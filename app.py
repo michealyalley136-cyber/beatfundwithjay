@@ -1028,20 +1028,51 @@ def admin_kyc_update(user_id, action):
 @app.route("/dashboard/admin/transactions", endpoint="admin_transactions")
 @role_required("admin")
 def admin_transactions():
-    # recent wallet entries
-    ledger = (LedgerEntry.query
-              .order_by(LedgerEntry.created_at.desc())
-              .limit(200).all())
+    q = (request.args.get("q") or "").strip()
+    t = (request.args.get("type") or "").strip()
+    min_amt = (request.args.get("min") or "").strip()
+    max_amt = (request.args.get("max") or "").strip()
 
-    # recent marketplace orders
-    orders = (Order.query
-              .order_by(Order.created_at.desc())
-              .limit(200).all())
+    query = LedgerEntry.query.join(Wallet).join(User)
+
+    if q:
+        query = query.filter(
+            (User.username.ilike(f"%{q}%")) |
+            (LedgerEntry.meta.ilike(f"%{q}%"))
+        )
+
+    if t:
+        try:
+            query = query.filter(LedgerEntry.entry_type == EntryType(t))
+        except ValueError:
+            pass
+
+    if min_amt:
+        try:
+            query = query.filter(LedgerEntry.amount_cents >= int(float(min_amt) * 100))
+        except Exception:
+            pass
+
+    if max_amt:
+        try:
+            query = query.filter(LedgerEntry.amount_cents <= int(float(max_amt) * 100))
+        except Exception:
+            pass
+
+    entries = query.order_by(LedgerEntry.created_at.desc()).limit(500).all()
+
+    current_filters = {
+        "q": q,
+        "type": t,
+        "min": min_amt,
+        "max": max_amt
+    }
 
     return render_template(
         "admin_transactions.html",
-        ledger=ledger,
-        orders=orders
+        entries=entries,
+        EntryType=EntryType,
+        current_filters=current_filters
     )
 
 
