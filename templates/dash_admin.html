@@ -138,10 +138,18 @@
           </a>
 
           <!-- ✅ ALWAYS SHOW TRANSACTIONS -->
+           <!-- ✅ ALWAYS SHOW TRANSACTIONS -->
           <a href="{{ url_for('admin_transactions') }}" class="admin-action-card">
             <div class="action-title">Transactions</div>
             <div class="action-sub">View wallet activity log.</div>
           </a>
+
+          <!-- ✅ ALWAYS SHOW REPORTS -->
+          <a href="/dashboard/admin/reports" class="admin-action-card">
+  <div class="action-title">Reports</div>
+  <div class="action-sub">Exports, audits, analytics.</div>
+</a>
+      </div>
 
           <!-- ✅ ALWAYS SHOW REPORTS -->
           <a href="{{ url_for('admin_reports') }}" class="admin-action-card">
