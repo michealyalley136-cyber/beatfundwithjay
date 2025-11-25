@@ -1,0 +1,20 @@
+#Python virtual environment
+beatfund_env/
+venv/
+env/
+
+#Python cache
+_ _pycache_ _/
+*.pyc
+*.pyo
+
+#Environment variables
+.env
+
+#File uploads (optional)
+uplaods/
+instance/
+
+#OS files
+.DS_Store
+Thumbs.db
