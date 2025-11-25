@@ -137,19 +137,17 @@
             <div class="action-sub">Review pending verification.</div>
           </a>
 
-          {% if admin_transactions is defined %}
+          <!-- ✅ ALWAYS SHOW TRANSACTIONS -->
           <a href="{{ url_for('admin_transactions') }}" class="admin-action-card">
             <div class="action-title">Transactions</div>
             <div class="action-sub">View wallet activity log.</div>
           </a>
-          {% endif %}
 
-          {% if admin_reports is defined %}
+          <!-- ✅ ALWAYS SHOW REPORTS -->
           <a href="{{ url_for('admin_reports') }}" class="admin-action-card">
             <div class="action-title">Reports</div>
             <div class="action-sub">Exports, audits, analytics.</div>
           </a>
-          {% endif %}
         </div>
       </div>
 
