@@ -1,0 +1,253 @@
+{% extends "base.html" %}
+{% block title %}Admin — Users{% endblock %}
+
+{% block content %}
+<div class="bf-page-shell">
+  <div class="bf-page-header">
+    <h1>All Users</h1>
+    <p class="bf-muted">
+      Manage accounts and review roles/KYC. (Demo admin tools)
+    </p>
+  </div>
+
+  <div class="bm-panel">
+    <div class="adm-toolbar">
+      <a href="{{ url_for('admin_dashboard') }}" class="bm-btn-secondary bm-btn-sm">
+        ← Back to Admin Dashboard
+      </a>
+      <div class="adm-count">
+        Total users: <strong>{{ users|length }}</strong>
+      </div>
+    </div>
+
+    {% if users %}
+      <div class="adm-table">
+        <div class="adm-row adm-head">
+          <div>ID</div>
+          <div>Username</div>
+          <div>Role</div>
+          <div>KYC</div>
+          <div>Status</div>
+          <div style="text-align:right;">Actions</div>
+        </div>
+
+        {% for u in users %}
+          <div class="adm-row">
+            <div>#{{ u.id }}</div>
+            <div>@{{ u.username }}</div>
+            <div>
+              <span class="adm-pill adm-pill-role">
+                {{ u.role.value|capitalize }}
+              </span>
+            </div>
+            <div>
+              <span class="adm-pill adm-pill-kyc adm-kyc-{{ u.kyc_status.value }}">
+                {{ u.kyc_status.value.replace("_"," ")|capitalize }}
+              </span>
+            </div>
+            <div>
+              {% if u.is_active_col %}
+                <span class="adm-pill adm-pill-ok">Active</span>
+              {% else %}
+                <span class="adm-pill adm-pill-warn">Disabled</span>
+              {% endif %}
+            </div>
+
+            <div class="adm-actions">
+              {% if u.id != current_user.id %}
+                {% if u.is_active_col %}
+                  <form method="post"
+                        action="{{ url_for('admin_users_action', user_id=u.id, action='disable') }}">
+                    <button class="bm-btn-secondary bm-btn-sm" type="submit">
+                      Disable
+                    </button>
+                  </form>
+                {% else %}
+                  <form method="post"
+                        action="{{ url_for('admin_users_action', user_id=u.id, action='enable') }}">
+                    <button class="bm-btn-primary bm-btn-sm" type="submit">
+                      Enable
+                    </button>
+                  </form>
+                {% endif %}
+
+                {% if u.role.value != 'admin' %}
+                  <form method="post"
+                        action="{{ url_for('admin_users_action', user_id=u.id, action='make_admin') }}">
+                    <button class="bm-btn-secondary bm-btn-sm" type="submit">
+                      Make Admin
+                    </button>
+                  </form>
+                {% endif %}
+              {% else %}
+                <span class="bf-muted" style="font-size:12px;">(you)</span>
+              {% endif %}
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="bm-empty">No users found.</p>
+    {% endif %}
+  </div>
+</div>
+
+<style>
+/* keep same page shell and panel style as BookMe */
+.bf-page-shell {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 32px 24px 48px;
+}
+.bf-page-header h1 {
+  font-size: 26px;
+  margin-bottom: 4px;
+}
+.bf-muted {
+  color: #9ca7c5;
+  font-size: 14px;
+}
+.bm-panel {
+  background: radial-gradient(circle at top left, #273760, #15192b 55%, #0b0f1e);
+  border-radius: 18px;
+  padding: 20px 22px 24px;
+  box-shadow: 0 14px 40px rgba(0,0,0,0.45);
+}
+
+/* toolbar */
+.adm-toolbar {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  margin-bottom: 12px;
+}
+.adm-count {
+  font-size: 13px;
+  color: #cbd5e1;
+}
+
+/* table layout */
+.adm-table {
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+}
+.adm-row {
+  display:grid;
+  grid-template-columns: 0.6fr 1.3fr 1fr 1fr 1fr 1.8fr;
+  gap:8px;
+  align-items:center;
+  padding:10px 12px;
+  border-radius: 12px;
+  background: rgba(8, 12, 30, 0.9);
+  border: 1px solid rgba(68, 90, 160, 0.7);
+  font-size: 14px;
+}
+.adm-head {
+  background: rgba(18, 26, 58, 0.95);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  color:#aab3d6;
+  border: 1px solid rgba(88, 109, 180, 0.9);
+}
+
+/* pills */
+.adm-pill {
+  display:inline-block;
+  padding:3px 9px;
+  font-size: 12px;
+  border-radius: 999px;
+  border:1px solid transparent;
+}
+.adm-pill-role {
+  background: rgba(57, 114, 255, 0.25);
+  color: #dfe7ff;
+  border-color: rgba(57,114,255,0.6);
+}
+.adm-pill-kyc {
+  background: rgba(255,255,255,0.06);
+  border-color: rgba(255,255,255,0.12);
+  color:#e2e8f0;
+}
+.adm-kyc-not_started { opacity: 0.7; }
+.adm-kyc-pending {
+  background: rgba(255, 193, 7, 0.15);
+  border-color: rgba(255, 193, 7, 0.6);
+  color:#ffe49a;
+}
+.adm-kyc-approved {
+  background: rgba(34, 197, 94, 0.12);
+  border-color: rgba(34, 197, 94, 0.6);
+  color:#bbf7d0;
+}
+.adm-kyc-rejected {
+  background: rgba(255, 77, 106, 0.12);
+  border-color: rgba(255, 77, 106, 0.6);
+  color:#ffb3c0;
+}
+.adm-pill-ok {
+  background: rgba(34,197,94,0.12);
+  border-color: rgba(34,197,94,0.6);
+  color:#bbf7d0;
+}
+.adm-pill-warn {
+  background: rgba(255,77,106,0.12);
+  border-color: rgba(255,77,106,0.6);
+  color:#ffb3c0;
+}
+
+/* actions */
+.adm-actions {
+  display:flex;
+  justify-content:flex-end;
+  gap:6px;
+  flex-wrap: wrap;
+}
+
+/* button styles aligned to your global buttons */
+.bm-btn-primary,
+.bm-btn-secondary {
+  border-radius: 999px;
+  padding: 6px 14px;
+  font-size: 13px;
+  border: none;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.bm-btn-primary {
+  background: linear-gradient(135deg, #33b5ff, #447aff);
+  color: #ffffff;
+  box-shadow: 0 6px 16px rgba(0,0,0,0.55);
+}
+.bm-btn-primary:hover {
+  background: linear-gradient(135deg, #45c4ff, #5688ff);
+}
+.bm-btn-secondary {
+  background: transparent;
+  color: #c1ccff;
+  border: 1px solid #3b476b;
+}
+.bm-btn-secondary:hover {
+  background: rgba(34, 43, 75, 0.9);
+}
+.bm-btn-sm {
+  padding: 5px 12px;
+  font-size: 12px;
+}
+
+@media (max-width: 900px) {
+  .adm-row {
+    grid-template-columns: 1fr 1.5fr 1fr 1fr;
+    grid-auto-rows:auto;
+  }
+  .adm-row div:nth-child(5),
+  .adm-row div:nth-child(6) {
+    grid-column: span 2;
+  }
+}
+</style>
+{% endblock %}

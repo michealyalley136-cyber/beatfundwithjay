@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}User Details{% endblock %}
+{% block content %}
+<h2>User: {{ user.username }} ({{ user.role.value }})</h2>
+<p>KYC Status: <strong>{{ user.kyc_status.value }}</strong></p>
+<p>Wallet Balance: ${{ "%.2f"|format(balance) }}</p>
+
+<h3>Recent Transactions</h3>
+{% if transactions %}
+<table border="1" cellpadding="5">
+  <tr><th>Date</th><th>Type</th><th>Amount</th><th>Meta</th></tr>
+  {% for t in transactions %}
+  <tr>
+    <td>{{ t.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+    <td>{{ t.entry_type.value }}</td>
+    <td>${{ "%.2f"|format(t.amount_cents / 100) }}</td>
+    <td>{{ t.meta }}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% else %}
+<p>No transactions yet.</p>
+{% endif %}
+
+<a href="{{ url_for('admin_users') }}">⬅ Back to Users</a>
+{% endblock %}

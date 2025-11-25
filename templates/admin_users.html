@@ -1,0 +1,177 @@
+{% extends "base.html" %}
+{% block title %}All Users — Admin{% endblock %}
+
+{% block content %}
+<div class="bf-page-shell">
+  <div class="bf-page-header">
+    <h1>All Users</h1>
+    <p class="bf-muted">Manage accounts and review KYC status.</p>
+
+    <div class="bm-admin-actions">
+      <a href="{{ url_for('admin_dashboard') }}" class="bm-btn-secondary bm-btn-sm">← Back to Admin</a>
+      <a href="{{ url_for('admin_kyc') }}" class="bm-btn-primary bm-btn-sm">Review KYC Queue</a>
+    </div>
+  </div>
+
+  <div class="bm-panel">
+    {% if users %}
+      <div class="bm-table-wrap">
+        <table class="bm-table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Username</th>
+              <th>Role</th>
+              <th>KYC</th>
+              <th>Active</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for u in users %}
+              <tr>
+                <td>{{ u.id }}</td>
+                <td>@{{ u.username }}</td>
+                <td>
+                  <span class="bm-pill bm-pill-role">
+                    {{ u.role.value|capitalize }}
+                  </span>
+                </td>
+                <td>
+                  {% if u.kyc_status == KYCStatus.approved %}
+                    <span class="bm-pill bm-pill-ok">Approved</span>
+                  {% elif u.kyc_status == KYCStatus.pending %}
+                    <span class="bm-pill bm-pill-warn">Pending</span>
+                  {% elif u.kyc_status == KYCStatus.rejected %}
+                    <span class="bm-pill bm-pill-bad">Rejected</span>
+                  {% else %}
+                    <span class="bm-pill bm-pill-neutral">Not started</span>
+                  {% endif %}
+                </td>
+                <td>
+                  {% if u.is_active_col %}
+                    <span class="bm-pill bm-pill-ok">Yes</span>
+                  {% else %}
+                    <span class="bm-pill bm-pill-bad">No</span>
+                  {% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p class="bm-empty">No users found.</p>
+    {% endif %}
+  </div>
+</div>
+
+<style>
+  .bf-page-shell {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 28px 18px 48px;
+  }
+  .bf-page-header h1 {
+    font-size: 24px;
+    margin-bottom: 4px;
+  }
+  .bf-muted {
+    color: #9ca7c5;
+    font-size: 14px;
+  }
+
+  .bm-admin-actions{
+    margin-top: 10px;
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .bm-panel {
+    margin-top: 14px;
+    background: radial-gradient(circle at top left, #273760, #15192b 55%, #0b0f1e);
+    border-radius: 18px;
+    padding: 18px 18px 10px;
+    box-shadow: 0 14px 40px rgba(0,0,0,0.45);
+  }
+
+  .bm-table-wrap {
+    width: 100%;
+    overflow-x: auto;
+    border-radius: 12px;
+  }
+  .bm-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+  }
+  .bm-table th, .bm-table td {
+    text-align: left;
+    padding: 10px 10px;
+    border-bottom: 1px solid rgba(68, 90, 160, 0.35);
+    color: #e6edff;
+    white-space: nowrap;
+  }
+  .bm-table th {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    color: #aab4d6;
+    background: rgba(8, 12, 30, 0.9);
+    position: sticky;
+    top: 0;
+  }
+
+  .bm-pill{
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    border: 1px solid rgba(68,90,160,.6);
+  }
+  .bm-pill-role{ background: rgba(57,114,255,.18); color: #dfe7ff; }
+  .bm-pill-ok{ background: rgba(34,197,94,.18); color: #bbf7d0; border-color: rgba(34,197,94,.6); }
+  .bm-pill-warn{ background: rgba(234,179,8,.18); color: #fde68a; border-color: rgba(234,179,8,.6); }
+  .bm-pill-bad{ background: rgba(244,63,94,.18); color: #fecdd3; border-color: rgba(244,63,94,.6); }
+  .bm-pill-neutral{ background: rgba(148,163,184,.18); color: #e2e8f0; }
+
+  .bm-btn-primary,
+  .bm-btn-secondary {
+    border-radius: 999px;
+    padding: 6px 14px;
+    font-size: 13px;
+    border: none;
+    cursor: pointer;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .bm-btn-primary {
+    background: linear-gradient(135deg, #33b5ff, #447aff);
+    color: #ffffff;
+    box-shadow: 0 6px 16px rgba(0,0,0,0.55);
+  }
+  .bm-btn-primary:hover {
+    background: linear-gradient(135deg, #45c4ff, #5688ff);
+  }
+  .bm-btn-secondary {
+    background: transparent;
+    color: #c1ccff;
+    border: 1px solid #3b476b;
+  }
+  .bm-btn-secondary:hover {
+    background: rgba(34, 43, 75, 0.9);
+  }
+  .bm-btn-sm {
+    padding: 5px 12px;
+    font-size: 12px;
+  }
+
+  .bm-empty {
+    padding: 12px;
+    font-size: 14px;
+    color: #9ca7c5;
+  }
+</style>
+{% endblock %}

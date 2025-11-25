@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Support · @{{ target.username }}{% endblock %}
+{% block content %}
+
+<h2>Support · User Detail</h2>
+<p>
+  <strong>User:</strong> @{{ target.username }} · <strong>Role:</strong> {{ target.role.value }} ·
+  <strong>KYC:</strong> {{ target.kyc_status.value }} ·
+  <strong>Active:</strong> {{ 'Yes' if target.is_active_col else 'No' }}
+</p>
+
+<div style="display:grid;gap:16px;grid-template-columns:1fr 1fr;align-items:start">
+  <div style="background:#fff;border-radius:10px;padding:16px;box-shadow:0 1px 4px rgba(0,0,0,0.1)">
+    <h3>Wallet Snapshot</h3>
+    <p><strong>Balance:</strong> ${{ "%.2f"|format(balance) }}</p>
+    <h4 style="margin-top:12px">Recent Transactions</h4>
+    {% if recent %}
+      <table style="width:100%;border-collapse:collapse">
+        <thead>
+          <tr>
+            <th style="text-align:left;border-bottom:1px solid #eee;padding:8px">When</th>
+            <th style="text-align:left;border-bottom:1px solid #eee;padding:8px">Type</th>
+            <th style="text-align:left;border-bottom:1px solid #eee;padding:8px">Amount</th>
+            <th style="text-align:left;border-bottom:1px solid #eee;padding:8px">Meta</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for e in recent %}
+          <tr>
+            <td style="padding:8px;border-bottom:1px solid #f4f4f4">{{ e.created_at }}</td>
+            <td style="padding:8px;border-bottom:1px solid #f4f4f4">{{ e.entry_type.value }}</td>
+            <td style="padding:8px;border-bottom:1px solid #f4f4f4">${{ "%.2f"|format(e.amount_cents / 100.0) }}</td>
+            <td style="padding:8px;border-bottom:1px solid #f4f4f4">{{ e.meta or '' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p style="color:#64748b">No transactions yet.</p>
+    {% endif %}
+  </div>
+
+  <div style="background:#fff;border-radius:10px;padding:16px;box-shadow:0 1px 4px rgba(0,0,0,0.1)">
+    <h3>Notes</h3>
+    <p>Support has read-only access. All actions are logged.</p>
+    <p><a href="{{ url_for('support_search') }}">← Back to Search</a></p>
+  </div>
+</div>
+
+{% endblock %}

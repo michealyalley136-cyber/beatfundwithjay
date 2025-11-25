@@ -1,0 +1,41 @@
+<!-- templates/artist_purchases.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>My Purchases - BeatFund</title>
+</head>
+<body>
+    <h1>My Purchases</h1>
+    {% with messages = get_flashed_messages() %}
+        {% if messages %}
+            <ul>
+                {% for message in messages %}
+                    <li>{{ message }}</li>
+                {% endfor %}
+            </ul>
+        {% endif %}
+    {% endwith %}
+    
+    {% if purchases %}
+        {% for purchase in purchases %}
+            <div style="border: 1px solid #ccc; margin: 10px; padding: 10px;">
+                <h3>{{ purchase.beat.title }}</h3>
+                <p>Purchased on: {{ purchase.created_at.strftime('%Y-%m-%d %H:%M') }} | Price: ${{ (purchase.amount_cents / 100.0)|floatformat(2) }}</p>
+                
+                <!-- Download Links: Only Visible Post-Payment -->
+                <a href="{{ url_for('download_preview', order_id=purchase.id) }}" download>Download Preview</a> |
+                {% if purchase.beat.stems_path %}
+                    <a href="{{ url_for('download_stems', order_id=purchase.id) }}" download>Download Stems</a>
+                {% else %}
+                    <span>No stems available</span>
+                {% endif %}
+            </div>
+        {% endfor %}
+    {% else %}
+        <p>No purchases yet. <a href="{{ url_for('market_index') }}">Browse the market</a>.</p>
+    {% endif %}
+    
+    <a href="{{ url_for('market_index') }}">Browse More Beats</a> | <a href="{{ url_for('artist_dashboard') }}">Dashboard</a>
+</body>
+</html>

@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Producer Dashboard{% endblock %}
+{% block content %}
+<div class="grid g-3">
+  <div class="card">
+    <h3>Your Listings</h3>
+    <div><span class="chip">{{ total_beats }}</span> active beats</div>
+    <a class="btn primary" href="{{ url_for('producer_market_mine') }}" style="margin-top:10px;">Manage</a>
+  </div>
+  <div class="card">
+    <h3>Sales</h3>
+    <div><span class="chip">{{ sales_count }}</span> total orders</div>
+    <div class="muted" style="margin-top:6px;">Gross: <strong>${{ '%.2f'|format(revenue) }}</strong></div>
+  </div>
+  <div class="card">
+    <h3>Upload</h3>
+    <p class="muted">Upload new beat (cover, preview, stems).</p>
+    <a class="btn ok" href="{{ url_for('producer_market_upload') }}">Upload Beat</a>
+  </div>
+</div>
+{% endblock %}

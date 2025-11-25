@@ -1,0 +1,342 @@
+{% extends "base.html" %}
+{% block title %}BookMe — Studios & Creative Services{% endblock %}
+
+{% block content %}
+<div class="bf-page-shell">
+  <div class="bf-page-header">
+    <h1>BookMe — Studios &amp; Creative Services</h1>
+    <p class="bf-muted">
+      Discover producers, studios, videographers and more. Use the map or the list, then request a booking.
+    </p>
+  </div>
+
+  <div class="bm-main-grid">
+    <!-- LEFT: Map -->
+    <div class="bm-panel bm-map-panel">
+      <h2 class="bm-panel-title">Map</h2>
+      <p class="bm-panel-sub">
+        Pins show providers who added coordinates to their BookMe profile.
+      </p>
+      <div id="bookme-map" class="bm-map"></div>
+    </div>
+
+    <!-- RIGHT: Providers list + filters -->
+    <div class="bm-panel bm-list-panel">
+      <div class="bm-panel-header">
+        <div>
+          <h2 class="bm-panel-title">Service Providers</h2>
+          {% set provider_roles = [
+            'producer', 'studio', 'videographer',
+            'designer', 'engineer', 'manager', 'vendor'
+          ] %}
+
+          {% if current_user.is_authenticated and current_user.role.value in provider_roles %}
+            <p class="bm-panel-sub">
+              <a href="{{ url_for('bookme_profile') }}" class="bm-link">
+                Create or edit my BookMe profile
+              </a>
+              to appear here and on the map (for service roles).
+            </p>
+          {% else %}
+            <p class="bm-panel-sub">
+              If you offer studio or creative services, create a provider account
+              (producer, studio, videographer, etc.) to appear here.
+            </p>
+          {% endif %}
+        </div>
+
+        <button type="button" class="bm-filters-toggle" id="bm-filters-toggle">
+          <span class="bm-filters-icon"><span></span><span></span></span>
+          <span>Filters</span>
+        </button>
+      </div>
+
+      <form method="GET"
+            action="{{ url_for('bookme_search') }}"
+            class="bm-filters-panel"
+            id="bm-filters-panel">
+
+        <div class="bm-filter-row">
+          <label class="bm-filter-label">Provider type</label>
+          <select name="role" class="bm-filter-select">
+            <option value="">All provider types</option>
+            <option value="producer" {% if current_filters.role == 'producer' %}selected{% endif %}>Producer</option>
+            <option value="engineer" {% if current_filters.role == 'engineer' %}selected{% endif %}>Engineer</option>
+            <option value="studio" {% if current_filters.role == 'studio' %}selected{% endif %}>Studio</option>
+            <option value="videographer" {% if current_filters.role == 'videographer' %}selected{% endif %}>Videographer</option>
+            <option value="designer" {% if current_filters.role == 'designer' %}selected{% endif %}>Graphic Designer</option>
+            <option value="manager" {% if current_filters.role == 'manager' %}selected{% endif %}>Manager</option>
+            <option value="vendor" {% if current_filters.role == 'vendor' %}selected{% endif %}>Vendor</option>
+          </select>
+        </div>
+
+        <div class="bm-filter-row bm-filter-row-inline">
+          <div>
+            <label class="bm-filter-label">ZIP</label>
+            <input type="text" name="zip" class="bm-filter-input" placeholder="Any"
+                   value="{{ current_filters.zip }}">
+          </div>
+          <div>
+            <label class="bm-filter-label">City</label>
+            <input type="text" name="city" class="bm-filter-input" placeholder="Any"
+                   value="{{ current_filters.city }}">
+          </div>
+          <div>
+            <label class="bm-filter-label">State</label>
+            <input type="text" name="state" class="bm-filter-input" placeholder="Any"
+                   value="{{ current_filters.state }}">
+          </div>
+        </div>
+
+        <div class="bm-filter-row">
+          <label class="bm-filter-label">Search</label>
+          <input type="text" name="q" class="bm-filter-input"
+                 placeholder="Name, services, notes..." value="{{ current_filters.q }}">
+        </div>
+
+        <div class="bm-filter-actions">
+          <button type="submit" class="bm-filter-btn-primary">View results</button>
+          <a href="{{ url_for('bookme_search') }}" class="bm-filter-btn-secondary">Clear</a>
+        </div>
+      </form>
+
+      {% if profiles %}
+        <div class="bm-provider-list">
+          {% for p in profiles %}
+            <div class="bm-provider-card">
+              <div class="bm-provider-main">
+                <div class="bm-provider-name-row">
+                  <span class="bm-provider-name">{{ p.display_name }}</span>
+                  {% if p.user %}
+                    <span class="bm-provider-handle">@{{ p.user.username }}</span>
+                  {% endif %}
+                </div>
+
+                {% if p.city or p.state or p.zip %}
+                  <div class="bm-provider-location">
+                    {{ p.city or '' }}{% if p.state %}, {{ p.state }}{% endif %}
+                    {% if p.zip %} · {{ p.zip }}{% endif %}
+                  </div>
+                {% endif %}
+
+                {% if p.service_types %}
+                  <div class="bm-provider-tags">
+                    {% for tag in p.service_types.split(',') %}
+                      <span class="bm-tag">{{ tag.strip() }}</span>
+                    {% endfor %}
+                  </div>
+                {% endif %}
+
+                {% if p.bio %}
+                  <div class="bm-provider-bio">
+                    {{ p.bio[:140] }}{% if p.bio|length > 140 %}…{% endif %}
+                  </div>
+                {% endif %}
+
+                {% if p.rate_notes %}
+                  <div class="bm-provider-rate">
+                    {{ p.rate_notes }}
+                  </div>
+                {% endif %}
+              </div>
+
+              <div class="bm-provider-actions">
+                {% if current_user.is_authenticated and current_user.id != p.user_id %}
+                  <a href="{{ url_for('bookme_request', provider_id=p.user_id) }}"
+                     class="bm-btn-primary bm-btn-sm">Request booking</a>
+                {% endif %}
+                {% if p.user %}
+                  <a href="{{ url_for('producer_public_profile', username=p.user.username) }}"
+                     class="bm-btn-secondary bm-btn-sm">View producer profile</a>
+                {% endif %}
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p class="bm-empty">
+          No providers match these filters yet. Try widening your search, or clear filters to see all providers.
+        </p>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<link rel="stylesheet"
+  href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+  integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+  crossorigin=""/>
+<script
+  src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+  integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+  crossorigin=""></script>
+
+<style>
+  .bf-page-shell { max-width: 1200px; margin: 0 auto; padding: 32px 24px 48px; }
+  .bf-page-header h1 { font-size: 26px; margin-bottom: 4px; }
+  .bf-muted { color: #9ca7c5; font-size: 14px; }
+
+  .bm-main-grid {
+    display: grid;
+    grid-template-columns: 1.5fr 1.3fr;
+    gap: 24px;
+    margin-top: 24px;
+  }
+  @media (max-width: 960px) { .bm-main-grid { grid-template-columns: 1fr; } }
+
+  .bm-panel {
+    background: radial-gradient(circle at top left, #273760, #15192b 55%, #0b0f1e);
+    border-radius: 18px;
+    padding: 20px 22px 24px;
+    box-shadow: 0 14px 40px rgba(0,0,0,0.45);
+  }
+  .bm-panel-title { font-size: 18px; margin-bottom: 4px; }
+  .bm-panel-sub { font-size: 13px; color: #9ca7c5; margin-bottom: 8px; }
+  .bm-panel-header { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; }
+
+  .bm-map { width: 100%; height: 360px; border-radius: 14px; overflow: hidden; }
+
+  .bm-provider-list { display:flex; flex-direction:column; gap:12px; margin-top:12px; }
+
+  .bm-provider-card {
+    display:flex; justify-content:space-between; gap:12px;
+    padding:14px 14px;
+    border-radius:14px;
+    background: rgba(8, 12, 30, 0.9);
+    border:1px solid rgba(68, 90, 160, 0.7);
+    transition: transform .12s ease, border-color .12s ease, background .12s ease;
+  }
+  .bm-provider-card:hover {
+    transform: translateY(-2px);
+    border-color: rgba(110, 140, 230, 0.9);
+    background: rgba(12, 18, 40, 0.95);
+  }
+
+  .bm-provider-name-row { display:flex; align-items:baseline; gap:8px; }
+  .bm-provider-name { font-weight:700; font-size:15px; }
+  .bm-provider-handle { font-size:13px; color:#9ca7c5; }
+  .bm-provider-location { font-size:13px; color:#9ca7c5; margin-top:2px; }
+
+  .bm-provider-tags { margin-top:6px; display:flex; flex-wrap:wrap; gap:4px; }
+  .bm-tag {
+    font-size:11px; padding:2px 8px; border-radius:999px;
+    background: rgba(57, 114, 255, 0.3); color:#dfe7ff;
+  }
+  .bm-provider-bio { margin-top:7px; font-size:13px; color:#d7ddf5; line-height:1.35; }
+  .bm-provider-rate { margin-top:6px; font-size:13px; color:#e9edff; }
+
+  .bm-provider-actions { display:flex; flex-direction:column; gap:6px; align-items:flex-end; }
+
+  .bm-btn-primary, .bm-btn-secondary {
+    border-radius:999px; padding:6px 14px; font-size:13px;
+    border:none; cursor:pointer; text-decoration:none; display:inline-flex;
+    align-items:center; justify-content:center;
+  }
+  .bm-btn-primary {
+    background: linear-gradient(135deg, #33b5ff, #447aff);
+    color:#fff; box-shadow:0 6px 16px rgba(0,0,0,0.55);
+  }
+  .bm-btn-primary:hover { background: linear-gradient(135deg, #45c4ff, #5688ff); }
+  .bm-btn-secondary {
+    background: transparent; color:#c1ccff; border:1px solid #3b476b;
+  }
+  .bm-btn-secondary:hover { background: rgba(34,43,75,0.9); }
+  .bm-btn-sm { padding:5px 12px; font-size:12px; }
+
+  .bm-link { color:#4aa8ff; text-decoration:underline; text-decoration-thickness:1px; }
+  .bm-empty { margin-top:12px; font-size:14px; color:#9ca7c5; }
+
+  /* Filters */
+  .bm-filters-toggle {
+    border-radius:999px; padding:6px 12px; border:1px solid #3b476b;
+    background: rgba(15,22,50,0.9); color:#dde5ff; font-size:12px;
+    display:inline-flex; align-items:center; gap:6px; cursor:pointer;
+  }
+  .bm-filters-icon { display:inline-flex; flex-direction:column; gap:2px; }
+  .bm-filters-icon span { width:10px; height:2px; border-radius:999px; background:#dde5ff; }
+
+  .bm-filters-panel {
+    margin-top:12px; padding:12px 14px; border-radius:14px;
+    background: rgba(8, 12, 30, 0.95);
+    border:1px solid rgba(68, 90, 160, 0.7);
+  }
+  .bm-filter-row { margin-bottom:10px; }
+  .bm-filter-row-inline {
+    display:grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap:8px;
+  }
+  @media (max-width: 700px) { .bm-filter-row-inline { grid-template-columns:1fr; } }
+
+  .bm-filter-label {
+    display:block; font-size:11px; text-transform:uppercase;
+    letter-spacing:0.04em; color:#8f9bc6; margin-bottom:2px;
+  }
+  .bm-filter-select, .bm-filter-input {
+    width:100%; border-radius:999px; border:1px solid #303a5c;
+    background: rgba(12,16,36,0.95); color:#e3e9ff;
+    padding:6px 10px; font-size:13px;
+  }
+  .bm-filter-input::placeholder { color:#6f7aa4; }
+
+  .bm-filter-actions {
+    margin-top:6px; display:flex; justify-content:flex-end; gap:8px;
+  }
+  .bm-filter-btn-primary, .bm-filter-btn-secondary {
+    border-radius:999px; padding:6px 14px; font-size:13px;
+    border:none; cursor:pointer; text-decoration:none; display:inline-flex;
+  }
+  .bm-filter-btn-primary {
+    background: linear-gradient(135deg, #33b5ff, #447aff);
+    color:#fff; box-shadow:0 6px 16px rgba(0,0,0,0.55);
+  }
+  .bm-filter-btn-secondary {
+    background: transparent; color:#c1ccff; border:1px solid #3b476b;
+  }
+</style>
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  const mapEl = document.getElementById("bookme-map");
+  if (mapEl && typeof L !== "undefined") {
+    const map = L.map("bookme-map").setView([37.8, -96], 4);
+
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 18,
+      attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(map);
+
+    const dataUrl = "{{ url_for('bookme_data',
+      role=current_filters.role,
+      zip=current_filters.zip,
+      city=current_filters.city,
+      state=current_filters.state,
+      q=current_filters.q) }}";
+
+    fetch(dataUrl)
+      .then(resp => resp.json())
+      .then(data => {
+        data.forEach(p => {
+          if (p.lat !== null && p.lng !== null) {
+            const marker = L.marker([p.lat, p.lng]).addTo(map);
+            marker.bindPopup(`
+              <strong>${p.display_name}</strong><br/>
+              ${p.service_types || ""}<br/>
+              ${p.city || ""}${p.state ? ", " + p.state : ""}<br/>
+              <small>${p.rate_notes || ""}</small>
+            `);
+          }
+        });
+      })
+      .catch(err => console.error("Error loading BookMe markers:", err));
+  }
+
+  const toggleBtn = document.getElementById("bm-filters-toggle");
+  const panel = document.getElementById("bm-filters-panel");
+  if (toggleBtn && panel) {
+    toggleBtn.addEventListener("click", () => {
+      panel.classList.toggle("bm-filters-open");
+      panel.style.display = panel.classList.contains("bm-filters-open") ? "block" : "none";
+    });
+  }
+});
+</script>
+{% endblock %}

@@ -1,0 +1,188 @@
+{% extends "base.html" %}
+{% block title %}My Purchased Beats{% endblock %}
+
+{% block content %}
+<div class="bf-page-shell">
+  <div class="bf-page-header">
+    <h1>My Purchased Beats</h1>
+    <p class="bf-muted">
+      These are beats you’ve bought with your BeatFund wallet. You can re-download deliverable files anytime.
+    </p>
+  </div>
+
+  <div class="mp-card">
+    {% if purchases %}
+      <div class="mp-list">
+        {% for item in purchases %}
+          {% set beat = item.beat %}
+          {% set order = item.order %}
+          {% set producer = item.producer %}
+          <div class="mp-row">
+            <div class="mp-main">
+              <div class="mp-title-line">
+                <span class="mp-title">{{ beat.title }}</span>
+                {% if producer %}
+                  <span class="mp-producer">@{{ producer.username }}</span>
+                {% endif %}
+              </div>
+              <div class="mp-meta-line">
+                <span class="mp-meta">
+                  Order #{{ order.id }} · {{ (order.created_at or "") }}
+                </span>
+                <span class="mp-meta">
+                  Paid: ${{ "%.2f"|format(order.amount_cents / 100.0) }}
+                </span>
+              </div>
+              {% if beat.genre or beat.bpm %}
+                <div class="mp-meta-line">
+                  {% if beat.genre %}
+                    <span class="mp-tag">{{ beat.genre }}</span>
+                  {% endif %}
+                  {% if beat.bpm %}
+                    <span class="mp-tag">{{ beat.bpm }} BPM</span>
+                  {% endif %}
+                </div>
+              {% endif %}
+            </div>
+
+            <div class="mp-actions">
+              {% if beat.stems_path %}
+                <a href="{{ url_for('market_download', beat_id=beat.id) }}"
+                   class="mp-btn-primary mp-btn-sm">
+                  Download files
+                </a>
+              {% else %}
+                <span class="mp-note">No files available</span>
+              {% endif %}
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="mp-empty">
+        You haven’t purchased any beats yet. Visit the
+        <a href="{{ url_for('market_index') }}">Marketplace</a>
+        to browse beats.
+      </p>
+    {% endif %}
+  </div>
+</div>
+
+<style>
+  .bf-page-shell {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 32px 24px 48px;
+  }
+  .bf-page-header h1 {
+    font-size: 26px;
+    margin-bottom: 4px;
+  }
+  .bf-muted {
+    color: #9ca7c5;
+    font-size: 14px;
+  }
+
+  .mp-card {
+    margin-top: 24px;
+    background: radial-gradient(circle at top left, #273760, #15192b 55%, #0b0f1e);
+    border-radius: 18px;
+    padding: 20px 22px 24px;
+    box-shadow: 0 14px 40px rgba(0,0,0,0.45);
+  }
+
+  .mp-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .mp-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 12px;
+    border-radius: 14px;
+    background: rgba(8, 12, 30, 0.9);
+    border: 1px solid rgba(68, 90, 160, 0.7);
+  }
+
+  .mp-main {
+    flex: 1 1 auto;
+  }
+
+  .mp-title-line {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+  }
+
+  .mp-title {
+    font-weight: 600;
+  }
+
+  .mp-producer {
+    font-size: 13px;
+    color: #9ca7c5;
+  }
+
+  .mp-meta-line {
+    margin-top: 3px;
+    font-size: 12px;
+    color: #9ca7c5;
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  .mp-tag {
+    display: inline-block;
+    margin-top: 4px;
+    padding: 2px 8px;
+    font-size: 11px;
+    border-radius: 999px;
+    background: rgba(57, 114, 255, 0.3);
+    color: #dfe7ff;
+  }
+
+  .mp-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+  }
+
+  .mp-btn-primary {
+    border-radius: 999px;
+    padding: 6px 14px;
+    font-size: 13px;
+    border: none;
+    cursor: pointer;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, #33b5ff, #447aff);
+    color: #ffffff;
+    box-shadow: 0 6px 16px rgba(0,0,0,0.55);
+  }
+
+  .mp-btn-primary:hover {
+    background: linear-gradient(135deg, #45c4ff, #5688ff);
+  }
+
+  .mp-btn-sm {
+    padding: 5px 12px;
+    font-size: 12px;
+  }
+
+  .mp-note {
+    font-size: 12px;
+    color: #9ca7c5;
+  }
+
+  .mp-empty {
+    font-size: 14px;
+    color: #9ca7c5;
+  }
+</style>
+{% endblock %}

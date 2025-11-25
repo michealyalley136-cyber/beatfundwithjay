@@ -1,0 +1,54 @@
+<!-- templates/artist_purchases.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>My Purchases – BeatFund</title>
+    <style>
+        body {font-family:Arial;margin:20px;}
+        .purchase {border:1px solid #ccc;padding:15px;margin:15px 0;border-radius:8px;}
+        .dl-btn {background:#28a745;color:#fff;padding:8px 16px;border:none;border-radius:4px;cursor:pointer;text-decoration:none;}
+        .dl-btn:hover {background:#218838;}
+    </style>
+</head>
+<body>
+<h1>My Purchases</h1>
+
+{% with messages = get_flashed_messages() %}
+  {% if messages %}
+    <div style="background:#f8d7da;color:#721c24;padding:10px;border-radius:5px;margin:10px 0;">
+      {% for m in messages %}<p>{{ m }}</p>{% endfor %}
+    </div>
+  {% endif %}
+{% endwith %}
+
+{% if purchases %}
+  {% for p in purchases %}
+    <div class="purchase">
+      <h3>{{ p.beat.title }}</h3>
+      <p>Purchased: {{ p.created_at.strftime('%Y-%m-%d %H:%M') }} |
+         Price: ${{ "%.2f" % (p.amount_cents/100.0) }}</p>
+
+      <!-- DOWNLOAD BUTTONS (appear only after payment) -->
+      <a href="{{ url_for('download_preview', order_id=p.id) }}" class="dl-btn">
+        Download Preview
+      </a>
+      {% if p.beat.stems_path %}
+        <a href="{{ url_for('download_stems', order_id=p.id) }}" class="dl-btn">
+          Download Stems (Full)
+        </a>
+      {% else %}
+        <span style="color:#666;">No stems</span>
+      {% endif %}
+    </div>
+  {% endfor %}
+{% else %}
+  <p>No purchases yet. <a href="{{ url_for('market_index') }}">Browse the market</a>.</p>
+{% endif %}
+
+<p>
+  <a href="{{ url_for('market_index') }}">Browse More</a> |
+  <a href="{{ url_for('artist_dashboard') }}">Dashboard</a>
+</p>
+</body>
+</html>

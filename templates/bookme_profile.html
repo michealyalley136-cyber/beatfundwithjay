@@ -1,0 +1,187 @@
+{% extends "base.html" %}
+{% block title %}My BookMe Profile{% endblock %}
+{% block content %}
+
+<style>
+  .bm-form-wrap {
+    max-width: 880px;
+    margin: 24px auto;
+    padding: 20px 22px;
+    background: #0f172a;
+    border-radius: 14px;
+    border: 1px solid #1e293b;
+  }
+  .bm-form-title {
+    font-size: 1.4rem;
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+  .bm-form-sub {
+    margin: 0 0 16px;
+    color: #9ca3af;
+    font-size: 0.95rem;
+  }
+  .bm-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+  .bm-grid label {
+    display: block;
+    font-weight: 600;
+    margin-bottom: 4px;
+    font-size: 0.9rem;
+  }
+  .bm-grid input,
+  .bm-grid textarea {
+    width: 100%;
+    padding: 9px 10px;
+    border-radius: 8px;
+    border: 1px solid #1f2937;
+    background: #020617;
+    color: #e5e7eb;
+    font-size: 0.95rem;
+  }
+  .bm-grid textarea {
+    resize: vertical;
+  }
+  .bm-grid .wide {
+    grid-column: 1 / -1;
+  }
+  .bm-actions {
+    margin-top: 14px;
+    display: flex;
+    gap: 10px;
+    align-items: center;
+  }
+  .btn-primary {
+    background: #0ea5e9;
+    border: none;
+    color: #f9fafb;
+    padding: 9px 16px;
+    border-radius: 999px;
+    font-weight: 600;
+    cursor: pointer;
+    font-size: 0.95rem;
+  }
+  .btn-primary:hover {
+    background: #0284c7;
+  }
+  .bm-back-link {
+    font-size: 0.9rem;
+    color: #93c5fd;
+    text-decoration: none;
+  }
+  .bm-back-link:hover {
+    text-decoration: underline;
+  }
+</style>
+
+<div class="bm-form-wrap">
+  <h2 class="bm-form-title">My BookMe Profile</h2>
+  <p class="bm-form-sub">
+    This profile is visible to artists and clients searching on BookMe.  
+    Add your location to appear on the map.
+  </p>
+
+  <form method="post">
+    <div class="bm-grid">
+      <div>
+        <label>Display Name *</label>
+        <input
+          name="display_name"
+          value="{{ prof.display_name if prof else current_user.username }}"
+          required
+        >
+      </div>
+
+      <div>
+        <label>Service Types (comma separated)</label>
+        <input
+          name="service_types"
+          placeholder="recording,mixing,mastering"
+          value="{{ prof.service_types if prof else '' }}"
+        >
+      </div>
+
+      <div class="wide">
+        <label>Short Bio</label>
+        <textarea
+          name="bio"
+          rows="3"
+          placeholder="Tell clients about your experience, credits and style."
+        >{{ prof.bio if prof else '' }}</textarea>
+      </div>
+
+      <div>
+        <label>Rate Notes</label>
+        <input
+          name="rate_notes"
+          placeholder="$50/hr, packages available"
+          value="{{ prof.rate_notes if prof else '' }}"
+        >
+      </div>
+
+      <div>
+        <label>ZIP</label>
+        <input
+          name="zip"
+          placeholder="e.g., 43215"
+          value="{{ prof.zip if prof else '' }}"
+        >
+      </div>
+
+      <div>
+        <label>City</label>
+        <input
+          name="city"
+          value="{{ prof.city if prof else '' }}"
+        >
+      </div>
+
+      <div>
+        <label>State</label>
+        <input
+          name="state"
+          value="{{ prof.state if prof else '' }}"
+        >
+      </div>
+
+      <div class="wide">
+        <label>Address (optional)</label>
+        <input
+          name="address"
+          placeholder="123 Studio Ln"
+          value="{{ prof.address if prof else '' }}"
+        >
+      </div>
+
+      <div>
+        <label>Latitude (optional)</label>
+        <input
+          name="lat"
+          placeholder="40.0"
+          value="{{ prof.lat if prof and prof.lat is not none else '' }}"
+        >
+      </div>
+
+      <div>
+        <label>Longitude (optional)</label>
+        <input
+          name="lng"
+          placeholder="-83.0"
+          value="{{ prof.lng if prof and prof.lng is not none else '' }}"
+        >
+      </div>
+    </div>
+
+    <div class="bm-actions">
+      <button type="submit" class="btn-primary">Save Profile</button>
+      <a href="{{ url_for('bookme_search') }}" class="bm-back-link">
+        ← Back to BookMe
+      </a>
+    </div>
+  </form>
+</div>
+
+{% endblock %}

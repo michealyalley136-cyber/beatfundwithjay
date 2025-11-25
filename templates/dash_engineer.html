@@ -1,0 +1,7 @@
+{% extends "base.html" %}
+{% block title %}Engineer Dashboard{% endblock %}
+{% block content %}
+  <h2>Welcome, {{ current_user.username }} (Engineer)</h2>
+  <p>Coming soon: mixing/mastering services, file handoff, payouts.</p>
+  <p><a href="{{ url_for('wallet_home') }}">Go to Wallet</a></p>
+{% endblock %}

@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}Support{% endblock %}
+{% block content %}
+<h2>Support Portal</h2>
+<form method="POST" action="{{ url_for('support_home') }}" style="display:flex;gap:10px;align-items:center;margin:16px 0">
+  <input type="text" name="query" placeholder="Search username or ID" required
+         style="flex:1;padding:10px;border-radius:6px;border:1px solid #ccc">
+  <button type="submit">Search</button>
+</form>
+<p style="color:#64748b">Search for a user, then provide a <em>Reason for Access</em> to view their account.</p>
+{% endblock %}

@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}New Request{% endblock %}
+{% block content %}
+<h2>Create Funding Request</h2>
+<form method="POST">
+    <p><textarea name="description" placeholder="Describe your project..." required></textarea></p>
+    <p><input type="number" step="0.01" name="amount" placeholder="Amount in USD" required></p>
+    <p><button type="submit">Submit Request</button></p>
+</form>
+{% endblock %}

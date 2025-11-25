@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}Funder Dashboard{% endblock %}
+{% block content %}
+<h2>All Funding Requests</h2>
+
+<table>
+    <tr><th>ID</th><th>Artist ID</th><th>Description</th><th>Amount</th><th>Status</th><th>Action</th></tr>
+    {% for r in requests %}
+    <tr>
+        <td>{{ r.id }}</td>
+        <td>{{ r.artist_id }}</td>
+        <td>{{ r.description }}</td>
+        <td>${{ "%.2f"|format(r.amount) }}</td>
+        <td>{{ r.status.capitalize() }}</td>
+        <td>
+            {% if r.status == 'pending' %}
+                <a href="{{ url_for('approve', request_id=r.id) }}" class="btn">Approve</a>
+            {% elif r.status == 'approved' %}
+                <a href="{{ url_for('disburse', request_id=r.id) }}" class="btn">Disburse</a>
+            {% else %}
+                Done
+            {% endif %}
+        </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="6">No requests.</td></tr>
+    {% endfor %}
+</table>
+{% endblock %}

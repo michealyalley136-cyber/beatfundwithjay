@@ -1,0 +1,205 @@
+{% extends "base.html" %}
+{% block title %}My Bookings — BookMe{% endblock %}
+
+{% block content %}
+<div class="bf-page-shell">
+  <div class="bf-page-header">
+    <h1>My Bookings</h1>
+    <p class="bf-muted">View requests you sent and requests you received.</p>
+  </div>
+
+  <div class="bm-tabs">
+    <button class="bm-tab-btn active" data-tab="client">As Client</button>
+    <button class="bm-tab-btn" data-tab="provider">As Provider</button>
+  </div>
+
+  <!-- AS CLIENT -->
+  <div class="bm-tab-panel" id="tab-client">
+    {% if as_client %}
+      <div class="bm-req-list">
+        {% for r in as_client %}
+          <div class="bm-req-card">
+            <div class="bm-req-left">
+              <div class="bm-req-title">
+                To <strong>@{{ r.provider.username }}</strong>
+              </div>
+              <div class="bm-req-sub">
+                <span class="bm-req-time">{{ r.preferred_time }}</span>
+                <span class="bm-dot">•</span>
+                <span class="bm-req-date">{{ r.created_at.strftime("%b %d, %Y") }}</span>
+              </div>
+
+              {% if r.message %}
+                <div class="bm-req-msg">{{ r.message }}</div>
+              {% endif %}
+            </div>
+
+            <div class="bm-req-right">
+              <div class="bm-status bm-status-{{ r.status.value }}">
+                {{ r.status.value|capitalize }}
+              </div>
+
+              {% if r.status.value in ['pending','accepted'] %}
+                <form method="post"
+                      action="{{ url_for('bookme_request_status', req_id=r.id) }}">
+                  <input type="hidden" name="action" value="cancel">
+                  <button class="bm-btn-secondary bm-btn-sm" type="submit">
+                    Cancel
+                  </button>
+                </form>
+              {% endif %}
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="bm-empty">No booking requests yet.</p>
+    {% endif %}
+  </div>
+
+  <!-- AS PROVIDER -->
+  <div class="bm-tab-panel" id="tab-provider" style="display:none;">
+    {% if as_provider %}
+      <div class="bm-req-list">
+        {% for r in as_provider %}
+          <div class="bm-req-card">
+            <div class="bm-req-left">
+              <div class="bm-req-title">
+                From <strong>@{{ r.client.username }}</strong>
+              </div>
+              <div class="bm-req-sub">
+                <span class="bm-req-time">{{ r.preferred_time }}</span>
+                <span class="bm-dot">•</span>
+                <span class="bm-req-date">{{ r.created_at.strftime("%b %d, %Y") }}</span>
+              </div>
+
+              {% if r.message %}
+                <div class="bm-req-msg">{{ r.message }}</div>
+              {% endif %}
+            </div>
+
+            <div class="bm-req-right">
+              <div class="bm-status bm-status-{{ r.status.value }}">
+                {{ r.status.value|capitalize }}
+              </div>
+
+              {% if r.status.value == 'pending' %}
+                <div class="bm-req-actions">
+                  <form method="post"
+                        action="{{ url_for('bookme_request_status', req_id=r.id) }}">
+                    <input type="hidden" name="action" value="accept">
+                    <button class="bm-btn-primary bm-btn-sm" type="submit">
+                      Accept
+                    </button>
+                  </form>
+
+                  <form method="post"
+                        action="{{ url_for('bookme_request_status', req_id=r.id) }}">
+                    <input type="hidden" name="action" value="decline">
+                    <button class="bm-btn-secondary bm-btn-sm" type="submit">
+                      Decline
+                    </button>
+                  </form>
+                </div>
+              {% endif %}
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="bm-empty">No incoming requests yet.</p>
+    {% endif %}
+  </div>
+</div>
+
+<style>
+  .bf-page-shell { max-width: 1000px; margin: 0 auto; padding: 32px 24px 48px; }
+  .bf-page-header h1 { font-size: 26px; margin-bottom: 4px; }
+  .bf-muted { color: #9ca7c5; font-size: 14px; }
+
+  .bm-tabs {
+    display:flex; gap:8px; margin-top:14px; margin-bottom:12px;
+  }
+  .bm-tab-btn {
+    border-radius:999px; padding:7px 14px; font-size:13px; cursor:pointer;
+    border:1px solid #3b476b; background: rgba(15,22,50,0.9); color:#dde5ff;
+  }
+  .bm-tab-btn.active {
+    background: linear-gradient(135deg,#33b5ff,#447aff);
+    border-color: transparent; color:white;
+    box-shadow: 0 6px 16px rgba(0,0,0,0.55);
+  }
+
+  .bm-req-list { display:flex; flex-direction:column; gap:12px; margin-top:6px; }
+
+  .bm-req-card {
+    display:flex; justify-content:space-between; gap:12px;
+    padding:14px 14px; border-radius:14px;
+    background: rgba(8,12,30,0.9);
+    border:1px solid rgba(68,90,160,0.7);
+  }
+
+  .bm-req-title { font-size:15px; font-weight:700; }
+  .bm-req-sub {
+    margin-top:4px; font-size:12px; color:#9ca7c5; display:flex; gap:6px; align-items:center;
+  }
+  .bm-dot { opacity:.6; }
+  .bm-req-msg {
+    margin-top:8px; font-size:13px; line-height:1.35; color:#dfe7ff;
+    background: rgba(12,16,36,0.8);
+    padding:8px 10px; border-radius:10px; border:1px solid #303a5c;
+  }
+
+  .bm-req-right { display:flex; flex-direction:column; align-items:flex-end; gap:8px; min-width:120px; }
+
+  .bm-status {
+    font-size:11px; padding:4px 10px; border-radius:999px; letter-spacing:.03em;
+    border:1px solid transparent; text-transform:uppercase;
+  }
+  .bm-status-pending { background: rgba(255,193,7,0.15); color:#ffd36a; border-color: rgba(255,193,7,0.35); }
+  .bm-status-accepted { background: rgba(34,197,94,0.15); color:#7cf2ab; border-color: rgba(34,197,94,0.35); }
+  .bm-status-declined { background: rgba(239,68,68,0.15); color:#ff8e8e; border-color: rgba(239,68,68,0.35); }
+  .bm-status-cancelled { background: rgba(148,163,184,0.15); color:#cbd5e1; border-color: rgba(148,163,184,0.35); }
+
+  .bm-req-actions { display:flex; flex-direction:column; gap:6px; }
+
+  .bm-btn-primary, .bm-btn-secondary {
+    border-radius:999px; padding:6px 14px; font-size:13px;
+    border:none; cursor:pointer; text-decoration:none; display:inline-flex;
+    align-items:center; justify-content:center;
+  }
+  .bm-btn-primary {
+    background: linear-gradient(135deg, #33b5ff, #447aff);
+    color:#fff; box-shadow:0 6px 16px rgba(0,0,0,0.55);
+  }
+  .bm-btn-secondary {
+    background: transparent; color:#c1ccff; border:1px solid #3b476b;
+  }
+  .bm-btn-sm { padding:5px 12px; font-size:12px; }
+
+  .bm-empty { margin-top: 12px; font-size: 14px; color: #9ca7c5; }
+</style>
+
+<script>
+  document.addEventListener("DOMContentLoaded", () => {
+    const tabs = document.querySelectorAll(".bm-tab-btn");
+    const clientPanel = document.getElementById("tab-client");
+    const providerPanel = document.getElementById("tab-provider");
+
+    tabs.forEach(btn => {
+      btn.addEventListener("click", () => {
+        tabs.forEach(b => b.classList.remove("active"));
+        btn.classList.add("active");
+        const tab = btn.getAttribute("data-tab");
+        if (tab === "client") {
+          clientPanel.style.display = "block";
+          providerPanel.style.display = "none";
+        } else {
+          clientPanel.style.display = "none";
+          providerPanel.style.display = "block";
+        }
+      });
+    });
+  });
+</script>
+{% endblock %}

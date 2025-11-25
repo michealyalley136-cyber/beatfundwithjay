@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% block title %}Wallet{% endblock %}
+{% block content %}
+<div class="grid g-2">
+  <div class="card">
+    <h3>Wallet</h3>
+    <div class="muted">Balance</div>
+    <div style="font-size:28px; margin:6px 0;"><strong>${{ '%.2f'|format(balance) }}</strong></div>
+
+    <hr style="border-color: var(--border)">
+
+    <h4>Quick Action</h4>
+    <form method="post" action="{{ url_for('wallet_action') }}">
+      <div>
+        <label>Action</label><br>
+        <select name="action" required>
+          <option value="add">Add Money</option>
+          <option value="send">Send</option>
+          <option value="withdraw">Withdraw</option>
+        </select>
+      </div>
+      <div style="margin-top:8px;">
+        <label>Amount (USD)</label><br>
+        <input name="amount" placeholder="50.00" required>
+      </div>
+
+      <div id="sendBlock" style="margin-top:8px; display:none;">
+        <label>To (username)</label><br>
+        <input name="handle" placeholder="artist1">
+        <div style="margin-top:6px;"><label>Note (optional)</label><br><input name="note" placeholder="for studio time"></div>
+      </div>
+
+      <div id="fundBlock" style="margin-top:8px;">
+        <label>Funding Method</label><br>
+        <select name="method">
+          <option value="card">Card</option>
+          <option value="bank">Bank</option>
+        </select>
+
+        <div id="cardBlock" style="margin-top:6px;">
+          <input name="card_number" placeholder="Card Number (16 digits)">
+          <div style="display:flex; gap:10px; margin-top:6px;">
+            <input name="exp" placeholder="MM/YY">
+            <input name="cvv" placeholder="CVV">
+          </div>
+        </div>
+
+        <div id="bankBlock" style="display:none; margin-top:6px;">
+          <input name="routing" placeholder="Routing Number">
+          <input name="account" placeholder="Account Number" style="margin-top:6px;">
+        </div>
+      </div>
+
+      <div style="margin-top:12px;">
+        <button class="btn primary" type="submit">Submit</button>
+      </div>
+    </form>
+
+    <script>
+      const actionSel = document.querySelector('select[name="action"]');
+      const sendBlock = document.getElementById('sendBlock');
+      const fundBlock = document.getElementById('fundBlock');
+      const methodSel = document.querySelector('select[name="method"]');
+      const cardBlock = document.getElementById('cardBlock');
+      const bankBlock = document.getElementById('bankBlock');
+
+      function syncUI(){
+        const a = actionSel.value;
+        sendBlock.style.display = (a === 'send') ? 'block':'none';
+        fundBlock.style.display = (a === 'add') ? 'block':'none';
+        const m = methodSel.value;
+        cardBlock.style.display = (m === 'card') ? 'block':'none';
+        bankBlock.style.display = (m === 'bank') ? 'block':'none';
+      }
+      actionSel.addEventListener('change', syncUI);
+      methodSel.addEventListener('change', syncUI);
+      syncUI();
+    </script>
+  </div>
+
+  <div class="card">
+    <h3>Recent Activity</h3>
+    <table class="table">
+      <thead><tr><th>When</th><th>Type</th><th>Amount</th><th>Meta</th></tr></thead>
+      <tbody>
+        {% for e in recent %}
+        <tr>
+          <td class="muted">{{ e.created_at }}</td>
+          <td>{{ e.entry_type.value }}</td>
+          <td>
+            {% set s = 1 if e.entry_type.value in ['deposit','transfer_in','interest','adjustment','sale_income'] else -1 %}
+            {% set dollars = (e.amount_cents/100.0) * s %}
+            <strong style="color: {{ 'var(--accent-2)' if s>0 else 'var(--danger)' }};">
+              {{ '+' if s>0 else '-' }}${{ '%.2f'|format(e.amount_cents/100.0) }}
+            </strong>
+          </td>
+          <td class="muted">{{ e.meta }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="4" class="muted">No recent activity.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

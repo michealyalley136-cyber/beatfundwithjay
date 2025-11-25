@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}Upload Beat{% endblock %}
+{% block content %}
+<div class="card">
+  <h3>Upload Beat</h3>
+  <form method="post" enctype="multipart/form-data">
+    <div><label>Title</label><br><input name="title" required></div>
+    <div style="margin-top:8px;">
+      <label>Price (USD)</label><br><input name="price" placeholder="29.99" required>
+    </div>
+    <div style="margin-top:8px;">
+      <label>License</label><br>
+      <select name="license">
+        <option value="standard">Standard</option>
+        <option value="exclusive">Exclusive</option>
+        <option value="custom">Custom</option>
+      </select>
+    </div>
+    <div style="margin-top:8px;">
+      <label>BPM</label><br><input name="bpm" placeholder="140">
+    </div>
+    <div style="margin-top:8px;">
+      <label>Genre</label><br><input name="genre" placeholder="Trap, Afrobeats">
+    </div>
+    <hr style="border-color: var(--border); margin:12px 0;">
+    <div><label>Cover (png/jpg)</label><br><input type="file" name="cover" accept=".png,.jpg,.jpeg"></div>
+    <div style="margin-top:8px;"><label>Preview (mp3/wav)</label><br><input type="file" name="preview" accept=".mp3,.wav,.m4a,.ogg"></div>
+    <div style="margin-top:8px;"><label>Stems / Full</label><br><input type="file" name="stems" accept=".mp3,.wav,.m4a,.ogg"></div>
+    <br>
+    <button class="btn ok" type="submit">List Beat</button>
+    <a class="btn" href="{{ url_for('producer_market_mine') }}">Back</a>
+  </form>
+</div>
+{% endblock %}

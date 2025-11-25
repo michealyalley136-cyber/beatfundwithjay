@@ -1,0 +1,277 @@
+{% extends "base.html" %}
+{% block title %}Admin Transactions — BeatFund{% endblock %}
+
+{% block content %}
+<div class="bf-page-shell">
+  <div class="bf-page-header">
+    <h1>Transactions</h1>
+    <p class="bf-muted">
+      View wallet activity across all users (demo admin view).
+    </p>
+  </div>
+
+  <!-- Filters -->
+  <div class="bm-panel" style="margin-top:14px;">
+    <form method="GET" class="adm-filter-form">
+      <div class="adm-filter-grid">
+        <div>
+          <label class="adm-label">Search (username / note)</label>
+          <input type="text" name="q" class="adm-input"
+                 placeholder="e.g. producer1, hold fee..."
+                 value="{{ current_filters.q if current_filters is defined else '' }}">
+        </div>
+
+        <div>
+          <label class="adm-label">Type</label>
+          <select name="type" class="adm-input">
+            <option value="">All types</option>
+            {% if EntryType is defined %}
+              {% for t in EntryType %}
+                <option value="{{ t.value }}"
+                  {% if current_filters is defined and current_filters.type == t.value %}selected{% endif %}>
+                  {{ t.value.replace('_',' ')|title }}
+                </option>
+              {% endfor %}
+            {% else %}
+              <option value="deposit">Deposit</option>
+              <option value="withdrawal">Withdrawal</option>
+              <option value="transfer_in">Transfer In</option>
+              <option value="transfer_out">Transfer Out</option>
+              <option value="sale_income">Sale Income</option>
+              <option value="purchase_spend">Purchase Spend</option>
+            {% endif %}
+          </select>
+        </div>
+
+        <div>
+          <label class="adm-label">Min $</label>
+          <input type="number" step="0.01" name="min"
+                 class="adm-input" placeholder="0.00"
+                 value="{{ current_filters.min if current_filters is defined else '' }}">
+        </div>
+
+        <div>
+          <label class="adm-label">Max $</label>
+          <input type="number" step="0.01" name="max"
+                 class="adm-input" placeholder="500.00"
+                 value="{{ current_filters.max if current_filters is defined else '' }}">
+        </div>
+      </div>
+
+      <div class="adm-filter-actions">
+        <button class="adm-btn-primary" type="submit">Apply filters</button>
+        <a class="adm-btn-secondary" href="{{ request.path }}">Clear</a>
+      </div>
+    </form>
+  </div>
+
+  <!-- Transactions table -->
+  <div class="bm-panel" style="margin-top:16px;">
+    <div class="adm-table-wrap">
+      <table class="adm-table">
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>User</th>
+            <th>Type</th>
+            <th>Amount</th>
+            <th>Note</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% if entries %}
+          {% for e in entries %}
+            <tr>
+              <td class="adm-td-muted">
+                {{ e.created_at.strftime("%Y-%m-%d %I:%M %p") if e.created_at else '' }}
+              </td>
+
+              <td>
+                {% if e.wallet and e.wallet.user %}
+                  <span class="adm-user">@{{ e.wallet.user.username }}</span>
+                {% else %}
+                  <span class="adm-td-muted">Unknown</span>
+                {% endif %}
+              </td>
+
+              <td>
+                <span class="adm-pill">
+                  {{ e.entry_type.value.replace('_',' ')|title if e.entry_type else '' }}
+                </span>
+              </td>
+
+              <td class="{% if e.amount_cents and e.amount_cents < 0 %}adm-neg{% endif %}">
+                {% if e.amount_cents is not none %}
+                  ${{ "%.2f"|format(e.amount_cents / 100.0) }}
+                {% endif %}
+              </td>
+
+              <td class="adm-td-muted">
+                {{ e.meta or '' }}
+              </td>
+            </tr>
+          {% endfor %}
+        {% else %}
+          <tr>
+            <td colspan="5" class="adm-empty">
+              No transactions yet.
+            </td>
+          </tr>
+        {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<style>
+  .bf-page-shell {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 26px 18px 48px;
+  }
+  .bf-page-header h1 {
+    font-size: 26px;
+    margin-bottom: 4px;
+  }
+  .bf-muted {
+    color: #9ca7c5;
+    font-size: 14px;
+  }
+
+  .bm-panel {
+    background: radial-gradient(circle at top left, #273760, #15192b 55%, #0b0f1e);
+    border-radius: 18px;
+    padding: 18px 18px 20px;
+    box-shadow: 0 14px 40px rgba(0,0,0,0.45);
+  }
+
+  /* Filter form */
+  .adm-filter-form { width: 100%; }
+  .adm-filter-grid {
+    display: grid;
+    grid-template-columns: 2fr 1.2fr 1fr 1fr;
+    gap: 10px;
+  }
+  @media (max-width: 900px) {
+    .adm-filter-grid {
+      grid-template-columns: 1fr 1fr;
+    }
+  }
+  @media (max-width: 520px) {
+    .adm-filter-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .adm-label {
+    display: block;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #8f9bc6;
+    margin-bottom: 4px;
+  }
+  .adm-input {
+    width: 100%;
+    border-radius: 999px;
+    border: 1px solid #303a5c;
+    background: rgba(12, 16, 36, 0.95);
+    color: #e3e9ff;
+    padding: 7px 10px;
+    font-size: 14px;
+  }
+  .adm-input::placeholder { color: #6f7aa4; }
+
+  .adm-filter-actions {
+    margin-top: 10px;
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+  .adm-btn-primary,
+  .adm-btn-secondary {
+    border-radius: 999px;
+    padding: 6px 14px;
+    font-size: 13px;
+    border: none;
+    cursor: pointer;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .adm-btn-primary {
+    background: linear-gradient(135deg, #33b5ff, #447aff);
+    color: #ffffff;
+    box-shadow: 0 6px 16px rgba(0,0,0,0.55);
+  }
+  .adm-btn-primary:hover {
+    background: linear-gradient(135deg, #45c4ff, #5688ff);
+  }
+  .adm-btn-secondary {
+    background: transparent;
+    color: #c1ccff;
+    border: 1px solid #3b476b;
+  }
+  .adm-btn-secondary:hover {
+    background: rgba(34, 43, 75, 0.9);
+  }
+
+  /* Table */
+  .adm-table-wrap {
+    overflow-x: auto;
+    border-radius: 12px;
+    border: 1px solid rgba(68, 90, 160, 0.7);
+    background: rgba(8, 12, 30, 0.9);
+  }
+  .adm-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+  }
+  .adm-table thead th {
+    text-align: left;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    padding: 12px 12px;
+    background: rgba(16, 22, 46, 0.95);
+    color: #e3e9ff;
+    border-bottom: 1px solid rgba(68, 90, 160, 0.7);
+    white-space: nowrap;
+  }
+  .adm-table tbody td {
+    padding: 10px 12px;
+    border-bottom: 1px solid rgba(68, 90, 160, 0.35);
+    vertical-align: top;
+  }
+  .adm-table tbody tr:hover td {
+    background: rgba(34, 43, 75, 0.45);
+  }
+  .adm-td-muted { color: #9ca7c5; }
+
+  .adm-user {
+    font-weight: 600;
+    color: #dfe7ff;
+  }
+
+  .adm-pill {
+    font-size: 12px;
+    padding: 3px 9px;
+    border-radius: 999px;
+    background: rgba(57, 114, 255, 0.25);
+    color: #dfe7ff;
+    border: 1px solid rgba(57,114,255,0.5);
+    white-space: nowrap;
+  }
+
+  .adm-neg { color: #ff8598; }
+
+  .adm-empty {
+    text-align: center;
+    padding: 18px;
+    color: #9ca7c5;
+    font-size: 14px;
+  }
+</style>
+{% endblock %}

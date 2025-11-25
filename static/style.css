@@ -1,0 +1,53 @@
+/* static/style.css */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+* { box-sizing: border-box; margin:0; padding:0; }
+html, body { height:100%; background:#0d1117; color:#c9d1d9; font-family:'Inter',sans-serif; }
+
+a { color:#58a6ff; text-decoration:none; }
+a:hover { text-decoration:underline; }
+
+button, .btn {
+    background:#1f6feb; color:#fff; border:none; border-radius:6px;
+    padding:8px 16px; font-weight:600; cursor:pointer; transition:0.2s;
+}
+button:hover, .btn:hover { background:#1a5cc4; }
+
+header {
+    display:flex; align-items:center; justify-content:space-between;
+    padding:1rem 2rem; background:#161b22; border-bottom:1px solid #30363d;
+}
+header .logo { display:flex; align-items:center; gap:0.5rem; }
+header .logo img { width:40px; height:40px; border-radius:50%; }
+header .logo span { font-weight:700; font-size:1.2rem; color:#58a6ff; }
+
+nav ul { display:flex; gap:1.5rem; list-style:none; }
+nav a { color:#8b949e; font-weight:500; }
+nav a:hover { color:#58a6ff; }
+
+main { padding:2rem; max-width:1200px; margin:auto; }
+
+.card {
+    background:#161b22; border:1px solid #30363d; border-radius:12px;
+    padding:1.5rem; margin-bottom:1.5rem; box-shadow:0 4px 6px rgba(0,0,0,.1);
+}
+.card h2 { margin-bottom:0.5rem; color:#58a6ff; }
+.card p { margin-bottom:1rem; color:#8b949e; }
+
+.grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(300px,1fr)); gap:1.5rem; }
+
+.flash { padding:0.75rem 1rem; border-radius:6px; margin-bottom:1rem; }
+.flash.success { background:#238636; color:#fff; }
+.flash.error   { background:#da3633; color:#fff; }
+
+/* Disable audio download & speed controls */
+audio::-webkit-media-controls-download-button { display:none !important; }
+audio::-webkit-media-controls-enclosure { overflow:hidden; }
+audio::-webkit-media-controls-panel { -webkit-user-select:none; }
+audio::-internal-media-controls-download-button { display:none; }
+audio { width:100%; max-width:400px; }
+
+/* Buttons inside cards */
+.card .btn { display:inline-block; margin-top:0.5rem; }
+
+footer { text-align:center; padding:1rem; color:#8b949e; font-size:0.85rem; }

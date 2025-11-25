@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Artist Dashboard{% endblock %}
+{% block content %}
+<h2>Your Funding Requests</h2>
+<a href="{{ url_for('create_request') }}" class="btn">+ New Request</a>
+
+<table>
+    <tr><th>ID</th><th>Description</th><th>Amount</th><th>Status</th></tr>
+    {% for r in requests %}
+    <tr>
+        <td>{{ r.id }}</td>
+        <td>{{ r.description }}</td>
+        <td>${{ "%.2f"|format(r.amount) }}</td>
+        <td><strong>{{ r.status.capitalize() }}</strong></td>
+    </tr>
+    {% else %}
+    <tr><td colspan="4">No requests yet.</td></tr>
+    {% endfor %}
+</table>
+{% endblock %}

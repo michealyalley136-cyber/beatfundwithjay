@@ -1,0 +1,442 @@
+{% extends "base.html" %}
+{% block title %}Admin Dashboard — BeatFund{% endblock %}
+
+{% block content %}
+<div class="admin-shell">
+  <!-- Header -->
+  <header class="admin-header">
+    <div class="admin-header-left">
+      <div class="admin-badge">Admin</div>
+      <div>
+        <h1>Admin Dashboard</h1>
+        <p class="admin-sub">
+          High-level overview of users, KYC, and platform activity.
+        </p>
+      </div>
+    </div>
+
+    <div class="admin-header-right">
+      <a class="admin-ghost-btn" href="{{ url_for('admin_users') }}">Users &amp; KYC</a>
+      <a class="admin-primary-btn" href="{{ url_for('admin_kyc') }}">KYC Queue</a>
+    </div>
+  </header>
+
+  <!-- KPI Cards -->
+  <section class="admin-kpi-grid">
+    <div class="admin-kpi-card">
+      <div class="kpi-label">Total Users</div>
+      <div class="kpi-value">{{ total_users }}</div>
+      <div class="kpi-meta">
+        Artists: {{ total_artists }} · Producers: {{ total_producers }}
+      </div>
+    </div>
+
+    <div class="admin-kpi-card">
+      <div class="kpi-label">Pending KYC</div>
+      <div class="kpi-value">{{ pending_kyc }}</div>
+      <div class="kpi-meta">
+        Approved: {{ approved_kyc }} · Rejected: {{ rejected_kyc }}
+      </div>
+    </div>
+
+    <div class="admin-kpi-card">
+      <div class="kpi-label">Platform Wallet Volume</div>
+      <div class="kpi-value">
+        {% if total_wallet_volume is defined %}
+          ${{ "{:,.2f}".format(total_wallet_volume) }}
+        {% else %}
+          —
+        {% endif %}
+      </div>
+      <div class="kpi-meta">All-time deposits + transfers</div>
+    </div>
+
+    <div class="admin-kpi-card">
+      <div class="kpi-label">Bookings</div>
+      <div class="kpi-value">
+        {% if total_bookings is defined %}
+          {{ total_bookings }}
+        {% else %}
+          —
+        {% endif %}
+      </div>
+      <div class="kpi-meta">All-time requests + accepted</div>
+    </div>
+  </section>
+
+  <!-- Main grid -->
+  <section class="admin-main-grid">
+
+    <!-- Left column -->
+    <div class="admin-col">
+
+      <!-- Users snapshot -->
+      <div class="admin-panel">
+        <div class="admin-panel-head">
+          <h2>User Overview</h2>
+          <a class="admin-link" href="{{ url_for('admin_users') }}">View all users →</a>
+        </div>
+
+        <div class="admin-mini-list">
+          <div class="admin-mini-row">
+            <span>Artists</span>
+            <span class="pill">{{ total_artists }}</span>
+          </div>
+          <div class="admin-mini-row">
+            <span>Producers</span>
+            <span class="pill">{{ total_producers }}</span>
+          </div>
+          <div class="admin-mini-row">
+            <span>Studios / Services</span>
+            <span class="pill">
+              {% if total_services is defined %}{{ total_services }}{% else %}—{% endif %}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <!-- KYC snapshot -->
+      <div class="admin-panel">
+        <div class="admin-panel-head">
+          <h2>KYC Status</h2>
+          <a class="admin-link" href="{{ url_for('admin_kyc') }}">Review queue →</a>
+        </div>
+
+        <div class="admin-mini-list">
+          <div class="admin-mini-row">
+            <span>Pending</span>
+            <span class="pill pill-warn">{{ pending_kyc }}</span>
+          </div>
+          <div class="admin-mini-row">
+            <span>Approved</span>
+            <span class="pill pill-ok">{{ approved_kyc }}</span>
+          </div>
+          <div class="admin-mini-row">
+            <span>Rejected</span>
+            <span class="pill pill-bad">{{ rejected_kyc }}</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Right column -->
+    <div class="admin-col">
+
+      <!-- Quick actions -->
+      <div class="admin-panel">
+        <h2>Quick Admin Actions</h2>
+        <div class="admin-action-grid">
+          <a href="{{ url_for('admin_users') }}" class="admin-action-card">
+            <div class="action-title">Users &amp; KYC</div>
+            <div class="action-sub">Enable/disable users, approve KYC.</div>
+          </a>
+
+          <a href="{{ url_for('admin_kyc') }}" class="admin-action-card">
+            <div class="action-title">KYC Queue</div>
+            <div class="action-sub">Review pending verification.</div>
+          </a>
+
+          {% if admin_transactions is defined %}
+          <a href="{{ url_for('admin_transactions') }}" class="admin-action-card">
+            <div class="action-title">Transactions</div>
+            <div class="action-sub">View wallet activity log.</div>
+          </a>
+          {% endif %}
+
+          {% if admin_reports is defined %}
+          <a href="{{ url_for('admin_reports') }}" class="admin-action-card">
+            <div class="action-title">Reports</div>
+            <div class="action-sub">Exports, audits, analytics.</div>
+          </a>
+          {% endif %}
+        </div>
+      </div>
+
+      <!-- Recent activity (optional) -->
+      <div class="admin-panel">
+        <div class="admin-panel-head">
+          <h2>Recent Activity</h2>
+          <span class="admin-muted">Latest 8</span>
+        </div>
+
+        {% if recent_activity is defined and recent_activity %}
+          <div class="admin-activity">
+            {% for a in recent_activity %}
+              <div class="admin-activity-row">
+                <div class="activity-left">
+                  <div class="activity-dot"></div>
+                  <div>
+                    <div class="activity-title">{{ a.title }}</div>
+                    <div class="activity-sub">{{ a.subtitle }}</div>
+                  </div>
+                </div>
+                <div class="activity-time">{{ a.time }}</div>
+              </div>
+            {% endfor %}
+          </div>
+        {% else %}
+          <p class="admin-muted" style="margin-top:8px;">
+            No activity data wired yet. We’ll plug this in when we add logs.
+          </p>
+        {% endif %}
+      </div>
+
+    </div>
+  </section>
+</div>
+
+<style>
+  .admin-shell {
+    max-width: 1150px;
+    margin: 0 auto;
+    padding: 20px 8px 44px;
+  }
+
+  /* Header */
+  .admin-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 18px;
+  }
+  .admin-header-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .admin-badge {
+    font-size: 12px;
+    padding: 6px 10px;
+    border-radius: 999px;
+    background: rgba(57,114,255,0.18);
+    border: 1px solid rgba(57,114,255,0.55);
+    color: #dfe7ff;
+    font-weight: 700;
+    letter-spacing: .05em;
+    text-transform: uppercase;
+  }
+  .admin-header h1 {
+    font-size: 26px;
+    margin-bottom: 2px;
+  }
+  .admin-sub {
+    color: #9ca7c5;
+    font-size: 14px;
+  }
+  .admin-header-right {
+    display: flex;
+    gap: 8px;
+  }
+
+  /* Buttons */
+  .admin-primary-btn, .admin-ghost-btn {
+    border-radius: 999px;
+    padding: 8px 14px;
+    font-size: 13px;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    cursor: pointer;
+  }
+  .admin-primary-btn {
+    background: linear-gradient(135deg, #33b5ff, #447aff);
+    color: #fff;
+    box-shadow: 0 8px 18px rgba(0,0,0,0.55);
+  }
+  .admin-primary-btn:hover {
+    filter: brightness(1.05);
+  }
+  .admin-ghost-btn {
+    background: transparent;
+    color: #c1ccff;
+    border: 1px solid #3b476b;
+  }
+  .admin-ghost-btn:hover {
+    background: rgba(34, 43, 75, 0.9);
+  }
+
+  /* KPI grid */
+  .admin-kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0,1fr));
+    gap: 12px;
+    margin-bottom: 18px;
+  }
+  @media (max-width: 980px) {
+    .admin-kpi-grid {
+      grid-template-columns: repeat(2, minmax(0,1fr));
+    }
+  }
+  @media (max-width: 560px) {
+    .admin-kpi-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .admin-kpi-card {
+    background: radial-gradient(circle at top left, #273760, #15192b 55%, #0b0f1e);
+    border-radius: 16px;
+    padding: 14px 16px;
+    border: 1px solid rgba(68, 90, 160, 0.7);
+    box-shadow: 0 12px 28px rgba(0,0,0,0.45);
+  }
+  .kpi-label {
+    font-size: 12px;
+    color: #9ca7c5;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+  }
+  .kpi-value {
+    font-size: 26px;
+    font-weight: 700;
+    margin-top: 4px;
+  }
+  .kpi-meta {
+    font-size: 12px;
+    color: #9ca7c5;
+    margin-top: 4px;
+  }
+
+  /* Main */
+  .admin-main-grid {
+    display: grid;
+    grid-template-columns: 1.1fr .9fr;
+    gap: 12px;
+  }
+  @media (max-width: 980px) {
+    .admin-main-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .admin-col {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .admin-panel {
+    background: radial-gradient(circle at top left, #273760, #15192b 55%, #0b0f1e);
+    border-radius: 16px;
+    padding: 14px 16px 16px;
+    border: 1px solid rgba(68, 90, 160, 0.7);
+    box-shadow: 0 12px 28px rgba(0,0,0,0.45);
+  }
+  .admin-panel h2 {
+    font-size: 16px;
+    margin-bottom: 8px;
+  }
+  .admin-panel-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 8px;
+  }
+  .admin-link {
+    font-size: 12px;
+    color: #4aa8ff;
+    text-decoration: underline;
+  }
+  .admin-muted {
+    font-size: 12px;
+    color: #9ca7c5;
+  }
+
+  .admin-mini-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 6px;
+  }
+  .admin-mini-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 8px 10px;
+    background: rgba(8,12,30,0.9);
+    border: 1px solid rgba(68,90,160,0.55);
+    border-radius: 12px;
+    font-size: 14px;
+  }
+
+  .pill {
+    font-size: 12px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: rgba(57,114,255,0.25);
+    color: #dfe7ff;
+    font-weight: 600;
+  }
+  .pill-ok { background: rgba(34,197,94,0.25); color: #bbf7d0; }
+  .pill-warn { background: rgba(234,179,8,0.25); color: #fde68a; }
+  .pill-bad { background: rgba(239,68,68,0.25); color: #fecaca; }
+
+  /* Action cards */
+  .admin-action-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0,1fr));
+    gap: 8px;
+  }
+  @media (max-width: 560px) {
+    .admin-action-grid { grid-template-columns: 1fr; }
+  }
+  .admin-action-card {
+    display: block;
+    padding: 12px 12px;
+    background: rgba(8,12,30,0.9);
+    border: 1px solid rgba(68,90,160,0.7);
+    border-radius: 12px;
+    text-decoration: none;
+    color: inherit;
+    transition: transform .08s ease, background .12s ease;
+  }
+  .admin-action-card:hover {
+    transform: translateY(-1px);
+    background: rgba(15,22,50,0.95);
+  }
+  .action-title {
+    font-weight: 700;
+    font-size: 14px;
+  }
+  .action-sub {
+    margin-top: 4px;
+    font-size: 12px;
+    color: #9ca7c5;
+  }
+
+  /* Activity */
+  .admin-activity {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 6px;
+  }
+  .admin-activity-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 9px 10px;
+    background: rgba(8,12,30,0.9);
+    border: 1px solid rgba(68,90,160,0.55);
+    border-radius: 12px;
+  }
+  .activity-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .activity-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 999px;
+    background: #33b5ff;
+    box-shadow: 0 0 8px rgba(51,181,255,0.9);
+  }
+  .activity-title { font-size: 13px; font-weight: 600; }
+  .activity-sub { font-size: 12px; color: #9ca7c5; }
+  .activity-time { font-size: 11px; color: #9ca7c5; }
+</style>
+{% endblock %}

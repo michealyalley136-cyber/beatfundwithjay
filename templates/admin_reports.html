@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}Admin — Reports{% endblock %}
+
+{% block content %}
+<div class="bf-page-shell">
+  <div class="bf-page-header">
+    <h1>Reports</h1>
+    <p class="bf-muted">Quick platform totals. Charts and exports next.</p>
+  </div>
+
+  <div class="rep-grid">
+    <div class="rep-card">
+      <div class="rep-label">Total Deposits</div>
+      <div class="rep-value">${{ "%.2f"|format(totals.deposits) }}</div>
+    </div>
+
+    <div class="rep-card">
+      <div class="rep-label">Total Withdrawals</div>
+      <div class="rep-value">${{ "%.2f"|format(totals.withdrawals) }}</div>
+    </div>
+
+    <div class="rep-card">
+      <div class="rep-label">Booking Fees Earned</div>
+      <div class="rep-value">${{ "%.2f"|format(totals.booking_fees) }}</div>
+    </div>
+  </div>
+
+  <div class="bf-card" style="margin-top: 14px;">
+    <h3 style="margin-bottom:6px;">Next we add:</h3>
+    <ul class="bf-muted" style="padding-left:18px;">
+      <li>Monthly breakdown</li>
+      <li>Top earning providers</li>
+      <li>CSV export</li>
+      <li>Basic fraud flags</li>
+    </ul>
+  </div>
+</div>
+
+<style>
+  .bf-page-shell { max-width: 1100px; margin: 0 auto; padding: 28px 18px 48px; }
+  .bf-page-header h1 { font-size: 26px; margin-bottom: 4px; }
+  .bf-muted { color:#9ca7c5; font-size:14px; }
+
+  .rep-grid { display:grid; grid-template-columns: repeat(3,1fr); gap:12px; margin-top:14px; }
+  @media (max-width:900px){ .rep-grid{ grid-template-columns:1fr; } }
+
+  .rep-card{
+    background: radial-gradient(circle at top left,#273760,#15192b 55%,#0b0f1e);
+    border-radius:16px; padding:16px; border:1px solid rgba(68,90,160,0.7);
+  }
+  .rep-label{ font-size:12px; color:#9ca7c5; text-transform:uppercase; letter-spacing:.06em; }
+  .rep-value{ font-size:22px; font-weight:700; margin-top:6px; }
+
+  .bf-card{
+    background: rgba(8,12,30,0.9);
+    border-radius:16px; padding:14px; border:1px solid rgba(68,90,160,0.7);
+  }
+</style>
+{% endblock %}

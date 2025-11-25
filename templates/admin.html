@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container mt-4">
+  <h2 class="mb-4 text-danger">Admin Control Panel</h2>
+
+  <!-- STATS CARDS -->
+  <div class="row mb-5">
+    <div class="col-md-3">
+      <div class="card text-white bg-primary">
+        <div class="card-body">
+          <h5>{{ total_users }} Users</h5>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card text-white bg-success">
+        <div class="card-body">
+          <h5>${{ "%.2f"|format(total_revenue) }} Revenue</h5>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card text-white bg-info">
+        <div class="card-body">
+          <h5>{{ total_beats }} Beats</h5>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card text-white bg-warning">
+        <div class="card-body">
+          <h5>{{ total_sales }} Sales</h5>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- USERS TABLE -->
+  <h4 class="mb-3">All Users</h4>
+  <div class="table-responsive mb-5">
+    <table class="table table-sm table-striped">
+      <thead><tr><th>ID</th><th>Username</th><th>Email</th><th>Role</th><th>Wallet</th></tr></thead>
+      <tbody>
+        {% for user in users %}
+        <tr>
+          <td>{{ user.id }}</td>
+          <td>{{ user.username }}</td>
+          <td>{{ user.email }}</td>
+          <td><span class="badge bg-secondary">{{ user.role }}</span></td>
+          <td>${{ "%.2f"|format(user.wallet_balance) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- FUNDING REQUESTS -->
+  <h4 class="mb-3">Funding Requests</h4>
+  <div class="table-responsive">
+    <table class="table table-sm">
+      <thead><tr><th>ID</th><th>Artist</th><th>Amount</th><th>Status</th><th>Actions</th></tr></thead>
+      <tbody>
+        {% for req in funding_requests %}
+        <tr>
+          <td>#{{ req.id }}</td>
+          <td>{{ req.artist.username }}</td>
+          <td>${{ "%.2f"|format(req.amount) }}</td>
+          <td><span class="badge bg-{{ 'success' if req.status == 'disbursed' else 'warning' if req.status == 'approved' else 'secondary' }}">{{ req.status.title() }}</span></td>
+          <td>
+            {% if req.status == 'pending' %}
+              <a href="{{ url_for('admin_approve', id=req.id) }}" class="btn btn-sm btn-warning">Approve</a>
+            {% elif req.status == 'approved' %}
+              <a href="{{ url_for('admin_disburse', id=req.id) }}" class="btn btn-sm btn-success">Disburse</a>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

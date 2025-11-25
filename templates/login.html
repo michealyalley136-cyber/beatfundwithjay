@@ -1,0 +1,255 @@
+{% extends "base.html" %}
+{% block title %}Login — BeatFund{% endblock %}
+
+{% block content %}
+<div class="auth-shell">
+  <div class="auth-card">
+    <!-- Left side: Form -->
+    <div class="auth-left">
+      <div class="auth-header">
+        <h1>Log in to BeatFund</h1>
+        <p class="auth-sub">
+          Enter your username and password to continue.
+        </p>
+      </div>
+
+      <form method="POST" class="auth-form">
+        {{ form.hidden_tag() if form else "" }}
+
+        <label class="auth-label" for="username">Username</label>
+        <input
+          id="username"
+          name="username"
+          type="text"
+          class="auth-input"
+          placeholder="e.g. zarleymarley"
+          required
+          autofocus
+        >
+
+        <label class="auth-label" for="password">Password</label>
+        <input
+          id="password"
+          name="password"
+          type="password"
+          class="auth-input"
+          placeholder="••••••••"
+          required
+        >
+
+        <div class="auth-actions">
+          <button type="submit" class="auth-btn-primary">Log in</button>
+          <a href="{{ url_for('register') }}" class="auth-btn-secondary">Create account</a>
+        </div>
+
+        <div class="auth-footer">
+          <span class="auth-muted">Don’t have an account?</span>
+          <a href="{{ url_for('register') }}">Register</a>
+        </div>
+      </form>
+    </div>
+
+    <!-- Right side: Simple welcome panel -->
+    <aside class="auth-right">
+      <div class="auth-welcome">
+        <div class="auth-pill">Welcome back</div>
+        <h2>Creators • Wallet • Bookings</h2>
+        <p>
+          BeatFund helps artists and studios manage money,
+          get verified fast, and book creative services through BookMe.
+        </p>
+
+        <ul class="auth-list">
+          <li><span>✅</span> Secure wallet + escrow bookings</li>
+          <li><span>✅</span> BookMe discovery + calendar requests</li>
+          <li><span>✅</span> Marketplace tools for producers</li>
+        </ul>
+      </div>
+    </aside>
+  </div>
+</div>
+
+<style>
+/* ====== Shell keeps it centered & symmetric ====== */
+.auth-shell {
+  min-height: calc(100vh - var(--nav-height));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 28px 14px 50px;
+}
+
+/* ====== Main card ====== */
+.auth-card {
+  width: 100%;
+  max-width: 980px;
+  display: grid;
+  grid-template-columns: 1.2fr 0.9fr;
+  gap: 18px;
+  background: radial-gradient(circle at top left, #273760, #15192b 55%, #0b0f1e);
+  border-radius: 18px;
+  padding: 20px;
+  box-shadow: 0 18px 50px rgba(0,0,0,0.6);
+  border: 1px solid rgba(68, 90, 160, 0.65);
+}
+
+@media (max-width: 900px) {
+  .auth-card {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ====== Left/form side ====== */
+.auth-left {
+  background: rgba(8, 12, 30, 0.88);
+  border-radius: 14px;
+  padding: 22px 22px 20px;
+  border: 1px solid rgba(68, 90, 160, 0.5);
+}
+
+.auth-header h1 {
+  font-size: 22px;
+  margin-bottom: 4px;
+}
+
+.auth-sub {
+  font-size: 14px;
+  color: #9ca7c5;
+  margin-bottom: 14px;
+}
+
+.auth-form {
+  display: grid;
+  gap: 10px;
+}
+
+.auth-label {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #8f9bc6;
+  margin-top: 6px;
+}
+
+.auth-input {
+  width: 100%;
+  border-radius: 12px;
+  border: 1px solid #303a5c;
+  background: rgba(12, 16, 36, 0.95);
+  color: #e3e9ff;
+  padding: 10px 12px;
+  font-size: 14px;
+}
+
+.auth-input::placeholder {
+  color: #6f7aa4;
+}
+
+/* ====== Buttons aligned, symmetric ====== */
+.auth-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+
+.auth-btn-primary,
+.auth-btn-secondary {
+  border-radius: 999px;
+  padding: 9px 16px;
+  font-size: 14px;
+  border: none;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.auth-btn-primary {
+  background: linear-gradient(135deg, #33b5ff, #447aff);
+  color: #ffffff;
+  box-shadow: 0 8px 20px rgba(0,0,0,0.55);
+}
+
+.auth-btn-primary:hover {
+  background: linear-gradient(135deg, #45c4ff, #5688ff);
+}
+
+.auth-btn-secondary {
+  background: transparent;
+  color: #c1ccff;
+  border: 1px solid #3b476b;
+}
+
+.auth-btn-secondary:hover {
+  background: rgba(34, 43, 75, 0.9);
+}
+
+/* ====== Footer ====== */
+.auth-footer {
+  margin-top: 10px;
+  font-size: 13px;
+  color: #9ca7c5;
+  display: flex;
+  gap: 6px;
+}
+
+.auth-footer a {
+  color: #4aa8ff;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+}
+
+/* ====== Right/welcome side ====== */
+.auth-right {
+  background: rgba(8, 12, 30, 0.6);
+  border-radius: 14px;
+  padding: 20px 18px;
+  border: 1px solid rgba(68, 90, 160, 0.4);
+  display: flex;
+  align-items: center;
+}
+
+.auth-welcome h2 {
+  font-size: 18px;
+  margin: 8px 0 6px;
+}
+
+.auth-welcome p {
+  font-size: 14px;
+  color: #c7d2ff;
+  line-height: 1.4;
+}
+
+.auth-pill {
+  display: inline-flex;
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(34,197,94,0.12);
+  border: 1px solid rgba(34,197,94,0.6);
+  color: #bbf7d0;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.auth-list {
+  list-style: none;
+  margin-top: 10px;
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+  color: #9ca7c5;
+}
+
+.auth-list li {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+.auth-list li span {
+  line-height: 1.2;
+}
+</style>
+{% endblock %}

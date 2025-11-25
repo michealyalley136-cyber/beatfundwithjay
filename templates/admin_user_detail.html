@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block title %}Admin · Manage @{{ target.username }}{% endblock %}
+{% block content %}
+
+<h2>Admin · Manage User</h2>
+
+<div style="display:grid;gap:16px;grid-template-columns:1fr 1fr;align-items:start">
+  <!-- Left column: Profile + Actions -->
+  <div style="background:#fff;border-radius:10px;padding:16px;box-shadow:0 1px 4px rgba(0,0,0,0.1)">
+    <h3>Profile</h3>
+    <p><strong>User ID:</strong> {{ target.id }}</p>
+    <p><strong>Username:</strong> @{{ target.username }}</p>
+    <p><strong>Role:</strong> {{ target.role.value }}</p>
+    <p><strong>KYC:</strong> {{ target.kyc_status.value }}</p>
+    <p><strong>Active:</strong> {{ 'Yes' if target.is_active_col else 'No' }}</p>
+
+    <h4 style="margin-top:16px">Actions</h4>
+    <form method="POST" action="{{ url_for('admin_user_toggle_active', user_id=target.id) }}" style="display:inline">
+      <button type="submit">{{ 'Deactivate' if target.is_active_col else 'Reactivate' }}</button>
+    </form>
+
+    <form method="POST" action="{{ url_for('admin_user_reset_password', user_id=target.id) }}" style="display:inline;margin-left:8px">
+      <button type="submit">Reset Password (demo)</button>
+    </form>
+
+    <div style="margin-top:10px">
+      <a href="{{ url_for('admin_kyc_action', user_id=target.id, action='approve') }}">Approve KYC</a> |
+      <a href="{{ url_for('admin_kyc_action', user_id=target.id, action='reject') }}">Reject KYC</a>
+    </div>
+
+    <div style="margin-top:10px">
+      <a href="{{ url_for('admin_users') }}">← Back to Users</a>
+    </div>
+  </div>
+
+  <!-- Right column: Wallet & Recent -->
+  <div style="background:#fff;border-radius:10px;padding:16px;box-shadow:0 1px 4px rgba(0,0,0,0.1)">
+    <h3>Wallet</h3>
+    <p><strong>Balance:</strong> ${{ "%.2f"|format(balance) }}</p>
+    <h4 style="margin-top:12px">Recent Transactions</h4>
+    {% if recent %}
+      <table style="width:100%;border-collapse:collapse">
+        <thead>
+          <tr>
+            <th style="text-align:left;border-bottom:1px solid #eee;padding:8px">When</th>
+            <th style="text-align:left;border-bottom:1px solid #eee;padding:8px">Type</th>
+            <th style="text-align:left;border-bottom:1px solid #eee;padding:8px">Amount</th>
+            <th style="text-align:left;border-bottom:1px solid #eee;padding:8px">Meta</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for e in recent %}
+          <tr>
+            <td style="padding:8px;border-bottom:1px solid #f4f4f4">{{ e.created_at }}</td>
+            <td style="padding:8px;border-bottom:1px solid #f4f4f4">{{ e.entry_type.value }}</td>
+            <td style="padding:8px;border-bottom:1px solid #f4f4f4">${{ "%.2f"|format(e.amount_cents/100.0) }}</td>
+            <td style="padding:8px;border-bottom:1px solid #f4f4f4">{{ e.meta or '' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p style="color:#64748b">No transactions yet.</p>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Audit table -->
+<div style="margin-top:16px;background:#fff;border-radius:10px;padding:16px;box-shadow:0 1px 4px rgba(0,0,0,0.1)">
+  <h3>Recent Audit Entries (for this user)</h3>
+  {% if audits %}
+    <table style="width:100%;border-collapse:collapse">
+      <thead>
+        <tr>
+          <th style="text-align:left;border-bottom:1px solid #eee;padding:8px">Time</th>
+          <th style="text-align:left;border-bottom:1px solid #eee;padding:8px">Actor ID</th>
+          <th style="text-align:left;border-bottom:1px solid #eee;padding:8px">Action</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for a in audits %}
+        <tr>
+          <td style="padding:8px;border-bottom:1px solid #f4f4f4">{{ a.timestamp }}</td>
+          <td style="padding:8px;border-bottom:1px solid #f4f4f4">{{ a.admin_id }}</td>
+          <td style="padding:8px;border-bottom:1px solid #f4f4f4;white-space:pre-wrap">{{ a.action }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p style="color:#64748b">No audit entries yet.</p>
+  {% endif %}
+</div>
+
+{% endblock %}

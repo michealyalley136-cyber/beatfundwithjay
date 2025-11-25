@@ -1,0 +1,7 @@
+{% extends "base.html" %}
+{% block title %}Funder Dashboard{% endblock %}
+{% block content %}
+  <h2>Welcome, {{ current_user.username }} (Funder)</h2>
+  <p>Coming soon: project funding, escrow releases, performance reports.</p>
+  <p><a href="{{ url_for('wallet_home') }}">Go to Wallet</a></p>
+{% endblock %}

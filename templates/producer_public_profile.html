@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}@{{ producer.username }}{% endblock %}
+{% block content %}
+<div class="card">
+  <h3>Producer: @{{ producer.username }}</h3>
+  <div class="grid g-3" style="margin-top:12px;">
+    {% for b in items %}
+    <div class="card">
+      <div style="display:flex; gap:12px;">
+        {% if b.cover_path %}
+          <img src="{{ url_for('media_file', filename=b.cover_path) }}" alt="cover" style="width:84px; height:84px; object-fit:cover; border-radius:8px;">
+        {% else %}
+          <div style="width:84px; height:84px; border-radius:8px; background:#0e2238;"></div>
+        {% endif %}
+        <div>
+          <strong>{{ b.title }}</strong><br>
+          <span class="muted">{{ b.genre or '—' }} • {{ b.bpm or '—' }} bpm</span><br>
+          <span class="chip">${{ '%.2f'|format(b.price_cents/100.0) }}</span>
+        </div>
+      </div>
+      <div style="margin-top:10px;">
+        {% if b.preview_path %}
+          <audio controls style="width:100%;">
+            <source src="{{ url_for('media_file', filename=b.preview_path) }}" type="audio/mpeg">
+          </audio>
+        {% else %}
+          <div class="muted">No preview available.</div>
+        {% endif %}
+      </div>
+      {% if b.owner_id != current_user.id %}
+      <form method="post" action="{{ url_for('market_buy', beat_id=b.id) }}" style="margin-top:10px;">
+        <button class="btn ok" type="submit">Buy & Download</button>
+      </form>
+      {% endif %}
+    </div>
+    {% else %}
+      <div class="muted">No beats from this producer yet.</div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container mt-4">
+  <h2 class="mb-4">Beatmaker Dashboard</h2>
+
+  <!-- UPLOAD BUTTON -->
+  <div class="mb-4">
+    <a href="{{ url_for('upload_beat') }}" class="btn btn-success btn-lg">
+      Upload New Beat
+    </a>
+  </div>
+
+  <!-- BEATS LIST -->
+  <h4 class="mb-3">Your Uploaded Beats</h4>
+  {% if beats %}
+    <div class="row">
+      {% for beat in beats %}
+      <div class="col-md-6 col-lg-4 mb-4">
+        <div class="card h-100 shadow-sm">
+          <div class="card-body">
+            <h5 class="card-title">{{ beat.title }}</h5>
+            <p class="card-text">
+              <strong>Price:</strong> ${{ "%.2f"|format(beat.price) }}<br>
+              <strong>Status:</strong>
+              <span class="badge bg-{{ 'success' if beat.is_sold else 'warning' }}">
+                {{ 'Sold' if beat.is_sold else 'For Sale' }}
+              </span>
+            </p>
+            <audio controls class="w-100 mt-2">
+              <source src="{{ url_for('downloaded_beat', filename=beat.file_path) }}" type="audio/mpeg">
+              Your browser does not support audio.
+            </audio>
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="alert alert-info">
+      <p>You haven't uploaded any beats yet. <a href="{{ url_for('upload_beat') }}" class="alert-link">Start now!</a></p>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

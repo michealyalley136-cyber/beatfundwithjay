@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>BeatFund - Profile</title>
+    <style>
+        body { font-family: Arial; margin: 40px; background: #f4f4f4; }
+        .header { background: #1a1a1a; color: white; padding: 20px; border-radius: 10px; }
+        .card { background: white; padding: 20px; border-radius: 10px; margin: 20px 0; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .btn { padding: 10px 20px; background: #00d4ff; color: black; text-decoration: none; border-radius: 5px; margin: 5px; display: inline-block; font-weight: bold; }
+        .verified { color: green; font-weight: bold; }
+        .pending { color: orange; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>BeatFund</h1>
+        <p>Hi {{ current_user.username }} | <a href="{{ url_for('dashboard') }}" style="color: #00d4ff;">Dashboard</a> | <a href="{{ url_for('logout') }}" style="color: #00d4ff;">Logout</a></p>
+    </div>
+
+    <div class="card">
+        <h2>Profile</h2>
+        <p><strong>Username:</strong> {{ current_user.username }}</p>
+        <p><strong>Email:</strong> {{ current_user.email }}</p>
+        <p><strong>Role:</strong> {{ current_user.role|capitalize }}</p>
+        <p><strong>Wallet:</strong> ${{ "%.2f"|format(current_user.wallet_balance) }}</p>
+
+        <h3>Identity Verification</h3>
+        {% if current_user.is_verified %}
+            <p class="verified">Verified (SSN last 4: {{ current_user.ssn_last4 }})</p>
+        {% else %}
+            <p class="pending">Not verified yet. <a href="{{ url_for('kyc') }}" class="btn">Complete KYC</a></p>
+        {% endif %}
+    </div>
+
+    <a href="{{ url_for('dashboard') }}" class="btn">Back</a>
+</body>
+</html>

@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+{% block title %}KYC Review — BeatFund{% endblock %}
+
+{% block content %}
+<div class="bf-page-shell">
+  <div class="bf-page-header">
+    <div style="display:flex; align-items:center; justify-content:space-between; gap:12px;">
+      <div>
+        <h1>KYC Review Queue</h1>
+        <p class="bf-muted">Approve or reject KYC for users. (Demo admin tools)</p>
+      </div>
+      <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <a class="bf-link-btn" href="{{ url_for('admin_dashboard') }}">← Admin Dashboard</a>
+        <a class="bf-link-btn" href="{{ url_for('admin_users') }}">Users List</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- PENDING -->
+  <div class="bm-panel" style="margin-bottom:16px;">
+    <h2 class="bm-panel-title">Pending KYC ({{ pending|length }})</h2>
+
+    {% if pending %}
+      <div class="bf-table-wrap">
+        <table class="bf-table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Username</th>
+              <th>Role</th>
+              <th>Status</th>
+              <th style="text-align:right;">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for u in pending %}
+            <tr>
+              <td>#{{ u.id }}</td>
+              <td>@{{ u.username }}</td>
+              <td>{{ u.role.value }}</td>
+              <td><span class="bf-badge bf-badge-warn">{{ u.kyc_status.value }}</span></td>
+              <td style="text-align:right;">
+                <form method="POST"
+                      action="{{ url_for('admin_kyc_update', user_id=u.id, action='approve') }}"
+                      style="display:inline;">
+                  <button type="submit" class="bf-btn bf-btn-primary">Approve</button>
+                </form>
+
+                <form method="POST"
+                      action="{{ url_for('admin_kyc_update', user_id=u.id, action='reject') }}"
+                      style="display:inline; margin-left:6px;">
+                  <button type="submit" class="bf-btn bf-btn-danger">Reject</button>
+                </form>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p class="bf-muted">No pending KYC right now.</p>
+    {% endif %}
+  </div>
+
+  <!-- APPROVED -->
+  <div class="bm-panel" style="margin-bottom:16px;">
+    <h2 class="bm-panel-title">Approved KYC ({{ approved|length }})</h2>
+
+    {% if approved %}
+      <div class="bf-table-wrap">
+        <table class="bf-table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Username</th>
+              <th>Role</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for u in approved %}
+            <tr>
+              <td>#{{ u.id }}</td>
+              <td>@{{ u.username }}</td>
+              <td>{{ u.role.value }}</td>
+              <td><span class="bf-badge bf-badge-good">{{ u.kyc_status.value }}</span></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p class="bf-muted">No approved users yet.</p>
+    {% endif %}
+  </div>
+
+  <!-- REJECTED -->
+  <div class="bm-panel">
+    <h2 class="bm-panel-title">Rejected KYC ({{ rejected|length }})</h2>
+
+    {% if rejected %}
+      <div class="bf-table-wrap">
+        <table class="bf-table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Username</th>
+              <th>Role</th>
+              <th>Status</th>
+              <th style="text-align:right;">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for u in rejected %}
+            <tr>
+              <td>#{{ u.id }}</td>
+              <td>@{{ u.username }}</td>
+              <td>{{ u.role.value }}</td>
+              <td><span class="bf-badge bf-badge-bad">{{ u.kyc_status.value }}</span></td>
+              <td style="text-align:right;">
+                <form method="POST"
+                      action="{{ url_for('admin_kyc_update', user_id=u.id, action='approve') }}"
+                      style="display:inline;">
+                  <button type="submit" class="bf-btn bf-btn-primary">Approve Anyway</button>
+                </form>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p class="bf-muted">No rejected users.</p>
+    {% endif %}
+  </div>
+
+</div>
+{% endblock %}
