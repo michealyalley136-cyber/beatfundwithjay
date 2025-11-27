@@ -1,20 +1,25 @@
-#Python virtual environment
-beatfund_env/
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
 venv/
-env/
-
-#Python cache
-_ _pycache_ _/
-*.pyc
-*.pyo
-
-#Environment variables
 .env
+.env.*
+.venv/
 
-#File uploads (optional)
-uplaods/
+# SQLite / local data
 instance/
+*.db
 
-#OS files
+# Flask uploads
+uploads/
+
+# Logs
+*.log
+
+# OS / editor junk
 .DS_Store
 Thumbs.db
+.vscode/

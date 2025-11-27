@@ -1,448 +1,275 @@
-{% extends "base.html" %}
-{% block title %}Admin Dashboard — BeatFund{% endblock %}
+{% extends "base.html" %} 
 
-{% block content %}
-<div class="admin-shell">
-  <!-- Header -->
-  <header class="admin-header">
-    <div class="admin-header-left">
-      <div class="admin-badge">Admin</div>
-      <div>
-        <h1>Admin Dashboard</h1>
-        <p class="admin-sub">
-          High-level overview of users, KYC, and platform activity.
-        </p>
-      </div>
-    </div>
+{% block title %}Admin Dashboard · BeatFund{% endblock %}
 
-    <div class="admin-header-right">
-      <a class="admin-ghost-btn" href="{{ url_for('admin_users') }}">Users &amp; KYC</a>
-      <a class="admin-primary-btn" href="{{ url_for('admin_kyc') }}">KYC Queue</a>
-    </div>
-  </header>
-
-  <!-- KPI Cards -->
-  <section class="admin-kpi-grid">
-    <div class="admin-kpi-card">
-      <div class="kpi-label">Total Users</div>
-      <div class="kpi-value">{{ total_users }}</div>
-      <div class="kpi-meta">
-        Artists: {{ total_artists }} · Producers: {{ total_producers }}
-      </div>
-    </div>
-
-    <div class="admin-kpi-card">
-      <div class="kpi-label">Pending KYC</div>
-      <div class="kpi-value">{{ pending_kyc }}</div>
-      <div class="kpi-meta">
-        Approved: {{ approved_kyc }} · Rejected: {{ rejected_kyc }}
-      </div>
-    </div>
-
-    <div class="admin-kpi-card">
-      <div class="kpi-label">Platform Wallet Volume</div>
-      <div class="kpi-value">
-        {% if total_wallet_volume is defined %}
-          ${{ "{:,.2f}".format(total_wallet_volume) }}
-        {% else %}
-          —
-        {% endif %}
-      </div>
-      <div class="kpi-meta">All-time deposits + transfers</div>
-    </div>
-
-    <div class="admin-kpi-card">
-      <div class="kpi-label">Bookings</div>
-      <div class="kpi-value">
-        {% if total_bookings is defined %}
-          {{ total_bookings }}
-        {% else %}
-          —
-        {% endif %}
-      </div>
-      <div class="kpi-meta">All-time requests + accepted</div>
-    </div>
-  </section>
-
-  <!-- Main grid -->
-  <section class="admin-main-grid">
-
-    <!-- Left column -->
-    <div class="admin-col">
-
-      <!-- Users snapshot -->
-      <div class="admin-panel">
-        <div class="admin-panel-head">
-          <h2>User Overview</h2>
-          <a class="admin-link" href="{{ url_for('admin_users') }}">View all users →</a>
-        </div>
-
-        <div class="admin-mini-list">
-          <div class="admin-mini-row">
-            <span>Artists</span>
-            <span class="pill">{{ total_artists }}</span>
-          </div>
-          <div class="admin-mini-row">
-            <span>Producers</span>
-            <span class="pill">{{ total_producers }}</span>
-          </div>
-          <div class="admin-mini-row">
-            <span>Studios / Services</span>
-            <span class="pill">
-              {% if total_services is defined %}{{ total_services }}{% else %}—{% endif %}
-            </span>
-          </div>
-        </div>
-      </div>
-
-      <!-- KYC snapshot -->
-      <div class="admin-panel">
-        <div class="admin-panel-head">
-          <h2>KYC Status</h2>
-          <a class="admin-link" href="{{ url_for('admin_kyc') }}">Review queue →</a>
-        </div>
-
-        <div class="admin-mini-list">
-          <div class="admin-mini-row">
-            <span>Pending</span>
-            <span class="pill pill-warn">{{ pending_kyc }}</span>
-          </div>
-          <div class="admin-mini-row">
-            <span>Approved</span>
-            <span class="pill pill-ok">{{ approved_kyc }}</span>
-          </div>
-          <div class="admin-mini-row">
-            <span>Rejected</span>
-            <span class="pill pill-bad">{{ rejected_kyc }}</span>
-          </div>
-        </div>
-      </div>
-
-    </div>
-
-    <!-- Right column -->
-    <div class="admin-col">
-
-      <!-- Quick actions -->
-      <div class="admin-panel">
-        <h2>Quick Admin Actions</h2>
-        <div class="admin-action-grid">
-          <a href="{{ url_for('admin_users') }}" class="admin-action-card">
-            <div class="action-title">Users &amp; KYC</div>
-            <div class="action-sub">Enable/disable users, approve KYC.</div>
-          </a>
-
-          <a href="{{ url_for('admin_kyc') }}" class="admin-action-card">
-            <div class="action-title">KYC Queue</div>
-            <div class="action-sub">Review pending verification.</div>
-          </a>
-
-          <!-- ✅ ALWAYS SHOW TRANSACTIONS -->
-           <!-- ✅ ALWAYS SHOW TRANSACTIONS -->
-          <a href="{{ url_for('admin_transactions') }}" class="admin-action-card">
-            <div class="action-title">Transactions</div>
-            <div class="action-sub">View wallet activity log.</div>
-          </a>
-
-          <!-- ✅ ALWAYS SHOW REPORTS -->
-          <a href="/dashboard/admin/reports" class="admin-action-card">
-  <div class="action-title">Reports</div>
-  <div class="action-sub">Exports, audits, analytics.</div>
-</a>
-      </div>
-
-          <!-- ✅ ALWAYS SHOW REPORTS -->
-          <a href="{{ url_for('admin_reports') }}" class="admin-action-card">
-            <div class="action-title">Reports</div>
-            <div class="action-sub">Exports, audits, analytics.</div>
-          </a>
-        </div>
-      </div>
-
-      <!-- Recent activity (optional) -->
-      <div class="admin-panel">
-        <div class="admin-panel-head">
-          <h2>Recent Activity</h2>
-          <span class="admin-muted">Latest 8</span>
-        </div>
-
-        {% if recent_activity is defined and recent_activity %}
-          <div class="admin-activity">
-            {% for a in recent_activity %}
-              <div class="admin-activity-row">
-                <div class="activity-left">
-                  <div class="activity-dot"></div>
-                  <div>
-                    <div class="activity-title">{{ a.title }}</div>
-                    <div class="activity-sub">{{ a.subtitle }}</div>
-                  </div>
-                </div>
-                <div class="activity-time">{{ a.time }}</div>
-              </div>
-            {% endfor %}
-          </div>
-        {% else %}
-          <p class="admin-muted" style="margin-top:8px;">
-            No activity data wired yet. We’ll plug this in when we add logs.
-          </p>
-        {% endif %}
-      </div>
-
-    </div>
-  </section>
-</div>
-
+{% block extra_head %}
 <style>
-  .admin-shell {
-    max-width: 1150px;
-    margin: 0 auto;
-    padding: 20px 8px 44px;
+  .grid {
+    display: grid;
+    gap: 14px;
+  }
+  .grid-4 {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  .grid-2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  @media (max-width: 900px) {
+    .grid-4, .grid-2 { grid-template-columns: 1fr; }
   }
 
-  /* Header */
-  .admin-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 16px;
-    margin-bottom: 18px;
-  }
-  .admin-header-left {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-  }
-  .admin-badge {
-    font-size: 12px;
-    padding: 6px 10px;
-    border-radius: 999px;
-    background: rgba(57,114,255,0.18);
-    border: 1px solid rgba(57,114,255,0.55);
-    color: #dfe7ff;
-    font-weight: 700;
-    letter-spacing: .05em;
-    text-transform: uppercase;
-  }
-  .admin-header h1 {
-    font-size: 26px;
-    margin-bottom: 2px;
-  }
-  .admin-sub {
-    color: #9ca7c5;
-    font-size: 14px;
-  }
-  .admin-header-right {
-    display: flex;
-    gap: 8px;
+  .card-admin {
+    background: linear-gradient(135deg, #0b1220, #020617);
+    border-radius: 16px;
+    border: 1px solid #20263b;
+    box-shadow: 0 18px 35px rgba(15, 23, 42, 0.9);
+    padding: 16px 18px;
   }
 
-  /* Buttons */
-  .admin-primary-btn, .admin-ghost-btn {
-    border-radius: 999px;
-    padding: 8px 14px;
+  .card-title {
     font-size: 13px;
-    text-decoration: none;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: #9aa4c2;
+    margin-bottom: 4px;
+  }
+  .card-value-lg {
+    font-size: 22px;
+    font-weight: 600;
+  }
+  .card-sub {
+    font-size: 12px;
+    color: #9aa4c2;
+  }
+
+  .pill-sm {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    border: none;
-    cursor: pointer;
-  }
-  .admin-primary-btn {
-    background: linear-gradient(135deg, #33b5ff, #447aff);
-    color: #fff;
-    box-shadow: 0 8px 18px rgba(0,0,0,0.55);
-  }
-  .admin-primary-btn:hover {
-    filter: brightness(1.05);
-  }
-  .admin-ghost-btn {
-    background: transparent;
-    color: #c1ccff;
-    border: 1px solid #3b476b;
-  }
-  .admin-ghost-btn:hover {
-    background: rgba(34, 43, 75, 0.9);
+    padding: 2px 7px;
+    border-radius: 999px;
+    border: 1px solid rgba(148, 163, 184, 0.5);
+    font-size: 11px;
+    white-space: nowrap;
   }
 
-  /* KPI grid */
-  .admin-kpi-grid {
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0,1fr));
-    gap: 12px;
+  .link-inline {
+    font-size: 12px;
+    color: #38bdf8;
+  }
+
+  .list-simple {
+    list-style: none;
+    padding: 0;
+    margin: 8px 0 0;
+  }
+  .list-simple li + li {
+    margin-top: 6px;
+    border-top: 1px solid rgba(15, 23, 42, 0.9);
+    padding-top: 6px;
+  }
+  .muted {
+    color: #9aa4c2;
+    font-size: 12px;
+  }
+
+  .btn-ghost {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 6px 10px;
+    border-radius: 999px;
+    border: 1px solid #1f2937;
+    font-size: 12px;
+    color: #e5e7eb;
+    background: rgba(15, 23, 42, 0.6);
+    text-decoration: none;
+  }
+  .btn-ghost:hover {
+    background: rgba(30, 64, 175, 0.6);
+  }
+
+  .ticket-count-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 12px;
+    margin-top: 6px;
+  }
+  .ticket-count-label {
+    color: #9aa4c2;
+  }
+  .ticket-count-value {
+    font-weight: 500;
+  }
+
+  /* Small page header polish */
+  .admin-header {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: flex-end;
+    gap: 8px;
     margin-bottom: 18px;
   }
-  @media (max-width: 980px) {
-    .admin-kpi-grid {
-      grid-template-columns: repeat(2, minmax(0,1fr));
-    }
-  }
-  @media (max-width: 560px) {
-    .admin-kpi-grid {
-      grid-template-columns: 1fr;
-    }
-  }
-
-  .admin-kpi-card {
-    background: radial-gradient(circle at top left, #273760, #15192b 55%, #0b0f1e);
-    border-radius: 16px;
-    padding: 14px 16px;
-    border: 1px solid rgba(68, 90, 160, 0.7);
-    box-shadow: 0 12px 28px rgba(0,0,0,0.45);
-  }
-  .kpi-label {
-    font-size: 12px;
-    color: #9ca7c5;
-    text-transform: uppercase;
-    letter-spacing: .06em;
-  }
-  .kpi-value {
-    font-size: 26px;
-    font-weight: 700;
-    margin-top: 4px;
-  }
-  .kpi-meta {
-    font-size: 12px;
-    color: #9ca7c5;
-    margin-top: 4px;
-  }
-
-  /* Main */
-  .admin-main-grid {
-    display: grid;
-    grid-template-columns: 1.1fr .9fr;
-    gap: 12px;
-  }
-  @media (max-width: 980px) {
-    .admin-main-grid {
-      grid-template-columns: 1fr;
-    }
-  }
-
-  .admin-col {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-  }
-
-  .admin-panel {
-    background: radial-gradient(circle at top left, #273760, #15192b 55%, #0b0f1e);
-    border-radius: 16px;
-    padding: 14px 16px 16px;
-    border: 1px solid rgba(68, 90, 160, 0.7);
-    box-shadow: 0 12px 28px rgba(0,0,0,0.45);
-  }
-  .admin-panel h2 {
-    font-size: 16px;
-    margin-bottom: 8px;
-  }
-  .admin-panel-head {
-    display: flex;
-    justify-content: space-between;
-    align-items: baseline;
-    gap: 8px;
-  }
-  .admin-link {
-    font-size: 12px;
-    color: #4aa8ff;
-    text-decoration: underline;
-  }
-  .admin-muted {
-    font-size: 12px;
-    color: #9ca7c5;
-  }
-
-  .admin-mini-list {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    margin-top: 6px;
-  }
-  .admin-mini-row {
-    display: flex;
-    justify-content: space-between;
-    padding: 8px 10px;
-    background: rgba(8,12,30,0.9);
-    border: 1px solid rgba(68,90,160,0.55);
-    border-radius: 12px;
-    font-size: 14px;
-  }
-
-  .pill {
-    font-size: 12px;
-    padding: 2px 8px;
-    border-radius: 999px;
-    background: rgba(57,114,255,0.25);
-    color: #dfe7ff;
+  .admin-header-title {
+    font-size: 24px;
     font-weight: 600;
+    margin-bottom: 2px;
   }
-  .pill-ok { background: rgba(34,197,94,0.25); color: #bbf7d0; }
-  .pill-warn { background: rgba(234,179,8,0.25); color: #fde68a; }
-  .pill-bad { background: rgba(239,68,68,0.25); color: #fecaca; }
-
-  /* Action cards */
-  .admin-action-grid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0,1fr));
-    gap: 8px;
+  .admin-header-subtitle {
+    font-size: 13px;
+    color: #9aa4c2;
   }
-  @media (max-width: 560px) {
-    .admin-action-grid { grid-template-columns: 1fr; }
+  .admin-header-subtitle span {
+    font-weight: 500;
+    color: #e5e7eb;
   }
-  .admin-action-card {
-    display: block;
-    padding: 12px 12px;
-    background: rgba(8,12,30,0.9);
-    border: 1px solid rgba(68,90,160,0.7);
-    border-radius: 12px;
-    text-decoration: none;
-    color: inherit;
-    transition: transform .08s ease, background .12s ease;
-  }
-  .admin-action-card:hover {
-    transform: translateY(-1px);
-    background: rgba(15,22,50,0.95);
-  }
-  .action-title {
-    font-weight: 700;
-    font-size: 14px;
-  }
-  .action-sub {
-    margin-top: 4px;
+  .admin-header-meta {
     font-size: 12px;
-    color: #9ca7c5;
-  }
-
-  /* Activity */
-  .admin-activity {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    margin-top: 6px;
-  }
-  .admin-activity-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 9px 10px;
-    background: rgba(8,12,30,0.9);
-    border: 1px solid rgba(68,90,160,0.55);
-    border-radius: 12px;
-  }
-  .activity-left {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-  .activity-dot {
-    width: 8px;
-    height: 8px;
+    color: #9aa4c2;
+    padding: 4px 10px;
     border-radius: 999px;
-    background: #33b5ff;
-    box-shadow: 0 0 8px rgba(51,181,255,0.9);
+    border: 1px solid #1f2937;
+    background: rgba(15, 23, 42, 0.6);
+    white-space: nowrap;
   }
-  .activity-title { font-size: 13px; font-weight: 600; }
-  .activity-sub { font-size: 12px; color: #9ca7c5; }
-  .activity-time { font-size: 11px; color: #9ca7c5; }
 </style>
+{% endblock %}
+
+{% block content %}
+<div class="admin-header">
+  <div>
+    <div class="admin-header-title">Admin Dashboard</div>
+    <div class="admin-header-subtitle">
+      BeatFund · <span>Fine-tech for creatives</span>
+    </div>
+  </div>
+  <div class="admin-header-meta">
+    Logged in as <strong>@{{ current_user.username }}</strong>
+  </div>
+</div>
+
+<p style="font-size:13px; color:#9aa4c2; margin-bottom:18px;">
+  High-level view of customers, wallets, tickets, and recent admin activity.
+</p>
+
+<!-- Top stats -->
+<div class="grid grid-4" style="margin-bottom:14px;">
+  <div class="card-admin">
+    <div class="card-title">Users</div>
+    <div class="card-value-lg">{{ total_users }}</div>
+    <div class="card-sub">Non-admin accounts</div>
+  </div>
+  <div class="card-admin">
+    <div class="card-title">Wallets</div>
+    <div class="card-value-lg">{{ total_wallets }}</div>
+    <div class="card-sub">Customer wallets created</div>
+  </div>
+  <div class="card-admin">
+    <div class="card-title">Beats</div>
+    <div class="card-value-lg">{{ total_beats }}</div>
+    <div class="card-sub">Active marketplace beats</div>
+  </div>
+  <div class="card-admin">
+    <div class="card-title">Orders</div>
+    <div class="card-value-lg">{{ total_orders }}</div>
+    <div class="card-sub">Completed purchases</div>
+  </div>
+</div>
+
+<!-- Middle row: users/KYC + tickets overview -->
+<div class="grid grid-2" style="margin-bottom:14px;">
+  <!-- Users & KYC -->
+  <div class="card-admin">
+    <div class="card-title">User Overview</div>
+    <div class="card-sub" style="margin-bottom:10px;">
+      Artists: <strong>{{ total_artists }}</strong> · Producers: <strong>{{ total_producers }}</strong>
+      <span style="margin-left:8px;">
+        <a href="{{ url_for('admin_users') }}" class="link-inline">View all users →</a>
+      </span>
+    </div>
+
+    <div class="card-title" style="margin-top:10px;">KYC Status</div>
+    <ul class="list-simple">
+      <li>
+        Pending
+        <span class="pill-sm" style="margin-left:8px;">{{ pending_kyc }}</span>
+      </li>
+      <li>
+        Approved
+        <span class="pill-sm" style="margin-left:8px;">{{ approved_kyc }}</span>
+      </li>
+      <li>
+        Rejected
+        <span class="pill-sm" style="margin-left:8px;">{{ rejected_kyc }}</span>
+      </li>
+    </ul>
+    <div style="margin-top:8px;">
+      <a href="{{ url_for('admin_kyc') }}" class="link-inline">Review KYC queue →</a>
+    </div>
+  </div>
+
+  <!-- Tickets overview -->
+  <div class="card-admin">
+    <div class="card-title">Support Tickets</div>
+    <div class="card-value-lg">{{ total_tickets }}</div>
+    <div class="card-sub">Total tickets logged</div>
+
+    <div class="ticket-count-row" style="margin-top:10px;">
+      <div class="ticket-count-label">Open</div>
+      <div class="ticket-count-value">{{ open_tickets }}</div>
+    </div>
+    <div class="ticket-count-row">
+      <div class="ticket-count-label">In review</div>
+      <div class="ticket-count-value">{{ in_review_tickets }}</div>
+    </div>
+    <div class="ticket-count-row">
+      <div class="ticket-count-label">Resolved / closed</div>
+      <div class="ticket-count-value">{{ resolved_tickets }}</div>
+    </div>
+
+    <div style="margin-top:10px;">
+      <a href="{{ url_for('admin_tickets') }}" class="btn-ghost">Go to Tickets hub</a>
+    </div>
+  </div>
+</div>
+
+<!-- Bottom row: quick actions + recent activity -->
+<div class="grid grid-2">
+  <!-- Quick admin actions -->
+  <div class="card-admin">
+    <div class="card-title">Quick Admin Actions</div>
+    <div class="grid grid-2" style="margin-top:8px; gap:10px;">
+      <a href="{{ url_for('admin_users') }}" class="btn-ghost">Users &amp; KYC</a>
+      <a href="{{ url_for('admin_kyc') }}" class="btn-ghost">KYC Queue</a>
+      <a href="{{ url_for('admin_transactions') }}" class="btn-ghost">Transactions</a>
+      <a href="{{ url_for('admin_reports') }}" class="btn-ghost">Reports</a>
+      <a href="{{ url_for('admin_tickets') }}" class="btn-ghost">Tickets</a>
+    </div>
+  </div>
+
+  <!-- Recent activity -->
+  <div class="card-admin">
+    <div class="card-title">Recent Activity</div>
+    {% if recent_events %}
+      <ul class="list-simple">
+        {% for e in recent_events %}
+          <li>
+            <div style="font-size:12px;">
+              {{ e.title }}
+            </div>
+            <div class="muted">
+              {{ e.body }} · {{ e.ts.strftime('%Y-%m-%d %H:%M') }}
+            </div>
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="muted" style="margin-top:6px;">
+        No activity data yet. This will fill up as admins access wallets and create tickets.
+      </p>
+    {% endif %}
+  </div>
+</div>
 {% endblock %}

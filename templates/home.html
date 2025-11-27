@@ -1,149 +1,43 @@
 {% extends "base.html" %}
+
 {% block title %}BeatFund — Creative Fintech for Creators{% endblock %}
 
 {% block content %}
-
-<style>
-  /* Hero layout fixes */
-  .hero-container {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 80px 40px;
-      max-width: 1400px;
-      margin: auto;
-  }
-
-  .hero-left {
-      max-width: 620px;
-  }
-
-  .hero-title {
-      font-size: 2.6rem;
-      font-weight: 700;
-      margin-bottom: 12px;
-  }
-
-  .hero-sub {
-      font-size: 1.1rem;
-      line-height: 1.6;
-      margin-bottom: 26px;
-      color: #cfd9e5;
-      max-width: 500px;
-  }
-
-  .hero-buttons {
-      margin-top: 20px;
-      display: flex;
-      gap: 18px;
-  }
-
-  .hero-stats {
-      margin-top: 35px;
-      display: flex;
-      gap: 26px;
-      color: #9fb0c6;
-      font-size: 0.95rem;
-  }
-
-  /* SVG styling */
-  .hero-logo-box {
-      flex: 1;
-      display: flex;
-      justify-content: center;
-  }
-
-  .hero-logo-box svg {
-      width: 420px;
-      max-width: 100%;
-      height: auto;
-      filter: drop-shadow(0px 0px 15px rgba(0,0,0,0.4));
-      animation: float 5s ease-in-out infinite;
-  }
-
-  @keyframes float {
-      0% { transform: translateY(0px); }
-      50% { transform: translateY(-12px); }
-      100% { transform: translateY(0px); }
-  }
-
-  /* Right-side feature card */
-  .hero-features {
-      margin-top: 50px;
-      max-width: 400px;
-      background: rgba(255, 255, 255, 0.04);
-      border-radius: 20px;
-      padding: 25px;
-      backdrop-filter: blur(6px);
-      border: 1px solid rgba(255,255,255,0.08);
-  }
-
-  .hero-features h3 {
-      font-size: 1.1rem;
-      margin-bottom: 12px;
-      color: #fff;
-  }
-
-  .hero-feature-item {
-      margin-bottom: 10px;
-  }
-
-  /* Mobile responsive */
-  @media(max-width: 950px) {
-      .hero-container {
-          flex-direction: column;
-          text-align: center;
-          gap: 45px;
-      }
-      .hero-buttons {
-          justify-content: center;
-      }
-  }
-</style>
-
-<!-- HERO SECTION -->
-<div class="hero-container">
-
-    <!-- LEFT SIDE -->
-    <div class="hero-left">
-        <div class="hero-logo-box">
-          </div>
-
-        <h1 class="hero-title">BeatFund — Creative Fintech for Creators</h1>
+<section class="hero">
+    <div>
+        <h1 class="hero-heading">
+            BeatFund &mdash; Creative Fintech<br>for Creators
+        </h1>
 
         <p class="hero-sub">
             Save, move money, and fund creative projects with a wallet and
             booking system designed for the creative economy.
         </p>
 
-        <div class="hero-buttons">
-            <a class="bf-btn-primary" href="/register">Create your account</a>
-            <a class="bf-btn-secondary" href="/login">Log in</a>
+        <div class="hero-links">
+            <a href="{{ url_for('register') }}">Create your account</a>
+            <a href="{{ url_for('login') }}">Log in</a>
         </div>
 
-        <div class="hero-stats">
+        <div class="hero-tags">
             <span>Fast KYC onboarding</span>
             <span>Secure wallet escrow</span>
             <span>Built-in BookMe marketplace</span>
         </div>
     </div>
 
-    <!-- RIGHT SIDE: FEATURE PANEL -->
-    <div class="hero-features">
-        <h3>Welcome to BeatFund</h3>
-
-        <div class="hero-feature-item">💰 Fund a project</div>
-        <div class="hero-feature-item">🎥 Book a session</div>
-        <div class="hero-feature-item">🎵 Sell beats or services</div>
-        <div class="hero-feature-item">👛 Creator wallet tools</div>
-        <div class="hero-feature-item">📍 BookMe discovery map</div>
-
-        <p style="opacity:0.7; font-size:0.85rem; margin-top:10px;">
+    <aside class="hero-card">
+        <h2 class="hero-card-title">Welcome to BeatFund</h2>
+        <ul class="hero-card-list">
+            <li><span class="hero-card-emoji">💰</span> <span>Fund a project</span></li>
+            <li><span class="hero-card-emoji">🧑‍🤝‍🧑</span> <span>Book a session</span></li>
+            <li><span class="hero-card-emoji">🎵</span> <span>Sell beats or services</span></li>
+            <li><span class="hero-card-emoji">🍑</span> <span>Creator wallet tools</span></li>
+            <li><span class="hero-card-emoji">📍</span> <span>BookMe discovery map</span></li>
+        </ul>
+        <p class="hero-card-tip">
             Tip: Create a free account to unlock your dashboard, wallet, and verified bookings.
         </p>
-    </div>
-
-</div>
-
+    </aside>
+</section>
 {% endblock %}
-

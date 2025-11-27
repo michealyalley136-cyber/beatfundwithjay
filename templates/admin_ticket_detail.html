@@ -1,0 +1,147 @@
+{% extends "base.html" %}
+
+{% block title %}Ticket #{{ ticket.id }} · Support · BeatFund{% endblock %}
+
+{% block content %}
+<section class="admin-page">
+    <div class="admin-page-header">
+        <div class="eyebrow">Admin · Support</div>
+        <h1>Ticket #{{ ticket.id }}</h1>
+        <p class="header-sub">
+            {{ ticket.subject }}
+            {% if ticket.user %}
+                &mdash; @{{ ticket.user.username }}
+            {% endif %}
+        </p>
+    </div>
+
+    <p style="margin-bottom: 16px;">
+        <a href="{{ url_for('admin_tickets') }}" style="color:#93c5fd;text-decoration:none;">
+            ← Back to all tickets
+        </a>
+    </p>
+
+    <div class="ticket-layout" style="display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1.1fr);gap:32px;">
+        <!-- LEFT: ticket body + comments -->
+        <div>
+            <div class="card" style="background:rgba(15,23,42,0.9);border-radius:18px;border:1px solid rgba(148,163,184,0.22);padding:20px 22px;margin-bottom:20px;">
+                <h2 style="font-size:16px;margin:0 0 10px;">Ticket details</h2>
+
+                <dl style="margin:0;font-size:14px;color:#e5e7eb;">
+                    <div style="display:flex;gap:8px;margin-bottom:4px;">
+                        <dt style="width:80px;color:#9ca3af;">Customer</dt>
+                        <dd style="margin:0;">
+                            {% if ticket.user %}@{{ ticket.user.username }}{% else %}Unknown{% endif %}
+                        </dd>
+                    </div>
+                    <div style="display:flex;gap:8px;margin-bottom:4px;">
+                        <dt style="width:80px;color:#9ca3af;">Type</dt>
+                        <dd style="margin:0;">{{ ticket.type.value.replace('_',' ').title() }}</dd>
+                    </div>
+                    <div style="display:flex;gap:8px;margin-bottom:4px;">
+                        <dt style="width:80px;color:#9ca3af;">Status</dt>
+                        <dd style="margin:0;">{{ ticket.status.value.replace('_',' ').title() }}</dd>
+                    </div>
+                    <div style="display:flex;gap:8px;margin-bottom:4px;">
+                        <dt style="width:80px;color:#9ca3af;">Priority</dt>
+                        <dd style="margin:0;">{{ ticket.priority.title() }}</dd>
+                    </div>
+                    <div style="display:flex;gap:8px;margin-bottom:4px;">
+                        <dt style="width:80px;color:#9ca3af;">Created</dt>
+                        <dd style="margin:0;">
+                            {{ ticket.created_at.strftime('%Y-%m-%d %H:%M') if ticket.created_at }}
+                        </dd>
+                    </div>
+                    <div style="display:flex;gap:8px;">
+                        <dt style="width:80px;color:#9ca3af;">Updated</dt>
+                        <dd style="margin:0;">
+                            {{ ticket.updated_at.strftime('%Y-%m-%d %H:%M') if ticket.updated_at }}
+                        </dd>
+                    </div>
+                </dl>
+
+                <hr style="border:none;border-top:1px solid rgba(75,85,99,0.7);margin:14px 0;">
+
+                <h3 style="font-size:15px;margin:0 0 6px;">Description</h3>
+                <p style="font-size:14px;line-height:1.6;color:#e5e7eb;white-space:pre-line;">
+                    {{ ticket.description }}
+                </p>
+            </div>
+
+            <div class="card" style="background:rgba(15,23,42,0.9);border-radius:18px;border:1px solid rgba(148,163,184,0.22);padding:20px 22px;">
+                <h2 style="font-size:16px;margin:0 0 10px;">Internal comments</h2>
+
+                {% if comments and comments|length %}
+                    <ul style="list-style:none;padding:0;margin:0;">
+                        {% for c in comments %}
+                            <li style="border-bottom:1px solid rgba(55,65,81,0.7);padding:10px 0;">
+                                <div style="font-size:13px;color:#9ca3af;margin-bottom:4px;">
+                                    @{{ c.admin.username }} ·
+                                    {{ c.created_at.strftime('%Y-%m-%d %H:%M') if c.created_at }}
+                                </div>
+                                <div style="font-size:14px;white-space:pre-line;">
+                                    {{ c.body }}
+                                </div>
+                            </li>
+                        {% endfor %}
+                    </ul>
+                {% else %}
+                    <p style="font-size:14px;color:#9ca3af;margin:0;">No comments yet.</p>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- RIGHT: update form -->
+        <div>
+            <form method="post"
+                  class="card"
+                  style="background:rgba(15,23,42,0.9);border-radius:18px;border:1px solid rgba(148,163,184,0.22);padding:20px 22px;">
+                <h2 style="font-size:16px;margin:0 0 10px;">Update ticket</h2>
+
+                <div style="margin-bottom:12px;font-size:14px;">
+                    <label for="status" style="display:block;margin-bottom:4px;color:#9ca3af;">
+                        Status
+                    </label>
+                    <select id="status" name="status"
+                            style="width:100%;padding:8px 10px;border-radius:10px;border:1px solid rgba(55,65,81,0.8);background:#020617;color:#e5e7eb;">
+                        {% for st in TicketStatus %}
+                            <option value="{{ st.value }}"
+                                    {% if ticket.status == st %}selected{% endif %}>
+                                {{ st.value.replace('_',' ').title() }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div style="margin-bottom:12px;font-size:14px;">
+                    <label for="priority" style="display:block;margin-bottom:4px;color:#9ca3af;">
+                        Priority
+                    </label>
+                    <select id="priority" name="priority"
+                            style="width:100%;padding:8px 10px;border-radius:10px;border:1px solid rgba(55,65,81,0.8);background:#020617;color:#e5e7eb;">
+                        {% for p in ['low','normal','high','urgent'] %}
+                            <option value="{{ p }}"
+                                {% if ticket.priority == p %}selected{% endif %}>
+                                {{ p.title() }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div style="margin-bottom:14px;font-size:14px;">
+                    <label for="comment_body" style="display:block;margin-bottom:4px;color:#9ca3af;">
+                        Add internal note (optional)
+                    </label>
+                    <textarea id="comment_body" name="comment_body" rows="4"
+                              style="width:100%;padding:8px 10px;border-radius:10px;border:1px solid rgba(55,65,81,0.8);background:#020617;color:#e5e7eb;resize:vertical;"></textarea>
+                </div>
+
+                <button type="submit"
+                        style="margin-top:4px;width:100%;padding:10px 0;border:none;border-radius:999px;background:linear-gradient(to right,#22c55e,#0ea5e9);color:#020617;font-weight:600;font-size:14px;cursor:pointer;">
+                    Save changes
+                </button>
+            </form>
+        </div>
+    </div>
+</section>
+{% endblock %}

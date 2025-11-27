@@ -1,59 +1,371 @@
 {% extends "base.html" %}
-{% block title %}Admin — Reports{% endblock %}
+
+{% block title %}Reports · BeatFund Admin{% endblock %}
+
+{% block extra_head %}
+<style>
+  .rep-page-title {
+    font-size: 22px;
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+  .rep-page-subtitle {
+    font-size: 13px;
+    color: #9aa4c2;
+    margin-bottom: 18px;
+  }
+
+  .rep-grid {
+    display: grid;
+    grid-template-columns: 1.4fr 1.6fr;
+    gap: 16px;
+    align-items: flex-start;
+  }
+  @media (max-width: 1024px) {
+    .rep-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .rep-card {
+    background: linear-gradient(135deg, #0b1220, #020617);
+    border-radius: 16px;
+    border: 1px solid #20263b;
+    box-shadow: 0 18px 35px rgba(15, 23, 42, 0.9);
+    padding: 18px 18px 14px;
+  }
+
+  .rep-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+  }
+
+  .rep-card-title {
+    font-size: 14px;
+    font-weight: 600;
+  }
+
+  .rep-card-sub {
+    font-size: 12px;
+    color: #9aa4c2;
+  }
+
+  .rep-metrics {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+    margin-top: 12px;
+  }
+
+  .rep-metric {
+    background: #020617;
+    border-radius: 14px;
+    border: 1px solid #111827;
+    padding: 10px 12px;
+  }
+
+  .rep-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: #64748b;
+    margin-bottom: 4px;
+    white-space: normal;
+    line-height: 1.2;
+  }
+
+  /* Slightly tighter label for long titles like "Resolved / closed" */
+  .rep-label-tight {
+    font-size: 10px;
+    letter-spacing: 0.12em;
+  }
+
+  .rep-value {
+    font-size: 16px;
+    font-weight: 600;
+  }
+
+  .rep-muted {
+    font-size: 12px;
+    color: #9aa4c2;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+
+  thead tr {
+    border-bottom: 1px solid #111827;
+  }
+
+  th, td {
+    padding: 8px 6px;
+    text-align: left;
+  }
+
+  th {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: #64748b;
+  }
+
+  tbody tr + tr {
+    border-top: 1px solid rgba(15, 23, 42, 0.9);
+  }
+
+  .amount-positive {
+    color: #4ade80;
+  }
+
+  .amount-negative {
+    color: #f97373;
+  }
+
+  .rep-chip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 3px 9px;
+    border-radius: 999px;
+    border: 1px solid rgba(148, 163, 184, 0.5);
+    font-size: 11px;
+    white-space: nowrap;
+  }
+
+  .rep-chip-role {
+    border-color: rgba(96, 165, 250, 0.7);
+    color: #bfdbfe;
+  }
+
+  .rep-chip-ticket-open {
+    border-color: #f97316;
+    color: #fed7aa;
+  }
+
+  .rep-chip-ticket-resolved {
+    border-color: #22c55e;
+    color: #bbf7d0;
+  }
+
+  .rep-links-row {
+    display: flex;
+    gap: 8px;
+    margin-top: 10px;
+    flex-wrap: wrap;
+  }
+
+  .rep-link-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 6px 12px;
+    border-radius: 999px;
+    border: 1px solid #1f2937;
+    font-size: 12px;
+    color: #e5e7eb;
+    text-decoration: none;
+    background: rgba(15, 23, 42, 0.8);
+  }
+
+  .rep-link-btn:hover {
+    border-color: #0ea5e9;
+  }
+</style>
+{% endblock %}
 
 {% block content %}
-<div class="bf-page-shell">
-  <div class="bf-page-header">
-    <h1>Reports</h1>
-    <p class="bf-muted">Quick platform totals. Charts and exports next.</p>
+<div class="rep-page-title">Reports</div>
+<div class="rep-page-subtitle">
+  High-level wallet, sales, user, and support metrics. For per-customer audit and CSV export,
+  use the <strong>Transactions</strong> tab.
+</div>
+
+<div class="rep-grid">
+  <!-- Left: money metrics + tickets -->
+  <div class="rep-card">
+    <div class="rep-card-header">
+      <div>
+        <div class="rep-card-title">Money &amp; tickets</div>
+        <div class="rep-card-sub">Top-line wallet flow and support workload.</div>
+      </div>
+    </div>
+
+    <div class="rep-metrics">
+      <div class="rep-metric">
+        <div class="rep-label">Total deposits</div>
+        <div class="rep-value">${{ "%.2f"|format(totals.deposits) }}</div>
+        <div class="rep-muted">All wallet top-ups recorded.</div>
+      </div>
+
+      <div class="rep-metric">
+        <div class="rep-label">Total withdrawals</div>
+        <div class="rep-value">${{ "%.2f"|format(totals.withdrawals) }}</div>
+        <div class="rep-muted">Funds moving back off-platform.</div>
+      </div>
+
+      <div class="rep-metric">
+        <div class="rep-label">Beat sales volume</div>
+        <div class="rep-value">${{ "%.2f"|format(totals.sales) }}</div>
+        <div class="rep-muted">Sum of paid beat orders.</div>
+      </div>
+    </div>
+
+    <hr style="border:none; border-top:1px solid #111827; margin:14px 0;">
+
+    <div class="rep-metrics" style="grid-template-columns: repeat(4, minmax(0,1fr));">
+      <div class="rep-metric">
+        <div class="rep-label">Tickets · total</div>
+        <div class="rep-value">{{ ticket_total }}</div>
+        <div class="rep-muted">All support tickets.</div>
+      </div>
+      <div class="rep-metric">
+        <div class="rep-label">Open</div>
+        <div class="rep-value">{{ ticket_open }}</div>
+        <div class="rep-muted">
+          <span class="rep-chip rep-chip-ticket-open">Needs attention</span>
+        </div>
+      </div>
+      <div class="rep-metric">
+        <div class="rep-label">In review</div>
+        <div class="rep-value">{{ ticket_in_review }}</div>
+        <div class="rep-muted">Actively worked on.</div>
+      </div>
+      <div class="rep-metric">
+        <div class="rep-label rep-label-tight">Resolved / closed</div>
+        <div class="rep-value">{{ ticket_resolved }}</div>
+        <div class="rep-muted">
+          <span class="rep-chip rep-chip-ticket-resolved">Completed</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="rep-links-row">
+      <a href="{{ url_for('admin_transactions') }}" class="rep-link-btn">
+        View global transactions
+      </a>
+      <a href="{{ url_for('admin_tickets') }}" class="rep-link-btn">
+        Open tickets queue
+      </a>
+    </div>
   </div>
 
-  <div class="rep-grid">
-    <div class="rep-card">
-      <div class="rep-label">Total Deposits</div>
-      <div class="rep-value">${{ "%.2f"|format(totals.deposits) }}</div>
+  <!-- Right: breakdown tables -->
+  <div class="rep-card">
+    <div class="rep-card-header">
+      <div>
+        <div class="rep-card-title">Breakdowns</div>
+        <div class="rep-card-sub">
+          Wallet activity by entry type and user distribution by role.
+        </div>
+      </div>
     </div>
 
-    <div class="rep-card">
-      <div class="rep-label">Total Withdrawals</div>
-      <div class="rep-value">${{ "%.2f"|format(totals.withdrawals) }}</div>
+    <div style="margin-bottom:16px;">
+      <div class="rep-label" style="margin-bottom:6px;">Wallet activity by type</div>
+      <table>
+        <thead>
+          <tr>
+            <th>Type</th>
+            <th>Count</th>
+            <th>Amount</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% if wallet_stats %}
+            {% for entry_type, count, sum_cents in wallet_stats %}
+              {% set dollars = (sum_cents / 100.0) %}
+              <tr>
+                <td>{{ entry_type.value.replace('_',' ')|title }}</td>
+                <td>{{ count }}</td>
+                <td>
+                  <span class="{{ 'amount-positive' if dollars >= 0 else 'amount-negative' }}">
+                    ${{ "%.2f"|format(dollars) }}
+                  </span>
+                </td>
+              </tr>
+            {% endfor %}
+          {% else %}
+            <tr>
+              <td colspan="3" style="padding:10px 6px; color:#9aa4c2;">
+                No wallet activity recorded yet.
+              </td>
+            </tr>
+          {% endif %}
+        </tbody>
+      </table>
     </div>
 
-    <div class="rep-card">
-      <div class="rep-label">Booking Fees Earned</div>
-      <div class="rep-value">${{ "%.2f"|format(totals.booking_fees) }}</div>
-    </div>
-  </div>
+    <div>
+      <div class="rep-label" style="margin-bottom:6px;">Users by role</div>
+      <table>
+        <thead>
+          <tr>
+            <th>Role</th>
+            <th>Count</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% if role_stats %}
+            {% for role, count in role_stats %}
+              <tr>
+                <td>
+                  <span class="rep-chip rep-chip-role">
+                    {{ role.value|capitalize }}
+                  </span>
+                </td>
+                <td>{{ count }}</td>
+              </tr>
+            {% endfor %}
+          {% else %}
+            <tr>
+              <td colspan="2" style="padding:10px 6px; color:#9aa4c2;">
+                No non-admin users found yet.
+              </td>
+            </tr>
+          {% endif %}
+        </tbody>
+      </table>
 
-  <div class="bf-card" style="margin-top: 14px;">
-    <h3 style="margin-bottom:6px;">Next we add:</h3>
-    <ul class="bf-muted" style="padding-left:18px;">
-      <li>Monthly breakdown</li>
-      <li>Top earning providers</li>
-      <li>CSV export</li>
-      <li>Basic fraud flags</li>
-    </ul>
+      <div class="rep-links-row">
+        <a href="{{ url_for('admin_users') }}" class="rep-link-btn">
+          Manage users
+        </a>
+        <a href="{{ url_for('admin_kyc') }}" class="rep-link-btn">
+          KYC review queue
+        </a>
+      </div>
+    </div>
   </div>
 </div>
 
-<style>
-  .bf-page-shell { max-width: 1100px; margin: 0 auto; padding: 28px 18px 48px; }
-  .bf-page-header h1 { font-size: 26px; margin-bottom: 4px; }
-  .bf-muted { color:#9ca7c5; font-size:14px; }
+<hr class="my-4">
 
-  .rep-grid { display:grid; grid-template-columns: repeat(3,1fr); gap:12px; margin-top:14px; }
-  @media (max-width:900px){ .rep-grid{ grid-template-columns:1fr; } }
+<section>
+  <h2 style="font-size:16px; font-weight:600; margin-bottom:4px;">
+    Audit Exports
+  </h2>
+  <p style="font-size:12px; color:#9aa4c2; margin-bottom:10px;">
+    Download full-system CSV exports for internal or external audit reviews.
+  </p>
 
-  .rep-card{
-    background: radial-gradient(circle at top left,#273760,#15192b 55%,#0b0f1e);
-    border-radius:16px; padding:16px; border:1px solid rgba(68,90,160,0.7);
-  }
-  .rep-label{ font-size:12px; color:#9ca7c5; text-transform:uppercase; letter-spacing:.06em; }
-  .rep-value{ font-size:22px; font-weight:700; margin-top:6px; }
+  <div style="display:flex; flex-wrap:wrap; gap:8px;">
+    <a href="{{ url_for('admin_export_system_ledger_csv') }}"
+       style="padding:6px 10px; border-radius:999px; border:1px solid #1f2937;
+              font-size:12px; color:#e5e7eb; background:rgba(15,23,42,0.6); text-decoration:none;">
+      Download system wallet ledger CSV
+    </a>
 
-  .bf-card{
-    background: rgba(8,12,30,0.9);
-    border-radius:16px; padding:14px; border:1px solid rgba(68,90,160,0.7);
-  }
-</style>
+    <a href="{{ url_for('admin_export_audit_log_csv') }}"
+       style="padding:6px 10px; border-radius:999px; border:1px solid #1f2937;
+              font-size:12px; color:#e5e7eb; background:rgba(15,23,42,0.2); text-decoration:none;">
+      Download admin access audit log CSV
+    </a>
+  </div>
+</section>
+
 {% endblock %}

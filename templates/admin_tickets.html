@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Users · BeatFund Admin{% endblock %}
+{% block title %}Support Tickets · BeatFund Admin{% endblock %}
 
 {% block extra_head %}
 <style>
@@ -25,7 +25,7 @@
   }
   .filter-grid {
     display: grid;
-    grid-template-columns: 2.2fr 1.6fr 1.6fr 1.6fr auto;
+    grid-template-columns: 2.3fr 1.6fr auto;
     gap: 10px;
     align-items: end;
   }
@@ -111,33 +111,34 @@
     font-size: 11px;
     white-space: nowrap;
   }
-  .pill-role {
-    border-color: rgba(96, 165, 250, 0.7);
-    color: #bfdbfe;
+  .pill-status-open,
+  .pill-status-in_review {
+    border-color: #0ea5e9;
+    color: #bae6fd;
   }
-  .pill-kyc-approved {
+  .pill-status-approved {
     border-color: #22c55e;
     color: #bbf7d0;
   }
-  .pill-kyc-pending {
-    border-color: #eab308;
-    color: #fef08a;
-  }
-  .pill-kyc-rejected {
+  .pill-status-rejected {
     border-color: #f97373;
     color: #fecaca;
   }
-  .pill-kyc-not_started {
-    border-color: #6b7280;
-    color: #d1d5db;
-  }
-  .pill-active {
+  .pill-status-resolved {
     border-color: #22c55e;
     color: #bbf7d0;
   }
-  .pill-inactive {
+  .pill-priority-high {
+    border-color: #eab308;
+    color: #fef08a;
+  }
+  .pill-priority-normal {
     border-color: #6b7280;
     color: #d1d5db;
+  }
+  .pill-priority-low {
+    border-color: #4b5563;
+    color: #9ca3af;
   }
 
   .actions-inline {
@@ -146,7 +147,6 @@
     justify-content: flex-end;
     flex-wrap: wrap;
   }
-
   .btn-small {
     padding: 4px 10px;
     border-radius: 999px;
@@ -154,6 +154,14 @@
     border: none;
     cursor: pointer;
     white-space: nowrap;
+  }
+  .btn-view-ticket {
+    background: rgba(148, 163, 184, 0.16);
+    color: #e5e7eb;
+    border: 1px solid rgba(148, 163, 184, 0.6);
+  }
+  .btn-view-ticket:hover {
+    filter: brightness(1.08);
   }
   .btn-open-wallet {
     background: rgba(59, 130, 246, 0.12);
@@ -163,20 +171,12 @@
   .btn-open-wallet:hover {
     filter: brightness(1.08);
   }
-  .btn-deactivate {
-    background: rgba(239, 68, 68, 0.12);
-    color: #fecaca;
-    border: 1px solid rgba(248, 113, 113, 0.8);
-  }
-  .btn-deactivate:hover {
-    filter: brightness(1.08);
-  }
-  .btn-reactivate {
+  .btn-user-details {
     background: rgba(34, 197, 94, 0.12);
     color: #bbf7d0;
     border: 1px solid rgba(34, 197, 94, 0.8);
   }
-  .btn-reactivate:hover {
+  .btn-user-details:hover {
     filter: brightness(1.08);
   }
 
@@ -202,45 +202,31 @@
 {% endblock %}
 
 {% block content %}
-<div class="admin-page-title">Users</div>
+<div class="admin-page-title">Support Tickets</div>
 <div class="admin-page-subtitle">
-  Search and manage customer accounts. Use the “Securely open wallet” action to view a customer's wallet
-  after logging why you're accessing their account.
+  Track and manage customer issues. Use the quick links to jump into the customer's wallet
+  or see their user record before making decisions.
 </div>
 
 <div class="filter-bar">
-  <form method="get" action="{{ url_for('admin_users') }}">
+  <form method="get" action="{{ url_for('admin_tickets') }}">
     <div class="filter-grid">
       <div>
-        <div class="filter-label">Search</div>
+        <div class="filter-label">Search by username</div>
         <input
           type="text"
           name="q"
           class="filter-input"
-          placeholder="Username (email/phone later)"
+          placeholder="e.g. artist1"
           value="{{ q or '' }}"
         >
       </div>
 
       <div>
-        <div class="filter-label">Role</div>
-        <select name="role" class="filter-select">
-          <option value="">All roles</option>
-          {% for r in RoleEnum %}
-            {% if r.value != 'admin' %}
-              <option value="{{ r.value }}" {% if role == r.value %}selected{% endif %}>
-                {{ r.value|capitalize }}
-              </option>
-            {% endif %}
-          {% endfor %}
-        </select>
-      </div>
-
-      <div>
-        <div class="filter-label">KYC status</div>
+        <div class="filter-label">Status</div>
         <select name="status" class="filter-select">
-          <option value="">All</option>
-          {% for s in KYCStatus %}
+          <option value="">All statuses</option>
+          {% for s in TicketStatus %}
             <option value="{{ s.value }}" {% if status == s.value %}selected{% endif %}>
               {{ s.value.replace('_',' ')|title }}
             </option>
@@ -248,18 +234,9 @@
         </select>
       </div>
 
-      <div>
-        <div class="filter-label">Account</div>
-        <select name="active" class="filter-select">
-          <option value="">Active & inactive</option>
-          <option value="active" {% if active == 'active' %}selected{% endif %}>Active only</option>
-          <option value="inactive" {% if active == 'inactive' %}selected{% endif %}>Inactive only</option>
-        </select>
-      </div>
-
       <div style="display:flex; gap:6px; justify-content:flex-end;">
         <button type="submit" class="btn-filter">Apply</button>
-        <a href="{{ url_for('admin_users') }}" class="btn-filter-clear">Clear</a>
+        <a href="{{ url_for('admin_tickets') }}" class="btn-filter-clear">Clear</a>
       </div>
     </div>
   </form>
@@ -269,69 +246,85 @@
   <table>
     <thead>
       <tr>
-        <th style="width:40px;">ID</th>
-        <th>Username</th>
-        <th>Role</th>
-        <th>KYC</th>
+        <th style="width:60px;">Ticket</th>
+        <th style="width:150px;">Created</th>
+        <th>Customer</th>
+        <th>Type</th>
         <th>Status</th>
-        <th style="width:260px; text-align:right;">Actions</th>
+        <th>Priority</th>
+        <th>Subject</th>
+        <th style="width:280px; text-align:right;">Actions</th>
       </tr>
     </thead>
     <tbody>
-      {% if users %}
-        {% for u in users %}
+      {% if tickets %}
+        {% for t in tickets %}
           <tr>
-            <td>#{{ u.id }}</td>
-            <td>@{{ u.username }}</td>
+            <td>#{{ t.id }}</td>
             <td>
-              <span class="pill pill-role">
-                {{ u.role.value|capitalize }}
+              {{ t.created_at.strftime('%Y-%m-%d %H:%M') if t.created_at else '—' }}
+            </td>
+            <td>
+              {% if t.user %}
+                @{{ t.user.username }}<br>
+                <span style="font-size:11px; color:#64748b;">
+                  User ID: {{ t.user.id }}
+                </span>
+              {% else %}
+                <span style="color:#9aa4c2;">(user deleted)</span>
+              {% endif %}
+            </td>
+            <td>
+              <span class="pill">
+                {{ t.type.value.replace('_',' ')|title }}
               </span>
             </td>
             <td>
-              {% if u.kyc_status == KYCStatus.approved %}
-                <span class="pill pill-kyc-approved">Approved</span>
-              {% elif u.kyc_status == KYCStatus.pending %}
-                <span class="pill pill-kyc-pending">Pending</span>
-              {% elif u.kyc_status == KYCStatus.rejected %}
-                <span class="pill pill-kyc-rejected">Rejected</span>
-              {% else %}
-                <span class="pill pill-kyc-not_started">Not started</span>
-              {% endif %}
+              {% set st = t.status.value %}
+              <span class="pill
+                {% if st in ['open','in_review'] %}pill-status-open
+                {% elif st == 'approved' %}pill-status-approved
+                {% elif st == 'rejected' %}pill-status-rejected
+                {% elif st == 'resolved' %}pill-status-resolved
+                {% endif %}
+              ">
+                {{ st.replace('_',' ')|title }}
+              </span>
             </td>
             <td>
-              {% if u.is_active_col %}
-                <span class="pill pill-active">Active</span>
-              {% else %}
-                <span class="pill pill-inactive">Inactive</span>
-              {% endif %}
+              {% set pr = (t.priority or 'normal')|lower %}
+              <span class="pill
+                {% if pr == 'high' %}pill-priority-high
+                {% elif pr == 'low' %}pill-priority-low
+                {% else %}pill-priority-normal
+                {% endif %}
+              ">
+                {{ pr|capitalize }}
+              </span>
+            </td>
+            <td>
+              {{ t.subject }}
             </td>
             <td style="text-align:right;">
               <div class="actions-inline">
-                {% if u.id != current_user.id %}
-                  <!-- Securely open wallet (goes to audit-access page) -->
-                  <a href="{{ url_for('admin_audit_access', user_id=u.id) }}"
+                <!-- View ticket (details + internal notes) -->
+                <a href="{{ url_for('admin_ticket_detail', ticket_id=t.id) }}"
+                   class="btn-small btn-view-ticket">
+                  View ticket
+                </a>
+
+                {% if t.user %}
+                  <!-- Quick link: open user's wallet via audit flow -->
+                  <a href="{{ url_for('admin_audit_access', user_id=t.user.id) }}"
                      class="btn-small btn-open-wallet">
                     Securely open wallet
                   </a>
 
-                  <!-- Deactivate / Reactivate -->
-                  <form method="post"
-                        action="{{ url_for('admin_user_toggle_active', user_id=u.id) }}">
-                    {% if u.is_active_col %}
-                      <button type="submit" class="btn-small btn-deactivate">
-                        Deactivate
-                      </button>
-                    {% else %}
-                      <button type="submit" class="btn-small btn-reactivate">
-                        Reactivate
-                      </button>
-                    {% endif %}
-                  </form>
-                {% else %}
-                  <span style="font-size:11px; color:#64748b;">
-                    (You)
-                  </span>
+                  <!-- Quick link: jump to Users page filtered to this customer -->
+                  <a href="{{ url_for('admin_users', q=t.user.username) }}"
+                     class="btn-small btn-user-details">
+                    User details
+                  </a>
                 {% endif %}
               </div>
             </td>
@@ -339,8 +332,8 @@
         {% endfor %}
       {% else %}
         <tr>
-          <td colspan="6" style="padding:14px 6px; color:#9aa4c2; font-size:13px;">
-            No users match these filters.
+          <td colspan="8" style="padding:14px 6px; color:#9aa4c2; font-size:13px;">
+            No tickets match these filters.
           </td>
         </tr>
       {% endif %}
@@ -351,9 +344,9 @@
     <div class="pagination">
       {% if pagination.has_prev %}
         <a class="page-link"
-           href="{{ url_for('admin_users',
+           href="{{ url_for('admin_tickets',
                             page=pagination.prev_num,
-                            q=q, role=role, status=status, active=active) }}">
+                            q=q, status=status) }}">
           ‹ Prev
         </a>
       {% endif %}
@@ -364,9 +357,9 @@
 
       {% if pagination.has_next %}
         <a class="page-link"
-           href="{{ url_for('admin_users',
+           href="{{ url_for('admin_tickets',
                             page=pagination.next_num,
-                            q=q, role=role, status=status, active=active) }}">
+                            q=q, status=status) }}">
           Next ›
         </a>
       {% endif %}

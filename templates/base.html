@@ -1,472 +1,67 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <title>{% block title %}BeatFund Inc{% endblock %}</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta charset="utf-8">
+    <title>{% block title %}BeatFund{% endblock %}</title>
 
-  <style>
-    :root {
-      --bg-body: #050814;
-      --bg-panel: #0d1324;
-      --bg-panel-soft: #11182b;
-      --accent: #00b4ff;
-      --accent-soft: rgba(0, 180, 255, 0.15);
-      --accent-strong: #02e1ff;
-      --danger: #ff4d6a;
-      --text-main: #f5f7ff;
-      --text-soft: #9aa4c2;
-      --border-soft: #20263b;
-      --radius-lg: 16px;
-      --radius-md: 10px;
-      --radius-pill: 999px;
-      --nav-height: 64px;
-    }
+    {# Main theme CSS #}
+    <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
 
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background: radial-gradient(circle at top left, #18233f 0, #050814 45%, #020309 100%);
-      color: var(--text-main);
-      min-height: 100vh;
-    }
-
-    a { color: var(--accent); text-decoration: none; }
-    a:hover { color: var(--accent-strong); }
-
-    /* =============================
-       NAVBAR SHELL
-       ============================= */
-    .nav-shell {
-      position: sticky;
-      top: 0;
-      z-index: 50;
-      backdrop-filter: blur(10px);
-      background: linear-gradient(to bottom,
-        rgba(5, 8, 20, 0.95),
-        rgba(5, 8, 20, 0.86),
-        rgba(5, 8, 20, 0.0)
-      );
-      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-    }
-
-    .nav-inner {
-      max-width: 1120px;
-      margin: 0 auto;
-      height: var(--nav-height);
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 0 18px;
-      gap: 12px;
-    }
-
-    /* Brand */
-    .nav-brand {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      min-width: 220px;
-    }
-
-    .brand-logo {
-      width: 34px;
-      height: 34px;
-      display: block;
-      filter: drop-shadow(0 0 8px rgba(0,180,255,0.45));
-      animation: logoPulse 3.2s ease-in-out infinite;
-    }
-    @keyframes logoPulse {
-      0%, 100% { filter: drop-shadow(0 0 6px rgba(0,180,255,0.35)); transform: translateY(0); }
-      50% { filter: drop-shadow(0 0 14px rgba(0,225,255,0.9)); transform: translateY(-1px); }
-    }
-
-    .brand-text-main {
-      letter-spacing: 0.16em;
-      font-size: 13px;
-      font-weight: 800;
-    }
-    .brand-text-sub {
-      font-size: 10px;
-      color: var(--text-soft);
-      margin-top: 1px;
-    }
-
-    /* Center menu (desktop) */
-    .nav-links {
-      display: flex;
-      gap: 10px;
-      align-items: center;
-      flex: 1;
-      justify-content: center;
-    }
-
-    .nav-link {
-      font-size: 14px;
-      padding: 6px 12px;
-      border-radius: var(--radius-pill);
-      color: var(--text-soft);
-      transition: background 0.16s ease, color 0.16s ease, transform 0.08s ease;
-      white-space: nowrap;
-    }
-    .nav-link:hover {
-      background: rgba(255, 255, 255, 0.05);
-      color: var(--text-main);
-      transform: translateY(-1px);
-    }
-    .nav-link.active {
-      background: var(--accent-soft);
-      color: var(--accent-strong);
-      box-shadow: 0 0 0 1px rgba(0, 180, 255, 0.45);
-    }
-
-    /* Right-side user area */
-    .nav-right {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      min-width: 180px;
-      justify-content: flex-end;
-    }
-
-    .nav-role-pill {
-      font-size: 11px;
-      padding: 3px 10px;
-      border-radius: var(--radius-pill);
-      background: #0b1220;
-      color: var(--text-soft);
-      border: 1px solid rgba(148, 163, 184, 0.35);
-    }
-
-    .nav-user-btn { position: relative; }
-    .nav-user-trigger {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      padding: 6px 12px;
-      border-radius: var(--radius-pill);
-      background: linear-gradient(to right, #0f172a, #020617);
-      border: 1px solid rgba(34, 197, 94, 0.7);
-      color: #bbf7d0;
-      font-size: 13px;
-      cursor: pointer;
-    }
-    .nav-user-dot {
-      width: 8px; height: 8px; border-radius: 999px;
-      background: #22c55e;
-      box-shadow: 0 0 8px rgba(34, 197, 94, 0.7);
-    }
-    .nav-user-name {
-      max-width: 110px; overflow: hidden;
-      text-overflow: ellipsis; white-space: nowrap;
-    }
-    .nav-caret { font-size: 11px; opacity: 0.7; }
-
-    .nav-user-menu {
-      position: absolute;
-      right: 0;
-      margin-top: 8px;
-      background: #020617;
-      border-radius: 12px;
-      padding: 8px 0;
-      box-shadow: 0 18px 45px rgba(15, 23, 42, 0.85);
-      border: 1px solid rgba(148, 163, 184, 0.35);
-      min-width: 210px;
-      display: none;
-      z-index: 60;
-    }
-    .nav-user-menu a,
-    .nav-user-menu form button {
-      display: flex;
-      align-items: center;
-      width: 100%;
-      padding: 7px 14px;
-      font-size: 13px;
-      background: none; border: none;
-      color: var(--text-soft);
-      text-align: left; cursor: pointer;
-    }
-    .nav-user-menu a:hover,
-    .nav-user-menu form button:hover {
-      background: rgba(148, 163, 184, 0.08);
-      color: var(--text-main);
-    }
-    .nav-user-menu .menu-section-label {
-      font-size: 11px; text-transform: uppercase;
-      letter-spacing: 0.14em; color: #64748b;
-      padding: 4px 14px 2px;
-    }
-    .nav-user-menu hr {
-      border: none;
-      border-top: 1px solid rgba(51, 65, 85, 0.8);
-      margin: 4px 0;
-    }
-
-    .nav-user-btn:hover .nav-user-menu { display: block; }
-
-    /* Auth buttons (logged out) */
-    .nav-auth { display: flex; gap: 10px; }
-    .btn-outline {
-      padding: 6px 12px; border-radius: var(--radius-pill);
-      border: 1px solid rgba(148, 163, 184, 0.6);
-      font-size: 13px; color: var(--text-soft);
-      background: transparent;
-    }
-    .btn-outline:hover {
-      background: rgba(148, 163, 184, 0.18);
-      color: var(--text-main);
-    }
-    .btn-primary {
-      padding: 6px 14px; border-radius: var(--radius-pill);
-      border: none; font-size: 13px;
-      background: linear-gradient(to right, #0ea5e9, #22c55e);
-      color: #020617; font-weight: 700;
-      box-shadow: 0 10px 30px rgba(34, 197, 94, 0.45);
-    }
-    .btn-primary:hover { filter: brightness(1.05); transform: translateY(-1px); }
-
-    /* Hamburger (mobile) */
-    .nav-burger {
-      display: none; flex-direction: column; gap: 4px;
-      cursor: pointer; margin-left: 8px;
-    }
-    .nav-burger span {
-      width: 19px; height: 2px; background: #e5e7eb; border-radius: 999px;
-    }
-
-    #nav-toggle { display: none; }
-
-    .nav-mobile {
-      display: none;
-      background: #020617;
-      border-top: 1px solid rgba(15, 23, 42, 0.85);
-      padding: 10px 14px 16px;
-    }
-    .nav-mobile a,
-    .nav-mobile form button {
-      display: block; padding: 8px 6px; font-size: 14px;
-      color: var(--text-soft); border: none; background: none;
-      width: 100%; text-align: left;
-    }
-    .nav-mobile a:hover,
-    .nav-mobile form button:hover {
-      color: var(--text-main);
-      background: rgba(148, 163, 184, 0.08);
-      border-radius: 8px;
-    }
-    .nav-mobile-section {
-      font-size: 11px; text-transform: uppercase;
-      letter-spacing: 0.14em; color: #64748b;
-      margin-top: 8px;
-    }
-
-    #nav-toggle:checked + .nav-mobile { display: block; }
-
-    /* Main page wrapper */
-    .page-shell {
-      max-width: 1120px;
-      margin: 0 auto;
-      padding: 20px 18px;
-    }
-
-    .card {
-      background: linear-gradient(135deg, #0b1220, #020617);
-      border-radius: var(--radius-lg);
-      border: 1px solid var(--border-soft);
-      box-shadow: 0 18px 35px rgba(15, 23, 42, 0.9);
-      padding: 20px;
-    }
-    .muted { color: var(--text-soft); font-size: 13px; }
-
-    /* Responsive */
-    @media (max-width: 900px) {
-      .nav-links { display: none; }
-      .nav-burger { display: flex; }
-      .nav-inner { padding: 0 12px; }
-    }
-    @media (max-width: 640px) {
-      .page-shell { padding: 12px; }
-      .nav-brand { min-width: 0; }
-      .brand-text-main { font-size: 12px; }
-    }
-  </style>
-
-  {% block extra_head %}{% endblock %}
+    {% block extra_head %}{% endblock %}
 </head>
 <body>
-
-  <!-- ================= NAVBAR ================= -->
-  <div class="nav-shell">
-    <div class="nav-inner">
-
-      <!-- Brand -->
-      <div class="nav-brand">
-        <img class="brand-logo"
-             src="{{ url_for('static', filename='beatfund_logo.svg') }}"
-             alt="BeatFund logo">
-        <div>
-          <div class="brand-text-main">BEATFUND</div>
-          <div class="brand-text-sub">Creators • Wallet • Bookings</div>
-        </div>
-      </div>
-
-      {% if current_user.is_authenticated %}
-        {% set ep = request.endpoint or '' %}
-        {% set is_admin = (current_user.role and current_user.role.value == 'admin') %}
-
-        <!-- Desktop links -->
-        <nav class="nav-links">
-
-          {% if is_admin %}
-            <a class="nav-link {% if ep in ['admin_dashboard','dashboard_admin'] %}active{% endif %}"
-               href="{{ url_for('admin_dashboard') }}">Admin Dashboard</a>
-
-            <a class="nav-link {% if ep in ['admin_users'] %}active{% endif %}"
-               href="{{ url_for('admin_users') }}">Users</a>
-
-            <a class="nav-link {% if ep in ['admin_kyc'] %}active{% endif %}"
-               href="{{ url_for('admin_kyc') }}">KYC Queue</a>
-
-            <!-- placeholders for next admin tools -->
-            <a class="nav-link"
-               href="#" onclick="return false;">Transactions </a>
-
-            <a class="nav-link"
-               href="#" onclick="return false;">Reports </a>
-
-          {% else %}
-            <a class="nav-link {% if ep in [
-                'route_to_dashboard','artist_dashboard','producer_dashboard',
-                'studio_dashboard','videographer_dashboard','designer_dashboard',
-                'engineer_dashboard','manager_dashboard','vendor_dashboard','funder_dashboard'
-              ] %}active{% endif %}"
-               href="{{ url_for('route_to_dashboard') }}">Dashboard</a>
-
-            <a class="nav-link {% if ep == 'market_index' %}active{% endif %}"
-               href="{{ url_for('market_index') }}">Marketplace</a>
-
-            <a class="nav-link {% if ep in ['wallet_home'] %}active{% endif %}"
-               href="{{ url_for('wallet_home') }}">Wallet</a>
-
-            <a class="nav-link {% if ep in ['bookme_search','bookme_requests','bookme_profile'] %}active{% endif %}"
-               href="{{ url_for('bookme_search') }}">BookMe</a>
-          {% endif %}
-        </nav>
-
-        <!-- Right side -->
-        <div class="nav-right">
-          <span class="nav-role-pill">
-            {{ current_user.role.value|capitalize }}
-          </span>
-
-          <div class="nav-user-btn">
-            <button class="nav-user-trigger" type="button">
-              <span class="nav-user-dot"></span>
-              <span class="nav-user-name">@{{ current_user.username }}</span>
-              <span class="nav-caret">▾</span>
-            </button>
-
-            <div class="nav-user-menu">
-              {% if is_admin %}
-                <div class="menu-section-label">Admin Tools</div>
-                <a href="{{ url_for('admin_dashboard') }}">Admin Dashboard</a>
-                <a href="{{ url_for('admin_users') }}">Users</a>
-                <a href="{{ url_for('admin_kyc') }}">KYC Review</a>
-                <a href="#" onclick="return false;">Transactions (soon)</a>
-                <hr>
-              {% else %}
-                <div class="menu-section-label">BookMe</div>
-                <a href="{{ url_for('bookme_search') }}">BookMe Map</a>
-                <a href="{{ url_for('bookme_requests') }}">My Bookings</a>
-                {% if current_user.role.value in ['producer','studio','videographer','designer','engineer','manager','vendor'] %}
-                  <a href="{{ url_for('bookme_profile') }}">BookMe Profile</a>
+<header class="top-nav">
+    <div class="nav-left">
+        {# Simple text brand only – no circle, no SVG #}
+        <div class="brand-text">
+            <div class="brand-main">BEATFUND</div>
+            <div class="brand-sub">
+                {# Admin subtitle for admins, global tagline for everyone else #}
+                {% if current_user.is_authenticated and current_user.role == RoleEnum.admin %}
+                    Admin
+                {% else %}
+                    Fintech for Creators
                 {% endif %}
-                <hr>
-                <div class="menu-section-label">Account</div>
-                <a href="{{ url_for('kyc') }}">KYC Status</a>
-                <a href="{{ url_for('loans_home') }}">Loans (coming soon)</a>
-              {% endif %}
-
-              <form method="post" action="{{ url_for('logout') }}" style="margin:0">
-                <button type="submit">Logout</button>
-              </form>
             </div>
-          </div>
-
-          <!-- Hamburger -->
-          <label class="nav-burger" for="nav-toggle">
-            <span></span><span></span><span></span>
-          </label>
         </div>
-
-      {% else %}
-        <!-- Logged out -->
-        <div style="flex:1"></div>
-        <div class="nav-auth">
-          <a class="btn-outline" href="{{ url_for('login') }}">Login</a>
-          <a class="btn-primary" href="{{ url_for('register') }}">Sign up</a>
-        </div>
-
-        <label class="nav-burger" for="nav-toggle">
-          <span></span><span></span><span></span>
-        </label>
-      {% endif %}
     </div>
 
-    <!-- ================= MOBILE MENU ================= -->
-    <input type="checkbox" id="nav-toggle">
-    <div class="nav-mobile">
-      {% if current_user.is_authenticated %}
-        {% set is_admin = (current_user.role and current_user.role.value == 'admin') %}
-
-        {% if is_admin %}
-          <div class="nav-mobile-section">Admin</div>
-          <a href="{{ url_for('admin_dashboard') }}">Admin Dashboard</a>
-          <a href="{{ url_for('admin_users') }}">Users</a>
-          <a href="{{ url_for('admin_kyc') }}">KYC Queue</a>
-          <a href="#" onclick="return false;">Transactions (soon)</a>
-          <a href="#" onclick="return false;">Reports (soon)</a>
-
-        {% else %}
-          <div class="nav-mobile-section">Main</div>
-          <a href="{{ url_for('route_to_dashboard') }}">Dashboard</a>
-          <a href="{{ url_for('market_index') }}">Marketplace</a>
-          <a href="{{ url_for('wallet_home') }}">Wallet</a>
-          <a href="{{ url_for('bookme_search') }}">BookMe Map</a>
-
-          <div class="nav-mobile-section">Bookings</div>
-          <a href="{{ url_for('bookme_requests') }}">My Bookings</a>
-          {% if current_user.role.value in ['producer','studio','videographer','designer','engineer','manager','vendor'] %}
-            <a href="{{ url_for('bookme_profile') }}">BookMe Profile</a>
-          {% endif %}
-
-          <div class="nav-mobile-section">Account</div>
-          <a href="{{ url_for('kyc') }}">KYC / Verification</a>
-          <a href="{{ url_for('loans') }}">Loans (coming soon)</a>
+    <nav class="nav-center">
+        {# Show the admin tabs only when an admin is logged in #}
+        {% if current_user.is_authenticated and current_user.role == RoleEnum.admin %}
+            <a href="{{ url_for('admin_dashboard') }}">Admin Dashboard</a>
+            <a href="{{ url_for('admin_users') }}">Users</a>
+            <a href="{{ url_for('admin_kyc') }}">KYC Queue</a>
+            <a href="{{ url_for('admin_transactions') }}">Transactions</a>
+            <a href="{{ url_for('admin_tickets') }}">Tickets</a>
+            <a href="{{ url_for('admin_reports') }}">Reports</a>
         {% endif %}
+    </nav>
 
-        <form method="post" action="{{ url_for('logout') }}" style="margin-top:6px;">
-          <button type="submit">Logout</button>
-        </form>
+    <div class="nav-right">
+        {% if current_user.is_authenticated %}
+            <span class="nav-username">@{{ current_user.username }}</span>
+            <a href="{{ url_for('route_to_dashboard') }}">Dashboard</a>
+            <a href="{{ url_for('logout') }}">Log out</a>
+        {% else %}
+            <a href="{{ url_for('login') }}">Log in</a>
+            <a href="{{ url_for('register') }}">Sign up</a>
+        {% endif %}
+    </div>
+</header>
 
-      {% else %}
-        <div class="nav-mobile-section">Account</div>
-        <a href="{{ url_for('login') }}">Login</a>
-        <a href="{{ url_for('register') }}">Create account</a>
+<main class="page-main">
+    {% with msgs = get_flashed_messages(with_categories=true) %}
+      {% if msgs %}
+        <div class="flash-container">
+          {% for category, msg in msgs %}
+            <div class="flash flash-{{ category }}">{{ msg }}</div>
+          {% endfor %}
+        </div>
       {% endif %}
-    </div>
-  </div>
+    {% endwith %}
 
-  <!-- ================= PAGE CONTENT ================= -->
-  <main class="page-shell">
-    {% block content %}
-    <div class="card">
-      <h2>BeatFund</h2>
-      <p class="muted">Content goes here…</p>
-    </div>
-    {% endblock %}
-  </main>
-
-  {% block extra_body %}{% endblock %}
+    {% block content %}{% endblock %}
+</main>
 </body>
 </html>

@@ -13,8 +13,10 @@
         </p>
       </div>
 
-      <form method="POST" class="auth-form">
-        {{ form.hidden_tag() if form else "" }}
+     <form method="POST" class="auth-form">
+  <!-- CSRF token (works with our generate_csrf helper) -->
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
 
         <label class="auth-label" for="username">Username</label>
         <input

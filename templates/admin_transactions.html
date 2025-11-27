@@ -1,277 +1,273 @@
 {% extends "base.html" %}
-{% block title %}Admin Transactions — BeatFund{% endblock %}
+{% block title %}Transactions · BeatFund Admin{% endblock %}
 
 {% block content %}
-<div class="bf-page-shell">
-  <div class="bf-page-header">
-    <h1>Transactions</h1>
-    <p class="bf-muted">
-      View wallet activity across all users (demo admin view).
+<div class="page-shell">
+  <div class="page-header">
+    <h1>Transactions & Audit</h1>
+    <p class="page-sub">
+      System-wide wallet activity. Search a username to open secure audit access.
     </p>
   </div>
 
-  <!-- Filters -->
-  <div class="bm-panel" style="margin-top:14px;">
-    <form method="GET" class="adm-filter-form">
-      <div class="adm-filter-grid">
-        <div>
-          <label class="adm-label">Search (username / note)</label>
-          <input type="text" name="q" class="adm-input"
-                 placeholder="e.g. producer1, hold fee..."
-                 value="{{ current_filters.q if current_filters is defined else '' }}">
-        </div>
+  <!-- Search bar -->
+  <form method="get" class="admin-search-row">
+    <label for="q" class="sr-only">Search user by username</label>
+    <input
+      id="q"
+      name="q"
+      type="text"
+      class="input"
+      placeholder="Search by username (e.g. artist1)"
+      value="{{ q or '' }}"
+    >
+    <button type="submit" class="btn-primary">Search</button>
+  </form>
 
+  <!-- Search result info -->
+  <div class="admin-search-result">
+    {% if found_user %}
+      <div class="found-user-card">
         <div>
-          <label class="adm-label">Type</label>
-          <select name="type" class="adm-input">
-            <option value="">All types</option>
-            {% if EntryType is defined %}
-              {% for t in EntryType %}
-                <option value="{{ t.value }}"
-                  {% if current_filters is defined and current_filters.type == t.value %}selected{% endif %}>
-                  {{ t.value.replace('_',' ')|title }}
-                </option>
-              {% endfor %}
-            {% else %}
-              <option value="deposit">Deposit</option>
-              <option value="withdrawal">Withdrawal</option>
-              <option value="transfer_in">Transfer In</option>
-              <option value="transfer_out">Transfer Out</option>
-              <option value="sale_income">Sale Income</option>
-              <option value="purchase_spend">Purchase Spend</option>
-            {% endif %}
-          </select>
+          <div class="found-user-title">@{{ found_user.username }}</div>
+          <div class="found-user-sub">
+            Role: {{ found_user.role.value|capitalize }} ·
+            KYC: {{ found_user.kyc_status.value.replace('_', ' ')|title }}
+          </div>
         </div>
-
-        <div>
-          <label class="adm-label">Min $</label>
-          <input type="number" step="0.01" name="min"
-                 class="adm-input" placeholder="0.00"
-                 value="{{ current_filters.min if current_filters is defined else '' }}">
-        </div>
-
-        <div>
-          <label class="adm-label">Max $</label>
-          <input type="number" step="0.01" name="max"
-                 class="adm-input" placeholder="500.00"
-                 value="{{ current_filters.max if current_filters is defined else '' }}">
-        </div>
+        <a
+          href="{{ url_for('admin_audit_access', user_id=found_user.id) }}"
+          class="btn-secondary"
+        >
+          Secure wallet access
+        </a>
       </div>
-
-      <div class="adm-filter-actions">
-        <button class="adm-btn-primary" type="submit">Apply filters</button>
-        <a class="adm-btn-secondary" href="{{ request.path }}">Clear</a>
-      </div>
-    </form>
+    {% elif q %}
+      <p class="text-muted">
+        No user found for “{{ q }}”.
+      </p>
+    {% endif %}
   </div>
 
-  <!-- Transactions table -->
-  <div class="bm-panel" style="margin-top:16px;">
-    <div class="adm-table-wrap">
-      <table class="adm-table">
+  <div class="grid-2">
+    <!-- Left: wallet stats -->
+    <section class="card">
+      <div class="card-header">
+        <h2>Wallet activity by type</h2>
+        <p class="card-sub">
+          Summed in cents across all wallets.
+        </p>
+      </div>
+
+      <table class="table">
         <thead>
           <tr>
-            <th>Date</th>
-            <th>User</th>
             <th>Type</th>
-            <th>Amount</th>
-            <th>Note</th>
+            <th>Count</th>
+            <th>Total amount (USD)</th>
           </tr>
         </thead>
         <tbody>
-        {% if entries %}
-          {% for e in entries %}
+          {% if stats %}
+            {% for entry_type, count, sum_cents in stats %}
+              {% set dollars = (sum_cents / 100.0) %}
+              <tr>
+                <td>{{ entry_type.value.replace('_',' ')|title }}</td>
+                <td>{{ count }}</td>
+                <td>
+                  <span class="{{ 'amount-pos' if dollars >= 0 else 'amount-neg' }}">
+                    ${{ "%.2f"|format(dollars) }}
+                  </span>
+                </td>
+              </tr>
+            {% endfor %}
+          {% else %}
             <tr>
-              <td class="adm-td-muted">
-                {{ e.created_at.strftime("%Y-%m-%d %I:%M %p") if e.created_at else '' }}
-              </td>
-
-              <td>
-                {% if e.wallet and e.wallet.user %}
-                  <span class="adm-user">@{{ e.wallet.user.username }}</span>
-                {% else %}
-                  <span class="adm-td-muted">Unknown</span>
-                {% endif %}
-              </td>
-
-              <td>
-                <span class="adm-pill">
-                  {{ e.entry_type.value.replace('_',' ')|title if e.entry_type else '' }}
-                </span>
-              </td>
-
-              <td class="{% if e.amount_cents and e.amount_cents < 0 %}adm-neg{% endif %}">
-                {% if e.amount_cents is not none %}
-                  ${{ "%.2f"|format(e.amount_cents / 100.0) }}
-                {% endif %}
-              </td>
-
-              <td class="adm-td-muted">
-                {{ e.meta or '' }}
+              <td colspan="3" class="text-muted">
+                No ledger entries found yet.
               </td>
             </tr>
-          {% endfor %}
-        {% else %}
-          <tr>
-            <td colspan="5" class="adm-empty">
-              No transactions yet.
-            </td>
-          </tr>
-        {% endif %}
+          {% endif %}
         </tbody>
       </table>
-    </div>
+    </section>
+
+    <!-- Right: recent audit notes -->
+    <section class="card">
+      <div class="card-header">
+        <h2>Recent audit notes</h2>
+        <p class="card-sub">
+          Last 10 admin actions recorded in the audit log.
+        </p>
+      </div>
+
+      {% if audit_logs %}
+        <table class="table">
+          <thead>
+            <tr>
+              <th>When</th>
+              <th>Admin</th>
+              <th>User</th>
+              <th>Action</th>
+              <th>Reason</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for log in audit_logs %}
+              <tr>
+                <td>{{ log.created_at.strftime("%Y-%m-%d %H:%M") if log.created_at else "" }}</td>
+                <td>@{{ log.admin.username if log.admin else "?" }}</td>
+                <td>@{{ log.user.username if log.user else "—" }}</td>
+                <td>{{ log.action }}</td>
+                <td>{{ log.reason }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <p class="text-muted" style="margin-top:8px;">
+          No audit logs have been recorded yet.
+        </p>
+      {% endif %}
+    </section>
   </div>
 </div>
 
 <style>
-  .bf-page-shell {
-    max-width: 1200px;
-    margin: 0 auto;
-    padding: 26px 18px 48px;
+.page-shell {
+  max-width: 1100px;
+  margin: 0 auto;
+}
+.page-header h1 {
+  font-size: 22px;
+  font-weight: 600;
+}
+.page-sub {
+  font-size: 13px;
+  color: #9ca3af;
+  margin-top: 4px;
+}
+.admin-search-row {
+  display: flex;
+  gap: 8px;
+  margin: 16px 0 10px;
+}
+.input {
+  flex: 1;
+  border-radius: 999px;
+  border: 1px solid #374151;
+  background: #020617;
+  color: #e5e7eb;
+  padding: 8px 12px;
+  font-size: 14px;
+}
+.btn-primary, .btn-secondary {
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-size: 13px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.btn-primary {
+  background: linear-gradient(135deg, #22c55e, #059669);
+  color: #f9fafb;
+}
+.btn-secondary {
+  background: transparent;
+  color: #e5e7eb;
+  border-color: #4b5563;
+}
+.admin-search-result {
+  margin-bottom: 10px;
+}
+.found-user-card {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid #1f2937;
+  background: rgba(15,23,42,0.7);
+}
+.found-user-title {
+  font-weight: 600;
+}
+.found-user-sub {
+  font-size: 12px;
+  color: #9ca3af;
+}
+.grid-2 {
+  display: grid;
+  grid-template-columns: 1.1fr 1.1fr;
+  gap: 14px;
+}
+@media (max-width: 900px) {
+  .grid-2 {
+    grid-template-columns: 1fr;
   }
-  .bf-page-header h1 {
-    font-size: 26px;
-    margin-bottom: 4px;
-  }
-  .bf-muted {
-    color: #9ca7c5;
-    font-size: 14px;
-  }
-
-  .bm-panel {
-    background: radial-gradient(circle at top left, #273760, #15192b 55%, #0b0f1e);
-    border-radius: 18px;
-    padding: 18px 18px 20px;
-    box-shadow: 0 14px 40px rgba(0,0,0,0.45);
-  }
-
-  /* Filter form */
-  .adm-filter-form { width: 100%; }
-  .adm-filter-grid {
-    display: grid;
-    grid-template-columns: 2fr 1.2fr 1fr 1fr;
-    gap: 10px;
-  }
-  @media (max-width: 900px) {
-    .adm-filter-grid {
-      grid-template-columns: 1fr 1fr;
-    }
-  }
-  @media (max-width: 520px) {
-    .adm-filter-grid {
-      grid-template-columns: 1fr;
-    }
-  }
-
-  .adm-label {
-    display: block;
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: #8f9bc6;
-    margin-bottom: 4px;
-  }
-  .adm-input {
-    width: 100%;
-    border-radius: 999px;
-    border: 1px solid #303a5c;
-    background: rgba(12, 16, 36, 0.95);
-    color: #e3e9ff;
-    padding: 7px 10px;
-    font-size: 14px;
-  }
-  .adm-input::placeholder { color: #6f7aa4; }
-
-  .adm-filter-actions {
-    margin-top: 10px;
-    display: flex;
-    justify-content: flex-end;
-    gap: 8px;
-  }
-  .adm-btn-primary,
-  .adm-btn-secondary {
-    border-radius: 999px;
-    padding: 6px 14px;
-    font-size: 13px;
-    border: none;
-    cursor: pointer;
-    text-decoration: none;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-  }
-  .adm-btn-primary {
-    background: linear-gradient(135deg, #33b5ff, #447aff);
-    color: #ffffff;
-    box-shadow: 0 6px 16px rgba(0,0,0,0.55);
-  }
-  .adm-btn-primary:hover {
-    background: linear-gradient(135deg, #45c4ff, #5688ff);
-  }
-  .adm-btn-secondary {
-    background: transparent;
-    color: #c1ccff;
-    border: 1px solid #3b476b;
-  }
-  .adm-btn-secondary:hover {
-    background: rgba(34, 43, 75, 0.9);
-  }
-
-  /* Table */
-  .adm-table-wrap {
-    overflow-x: auto;
-    border-radius: 12px;
-    border: 1px solid rgba(68, 90, 160, 0.7);
-    background: rgba(8, 12, 30, 0.9);
-  }
-  .adm-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 14px;
-  }
-  .adm-table thead th {
-    text-align: left;
-    font-weight: 600;
-    letter-spacing: 0.02em;
-    padding: 12px 12px;
-    background: rgba(16, 22, 46, 0.95);
-    color: #e3e9ff;
-    border-bottom: 1px solid rgba(68, 90, 160, 0.7);
-    white-space: nowrap;
-  }
-  .adm-table tbody td {
-    padding: 10px 12px;
-    border-bottom: 1px solid rgba(68, 90, 160, 0.35);
-    vertical-align: top;
-  }
-  .adm-table tbody tr:hover td {
-    background: rgba(34, 43, 75, 0.45);
-  }
-  .adm-td-muted { color: #9ca7c5; }
-
-  .adm-user {
-    font-weight: 600;
-    color: #dfe7ff;
-  }
-
-  .adm-pill {
-    font-size: 12px;
-    padding: 3px 9px;
-    border-radius: 999px;
-    background: rgba(57, 114, 255, 0.25);
-    color: #dfe7ff;
-    border: 1px solid rgba(57,114,255,0.5);
-    white-space: nowrap;
-  }
-
-  .adm-neg { color: #ff8598; }
-
-  .adm-empty {
-    text-align: center;
-    padding: 18px;
-    color: #9ca7c5;
-    font-size: 14px;
-  }
+}
+.card {
+  border-radius: 14px;
+  border: 1px solid #1f2937;
+  background: #020617;
+  padding: 14px 14px 10px;
+}
+.card-header h2 {
+  font-size: 16px;
+  font-weight: 600;
+}
+.card-sub {
+  font-size: 12px;
+  color: #9ca3af;
+  margin-top: 2px;
+}
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  margin-top: 10px;
+}
+.table th,
+.table td {
+  padding: 6px 4px;
+  text-align: left;
+}
+.table thead tr {
+  border-bottom: 1px solid #111827;
+}
+.table th {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #6b7280;
+}
+.table tbody tr + tr {
+  border-top: 1px solid #020617;
+}
+.text-muted {
+  font-size: 12px;
+  color: #9ca3af;
+}
+.amount-pos {
+  color: #4ade80;
+}
+.amount-neg {
+  color: #f97373;
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0,0,0,0);
+  white-space: nowrap;
+  border: 0;
+}
 </style>
 {% endblock %}
