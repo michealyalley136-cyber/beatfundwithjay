@@ -1,121 +1,38 @@
 {% extends "base.html" %}
-{% block title %}Secure wallet access · BeatFund Admin{% endblock %}
-
-{% block extra_head %}
-<style>
-  .audit-shell {
-    max-width: 640px;
-    margin: 0 auto;
-  }
-  .audit-card {
-    background: linear-gradient(135deg, #020617, #020617);
-    border-radius: 16px;
-    border: 1px solid #1f2937;
-    box-shadow: 0 18px 35px rgba(15, 23, 42, 0.9);
-    padding: 18px 18px 16px;
-  }
-  .audit-title {
-    font-size: 20px;
-    font-weight: 600;
-    margin-bottom: 4px;
-  }
-  .audit-sub {
-    font-size: 13px;
-    color: #9aa4c2;
-    margin-bottom: 14px;
-  }
-  .audit-user-pill {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    padding: 3px 9px;
-    border-radius: 999px;
-    border: 1px solid rgba(56,189,248,0.7);
-    color: #bae6fd;
-    background: rgba(8,47,73,0.7);
-    font-size: 11px;
-  }
-  .audit-label {
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: #8f9bc6;
-    margin-bottom: 4px;
-  }
-  .audit-textarea {
-    width: 100%;
-    min-height: 90px;
-    border-radius: 12px;
-    border: 1px solid #303a5c;
-    background: rgba(12, 16, 36, 0.95);
-    color: #e3e9ff;
-    padding: 10px 12px;
-    font-size: 13px;
-    resize: vertical;
-  }
-  .audit-actions {
-    margin-top: 12px;
-    display: flex;
-    gap: 8px;
-    flex-wrap: wrap;
-  }
-  .audit-btn-primary,
-  .audit-btn-secondary {
-    border-radius: 999px;
-    padding: 8px 16px;
-    font-size: 13px;
-    border: none;
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    text-decoration: none;
-  }
-  .audit-btn-primary {
-    background: linear-gradient(135deg, #22c55e, #16a34a);
-    color: #ffffff;
-  }
-  .audit-btn-secondary {
-    background: transparent;
-    color: #cbd5f5;
-    border: 1px solid #374151;
-  }
-</style>
-{% endblock %}
+{% block title %}Wallet Audit Access · BeatFund Admin{% endblock %}
 
 {% block content %}
-<div class="audit-shell">
-  <div class="audit-card">
-    <div class="audit-title">Secure wallet access</div>
-    <p class="audit-sub">
-      You’re about to view the full wallet history for
-      <span class="audit-user-pill">
-        @{{ customer.username }} · ID {{ customer.id }}
-      </span>.
-      For compliance and internal controls, you must record a reason.
-    </p>
+<h1 style="font-size:22px; font-weight:600; margin-bottom:6px;">
+  Access @{{ customer.username }}’s wallet
+</h1>
+<p style="font-size:13px; color:#9aa4c2; margin-bottom:12px;">
+  For compliance, any admin viewing a customer’s wallet must record a reason.
+</p>
 
-    <form method="POST">
-      <!-- ✅ CSRF token required for this POST -->
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<form method="POST" class="audit-form"
+      style="max-width:520px; padding:16px; border-radius:14px; background:#020617; border:1px solid #1f2937;">
+  <!-- ✅ CSRF token -->
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
-      <div class="audit-label">Reason for access</div>
-      <textarea
-        name="reason"
-        class="audit-textarea"
-        placeholder="Example: Investigating refund dispute for ticket #123."
-        required
-      ></textarea>
+  <label for="reason"
+         style="display:block; font-size:12px; text-transform:uppercase; letter-spacing:0.08em; color:#9ca3af; margin-bottom:4px;">
+    Reason for access
+  </label>
+  <textarea id="reason" name="reason" rows="4" required
+            style="width:100%; border-radius:10px; border:1px solid #1f2937; background:#020617; color:#e5e7eb;
+                   padding:8px 10px; font-size:13px; margin-bottom:10px;"></textarea>
 
-      <div class="audit-actions">
-        <button type="submit" class="audit-btn-primary">
-          Confirm &amp; view wallet
-        </button>
-        <a href="{{ url_for('admin_transactions') }}" class="audit-btn-secondary">
-          Cancel
-        </a>
-      </div>
-    </form>
+  <div style="display:flex; gap:8px; margin-top:6px;">
+    <button type="submit"
+            style="padding:8px 14px; border-radius:999px; border:none;
+                   background:#2563eb; color:#fff; font-size:13px;">
+      Confirm & view wallet
+    </button>
+    <a href="{{ url_for('admin_transactions') }}"
+       style="padding:8px 14px; border-radius:999px; border:1px solid #4b5563;
+              color:#e5e7eb; font-size:13px; text-decoration:none;">
+      Cancel
+    </a>
   </div>
-</div>
+</form>
 {% endblock %}

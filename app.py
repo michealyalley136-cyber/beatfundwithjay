@@ -26,6 +26,10 @@ from decimal import Decimal, InvalidOperation
 HOLD_FEE_CENTS = 2000  # $20 hold fee for accepted bookings
 MAX_TXN_DOLLARS = 10_000  # safety cap: max $10k per wallet action in dev
 
+# Password / security settings
+PASSWORD_MAX_AGE_DAYS = 90          # admins must change password every 90 days
+RESET_TOKEN_MAX_AGE_HOURS = 1       # reset links valid for 1 hour
+
 
 # =========================================================
 # App / DB setup
@@ -124,12 +128,25 @@ class User(UserMixin, db.Model):
     kyc_status = db.Column(db.Enum(KYCStatus), nullable=False, default=KYCStatus.not_started)
     is_active_col = db.Column("is_active", db.Boolean, nullable=False, default=True)
 
+    # 🚨 SUPER ADMIN FLAG
+    # Only the "owner" admin (you) should have this set to True.
+    is_superadmin = db.Column(db.Boolean, nullable=False, default=False)
+
+    # 🔐 Password metadata
+    password_changed_at = db.Column(db.DateTime, nullable=True)
+    password_reset_token = db.Column(db.String(255), nullable=True)
+    password_reset_sent_at = db.Column(db.DateTime, nullable=True)
+
     @property
     def is_active(self):
         return self.is_active_col
 
     def set_password(self, pw: str) -> None:
         self.password_hash = generate_password_hash(pw)
+        # When password is set/changed, update timestamp and clear any reset token
+        self.password_changed_at = datetime.utcnow()
+        self.password_reset_token = None
+        self.password_reset_sent_at = None
 
     def check_password(self, pw: str) -> bool:
         return check_password_hash(self.password_hash, pw)
@@ -351,6 +368,22 @@ app.jinja_env.globals["TicketType"] = TicketType
 def load_user(user_id):
     return User.query.get(int(user_id))
 
+def is_password_expired(user: User) -> bool:
+    """
+    Only enforce expiry for admin accounts.
+    Returns True if the password is older than PASSWORD_MAX_AGE_DAYS
+    or if we've never recorded a password_changed_at.
+    """
+    if user.role != RoleEnum.admin:
+        return False
+
+    if not user.password_changed_at:
+        # Treat "never set" as expired for admins
+        return True
+
+    age = datetime.utcnow() - user.password_changed_at
+    return age > timedelta(days=PASSWORD_MAX_AGE_DAYS)
+
 
 def role_required(*roles):
     def decorator(f):
@@ -363,6 +396,20 @@ def role_required(*roles):
             return f(*args, **kwargs)
         return wrapper
     return decorator
+
+
+def superadmin_required(f):
+    """
+    Only allow the "owner" admin (is_superadmin=True) to access this route.
+    """
+    @wraps(f)
+    @login_required
+    def wrapper(*args, **kwargs):
+        if not getattr(current_user, "is_superadmin", False):
+            flash("You don't have permission to do that.", "error")
+            return redirect(url_for("admin_dashboard"))
+        return f(*args, **kwargs)
+    return wrapper
 
 
 def require_kyc_approved():
@@ -736,6 +783,8 @@ def register():
         role = request.form["role"]
 
         # -------------------------
+
+
         # Basic password policy
         # -------------------------
         pw_errors = []
@@ -812,7 +861,18 @@ def login():
         # 3) Successful login: clear failure counter for this IP
         _clear_failed_logins(remote_addr)
 
+        # Log them in
         login_user(user)
+
+        # 4) If admin password is too old, force password reset
+        if is_password_expired(user):
+            flash(
+                "For security, your admin password must be updated before continuing.",
+                "error",
+            )
+            return redirect(url_for("force_password_reset"))
+
+        # Normal flow
         return redirect(url_for("route_to_dashboard"))
 
     # GET request, just render the login form
@@ -824,6 +884,133 @@ def login():
 def logout():
     logout_user()
     return redirect(url_for("home"))
+
+@app.route("/forgot-password", methods=["GET", "POST"])
+def forgot_password():
+    """
+    Request a password reset link by username.
+    In this dev build, we print the reset link to the server console.
+    """
+    if request.method == "POST":
+        username = (request.form.get("username") or "").strip().lower()
+        if not username:
+            flash("Please enter your username.", "error")
+            return redirect(url_for("forgot_password"))
+
+        user = User.query.filter_by(username=username).first()
+
+        if user:
+            # Generate a simple random token and store it on the user
+            token = uuid.uuid4().hex
+            user.password_reset_token = token
+            user.password_reset_sent_at = datetime.utcnow()
+            db.session.commit()
+
+            # In a real app you'd send email; in dev we print the link
+            reset_link = url_for("reset_password", token=token, _external=True)
+            print("\n[BeatFund] Password reset link:", reset_link, "\n")
+
+        # Don't reveal whether the username exists
+        flash(
+            "If an account with that username exists, a password reset link "
+            "has been generated. (In dev, check the terminal output.)",
+            "info",
+        )
+        return redirect(url_for("login"))
+
+    return render_template("forgot_password.html")
+
+
+@app.route("/reset-password/<token>", methods=["GET", "POST"])
+def reset_password(token):
+    """
+    Complete the password reset using the one-time token.
+    """
+    user = User.query.filter_by(password_reset_token=token).first()
+    if not user:
+        flash("This reset link is invalid or has already been used.", "error")
+        return redirect(url_for("forgot_password"))
+
+    # Check token age
+    if not user.password_reset_sent_at or (
+        datetime.utcnow() - user.password_reset_sent_at
+        > timedelta(hours=RESET_TOKEN_MAX_AGE_HOURS)
+    ):
+        flash("This reset link has expired. Please request a new one.", "error")
+        return redirect(url_for("forgot_password"))
+
+    if request.method == "POST":
+        password = request.form.get("password") or ""
+        confirm = request.form.get("confirm") or ""
+
+        pw_errors = []
+        if len(password) < 8:
+            pw_errors.append("Password must be at least 8 characters long.")
+        if not re.search(r"[A-Za-z]", password):
+            pw_errors.append("Password must contain at least one letter.")
+        if not re.search(r"\d", password):
+            pw_errors.append("Password must contain at least one number.")
+        if password != confirm:
+            pw_errors.append("Password and confirmation do not match.")
+
+        if pw_errors:
+            flash(" ".join(pw_errors), "error")
+            return redirect(url_for("reset_password", token=token))
+
+        user.set_password(password)
+        # token is cleared inside set_password, but we also null them explicitly
+        user.password_reset_token = None
+        user.password_reset_sent_at = None
+        db.session.commit()
+
+        flash("Your password has been updated. You can now log in.", "success")
+        return redirect(url_for("login"))
+
+    return render_template("reset_password.html")
+
+
+@app.route("/force-password-reset", methods=["GET", "POST"])
+@login_required
+def force_password_reset():
+    """
+    When an admin password is older than 90 days, force them to change it
+    before accessing the rest of the app.
+    """
+    if not is_password_expired(current_user):
+        # If somehow reached but not expired, send to normal dashboard
+        return redirect(url_for("route_to_dashboard"))
+
+    if request.method == "POST":
+        current_pw = request.form.get("current_password") or ""
+        new_pw = request.form.get("password") or ""
+        confirm = request.form.get("confirm") or ""
+
+        if not current_user.check_password(current_pw):
+            flash("Current password is incorrect.", "error")
+            return redirect(url_for("force_password_reset"))
+
+        pw_errors = []
+        if len(new_pw) < 8:
+            pw_errors.append("Password must be at least 8 characters long.")
+        if not re.search(r"[A-Za-z]", new_pw):
+            pw_errors.append("Password must contain at least one letter.")
+        if not re.search(r"\d", new_pw):
+            pw_errors.append("Password must contain at least one number.")
+        if new_pw != confirm:
+            pw_errors.append("Password and confirmation do not match.")
+
+        if pw_errors:
+            flash(" ".join(pw_errors), "error")
+            return redirect(url_for("force_password_reset"))
+
+        current_user.set_password(new_pw)
+        db.session.commit()
+
+        flash("Password updated. Please continue to your dashboard.", "success")
+        return redirect(url_for("route_to_dashboard"))
+
+    return render_template("force_password_reset.html")
+
 
 
 @app.route("/kyc")
@@ -1236,6 +1423,121 @@ def admin_users():
     )
 
 
+# =========================================================
+# Admin – Admin Team (superadmin only)
+# =========================================================
+@app.route(
+    "/dashboard/admin/team",
+    methods=["GET", "POST"],
+    endpoint="admin_team",
+)
+@superadmin_required
+def admin_team():
+    """
+    Manage admin/team accounts (superadmin only):
+    - List all admins
+    - Create new admin accounts
+    - Deactivate/reactivate existing admins (via toggle route)
+    """
+    if request.method == "POST":
+        username = (request.form.get("username") or "").strip().lower()
+        password = request.form.get("password") or ""
+
+        if not username:
+            flash("Username is required for a new admin.", "error")
+            return redirect(url_for("admin_team"))
+
+        # ---- Basic password policy (same as register) ----
+        pw_errors = []
+        if len(password) < 8:
+            pw_errors.append("Password must be at least 8 characters long.")
+        if not re.search(r"[A-Za-z]", password):
+            pw_errors.append("Password must contain at least one letter.")
+        if not re.search(r"\d", password):
+            pw_errors.append("Password must contain at least one number.")
+
+        if pw_errors:
+            flash(" ".join(pw_errors), "error")
+            return redirect(url_for("admin_team"))
+
+        # ---- Username must be unique ----
+        if User.query.filter_by(username=username).first():
+            flash("Username already taken.", "error")
+            return redirect(url_for("admin_team"))
+
+        # ---- Create the new admin user (non-superadmin) ----
+        new_admin = User(
+            username=username,
+            role=RoleEnum.admin,
+            kyc_status=KYCStatus.approved,
+            is_superadmin=False,
+        )
+        new_admin.set_password(password)
+        db.session.add(new_admin)
+        db.session.commit()
+
+        # Optional: give them a wallet so audit/export tools don't break if needed
+        get_or_create_wallet(new_admin.id)
+
+        # Log this in the audit log for transparency
+        log = AuditLog(
+            admin_id=current_user.id,
+            user_id=new_admin.id,
+            action="create_admin_user",
+            reason="Superadmin created another admin via Admin Team page.",
+        )
+        db.session.add(log)
+        db.session.commit()
+
+        flash(f"Admin @{username} created.", "success")
+        return redirect(url_for("admin_team"))
+
+    # GET: list all admin users
+    admins = (
+        User.query
+        .filter(User.role == RoleEnum.admin)
+        .order_by(User.id.asc())
+        .all()
+    )
+
+    return render_template("admin_team.html", admins=admins)
+
+
+@app.route(
+    "/dashboard/admin/team/<int:user_id>/toggle-active",
+    methods=["POST"],
+    endpoint="admin_team_toggle_active",
+)
+@superadmin_required
+def admin_team_toggle_active(user_id):
+    """
+    Superadmin can deactivate/reactivate admin team members.
+    - Cannot deactivate themselves
+    - Cannot deactivate another superadmin (safety)
+    """
+    user = User.query.get_or_404(user_id)
+
+    if user.id == current_user.id:
+        flash("You can't deactivate your own superadmin account.", "error")
+        return redirect(url_for("admin_team"))
+
+    if getattr(user, "is_superadmin", False):
+        flash("You can't deactivate another superadmin from this page.", "error")
+        return redirect(url_for("admin_team"))
+
+    new_active = not bool(user.is_active_col)
+    user.is_active_col = new_active
+    db.session.commit()
+
+    if new_active:
+        flash(f"Admin @{user.username} reactivated.", "success")
+    else:
+        flash(f"Admin @{user.username} deactivated.", "success")
+
+    return redirect(url_for("admin_team"))
+
+
+@csrf.exempt  # DEV: avoid CSRF errors on this admin action
 @app.route(
     "/dashboard/admin/users/<int:user_id>/toggle-active",
     methods=["POST"],
@@ -1288,6 +1590,7 @@ def admin_kyc():
     return render_template("admin_kyc.html", pending=pending, approved=approved, rejected=rejected, KYCStatus=KYCStatus)
 
 
+@csrf.exempt  # DEV: avoid CSRF errors on KYC actions
 @app.route("/dashboard/admin/kyc/<int:user_id>/<string:action>",
            methods=["POST"], endpoint="admin_kyc_update")
 @role_required("admin")
@@ -1378,12 +1681,12 @@ def admin_audit_log():
     return "Admin Audit Log\n" + "\n".join(lines)
 
 
+@csrf.exempt  # DEV: avoid CSRF errors on audit reason form
 @app.route(
     "/dashboard/admin/transactions/user/<int:user_id>/audit",
     methods=["GET", "POST"],
     endpoint="admin_audit_access"
 )
-@csrf.exempt          # ✅ CSRF disabled ONLY for this admin-only form
 @role_required("admin")
 def admin_audit_access(user_id):
     """
@@ -1391,7 +1694,6 @@ def admin_audit_access(user_id):
     After a valid reason is submitted, we insert an AuditLog row and redirect
     to the detailed transaction view.
     """
-    # Use the user_id from the URL, store in `customer`
     customer = User.query.get_or_404(user_id)
 
     if request.method == "POST":
@@ -1680,6 +1982,7 @@ def admin_tickets():
     )
 
 
+@csrf.exempt  # DEV: avoid CSRF errors on ticket creation
 @app.route(
     "/dashboard/admin/tickets/new",
     methods=["GET", "POST"],
@@ -1752,6 +2055,7 @@ def admin_ticket_new():
     )
 
 
+@csrf.exempt  # DEV: avoid CSRF errors on ticket update form
 @app.route(
     "/dashboard/admin/tickets/<int:ticket_id>",
     methods=["GET", "POST"],
@@ -1994,26 +2298,36 @@ if __name__ == "__main__":
     with app.app_context():
         db.create_all()
 
-        # ADMIN SEED
+        # ------------------------------------
+        # ADMIN SEED (superadmin / owner)
+        # ------------------------------------
         admin = User.query.filter_by(username="admin").first()
         if not admin:
             admin = User(
                 username="admin",
                 role=RoleEnum.admin,
-                kyc_status=KYCStatus.approved
+                kyc_status=KYCStatus.approved,
+                is_superadmin=True,  # mark as platform owner
             )
             admin.set_password(os.getenv("ADMIN_PASSWORD", "admin123"))
             db.session.add(admin)
             db.session.commit()
             get_or_create_wallet(admin.id)
+        else:
+            # Ensure existing admin is flagged as superadmin
+            if not getattr(admin, "is_superadmin", False):
+                admin.is_superadmin = True
+                db.session.commit()
 
+        # ------------------------------------
         # Sample producer
+        # ------------------------------------
         prod = User.query.filter_by(username="producer1").first()
         if not prod:
             prod = User(
                 username="producer1",
                 role=RoleEnum.producer,
-                kyc_status=KYCStatus.approved
+                kyc_status=KYCStatus.approved,
             )
             prod.set_password("producer1123")
             db.session.add(prod)
@@ -2021,13 +2335,15 @@ if __name__ == "__main__":
             w = get_or_create_wallet(prod.id)
             post_ledger(w, EntryType.deposit, 5_000, meta="seed $50")
 
+        # ------------------------------------
         # Sample artist
+        # ------------------------------------
         artist = User.query.filter_by(username="artist1").first()
         if not artist:
             artist = User(
                 username="artist1",
                 role=RoleEnum.artist,
-                kyc_status=KYCStatus.approved
+                kyc_status=KYCStatus.approved,
             )
             artist.set_password("artist1123")
             db.session.add(artist)

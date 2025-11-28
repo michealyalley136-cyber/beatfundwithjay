@@ -1,138 +1,79 @@
 {% extends "base.html" %}
-{% block title %}KYC Review — BeatFund{% endblock %}
+{% block title %}KYC Review · BeatFund Admin{% endblock %}
 
 {% block content %}
-<div class="bf-page-shell">
-  <div class="bf-page-header">
-    <div style="display:flex; align-items:center; justify-content:space-between; gap:12px;">
-      <div>
-        <h1>KYC Review Queue</h1>
-        <p class="bf-muted">Approve or reject KYC for users. (Demo admin tools)</p>
-      </div>
-      <div style="display:flex; gap:8px; flex-wrap:wrap;">
-        <a class="bf-link-btn" href="{{ url_for('admin_dashboard') }}">← Admin Dashboard</a>
-        <a class="bf-link-btn" href="{{ url_for('admin_users') }}">Users List</a>
-      </div>
-    </div>
-  </div>
+<h1 style="font-size:22px; font-weight:600; margin-bottom:6px;">KYC Review</h1>
+<p style="font-size:13px; color:#9aa4c2; margin-bottom:14px;">
+  Review and update customer KYC status.
+</p>
 
-  <!-- PENDING -->
-  <div class="bm-panel" style="margin-bottom:16px;">
-    <h2 class="bm-panel-title">Pending KYC ({{ pending|length }})</h2>
-
+<h2 style="font-size:16px; font-weight:600; margin-bottom:6px;">Pending</h2>
+<table style="width:100%; border-collapse:collapse; font-size:13px; margin-bottom:16px;">
+  <thead>
+    <tr style="border-bottom:1px solid #111827;">
+      <th style="text-align:left; padding:8px 6px;">Username</th>
+      <th style="text-align:left; padding:8px 6px;">Current Status</th>
+      <th style="text-align:left; padding:8px 6px;">Actions</th>
+    </tr>
+  </thead>
+  <tbody>
     {% if pending %}
-      <div class="bf-table-wrap">
-        <table class="bf-table">
-          <thead>
-            <tr>
-              <th>ID</th>
-              <th>Username</th>
-              <th>Role</th>
-              <th>Status</th>
-              <th style="text-align:right;">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for u in pending %}
-            <tr>
-              <td>#{{ u.id }}</td>
-              <td>@{{ u.username }}</td>
-              <td>{{ u.role.value }}</td>
-              <td><span class="bf-badge bf-badge-warn">{{ u.kyc_status.value }}</span></td>
-              <td style="text-align:right;">
-                <form method="POST"
-                      action="{{ url_for('admin_kyc_update', user_id=u.id, action='approve') }}"
-                      style="display:inline;">
-                  <button type="submit" class="bf-btn bf-btn-primary">Approve</button>
-                </form>
+      {% for u in pending %}
+        <tr style="border-top:1px solid rgba(15,23,42,0.9);">
+          <td style="padding:8px 6px;">@{{ u.username }}</td>
+          <td style="padding:8px 6px;">{{ u.kyc_status.value.replace('_',' ')|title }}</td>
+          <td style="padding:8px 6px;">
+            <!-- Approve -->
+            <form method="POST"
+                  action="{{ url_for('admin_kyc_update', user_id=u.id, action='approve') }}"
+                  style="display:inline;">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button type="submit"
+                      style="padding:4px 10px; border-radius:999px; border:1px solid #16a34a;
+                             background:#15803d; color:#fff; font-size:12px;">
+                Approve
+              </button>
+            </form>
 
-                <form method="POST"
-                      action="{{ url_for('admin_kyc_update', user_id=u.id, action='reject') }}"
-                      style="display:inline; margin-left:6px;">
-                  <button type="submit" class="bf-btn bf-btn-danger">Reject</button>
-                </form>
-              </td>
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
+            <!-- Reject -->
+            <form method="POST"
+                  action="{{ url_for('admin_kyc_update', user_id=u.id, action='reject') }}"
+                  style="display:inline; margin-left:6px;">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button type="submit"
+                      style="padding:4px 10px; border-radius:999px; border:1px solid #b91c1c;
+                             background:#7f1d1d; color:#fee2e2; font-size:12px;">
+                Reject
+              </button>
+            </form>
+          </td>
+        </tr>
+      {% endfor %}
     {% else %}
-      <p class="bf-muted">No pending KYC right now.</p>
+      <tr>
+        <td colspan="3" style="padding:10px 6px; color:#9aa4c2;">
+          No pending KYC reviews.
+        </td>
+      </tr>
     {% endif %}
-  </div>
+  </tbody>
+</table>
 
-  <!-- APPROVED -->
-  <div class="bm-panel" style="margin-bottom:16px;">
-    <h2 class="bm-panel-title">Approved KYC ({{ approved|length }})</h2>
+<h2 style="font-size:16px; font-weight:600; margin-bottom:6px;">Approved</h2>
+<ul style="font-size:13px; color:#e5e7eb; margin-bottom:16px;">
+  {% for u in approved %}
+    <li>@{{ u.username }}</li>
+  {% else %}
+    <li style="color:#9aa4c2;">No approved users yet.</li>
+  {% endfor %}
+</ul>
 
-    {% if approved %}
-      <div class="bf-table-wrap">
-        <table class="bf-table">
-          <thead>
-            <tr>
-              <th>ID</th>
-              <th>Username</th>
-              <th>Role</th>
-              <th>Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for u in approved %}
-            <tr>
-              <td>#{{ u.id }}</td>
-              <td>@{{ u.username }}</td>
-              <td>{{ u.role.value }}</td>
-              <td><span class="bf-badge bf-badge-good">{{ u.kyc_status.value }}</span></td>
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
-    {% else %}
-      <p class="bf-muted">No approved users yet.</p>
-    {% endif %}
-  </div>
-
-  <!-- REJECTED -->
-  <div class="bm-panel">
-    <h2 class="bm-panel-title">Rejected KYC ({{ rejected|length }})</h2>
-
-    {% if rejected %}
-      <div class="bf-table-wrap">
-        <table class="bf-table">
-          <thead>
-            <tr>
-              <th>ID</th>
-              <th>Username</th>
-              <th>Role</th>
-              <th>Status</th>
-              <th style="text-align:right;">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for u in rejected %}
-            <tr>
-              <td>#{{ u.id }}</td>
-              <td>@{{ u.username }}</td>
-              <td>{{ u.role.value }}</td>
-              <td><span class="bf-badge bf-badge-bad">{{ u.kyc_status.value }}</span></td>
-              <td style="text-align:right;">
-                <form method="POST"
-                      action="{{ url_for('admin_kyc_update', user_id=u.id, action='approve') }}"
-                      style="display:inline;">
-                  <button type="submit" class="bf-btn bf-btn-primary">Approve Anyway</button>
-                </form>
-              </td>
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
-    {% else %}
-      <p class="bf-muted">No rejected users.</p>
-    {% endif %}
-  </div>
-
-</div>
+<h2 style="font-size:16px; font-weight:600; margin-bottom:6px;">Rejected</h2>
+<ul style="font-size:13px; color:#e5e7eb;">
+  {% for u in rejected %}
+    <li>@{{ u.username }}</li>
+  {% else %}
+    <li style="color:#9aa4c2;">No rejected users yet.</li>
+  {% endfor %}
+</ul>
 {% endblock %}

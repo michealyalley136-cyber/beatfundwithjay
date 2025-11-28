@@ -1,219 +1,80 @@
 {% extends "base.html" %}
-
-{% block title %}Admin • New Ticket | BeatFund{% endblock %}
-
-{% block extra_head %}
-<style>
-  .ticket-new-page {
-    display: flex;
-    flex-direction: column;
-    gap: 18px;
-  }
-
-  .page-header {
-    margin-bottom: 4px;
-  }
-
-  .page-kicker {
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 0.16em;
-    color: var(--text-soft);
-    margin-bottom: 4px;
-  }
-
-  .page-title {
-    font-size: 22px;
-    font-weight: 700;
-  }
-
-  .page-subtitle {
-    font-size: 13px;
-    color: var(--text-soft);
-    margin-top: 4px;
-  }
-
-  .form-grid {
-    display: grid;
-    grid-template-columns: 2fr 1.5fr;
-    gap: 18px;
-  }
-
-  .form-group {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    margin-bottom: 10px;
-  }
-
-  .form-label {
-    font-size: 12px;
-    color: var(--text-soft);
-  }
-
-  .form-input,
-  .form-select,
-  .form-textarea {
-    border-radius: var(--radius-md);
-    border: 1px solid var(--border-soft);
-    padding: 8px 10px;
-    font-size: 13px;
-    background: #020617;
-    color: var(--text-main);
-    outline: none;
-  }
-
-  .form-textarea {
-    min-height: 140px;
-    resize: vertical;
-  }
-
-  .form-input:focus,
-  .form-select:focus,
-  .form-textarea:focus {
-    border-color: rgba(0, 180, 255, 0.75);
-    box-shadow: 0 0 0 1px rgba(0, 180, 255, 0.4);
-  }
-
-  .ticket-side-card {
-    font-size: 13px;
-    color: var(--text-soft);
-  }
-
-  .ticket-side-card h3 {
-    font-size: 14px;
-    margin-bottom: 6px;
-  }
-
-  .ticket-meta {
-    font-size: 12px;
-    margin-top: 8px;
-  }
-
-  .btn-row {
-    margin-top: 12px;
-    display: flex;
-    gap: 8px;
-  }
-
-  .btn-ghost {
-    padding: 6px 14px;
-    border-radius: var(--radius-pill);
-    border: 1px solid rgba(148, 163, 184, 0.45);
-    background: transparent;
-    color: var(--text-soft);
-    font-size: 13px;
-  }
-
-  .btn-ghost:hover {
-    background: rgba(148, 163, 184, 0.18);
-    color: var(--text-main);
-  }
-
-  @media (max-width: 900px) {
-    .form-grid {
-      grid-template-columns: 1fr;
-    }
-  }
-</style>
-{% endblock %}
+{% block title %}New Support Ticket · BeatFund Admin{% endblock %}
 
 {% block content %}
-<div class="ticket-new-page">
+<h1 style="font-size:22px; font-weight:600; margin-bottom:6px;">
+  New ticket for @{{ customer.username }}
+</h1>
+<p style="font-size:13px; color:#9aa4c2; margin-bottom:12px;">
+  Create a support or compliance ticket about this customer.
+  {% if ledger %}
+    Linked transaction: <strong>#{{ ledger.id }}</strong> ({{ ledger.entry_type.value }})
+  {% endif %}
+</p>
 
-  <header class="page-header">
-    <div class="page-kicker">ADMIN • SUPPORT</div>
-    <h1 class="page-title">New support ticket</h1>
-    <p class="page-subtitle">
-      You’re creating a ticket for @{{ customer.username }}.
-      Use this to request refunds, investigate suspicious activity, or log customer issues.
-    </p>
-  </header>
+<form method="POST"
+      style="max-width:560px; padding:16px; border-radius:14px; background:#020617; border:1px solid #1f2937;">
+  <!-- ✅ CSRF token -->
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
-  <section class="card form-grid">
-    <form method="POST">
-      <div class="form-group">
-        <label class="form-label" for="type">Ticket type</label>
-        <select class="form-select" id="type" name="type">
-          {% for t in TicketType %}
-            <option value="{{ t.value }}"
-              {% if type_value == t.value %}selected{% endif %}>
-              {{ t.value.replace('_',' ')|title }}
-            </option>
-          {% endfor %}
-        </select>
-      </div>
+  <!-- Ticket type -->
+  <label for="type"
+         style="display:block; font-size:12px; text-transform:uppercase; letter-spacing:0.08em; color:#9ca3af; margin-bottom:4px;">
+    Ticket Type
+  </label>
+  <select id="type" name="type"
+          style="width:100%; border-radius:10px; border:1px solid #1f2937; background:#020617; color:#e5e7eb;
+                 padding:8px 10px; font-size:13px; margin-bottom:10px;">
+    {% for t in TicketType %}
+      <option value="{{ t.value }}" {% if type_value == t.value %}selected{% endif %}>
+        {{ t.value.replace('_',' ')|title }}
+      </option>
+    {% endfor %}
+  </select>
 
-      <div class="form-group">
-        <label class="form-label" for="priority">Priority</label>
-        <select class="form-select" id="priority" name="priority">
-          <option value="normal" {% if priority == 'normal' %}selected{% endif %}>Normal</option>
-          <option value="high" {% if priority == 'high' %}selected{% endif %}>High</option>
-          <option value="urgent" {% if priority == 'urgent' %}selected{% endif %}>Urgent</option>
-        </select>
-      </div>
+  <!-- Subject -->
+  <label for="subject"
+         style="display:block; font-size:12px; text-transform:uppercase; letter-spacing:0.08em; color:#9ca3af; margin-bottom:4px;">
+    Subject
+  </label>
+  <input id="subject" name="subject" type="text" required
+         value="{{ subject }}"
+         style="width:100%; border-radius:10px; border:1px solid #1f2937; background:#020617; color:#e5e7eb;
+                padding:8px 10px; font-size:13px; margin-bottom:10px;">
 
-      <div class="form-group">
-        <label class="form-label" for="subject">Subject</label>
-        <input
-          class="form-input"
-          type="text"
-          id="subject"
-          name="subject"
-          value="{{ subject }}"
-          placeholder="Short summary (e.g. Refund request for booking hold fee)"
-        >
-      </div>
+  <!-- Description -->
+  <label for="description"
+         style="display:block; font-size:12px; text-transform:uppercase; letter-spacing:0.08em; color:#9ca3af; margin-bottom:4px;">
+    Description
+  </label>
+  <textarea id="description" name="description" rows="5" required
+            style="width:100%; border-radius:10px; border:1px solid #1f2937; background:#020617; color:#e5e7eb;
+                   padding:8px 10px; font-size:13px; margin-bottom:10px;">{{ description }}</textarea>
 
-      <div class="form-group">
-        <label class="form-label" for="description">Description</label>
-        <textarea
-          class="form-textarea"
-          id="description"
-          name="description"
-          placeholder="Describe what the customer reported, what you see in the wallet, and the suggested next step."
-        >{{ description }}</textarea>
-      </div>
+  <!-- Priority -->
+  <label for="priority"
+         style="display:block; font-size:12px; text-transform:uppercase; letter-spacing:0.08em; color:#9ca3af; margin-bottom:4px;">
+    Priority
+  </label>
+  <select id="priority" name="priority"
+          style="width:100%; border-radius:10px; border:1px solid #1f2937; background:#020617; color:#e5e7eb;
+                 padding:8px 10px; font-size:13px; margin-bottom:14px;">
+    <option value="low"    {% if priority == "low" %}selected{% endif %}>Low</option>
+    <option value="normal" {% if priority == "normal" %}selected{% endif %}>Normal</option>
+    <option value="high"   {% if priority == "high" %}selected{% endif %}>High</option>
+  </select>
 
-      <div class="btn-row">
-        <button type="submit" class="btn-primary">Create ticket</button>
-        <a href="{{ url_for('admin_tickets') }}" class="btn-ghost">Cancel</a>
-      </div>
-    </form>
-
-    <aside class="ticket-side-card">
-      <h3>Context</h3>
-      <p>
-        Customer: <strong>@{{ customer.username }}</strong>
-      </p>
-      <p class="ticket-meta">
-        Role: {{ customer.role.value|capitalize }}<br>
-        KYC: {{ customer.kyc_status.value.replace('_',' ')|title }}
-      </p>
-
-      {% if ledger %}
-        <div class="ticket-meta" style="margin-top:10px;">
-          <div style="font-size:12px; margin-bottom:2px;">Linked transaction:</div>
-          <div>
-            {{ ledger.created_at.strftime("%Y-%m-%d %H:%M") if ledger.created_at else "-" }} –
-            {{ ledger.entry_type.value.replace('_',' ')|title }}
-            for ${{ (ledger.amount_cents / 100.0)|round(2) }}
-          </div>
-          <div style="font-size:12px; color:var(--text-soft);">
-            Meta: {{ ledger.meta or '—' }}
-          </div>
-        </div>
-      {% else %}
-        <div class="ticket-meta" style="margin-top:10px;">
-          No specific transaction is linked. This ticket is about the customer’s wallet in general.
-        </div>
-      {% endif %}
-
-      <div class="ticket-meta" style="margin-top:12px;">
-        Once created, this ticket will appear in the Tickets list for review and approval
-        by your operations team.
-      </div>
-    </aside>
-  </section>
-</div>
+  <div style="display:flex; gap:8px;">
+    <button type="submit"
+            style="padding:8px 14px; border-radius:999px; border:none;
+                   background:#2563eb; color:#fff; font-size:13px;">
+      Create ticket
+    </button>
+    <a href="{{ url_for('admin_tickets') }}"
+       style="padding:8px 14px; border-radius:999px; border:1px solid #4b5563;
+              color:#e5e7eb; font-size:13px; text-decoration:none;">
+      Cancel
+    </a>
+  </div>
+</form>
 {% endblock %}

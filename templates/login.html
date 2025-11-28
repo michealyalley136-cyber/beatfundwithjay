@@ -13,10 +13,9 @@
         </p>
       </div>
 
-     <form method="POST" class="auth-form">
-  <!-- CSRF token (works with our generate_csrf helper) -->
-  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-
+      <form method="POST" class="auth-form">
+        <!-- CSRF token (works with our generate_csrf helper) -->
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
         <label class="auth-label" for="username">Username</label>
         <input
@@ -24,9 +23,10 @@
           name="username"
           type="text"
           class="auth-input"
-          placeholder="e.g. zarleymarley"
+          placeholder="e.g. johnsmith"
           required
           autofocus
+          autocomplete="username"
         >
 
         <label class="auth-label" for="password">Password</label>
@@ -37,6 +37,7 @@
           class="auth-input"
           placeholder="••••••••"
           required
+          autocomplete="current-password"
         >
 
         <div class="auth-actions">
@@ -45,7 +46,9 @@
         </div>
 
         <div class="auth-footer">
-          <span class="auth-muted">Don’t have an account?</span>
+          <a href="{{ url_for('forgot_password') }}">Forgot your password?</a>
+          <span style="margin: 0 4px;">·</span>
+          <span>Don’t have an account?</span>
           <a href="{{ url_for('register') }}">Register</a>
         </div>
       </form>
@@ -194,7 +197,9 @@
   font-size: 13px;
   color: #9ca7c5;
   display: flex;
-  gap: 6px;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: baseline;
 }
 
 .auth-footer a {
@@ -250,6 +255,7 @@
   gap: 8px;
   align-items: flex-start;
 }
+
 .auth-list li span {
   line-height: 1.2;
 }

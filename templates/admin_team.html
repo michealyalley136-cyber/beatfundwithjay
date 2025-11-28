@@ -1,0 +1,253 @@
+{% extends "base.html" %}
+{% block title %}Admin Team · BeatFund{% endblock %}
+
+{% block extra_head %}
+<style>
+  .team-page-title {
+    font-size: 22px;
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+  .team-page-sub {
+    font-size: 13px;
+    color: #9aa4c2;
+    margin-bottom: 18px;
+  }
+
+  .team-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.3fr);
+    gap: 16px;
+  }
+  @media (max-width: 900px) {
+    .team-grid { grid-template-columns: 1fr; }
+  }
+
+  .team-card {
+    background: linear-gradient(135deg, #0b1220, #020617);
+    border-radius: 16px;
+    border: 1px solid #20263b;
+    box-shadow: 0 18px 35px rgba(15, 23, 42, 0.9);
+    padding: 16px 18px 14px;
+  }
+
+  .team-card-title {
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+
+  .team-card-sub {
+    font-size: 12px;
+    color: #9aa4c2;
+    margin-bottom: 12px;
+  }
+
+  .team-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #8f9bc6;
+    margin-top: 6px;
+    margin-bottom: 2px;
+  }
+
+  .team-input {
+    width: 100%;
+    border-radius: 10px;
+    border: 1px solid #303a5c;
+    background: rgba(12, 16, 36, 0.95);
+    color: #e3e9ff;
+    padding: 8px 10px;
+    font-size: 13px;
+  }
+
+  .team-input::placeholder {
+    color: #6f7aa4;
+  }
+
+  .team-btn-primary {
+    border-radius: 999px;
+    padding: 8px 16px;
+    font-size: 13px;
+    border: none;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, #33b5ff, #447aff);
+    color: #ffffff;
+    margin-top: 10px;
+  }
+  .team-btn-primary:hover {
+    background: linear-gradient(135deg, #45c4ff, #5688ff);
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  thead tr {
+    border-bottom: 1px solid #111827;
+  }
+  th, td {
+    padding: 8px 6px;
+    text-align: left;
+  }
+  th {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: #64748b;
+  }
+  tbody tr + tr {
+    border-top: 1px solid rgba(15, 23, 42, 0.9);
+  }
+
+  .chip-status {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 3px 9px;
+    border-radius: 999px;
+    font-size: 11px;
+    border: 1px solid rgba(148, 163, 184, 0.5);
+    white-space: nowrap;
+  }
+  .chip-status-active {
+    border-color: #22c55e;
+    color: #bbf7d0;
+  }
+  .chip-status-inactive {
+    border-color: #f97316;
+    color: #fed7aa;
+  }
+
+  .team-toggle-form button {
+    border-radius: 999px;
+    padding: 5px 10px;
+    font-size: 12px;
+    border: 1px solid #1f2937;
+    background: rgba(15,23,42,0.8);
+    color: #e5e7eb;
+    cursor: pointer;
+  }
+  .team-toggle-form button:hover {
+    border-color: #0ea5e9;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<h1 class="team-page-title">Admin Team</h1>
+<p class="team-page-sub">
+  Manage who has admin access to BeatFund. Each admin has their own login and
+  can access the admin dashboard, users, KYC, reports, tickets, and audits.
+</p>
+
+<div class="team-grid">
+  <!-- Left: create new admin -->
+  <div class="team-card">
+    <div class="team-card-title">Create new admin</div>
+    <div class="team-card-sub">
+      Use this for trusted team members (ops, support, finance). Each person should have
+      their own admin account. Password policy matches regular signup.
+    </div>
+
+    <form method="POST" action="{{ url_for('admin_team') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+      <label class="team-label" for="admin-username">Username</label>
+      <input
+        id="admin-username"
+        name="username"
+        type="text"
+        class="team-input"
+        placeholder="e.g. ops_lead"
+        required
+      >
+
+      <label class="team-label" for="admin-password">Password</label>
+      <input
+        id="admin-password"
+        name="password"
+        type="password"
+        class="team-input"
+        placeholder="At least 8 chars, with letters & numbers"
+        required
+      >
+
+      <button type="submit" class="team-btn-primary">
+        Create admin account
+      </button>
+
+      <p style="font-size:11px; color:#9aa4c2; margin-top:6px;">
+        Tip: Don’t share admin logins. Create one account per person so the audit log
+        clearly shows who did what.
+      </p>
+    </form>
+  </div>
+
+  <!-- Right: existing admins table -->
+  <div class="team-card">
+    <div class="team-card-title">Existing admin accounts</div>
+    <div class="team-card-sub">
+      Toggle admins active/inactive instead of deleting them. Inactive admins can no longer log in.
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Username</th>
+          <th>Status</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% if admins %}
+          {% for a in admins %}
+            <tr>
+              <td>#{{ a.id }}</td>
+              <td>@{{ a.username }}</td>
+              <td>
+                {% if a.is_active_col %}
+                  <span class="chip-status chip-status-active">Active</span>
+                {% else %}
+                  <span class="chip-status chip-status-inactive">Inactive</span>
+                {% endif %}
+              </td>
+              <td>
+                {% if a.id == current_user.id %}
+                  <span style="font-size:11px; color:#9aa4c2;">
+                    You can't deactivate yourself.
+                  </span>
+                {% else %}
+                  <form
+                    method="POST"
+                    action="{{ url_for('admin_user_toggle_active', user_id=a.id) }}"
+                    class="team-toggle-form"
+                    style="display:inline;"
+                  >
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit">
+                      {{ "Deactivate" if a.is_active_col else "Reactivate" }}
+                    </button>
+                  </form>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        {% else %}
+          <tr>
+            <td colspan="4" style="padding:10px 6px; color:#9aa4c2;">
+              No admin accounts found (apart from you). Use the form on the left to add more.
+            </td>
+          </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

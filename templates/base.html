@@ -35,6 +35,11 @@
             <a href="{{ url_for('admin_transactions') }}">Transactions</a>
             <a href="{{ url_for('admin_tickets') }}">Tickets</a>
             <a href="{{ url_for('admin_reports') }}">Reports</a>
+
+            {# Only the superadmin (owner) sees Admin Team #}
+            {% if current_user.is_superadmin %}
+                <a href="{{ url_for('admin_team') }}">Admin Team</a>
+            {% endif %}
         {% endif %}
     </nav>
 

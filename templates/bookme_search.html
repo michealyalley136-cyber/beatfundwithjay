@@ -1,138 +1,379 @@
 {% extends "base.html" %}
-{% block title %}BookMe — Studios & Creative Services{% endblock %}
+{% block title %}BookMe · Creative Services Directory{% endblock %}
+
+{% block extra_head %}
+  <!-- Leaflet map CSS (for the pins) -->
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+    crossorigin=""
+  />
+  <style>
+    .bm-page-title {
+      font-size: 22px;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+    .bm-page-sub {
+      font-size: 13px;
+      color: #9aa4c2;
+      margin-bottom: 18px;
+    }
+
+    .bm-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.2fr);
+      gap: 16px;
+      align-items: flex-start;
+    }
+    @media (max-width: 960px) {
+      .bm-layout {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .bm-card {
+      background: linear-gradient(135deg, #0b1220, #020617);
+      border-radius: 16px;
+      border: 1px solid #20263b;
+      box-shadow: 0 18px 35px rgba(15, 23, 42, 0.9);
+      padding: 16px 18px;
+    }
+
+    /* Map card */
+    #bm-map {
+      width: 100%;
+      height: 360px;
+      border-radius: 14px;
+      overflow: hidden;
+      border: 1px solid #111827;
+    }
+    @media (max-width: 600px) {
+      #bm-map {
+        height: 260px;
+      }
+    }
+
+    .bm-map-header {
+      font-size: 13px;
+      margin-bottom: 8px;
+      color: #c7d2fe;
+    }
+    .bm-map-sub {
+      font-size: 12px;
+      color: #9aa4c2;
+      margin-bottom: 10px;
+    }
+
+    /* Filters + list */
+    .bm-card-header-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+
+    .bm-card-title {
+      font-size: 14px;
+      font-weight: 600;
+    }
+    .bm-card-sub {
+      font-size: 12px;
+      color: #9aa4c2;
+    }
+
+    .bm-filters-toggle-pill {
+      border-radius: 999px;
+      padding: 6px 10px;
+      border: 1px solid #1f2937;
+      font-size: 11px;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      background: rgba(15, 23, 42, 0.9);
+      color: #e5e7eb;
+      cursor: default;
+      white-space: nowrap;
+    }
+
+    .bm-filter-form {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+    @media (max-width: 720px) {
+      .bm-filter-form {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .bm-label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #8f9bc6;
+      margin-bottom: 2px;
+    }
+    .bm-input,
+    .bm-select {
+      width: 100%;
+      border-radius: 10px;
+      border: 1px solid #303a5c;
+      background: rgba(12, 16, 36, 0.95);
+      color: #e3e9ff;
+      padding: 7px 10px;
+      font-size: 13px;
+    }
+    .bm-input::placeholder {
+      color: #6f7aa4;
+    }
+
+    .bm-filter-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 4px;
+    }
+    .bm-btn-primary,
+    .bm-btn-ghost {
+      border-radius: 999px;
+      padding: 7px 14px;
+      font-size: 13px;
+      border: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      text-decoration: none;
+    }
+    .bm-btn-primary {
+      background: linear-gradient(135deg, #33b5ff, #447aff);
+      color: #fff;
+    }
+    .bm-btn-primary:hover {
+      background: linear-gradient(135deg, #45c4ff, #5688ff);
+    }
+    .bm-btn-ghost {
+      background: transparent;
+      color: #c1ccff;
+      border: 1px solid #3b476b;
+    }
+    .bm-btn-ghost:hover {
+      background: rgba(34, 43, 75, 0.9);
+    }
+
+    /* Provider list */
+    .bm-list {
+      margin-top: 10px;
+      display: grid;
+      gap: 8px;
+    }
+
+    .bm-provider-card {
+      border-radius: 14px;
+      border: 1px solid #111827;
+      background: rgba(4, 7, 20, 0.98);
+      padding: 10px 12px;
+      display: grid;
+      grid-template-columns: minmax(0, 1.2fr) auto;
+      gap: 8px;
+      align-items: center;
+    }
+    @media (max-width: 640px) {
+      .bm-provider-card {
+        grid-template-columns: 1fr;
+        align-items: flex-start;
+      }
+    }
+
+    .bm-provider-title {
+      font-size: 14px;
+      font-weight: 500;
+    }
+    .bm-provider-meta-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 2px;
+    }
+    .bm-chip-role {
+      border-radius: 999px;
+      border: 1px solid rgba(96, 165, 250, 0.8);
+      padding: 2px 8px;
+      font-size: 11px;
+      color: #bfdbfe;
+    }
+    .bm-chip-location {
+      border-radius: 999px;
+      border: 1px solid rgba(148, 163, 184, 0.5);
+      padding: 2px 8px;
+      font-size: 11px;
+      color: #e5e7eb;
+    }
+    .bm-provider-services {
+      font-size: 12px;
+      color: #9aa4c2;
+      margin-top: 4px;
+    }
+    .bm-provider-rate {
+      font-size: 12px;
+      color: #c4d0ff;
+      margin-top: 2px;
+    }
+
+    .bm-provider-actions {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 6px;
+      font-size: 11px;
+      color: #9aa4c2;
+    }
+    .bm-provider-actions .bm-btn-primary {
+      padding-inline: 16px;
+    }
+  </style>
+{% endblock %}
 
 {% block content %}
-<div class="bf-page-shell">
-  <div class="bf-page-header">
-    <h1>BookMe — Studios &amp; Creative Services</h1>
-    <p class="bf-muted">
-      Discover producers, studios, videographers and more. Use the map or the list, then request a booking.
-    </p>
-  </div>
+  <h1 class="bm-page-title">Book creative services (BookMe)</h1>
+  <p class="bm-page-sub">
+    Find studios, producers, videographers and more. Use the map and filters to discover providers,
+    then send a booking request.
+  </p>
 
-  <div class="bm-main-grid">
+  <div class="bm-layout">
     <!-- LEFT: Map -->
-    <div class="bm-panel bm-map-panel">
-      <h2 class="bm-panel-title">Map</h2>
-      <p class="bm-panel-sub">
-        Pins show providers who added coordinates to their BookMe profile.
+    <div class="bm-card">
+      <div class="bm-map-header">Where providers are located</div>
+      <div class="bm-map-sub">
+        Pins represent BookMe profiles with a city/state and optional coordinates.
+      </div>
+      <div id="bm-map"></div>
+      <p class="bm-map-sub" style="margin-top:8px;">
+        Tip: zoom and drag to explore other cities. Click a pin to see who’s there.
       </p>
-      <div id="bookme-map" class="bm-map"></div>
     </div>
 
-    <!-- RIGHT: Providers list + filters -->
-    <div class="bm-panel bm-list-panel">
-      <div class="bm-panel-header">
+    <!-- RIGHT: Filters + list -->
+    <div class="bm-card">
+      <div class="bm-card-header-row">
         <div>
-          <h2 class="bm-panel-title">Service Providers</h2>
-          {% set provider_roles = [
-            'producer', 'studio', 'videographer',
-            'designer', 'engineer', 'manager', 'vendor'
-          ] %}
-
-          {% if current_user.is_authenticated and current_user.role.value in provider_roles %}
-            <p class="bm-panel-sub">
-              <a href="{{ url_for('bookme_profile') }}" class="bm-link">
-                Create or edit my BookMe profile
-              </a>
-              to appear here and on the map (for service roles).
-            </p>
-          {% else %}
-            <p class="bm-panel-sub">
-              If you offer studio or creative services, create a provider account
-              (producer, studio, videographer, etc.) to appear here.
-            </p>
-          {% endif %}
+          <div class="bm-card-title">Service Providers</div>
+          <div class="bm-card-sub">
+            If you offer studio or creative services, create a BookMe profile to appear here.
+          </div>
         </div>
-
-        <button type="button" class="bm-filters-toggle" id="bm-filters-toggle">
-          <span class="bm-filters-icon"><span></span><span></span></span>
-          <span>Filters</span>
-        </button>
+        <div class="bm-filters-toggle-pill">
+          Filters
+        </div>
       </div>
 
-      <form method="GET"
-            action="{{ url_for('bookme_search') }}"
-            class="bm-filters-panel"
-            id="bm-filters-panel">
-
-        <div class="bm-filter-row">
-          <label class="bm-filter-label">Provider type</label>
-          <select name="role" class="bm-filter-select">
+      <!-- Filters -->
+      <form class="bm-filter-form" method="GET" action="{{ url_for('bookme_search') }}">
+        <div>
+          <div class="bm-label">Provider type</div>
+          <select name="role" class="bm-select">
             <option value="">All provider types</option>
-            <option value="producer" {% if current_filters.role == 'producer' %}selected{% endif %}>Producer</option>
-            <option value="engineer" {% if current_filters.role == 'engineer' %}selected{% endif %}>Engineer</option>
-            <option value="studio" {% if current_filters.role == 'studio' %}selected{% endif %}>Studio</option>
-            <option value="videographer" {% if current_filters.role == 'videographer' %}selected{% endif %}>Videographer</option>
-            <option value="designer" {% if current_filters.role == 'designer' %}selected{% endif %}>Graphic Designer</option>
-            <option value="manager" {% if current_filters.role == 'manager' %}selected{% endif %}>Manager</option>
-            <option value="vendor" {% if current_filters.role == 'vendor' %}selected{% endif %}>Vendor</option>
+            {% for r in RoleEnum %}
+              {% if r.value in ['producer','studio','videographer','designer','engineer','manager','vendor'] %}
+                <option value="{{ r.value }}"
+                  {% if current_filters.role == r.value %}selected{% endif %}>
+                  {{ r.value|capitalize }}
+                </option>
+              {% endif %}
+            {% endfor %}
           </select>
         </div>
 
-        <div class="bm-filter-row bm-filter-row-inline">
-          <div>
-            <label class="bm-filter-label">ZIP</label>
-            <input type="text" name="zip" class="bm-filter-input" placeholder="Any"
-                   value="{{ current_filters.zip }}">
-          </div>
-          <div>
-            <label class="bm-filter-label">City</label>
-            <input type="text" name="city" class="bm-filter-input" placeholder="Any"
-                   value="{{ current_filters.city }}">
-          </div>
-          <div>
-            <label class="bm-filter-label">State</label>
-            <input type="text" name="state" class="bm-filter-input" placeholder="Any"
-                   value="{{ current_filters.state }}">
-          </div>
+        <div>
+          <div class="bm-label">ZIP</div>
+          <input
+            type="text"
+            name="zip"
+            class="bm-input"
+            placeholder="Any"
+            value="{{ current_filters.zip }}"
+          >
         </div>
 
-        <div class="bm-filter-row">
-          <label class="bm-filter-label">Search</label>
-          <input type="text" name="q" class="bm-filter-input"
-                 placeholder="Name, services, notes..." value="{{ current_filters.q }}">
+        <div>
+          <div class="bm-label">City</div>
+          <input
+            type="text"
+            name="city"
+            class="bm-input"
+            placeholder="Any"
+            value="{{ current_filters.city }}"
+          >
         </div>
 
-        <div class="bm-filter-actions">
-          <button type="submit" class="bm-filter-btn-primary">View results</button>
-          <a href="{{ url_for('bookme_search') }}" class="bm-filter-btn-secondary">Clear</a>
+        <div>
+          <div class="bm-label">State</div>
+          <input
+            type="text"
+            name="state"
+            class="bm-input"
+            placeholder="Any"
+            value="{{ current_filters.state }}"
+          >
+        </div>
+
+        <div style="grid-column: 1 / -1;">
+          <div class="bm-label">Search</div>
+          <input
+            type="text"
+            name="q"
+            class="bm-input"
+            placeholder="Name, services, notes…"
+            value="{{ current_filters.q }}"
+          >
+        </div>
+
+        <div class="bm-filter-actions" style="grid-column: 1 / -1;">
+          <button type="submit" class="bm-btn-primary">View results</button>
+          <a href="{{ url_for('bookme_search') }}" class="bm-btn-ghost">Clear</a>
+          <span style="font-size:11px; color:#9aa4c2;">
+            Showing {{ profiles|length }} result{{ profiles|length != 1 and 's' or '' }}.
+          </span>
         </div>
       </form>
 
-      {% if profiles %}
-        <div class="bm-provider-list">
+      <!-- Provider list -->
+      <div class="bm-list">
+        {% if profiles %}
           {% for p in profiles %}
             <div class="bm-provider-card">
-              <div class="bm-provider-main">
-                <div class="bm-provider-name-row">
-                  <span class="bm-provider-name">{{ p.display_name }}</span>
+              <div>
+                <div class="bm-provider-title">
+                  {{ p.display_name or "Unnamed profile" }}
                   {% if p.user %}
-                    <span class="bm-provider-handle">@{{ p.user.username }}</span>
+                    <span style="font-size:12px; color:#9ca7c5;">@{{ p.user.username }}</span>
                   {% endif %}
                 </div>
-
-                {% if p.city or p.state or p.zip %}
-                  <div class="bm-provider-location">
-                    {{ p.city or '' }}{% if p.state %}, {{ p.state }}{% endif %}
-                    {% if p.zip %} · {{ p.zip }}{% endif %}
-                  </div>
-                {% endif %}
-
+                <div class="bm-provider-meta-row">
+                  {% if p.user %}
+                    <span class="bm-chip-role">
+                      {{ p.user.role.value|capitalize }}
+                    </span>
+                  {% endif %}
+                  {% if p.city or p.state %}
+                    <span class="bm-chip-location">
+                      {{ p.city or '' }}{% if p.city and p.state %}, {% endif %}{{ p.state or '' }}
+                    </span>
+                  {% endif %}
+                  {% if p.zip %}
+                    <span class="bm-chip-location">ZIP {{ p.zip }}</span>
+                  {% endif %}
+                </div>
                 {% if p.service_types %}
-                  <div class="bm-provider-tags">
-                    {% for tag in p.service_types.split(',') %}
-                      <span class="bm-tag">{{ tag.strip() }}</span>
-                    {% endfor %}
+                  <div class="bm-provider-services">
+                    {{ p.service_types }}
                   </div>
                 {% endif %}
-
-                {% if p.bio %}
-                  <div class="bm-provider-bio">
-                    {{ p.bio[:140] }}{% if p.bio|length > 140 %}…{% endif %}
-                  </div>
-                {% endif %}
-
                 {% if p.rate_notes %}
                   <div class="bm-provider-rate">
                     {{ p.rate_notes }}
@@ -141,202 +382,86 @@
               </div>
 
               <div class="bm-provider-actions">
-                {% if current_user.is_authenticated and current_user.id != p.user_id %}
-                  <a href="{{ url_for('bookme_request', provider_id=p.user_id) }}"
-                     class="bm-btn-primary bm-btn-sm">Request booking</a>
-                {% endif %}
-                {% if p.user %}
-                  <a href="{{ url_for('producer_public_profile', username=p.user.username) }}"
-                     class="bm-btn-secondary bm-btn-sm">View producer profile</a>
+                <a
+                  href="{{ url_for('bookme_request', provider_id=p.user_id) }}"
+                  class="bm-btn-primary"
+                >
+                  Request booking
+                </a>
+                {% if p.city or p.state %}
+                  <span>
+                    {{ p.city or '' }}{% if p.city and p.state %}, {% endif %}{{ p.state or '' }}
+                  </span>
                 {% endif %}
               </div>
             </div>
           {% endfor %}
-        </div>
-      {% else %}
-        <p class="bm-empty">
-          No providers match these filters yet. Try widening your search, or clear filters to see all providers.
-        </p>
-      {% endif %}
+        {% else %}
+          <p style="font-size:13px; color:#9aa4c2; margin-top:4px;">
+            No providers match these filters yet. Try broadening your search or ask your
+            engineer / studio to create a BookMe profile.
+          </p>
+        {% endif %}
+      </div>
     </div>
   </div>
-</div>
 
-<link rel="stylesheet"
-  href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-  integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
-  crossorigin=""/>
-<script
-  src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-  integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
-  crossorigin=""></script>
+  <!-- Leaflet JS and BookMe map bootstrap -->
+  <script
+    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+    crossorigin=""
+  ></script>
+  <script>
+    document.addEventListener("DOMContentLoaded", function () {
+      if (!window.L) {
+        return; // Leaflet didn't load; fail silently
+      }
 
-<style>
-  .bf-page-shell { max-width: 1200px; margin: 0 auto; padding: 32px 24px 48px; }
-  .bf-page-header h1 { font-size: 26px; margin-bottom: 4px; }
-  .bf-muted { color: #9ca7c5; font-size: 14px; }
+      const mapEl = document.getElementById("bm-map");
+      if (!mapEl) return;
 
-  .bm-main-grid {
-    display: grid;
-    grid-template-columns: 1.5fr 1.3fr;
-    gap: 24px;
-    margin-top: 24px;
-  }
-  @media (max-width: 960px) { .bm-main-grid { grid-template-columns: 1fr; } }
+      // Base map (centered roughly on US)
+      const map = L.map("bm-map", { scrollWheelZoom: false }).setView([39, -95], 4);
 
-  .bm-panel {
-    background: radial-gradient(circle at top left, #273760, #15192b 55%, #0b0f1e);
-    border-radius: 18px;
-    padding: 20px 22px 24px;
-    box-shadow: 0 14px 40px rgba(0,0,0,0.45);
-  }
-  .bm-panel-title { font-size: 18px; margin-bottom: 4px; }
-  .bm-panel-sub { font-size: 13px; color: #9ca7c5; margin-bottom: 8px; }
-  .bm-panel-header { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; }
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        maxZoom: 18,
+        attribution: '&copy; OpenStreetMap contributors'
+      }).addTo(map);
 
-  .bm-map { width: 100%; height: 360px; border-radius: 14px; overflow: hidden; }
+      const dataUrl = "{{ url_for('bookme_data') }}?role={{ current_filters.role|urlencode }}&zip={{ current_filters.zip|urlencode }}&city={{ current_filters.city|urlencode }}&state={{ current_filters.state|urlencode }}&q={{ current_filters.q|urlencode }}";
 
-  .bm-provider-list { display:flex; flex-direction:column; gap:12px; margin-top:12px; }
+      fetch(dataUrl)
+        .then(resp => resp.json())
+        .then(rows => {
+          if (!Array.isArray(rows) || !rows.length) return;
+          const bounds = [];
+          rows.forEach(r => {
+            if (r.lat == null || r.lng == null) return;
+            const lat = parseFloat(r.lat);
+            const lng = parseFloat(r.lng);
+            if (Number.isNaN(lat) || Number.isNaN(lng)) return;
 
-  .bm-provider-card {
-    display:flex; justify-content:space-between; gap:12px;
-    padding:14px 14px;
-    border-radius:14px;
-    background: rgba(8, 12, 30, 0.9);
-    border:1px solid rgba(68, 90, 160, 0.7);
-    transition: transform .12s ease, border-color .12s ease, background .12s ease;
-  }
-  .bm-provider-card:hover {
-    transform: translateY(-2px);
-    border-color: rgba(110, 140, 230, 0.9);
-    background: rgba(12, 18, 40, 0.95);
-  }
+            const marker = L.marker([lat, lng]).addTo(map);
+            const title = r.display_name || ("@" + (r.username || ""));
+            const body = `
+              <div style="font-size:13px; font-weight:600; margin-bottom:2px;">${title}</div>
+              <div style="font-size:12px; margin-bottom:2px;">${r.service_types || ""}</div>
+              <div style="font-size:11px; color:#64748b;">
+                ${r.city || ""}${(r.city && r.state) ? ", " : ""}${r.state || ""}
+              </div>
+            `;
+            marker.bindPopup(body);
+            bounds.push([lat, lng]);
+          });
 
-  .bm-provider-name-row { display:flex; align-items:baseline; gap:8px; }
-  .bm-provider-name { font-weight:700; font-size:15px; }
-  .bm-provider-handle { font-size:13px; color:#9ca7c5; }
-  .bm-provider-location { font-size:13px; color:#9ca7c5; margin-top:2px; }
-
-  .bm-provider-tags { margin-top:6px; display:flex; flex-wrap:wrap; gap:4px; }
-  .bm-tag {
-    font-size:11px; padding:2px 8px; border-radius:999px;
-    background: rgba(57, 114, 255, 0.3); color:#dfe7ff;
-  }
-  .bm-provider-bio { margin-top:7px; font-size:13px; color:#d7ddf5; line-height:1.35; }
-  .bm-provider-rate { margin-top:6px; font-size:13px; color:#e9edff; }
-
-  .bm-provider-actions { display:flex; flex-direction:column; gap:6px; align-items:flex-end; }
-
-  .bm-btn-primary, .bm-btn-secondary {
-    border-radius:999px; padding:6px 14px; font-size:13px;
-    border:none; cursor:pointer; text-decoration:none; display:inline-flex;
-    align-items:center; justify-content:center;
-  }
-  .bm-btn-primary {
-    background: linear-gradient(135deg, #33b5ff, #447aff);
-    color:#fff; box-shadow:0 6px 16px rgba(0,0,0,0.55);
-  }
-  .bm-btn-primary:hover { background: linear-gradient(135deg, #45c4ff, #5688ff); }
-  .bm-btn-secondary {
-    background: transparent; color:#c1ccff; border:1px solid #3b476b;
-  }
-  .bm-btn-secondary:hover { background: rgba(34,43,75,0.9); }
-  .bm-btn-sm { padding:5px 12px; font-size:12px; }
-
-  .bm-link { color:#4aa8ff; text-decoration:underline; text-decoration-thickness:1px; }
-  .bm-empty { margin-top:12px; font-size:14px; color:#9ca7c5; }
-
-  /* Filters */
-  .bm-filters-toggle {
-    border-radius:999px; padding:6px 12px; border:1px solid #3b476b;
-    background: rgba(15,22,50,0.9); color:#dde5ff; font-size:12px;
-    display:inline-flex; align-items:center; gap:6px; cursor:pointer;
-  }
-  .bm-filters-icon { display:inline-flex; flex-direction:column; gap:2px; }
-  .bm-filters-icon span { width:10px; height:2px; border-radius:999px; background:#dde5ff; }
-
-  .bm-filters-panel {
-    margin-top:12px; padding:12px 14px; border-radius:14px;
-    background: rgba(8, 12, 30, 0.95);
-    border:1px solid rgba(68, 90, 160, 0.7);
-  }
-  .bm-filter-row { margin-bottom:10px; }
-  .bm-filter-row-inline {
-    display:grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap:8px;
-  }
-  @media (max-width: 700px) { .bm-filter-row-inline { grid-template-columns:1fr; } }
-
-  .bm-filter-label {
-    display:block; font-size:11px; text-transform:uppercase;
-    letter-spacing:0.04em; color:#8f9bc6; margin-bottom:2px;
-  }
-  .bm-filter-select, .bm-filter-input {
-    width:100%; border-radius:999px; border:1px solid #303a5c;
-    background: rgba(12,16,36,0.95); color:#e3e9ff;
-    padding:6px 10px; font-size:13px;
-  }
-  .bm-filter-input::placeholder { color:#6f7aa4; }
-
-  .bm-filter-actions {
-    margin-top:6px; display:flex; justify-content:flex-end; gap:8px;
-  }
-  .bm-filter-btn-primary, .bm-filter-btn-secondary {
-    border-radius:999px; padding:6px 14px; font-size:13px;
-    border:none; cursor:pointer; text-decoration:none; display:inline-flex;
-  }
-  .bm-filter-btn-primary {
-    background: linear-gradient(135deg, #33b5ff, #447aff);
-    color:#fff; box-shadow:0 6px 16px rgba(0,0,0,0.55);
-  }
-  .bm-filter-btn-secondary {
-    background: transparent; color:#c1ccff; border:1px solid #3b476b;
-  }
-</style>
-
-<script>
-document.addEventListener("DOMContentLoaded", function () {
-  const mapEl = document.getElementById("bookme-map");
-  if (mapEl && typeof L !== "undefined") {
-    const map = L.map("bookme-map").setView([37.8, -96], 4);
-
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      maxZoom: 18,
-      attribution: '&copy; OpenStreetMap contributors'
-    }).addTo(map);
-
-    const dataUrl = "{{ url_for('bookme_data',
-      role=current_filters.role,
-      zip=current_filters.zip,
-      city=current_filters.city,
-      state=current_filters.state,
-      q=current_filters.q) }}";
-
-    fetch(dataUrl)
-      .then(resp => resp.json())
-      .then(data => {
-        data.forEach(p => {
-          if (p.lat !== null && p.lng !== null) {
-            const marker = L.marker([p.lat, p.lng]).addTo(map);
-            marker.bindPopup(`
-              <strong>${p.display_name}</strong><br/>
-              ${p.service_types || ""}<br/>
-              ${p.city || ""}${p.state ? ", " + p.state : ""}<br/>
-              <small>${p.rate_notes || ""}</small>
-            `);
+          if (bounds.length) {
+            map.fitBounds(bounds, { padding: [30, 30] });
           }
+        })
+        .catch(() => {
+          // If the JSON call fails, we just leave the base map.
         });
-      })
-      .catch(err => console.error("Error loading BookMe markers:", err));
-  }
-
-  const toggleBtn = document.getElementById("bm-filters-toggle");
-  const panel = document.getElementById("bm-filters-panel");
-  if (toggleBtn && panel) {
-    toggleBtn.addEventListener("click", () => {
-      panel.classList.toggle("bm-filters-open");
-      panel.style.display = panel.classList.contains("bm-filters-open") ? "block" : "none";
     });
-  }
-});
-</script>
+  </script>
 {% endblock %}

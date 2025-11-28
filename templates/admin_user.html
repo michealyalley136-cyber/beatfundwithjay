@@ -1,94 +1,137 @@
 {% extends "base.html" %}
-{% block title %}Admin — Users{% endblock %}
+{% block title %}Users · BeatFund Admin{% endblock %}
 
 {% block content %}
-<div class="bf-page-shell">
-  <div class="bf-page-header">
-    <h1>All Users</h1>
-    <p class="bf-muted">
-      Manage accounts and review roles/KYC. (Demo admin tools)
-    </p>
-  </div>
+<h1 style="font-size:22px; font-weight:600; margin-bottom:6px;">Users</h1>
+<p style="font-size:13px; color:#9aa4c2; margin-bottom:14px;">
+  Manage customer accounts, KYC status, and activation.
+</p>
 
-  <div class="bm-panel">
-    <div class="adm-toolbar">
-      <a href="{{ url_for('admin_dashboard') }}" class="bm-btn-secondary bm-btn-sm">
-        ← Back to Admin Dashboard
-      </a>
-      <div class="adm-count">
-        Total users: <strong>{{ users|length }}</strong>
-      </div>
-    </div>
+<!-- Filters (GET – no CSRF needed) -->
+<form method="GET" style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:14px;">
+  <input
+    type="text"
+    name="q"
+    value="{{ q }}"
+    placeholder="Search username..."
+    style="padding:6px 8px; border-radius:8px; border:1px solid #1f2937; background:#020617; color:#e5e7eb; font-size:13px;"
+  >
 
+  <select name="role" style="padding:6px 8px; border-radius:8px; border:1px solid #1f2937; background:#020617; color:#e5e7eb; font-size:13px;">
+    <option value="">All roles</option>
+    {% for r in RoleEnum %}
+      <option value="{{ r.value }}" {% if role == r.value %}selected{% endif %}>
+        {{ r.value|capitalize }}
+      </option>
+    {% endfor %}
+  </select>
+
+  <select name="status" style="padding:6px 8px; border-radius:8px; border:1px solid #1f2937; background:#020617; color:#e5e7eb; font-size:13px;">
+    <option value="">KYC: Any</option>
+    {% for s in KYCStatus %}
+      <option value="{{ s.value }}" {% if status == s.value %}selected{% endif %}>
+        {{ s.value.replace('_',' ')|title }}
+      </option>
+    {% endfor %}
+  </select>
+
+  <select name="active" style="padding:6px 8px; border-radius:8px; border:1px solid #1f2937; background:#020617; color:#e5e7eb; font-size:13px;">
+    <option value="">Active: Any</option>
+    <option value="active" {% if active == "active" %}selected{% endif %}>Active only</option>
+    <option value="inactive" {% if active == "inactive" %}selected{% endif %}>Inactive only</option>
+  </select>
+
+  <button type="submit"
+          style="padding:6px 12px; border-radius:999px; border:1px solid #2563eb;
+                 background:#1d4ed8; color:#fff; font-size:13px;">
+    Apply filters
+  </button>
+</form>
+
+<table style="width:100%; border-collapse:collapse; font-size:13px;">
+  <thead>
+    <tr style="border-bottom:1px solid #111827;">
+      <th style="text-align:left; padding:8px 6px;">Username</th>
+      <th style="text-align:left; padding:8px 6px;">Role</th>
+      <th style="text-align:left; padding:8px 6px;">KYC</th>
+      <th style="text-align:left; padding:8px 6px;">Active</th>
+      <th style="text-align:left; padding:8px 6px;">Actions</th>
+    </tr>
+  </thead>
+  <tbody>
     {% if users %}
-      <div class="adm-table">
-        <div class="adm-row adm-head">
-          <div>ID</div>
-          <div>Username</div>
-          <div>Role</div>
-          <div>KYC</div>
-          <div>Status</div>
-          <div style="text-align:right;">Actions</div>
-        </div>
-
-        {% for u in users %}
-          <div class="adm-row">
-            <div>#{{ u.id }}</div>
-            <div>@{{ u.username }}</div>
-            <div>
-              <span class="adm-pill adm-pill-role">
-                {{ u.role.value|capitalize }}
+      {% for u in users %}
+        <tr style="border-top:1px solid rgba(15,23,42,0.9);">
+          <td style="padding:8px 6px;">
+            @{{ u.username }}
+          </td>
+          <td style="padding:8px 6px;">
+            {{ u.role.value|capitalize }}
+          </td>
+          <td style="padding:8px 6px;">
+            {{ u.kyc_status.value.replace('_',' ')|title }}
+          </td>
+          <td style="padding:8px 6px;">
+            {% if u.is_active_col %}
+              <span style="font-size:11px; padding:2px 7px; border-radius:999px; background:rgba(34,197,94,0.12); color:#bbf7d0; border:1px solid rgba(34,197,94,0.7);">
+                Active
               </span>
-            </div>
-            <div>
-              <span class="adm-pill adm-pill-kyc adm-kyc-{{ u.kyc_status.value }}">
-                {{ u.kyc_status.value.replace("_"," ")|capitalize }}
+            {% else %}
+              <span style="font-size:11px; padding:2px 7px; border-radius:999px; background:rgba(239,68,68,0.12); color:#fecaca; border:1px solid rgba(248,113,113,0.7);">
+                Inactive
               </span>
-            </div>
-            <div>
-              {% if u.is_active_col %}
-                <span class="adm-pill adm-pill-ok">Active</span>
-              {% else %}
-                <span class="adm-pill adm-pill-warn">Disabled</span>
-              {% endif %}
-            </div>
+            {% endif %}
+          </td>
+          <td style="padding:8px 6px;">
+            {% if u.role != RoleEnum.admin %}
+              <form method="POST"
+                    action="{{ url_for('admin_user_toggle_active', user_id=u.id) }}"
+                    style="display:inline;">
+                <!-- ✅ CSRF token here -->
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
-            <div class="adm-actions">
-              {% if u.id != current_user.id %}
-                {% if u.is_active_col %}
-                  <form method="post"
-                        action="{{ url_for('admin_users_action', user_id=u.id, action='disable') }}">
-                    <button class="bm-btn-secondary bm-btn-sm" type="submit">
-                      Disable
-                    </button>
-                  </form>
-                {% else %}
-                  <form method="post"
-                        action="{{ url_for('admin_users_action', user_id=u.id, action='enable') }}">
-                    <button class="bm-btn-primary bm-btn-sm" type="submit">
-                      Enable
-                    </button>
-                  </form>
-                {% endif %}
-
-                {% if u.role.value != 'admin' %}
-                  <form method="post"
-                        action="{{ url_for('admin_users_action', user_id=u.id, action='make_admin') }}">
-                    <button class="bm-btn-secondary bm-btn-sm" type="submit">
-                      Make Admin
-                    </button>
-                  </form>
-                {% endif %}
-              {% else %}
-                <span class="bf-muted" style="font-size:12px;">(you)</span>
-              {% endif %}
-            </div>
-          </div>
-        {% endfor %}
-      </div>
+                <button type="submit"
+                        style="padding:4px 10px; border-radius:999px; border:1px solid #1f2937;
+                               font-size:12px; background:#020617; color:#e5e7eb;">
+                  {% if u.is_active_col %}Deactivate{% else %}Reactivate{% endif %}
+                </button>
+              </form>
+            {% else %}
+              <span style="font-size:11px; color:#9ca3af;">Admin</span>
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
     {% else %}
-      <p class="bm-empty">No users found.</p>
+      <tr>
+        <td colspan="5" style="padding:10px 6px; color:#9aa4c2;">
+          No users found for this filter.
+        </td>
+      </tr>
     {% endif %}
+  </tbody>
+</table>
+
+<!-- Simple pagination -->
+{% if pagination.pages > 1 %}
+  <div style="margin-top:12px; display:flex; gap:8px; align-items:center; font-size:13px;">
+    {% if pagination.has_prev %}
+      <a href="{{ url_for('admin_users', page=pagination.prev_num, q=q, role=role, status=status, active=active) }}"
+         style="padding:4px 10px; border-radius:999px; border:1px solid #1f2937; text-decoration:none; color:#e5e7eb;">
+        ← Prev
+      </a>
+    {% endif %}
+
+    <span>Page {{ pagination.page }} of {{ pagination.pages }}</span>
+
+    {% if pagination.has_next %}
+      <a href="{{ url_for('admin_users', page=pagination.next_num, q=q, role=role, status=status, active=active) }}"
+         style="padding:4px 10px; border-radius:999px; border:1px solid #1f2937; text-decoration:none; color:#e5e7eb;">
+        Next →
+      </a>
+    {% endif %}
+  </div>
+{% endif %}
   </div>
 </div>
 

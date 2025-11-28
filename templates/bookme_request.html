@@ -1,296 +1,139 @@
 {% extends "base.html" %}
-{% block title %}Request booking{% endblock %}
+{% block title %}Request Booking · BeatFund{% endblock %}
 
 {% block content %}
-<div class="bf-page-shell">
-  <div class="bf-page-header">
+<div class="bm-req-shell">
+  <header class="bm-req-header">
     <h1>Request a booking</h1>
-    <p class="bf-muted">
-      You're requesting a session with
-      <strong>@{{ provider.username }}</strong>.
+    <p class="bm-req-sub">
+      You’re contacting <strong>@{{ provider.username }}</strong>.
+      Share what you need and when.
     </p>
-  </div>
+  </header>
 
-  <div class="bm-request-grid">
-    <div class="bm-panel">
-      <h2 class="bm-panel-title">Schedule &amp; availability</h2>
-      <p class="bm-panel-sub">Pick a date and a time slot for your session.</p>
+  <div class="bm-req-card">
+    <form method="POST" class="bm-req-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
-      <form method="post" id="booking-form" onsubmit="return validateBookingForm();">
-        <div class="bm-calendar-wrapper">
-          <div class="bm-calendar-header">
-            <button type="button" class="bm-cal-nav" id="cal-prev">&lt;</button>
-            <div class="bm-cal-month" id="cal-month-label">Month 0000</div>
-            <button type="button" class="bm-cal-nav" id="cal-next">&gt;</button>
-          </div>
+      <label class="bm-label" for="preferred_time">Preferred date & time</label>
+      <input
+        id="preferred_time"
+        name="preferred_time"
+        type="text"
+        class="bm-input"
+        placeholder="e.g. Sat Jun 10, 2–5pm"
+        required
+      >
 
-          <p class="bf-muted" style="margin: 4px 0 10px;">
-            When the provider accepts, a <strong>$20 booking hold fee</strong>
-            is charged from your wallet to reserve this slot.
-          </p>
+      <label class="bm-label" for="message">Message</label>
+      <textarea
+        id="message"
+        name="message"
+        class="bm-textarea"
+        placeholder="Share what you’re looking for: project details, number of hours, references, etc."
+      ></textarea>
 
-          <div class="bm-cal-grid">
-            <div class="bm-cal-dow">Sun</div>
-            <div class="bm-cal-dow">Mon</div>
-            <div class="bm-cal-dow">Tue</div>
-            <div class="bm-cal-dow">Wed</div>
-            <div class="bm-cal-dow">Thu</div>
-            <div class="bm-cal-dow">Fri</div>
-            <div class="bm-cal-dow">Sat</div>
-            <div id="cal-days"></div>
-          </div>
-
-          <div class="bm-cal-selected">
-            <span id="selected-date-label">No date selected yet.</span>
-          </div>
-        </div>
-
-        <div class="bm-form-row">
-          <label class="bm-label" for="time_slot">Time slot</label>
-          <select id="time_slot" class="bm-select">
-            <option value="">Select a time slot</option>
-            <option value="10am–12pm">10am–12pm</option>
-            <option value="1pm–3pm">1pm–3pm</option>
-            <option value="4pm–6pm">4pm–6pm</option>
-            <option value="7pm–9pm">7pm–9pm</option>
-          </select>
-          <div class="bm-slot-hint" id="bm-slot-hint">Choose a date first.</div>
-        </div>
-
-        <div class="bm-form-row">
-          <label class="bm-label" for="notes">Notes (optional)</label>
-          <textarea id="notes" name="message" rows="3"
-                    class="bm-textarea"
-                    placeholder="Describe what you need (recording session, mixing, etc.)"></textarea>
-        </div>
-
-        <input type="hidden" name="preferred_time" id="preferred_time">
-
-        <div class="bm-actions">
-          <a href="{{ url_for('bookme_search') }}" class="bm-btn-secondary">Cancel</a>
-          <button type="submit" class="bm-btn-primary">Send booking request</button>
-        </div>
-      </form>
-    </div>
-
-    <div class="bm-panel">
-      <h2 class="bm-panel-title">Provider</h2>
-      <p class="bm-provider-handle">@{{ provider.username }}</p>
-      {% if provider.role %}
-        <p class="bm-tag">{{ provider.role.value|capitalize }}</p>
-      {% endif %}
-
-      {% if provider.bookme_profile %}
-        <p class="bm-provider-city">
-          {{ provider.bookme_profile.city or '' }}
-          {% if provider.bookme_profile.state %}, {{ provider.bookme_profile.state }}{% endif %}
-        </p>
-        {% if provider.bookme_profile.service_types %}
-          <p class="bm-provider-services">
-            {{ provider.bookme_profile.service_types }}
-          </p>
-        {% endif %}
-        {% if provider.bookme_profile.rate_notes %}
-          <p class="bm-provider-rate">
-            {{ provider.bookme_profile.rate_notes }}
-          </p>
-        {% endif %}
-      {% else %}
-        <p class="bm-muted">This provider has not completed their BookMe profile yet.</p>
-      {% endif %}
-    </div>
+      <div class="bm-req-actions">
+        <button type="submit" class="bm-btn-primary">Send request</button>
+        <a href="{{ url_for('bookme_search') }}" class="bm-btn-secondary">Cancel</a>
+      </div>
+    </form>
   </div>
 </div>
 
 <style>
-  .bf-page-shell { max-width:1100px; margin:0 auto; padding:32px 24px 48px; }
-  .bf-page-header h1 { font-size:26px; margin-bottom:4px; }
-  .bf-muted { color:#9ca7c5; font-size:14px; }
-
-  .bm-request-grid {
-    display:grid; grid-template-columns:2fr 1.2fr; gap:24px; margin-top:24px;
-  }
-  @media (max-width:900px){ .bm-request-grid{ grid-template-columns:1fr; } }
-
-  .bm-panel {
-    background: radial-gradient(circle at top left, #273760, #15192b 55%, #0b0f1e);
-    border-radius:18px; padding:20px 22px 24px;
-    box-shadow:0 14px 40px rgba(0,0,0,0.45);
-  }
-  .bm-panel-title { font-size:18px; margin-bottom:4px; }
-  .bm-panel-sub { font-size:13px; color:#9ca7c5; margin-bottom:16px; }
-
-  .bm-calendar-wrapper {
-    border-radius:14px; padding:14px 16px 18px;
-    background: rgba(8, 12, 30, 0.8);
-    border: 1px solid rgba(88, 109, 180, 0.6);
-    margin-bottom:16px;
-  }
-  .bm-calendar-header {
-    display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;
-  }
-  .bm-cal-month { font-weight:600; font-size:15px; }
-  .bm-cal-nav {
-    border:none; border-radius:999px; background: rgba(31, 48, 113, 0.85);
-    color:#e6ecff; padding:4px 10px; cursor:pointer; font-size:14px;
-  }
-  .bm-cal-nav:hover { background: rgba(60, 96, 200, 0.95); }
-
-  .bm-cal-grid {
-    display:grid; grid-template-columns:repeat(7,1fr); gap:4px;
-    font-size:13px; margin-top:4px;
-  }
-  .bm-cal-dow { text-align:center; color:#8d98c0; padding:4px 0; }
-  #cal-days { display: contents; }
-
-  .bm-cal-day {
-    text-align:center; padding:7px 0; border-radius:999px; cursor:pointer;
-    color:#c7d2ff; transition: background .12s ease, transform .08s ease;
-  }
-  .bm-cal-day.disabled { cursor:default; opacity:0.25; }
-  .bm-cal-day:hover:not(.disabled) { background: rgba(75, 100, 200, 0.35); transform: translateY(-1px); }
-  .bm-cal-day.selected { background:#3c82ff; color:#fff; font-weight:700; }
-
-  .bm-cal-selected { margin-top:10px; font-size:13px; color:#9ca7c5; }
-
-  .bm-form-row { margin-bottom:14px; }
-  .bm-label { display:block; font-size:13px; font-weight:600; margin-bottom:4px; }
-
-  .bm-select, .bm-textarea {
-    width:100%; border-radius:10px; border:1px solid #303a5c;
-    background: rgba(12, 16, 36, 0.95); color:#e3e9ff;
-    padding:8px 10px; font-size:14px;
-  }
-  .bm-textarea { resize: vertical; min-height:70px; }
-
-  .bm-slot-hint {
-    margin-top:6px; font-size:12px; color:#9ca7c5;
-  }
-
-  .bm-actions {
-    margin-top:16px; display:flex; justify-content:flex-end; gap:10px;
-  }
-  .bm-btn-primary, .bm-btn-secondary {
-    border-radius:999px; padding:8px 16px; font-size:14px; border:none;
-    cursor:pointer; text-decoration:none; display:inline-flex; align-items:center; justify-content:center;
-  }
-  .bm-btn-primary {
-    background: linear-gradient(135deg, #33b5ff, #447aff);
-    color:#fff; box-shadow:0 8px 20px rgba(0,0,0,0.55);
-  }
-  .bm-btn-secondary { background:transparent; color:#c1ccff; border:1px solid #3b476b; }
-
-  .bm-provider-handle { font-weight:600; margin-top:4px; }
-  .bm-tag {
-    display:inline-block; margin-top:6px; padding:3px 10px; font-size:12px;
-    border-radius:999px; background: rgba(57,114,255,0.3); color:#dfe7ff;
-  }
-  .bm-provider-city, .bm-provider-services, .bm-provider-rate { margin-top:8px; font-size:14px; }
-</style>
-
-<script>
-(function() {
-  const monthLabel = document.getElementById('cal-month-label');
-  const daysContainer = document.getElementById('cal-days');
-  const selectedLabel = document.getElementById('selected-date-label');
-  const prevBtn = document.getElementById('cal-prev');
-  const nextBtn = document.getElementById('cal-next');
-  const timeSlotSelect = document.getElementById('time_slot');
-  const hiddenPreferred = document.getElementById('preferred_time');
-  const slotHint = document.getElementById('bm-slot-hint');
-
-  let current = new Date();
-  let selectedDate = null;
-
-  function renderCalendar() {
-    const year = current.getFullYear();
-    const month = current.getMonth();
-    const firstOfMonth = new Date(year, month, 1);
-    const startDay = firstOfMonth.getDay();
-    const daysInMonth = new Date(year, month + 1, 0).getDate();
-
-    const monthNames = [
-      "January","February","March","April","May","June",
-      "July","August","September","October","November","December"
-    ];
-    monthLabel.textContent = monthNames[month] + " " + year;
-    daysContainer.innerHTML = "";
-
-    for (let i = 0; i < startDay; i++) {
-      const span = document.createElement('div');
-      span.className = "bm-cal-day disabled";
-      daysContainer.appendChild(span);
-    }
-
-    for (let day = 1; day <= daysInMonth; day++) {
-      const dateObj = new Date(year, month, day);
-      const btn = document.createElement('div');
-      btn.className = "bm-cal-day";
-      btn.textContent = day.toString();
-
-      const today = new Date(); today.setHours(0,0,0,0);
-      const cmp = new Date(year, month, day); cmp.setHours(0,0,0,0);
-
-      if (cmp < today) {
-        btn.classList.add("disabled");
-      } else {
-        btn.addEventListener('click', () => selectDate(dateObj, btn));
-      }
-
-      if (selectedDate &&
-          dateObj.getFullYear() === selectedDate.getFullYear() &&
-          dateObj.getMonth() === selectedDate.getMonth() &&
-          dateObj.getDate() === selectedDate.getDate()) {
-        btn.classList.add("selected");
-      }
-
-      daysContainer.appendChild(btn);
-    }
-  }
-
-  function selectDate(dateObj, btn) {
-    selectedDate = dateObj;
-    document.querySelectorAll(".bm-cal-day.selected")
-      .forEach(el => el.classList.remove("selected"));
-    btn.classList.add("selected");
-    slotHint.textContent = "Now choose a time slot.";
-    updatePreferred();
-  }
-
-  function updatePreferred() {
-    if (!selectedDate) {
-      hiddenPreferred.value = "";
-      selectedLabel.textContent = "No date selected yet.";
-      return;
-    }
-    const slot = timeSlotSelect.value;
-    const humanDate = selectedDate.toLocaleDateString(undefined, {
-      weekday: 'short', month: 'short', day: 'numeric', year: 'numeric'
-    });
-
-    if (slot) {
-      hiddenPreferred.value = selectedDate.toISOString().slice(0,10) + " " + slot;
-      selectedLabel.textContent = humanDate + " · " + slot;
-    } else {
-      hiddenPreferred.value = "";
-      selectedLabel.textContent = humanDate + " (select a time slot)";
-    }
-  }
-
-  prevBtn.addEventListener('click', () => { current.setMonth(current.getMonth() - 1); renderCalendar(); });
-  nextBtn.addEventListener('click', () => { current.setMonth(current.getMonth() + 1); renderCalendar(); });
-  timeSlotSelect.addEventListener('change', updatePreferred);
-
-  renderCalendar();
-})();
-
-function validateBookingForm() {
-  const v = document.getElementById('preferred_time').value.trim();
-  if (!v) {
-    alert("Please choose a date and a time slot before sending your request.");
-    return false;
-  }
-  return true;
+.bm-req-shell {
+  padding-top: 16px;
 }
-</script>
+.bm-req-header h1 {
+  font-size: 22px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.bm-req-sub {
+  font-size: 13px;
+  color: #9aa4c2;
+  margin-bottom: 12px;
+}
+
+.bm-req-card {
+  background: linear-gradient(135deg, #0b1220, #020617);
+  border-radius: 16px;
+  border: 1px solid #1f2937;
+  padding: 16px 16px 12px;
+  box-shadow: 0 18px 35px rgba(15, 23, 42, 0.9);
+}
+
+.bm-req-form {
+  display: grid;
+  gap: 8px;
+}
+
+.bm-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #8f9bc6;
+  margin-top: 6px;
+  margin-bottom: 2px;
+}
+
+.bm-input,
+.bm-textarea {
+  width: 100%;
+  border-radius: 10px;
+  border: 1px solid #303a5c;
+  background: rgba(12, 16, 36, 0.95);
+  color: #e3e9ff;
+  padding: 8px 10px;
+  font-size: 13px;
+}
+
+.bm-textarea {
+  min-height: 110px;
+  resize: vertical;
+}
+
+.bm-input::placeholder,
+.bm-textarea::placeholder {
+  color: #6f7aa4;
+}
+
+.bm-req-actions {
+  margin-top: 10px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.bm-btn-primary,
+.bm-btn-secondary {
+  border-radius: 999px;
+  padding: 8px 16px;
+  font-size: 13px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.bm-btn-primary {
+  border: none;
+  background: linear-gradient(135deg, #33b5ff, #447aff);
+  color: #ffffff;
+}
+.bm-btn-primary:hover {
+  background: linear-gradient(135deg, #45c4ff, #5688ff);
+}
+
+.bm-btn-secondary {
+  border: 1px solid #1f2937;
+  color: #e5e7eb;
+  background: rgba(15, 23, 42, 0.8);
+}
+.bm-btn-secondary:hover {
+  border-color: #38bdf8;
+}
+</style>
 {% endblock %}
