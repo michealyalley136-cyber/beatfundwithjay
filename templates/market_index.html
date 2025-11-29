@@ -111,16 +111,22 @@
       radial-gradient(circle at 80% 70%, rgba(16, 185, 129, 0.8), transparent 55%);
   }
 
-  /* Layout */
+  /* Layout: shell switches between 1-column and 2-column */
   .mk-shell {
     display: grid;
-    grid-template-columns: minmax(0, 1.02fr) minmax(0, 1.6fr);
+    grid-template-columns: minmax(0, 1fr); /* default: beats full width */
     gap: 16px;
     align-items: flex-start;
+    transition: grid-template-columns 0.18s ease;
   }
+
+  .mk-shell.filters-open {
+    grid-template-columns: minmax(0, 1.02fr) minmax(0, 1.6fr); /* left filters + right beats */
+  }
+
   @media (max-width: 980px) {
-    .mk-shell {
-      grid-template-columns: 1fr;
+    .mk-shell.filters-open {
+      grid-template-columns: 1fr; /* stack filters above beats on smaller screens */
     }
   }
 
@@ -162,6 +168,33 @@
     font-size: 12px;
     color: #9aa4c2;
     margin-bottom: 12px;
+  }
+
+  .mk-card-title-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 4px;
+  }
+
+  /* Extra spacing for rows under the main shell */
+  .mk-row-card {
+    margin-top: 20px;
+  }
+
+  /* Filters card: hidden by default, only shows when shell gets .filters-open */
+  .mk-filters-card {
+    display: none;
+    opacity: 0;
+    transform: translateX(-4px);
+    transition: opacity 0.16s ease, transform 0.16s ease;
+  }
+
+  .mk-shell.filters-open .mk-filters-card {
+    display: block;
+    opacity: 1;
+    transform: translateX(0);
   }
 
   /* Filters */
@@ -215,6 +248,13 @@
     flex-wrap: wrap;
     font-size: 11px;
     color: #9aa4c2;
+  }
+
+  .mk-filter-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    align-items: center;
   }
 
   .mk-btn-primary,
@@ -284,14 +324,20 @@
     opacity: 0.9;
   }
 
-  /* Beat grid – Apple Music style tiles */
+  /* Horizontal rail (used by beats + all other rows) */
   .mk-beat-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    display: flex;
+    flex-wrap: nowrap;
     gap: 16px;
+    overflow-x: auto;
+    padding-bottom: 8px;
+    margin-bottom: -4px;
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
   }
 
   .mk-beat-card {
+    flex: 0 0 220px;
     border-radius: 18px;
     border: 1px solid rgba(17, 24, 39, 0.95);
     background:
@@ -302,6 +348,7 @@
     flex-direction: column;
     gap: 8px;
     transition: transform 0.12s ease, box-shadow 0.12s ease, border-color 0.12s ease, background 0.12s ease;
+    scroll-snap-align: start;
   }
 
   .mk-beat-card:hover {
@@ -310,6 +357,15 @@
     box-shadow:
       0 14px 30px rgba(15, 23, 42, 0.9),
       0 0 0 1px rgba(30, 64, 175, 0.8);
+  }
+
+  /* Special CTA card at end */
+  .mk-beat-card-more {
+    background:
+      radial-gradient(circle at top left, rgba(45, 212, 191, 0.28), transparent 60%),
+      radial-gradient(circle at bottom right, rgba(30, 64, 175, 1), rgba(15, 23, 42, 1));
+    display: flex;
+    justify-content: center;
   }
 
   .mk-beat-cover {
@@ -368,12 +424,38 @@
     text-align: right;
   }
 
+  /* Make producer link look like subtle text but clickable */
+  .mk-producer-link {
+    background: none;
+    border: none;
+    padding: 0;
+    margin: 0;
+    font: inherit;
+    color: #9ca3c8;
+    cursor: pointer;
+    text-align: right;
+  }
+  .mk-producer-link:hover {
+    color: #e5e7eb;
+    text-decoration: underline;
+  }
+
   .mk-beat-meta {
     font-size: 11px;
     color: #9aa4c2;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+
+  /* Audio preview row */
+  .mk-beat-audio-row {
+    margin-top: 4px;
+  }
+
+  .mk-beat-audio {
+    width: 100%;
+    outline: none;
   }
 
   .mk-beat-bottom {
@@ -466,9 +548,9 @@
     </aside>
   </header>
 
-  <div class="mk-shell">
-    <!-- LEFT: Filters / helper -->
-    <section class="mk-card">
+  <div class="mk-shell" id="mk-shell">
+    <!-- LEFT: "Find the right beat" filters (hidden until pill is clicked) -->
+    <section class="mk-card mk-filters-card">
       <div class="mk-card-inner">
         <div class="mk-card-title">Find the right beat</div>
         <div class="mk-card-sub">
@@ -545,9 +627,12 @@
         </div>
 
         <div class="mk-filter-footer">
-          <div>
+          <div class="mk-filter-actions">
             <button type="button" id="mk-clear-filters" class="mk-btn-ghost mk-btn-small">
-              Clear filters
+              Clear
+            </button>
+            <button type="button" id="mk-apply-filters" class="mk-btn-primary mk-btn-small">
+              Find beats
             </button>
           </div>
           <div id="mk-results-count">
@@ -565,7 +650,13 @@
     <!-- RIGHT: Beats list -->
     <section class="mk-card">
       <div class="mk-card-inner">
-        <div class="mk-card-title">Available beats</div>
+        <div class="mk-card-title-row">
+          <div class="mk-card-title">Available beats</div>
+          <!-- Pill: tacked-in Find the right beat toggle -->
+          <button type="button" id="mk-toggle-find" class="mk-btn-ghost mk-btn-small">
+            Find the right beat
+          </button>
+        </div>
         <div class="mk-card-sub">
           Click “Buy with wallet” to purchase instantly using your BeatFund balance.
         </div>
@@ -600,9 +691,13 @@
                       {{ b.title }}
                     </div>
                     {% if b.owner %}
-                      <div class="mk-beat-artist">
+                      <button
+                        type="button"
+                        class="mk-beat-artist mk-producer-link"
+                        data-producer="{{ b.owner.username|lower }}"
+                      >
                         @{{ b.owner.username }}
-                      </div>
+                      </button>
                     {% endif %}
                   </div>
 
@@ -612,6 +707,22 @@
                     {% if b.bpm %}{{ b.bpm }} BPM{% endif %}
                     {% if b.id %} · #{{ b.id }}{% endif %}
                   </div>
+
+                  {# Audio preview (sample only, no download) #}
+                  {% set preview_url = b.preview_url or b.audio_url or b.file_url %}
+                  {% if preview_url %}
+                    <div class="mk-beat-audio-row">
+                      <audio
+                        class="mk-beat-audio"
+                        controls
+                        controlsList="nodownload noplaybackrate"
+                        preload="none"
+                      >
+                        <source src="{{ preview_url }}" type="audio/mpeg">
+                        Your browser does not support audio playback.
+                      </audio>
+                    </div>
+                  {% endif %}
 
                   <div class="mk-beat-bottom">
                     <div>
@@ -633,6 +744,26 @@
                 </div>
               </article>
             {% endfor %}
+
+            <!-- CTA card at the end of the rail -->
+            <article class="mk-beat-card mk-beat-card-more">
+              <div class="mk-beat-info">
+                <div class="mk-beat-main-title">
+                  Reached the end?
+                </div>
+                <div class="mk-beat-meta">
+                  Tap a producer’s @name to view their catalog in this rail, or browse the full producer catalog for even more beats.
+                </div>
+                <div class="mk-beat-bottom">
+                  <div class="mk-price-sub">
+                    Keep exploring new sounds.
+                  </div>
+                  <button type="button" class="mk-btn-buy-inline">
+                    Producer catalog
+                  </button>
+                </div>
+              </div>
+            </article>
           </div>
         {% else %}
           <p class="mk-empty">
@@ -642,11 +773,421 @@
       </div>
     </section>
   </div>
+
+  {# STUDIOS ROW – always visible, content depends on `studios` #}
+  <section class="mk-card mk-row-card">
+    <div class="mk-card-inner">
+      <div class="mk-card-title-row">
+        <div class="mk-card-title">Studios near you</div>
+        <button type="button" class="mk-btn-ghost mk-btn-small">
+          Filter studios
+        </button>
+      </div>
+      <div class="mk-card-sub">
+        Book recording studios by the hour and pay securely with your BeatFund wallet.
+      </div>
+
+      {% if studios is defined and studios %}
+        <div class="mk-beat-grid">
+          {% for s in studios %}
+            <article class="mk-beat-card">
+              <div class="mk-beat-cover">
+                <img
+                  class="mk-beat-cover-img"
+                  src="{{ s.cover_url or url_for('static', filename='img/studio-placeholder.jpg') }}"
+                  alt="{{ s.name }} studio photo"
+                >
+                {% if s.has_discount %}
+                  <span class="mk-beat-featured-badge">
+                    {{ s.discount_label or 'Discount' }}
+                  </span>
+                {% endif %}
+              </div>
+
+              <div class="mk-beat-info">
+                <div class="mk-beat-title-row">
+                  <div class="mk-beat-main-title">
+                    {{ s.name }}
+                  </div>
+                  {% if s.handle %}
+                    <div class="mk-beat-artist">
+                      @{{ s.handle }}
+                    </div>
+                  {% endif %}
+                </div>
+
+                <div class="mk-beat-meta">
+                  {% if s.city and s.state %}
+                    {{ s.city }}, {{ s.state }}
+                  {% elif s.city %}
+                    {{ s.city }}
+                  {% endif %}
+                  {% if s.base_rate_cents %}
+                    · From ${{ "%.2f"|format((s.base_rate_cents or 0) / 100.0) }}/hr
+                  {% endif %}
+                </div>
+
+                <div class="mk-beat-bottom">
+                  <div>
+                    {% if s.has_discount and s.discount_text %}
+                      <div class="mk-price-row">{{ s.discount_text }}</div>
+                    {% elif s.base_rate_cents %}
+                      <div class="mk-price-row">
+                        From ${{ "%.2f"|format((s.base_rate_cents or 0) / 100.0) }}/hr
+                      </div>
+                    {% endif %}
+                    <div class="mk-price-sub">Book and pay via BeatFund</div>
+                  </div>
+
+                  {# Replace href with real studio booking route later #}
+                  <a href="#" class="mk-btn-buy-inline">
+                    Book a session
+                  </a>
+                </div>
+              </div>
+            </article>
+          {% endfor %}
+
+          <!-- CTA card for studios -->
+          <article class="mk-beat-card mk-beat-card-more">
+            <div class="mk-beat-info">
+              <div class="mk-beat-main-title">
+                Need more options?
+              </div>
+              <div class="mk-beat-meta">
+                Browse the full studio catalog to compare locations, rates, and availability.
+              </div>
+              <div class="mk-beat-bottom">
+                <div class="mk-price-sub">
+                  Discover more studios.
+                </div>
+                {# Replace href with real studio catalog route later #}
+                <a href="#" class="mk-btn-buy-inline">
+                  View all studios
+                </a>
+              </div>
+            </div>
+          </article>
+        </div>
+      {% else %}
+        <p class="mk-empty">
+          Studios marketplace is coming soon. Once studios are onboarded near you, they’ll appear here.
+        </p>
+      {% endif %}
+    </div>
+  </section>
+
+  {# VIDEOGRAPHERS ROW #}
+  <section class="mk-card mk-row-card">
+    <div class="mk-card-inner">
+      <div class="mk-card-title-row">
+        <div class="mk-card-title">Videographers &amp; directors</div>
+        <button type="button" class="mk-btn-ghost mk-btn-small">
+          Filter videographers
+        </button>
+      </div>
+      <div class="mk-card-sub">
+        Find video teams for music videos, promos, and live sessions, then lock in your shoot with BeatFund.
+      </div>
+
+      {% if videographers is defined and videographers %}
+        <div class="mk-beat-grid">
+          {% for v in videographers %}
+            <article class="mk-beat-card">
+              <div class="mk-beat-cover">
+                <img
+                  class="mk-beat-cover-img"
+                  src="{{ v.cover_url or url_for('static', filename='img/videographer-placeholder.jpg') }}"
+                  alt="{{ v.name }} videographer photo"
+                >
+                {% if v.has_highlight %}
+                  <span class="mk-beat-featured-badge">
+                    {{ v.highlight_label or 'Featured' }}
+                  </span>
+                {% endif %}
+              </div>
+
+              <div class="mk-beat-info">
+                <div class="mk-beat-title-row">
+                  <div class="mk-beat-main-title">
+                    {{ v.name }}
+                  </div>
+                  {% if v.handle %}
+                    <div class="mk-beat-artist">
+                      @{{ v.handle }}
+                    </div>
+                  {% endif %}
+                </div>
+
+                <div class="mk-beat-meta">
+                  {% if v.city and v.state %}
+                    {{ v.city }}, {{ v.state }}
+                  {% elif v.city %}
+                    {{ v.city }}
+                  {% endif %}
+                  {% if v.base_rate_cents %}
+                    · From ${{ "%.2f"|format((v.base_rate_cents or 0) / 100.0) }}/project
+                  {% endif %}
+                </div>
+
+                <div class="mk-beat-bottom">
+                  <div>
+                    {% if v.tagline %}
+                      <div class="mk-price-row">{{ v.tagline }}</div>
+                    {% elif v.base_rate_cents %}
+                      <div class="mk-price-row">
+                        From ${{ "%.2f"|format((v.base_rate_cents or 0) / 100.0) }}/project
+                      </div>
+                    {% endif %}
+                    <div class="mk-price-sub">Secure your shoot via BeatFund</div>
+                  </div>
+
+                  {# Replace href with real videographer booking route later #}
+                  <a href="#" class="mk-btn-buy-inline">
+                    Book a shoot
+                  </a>
+                </div>
+              </div>
+            </article>
+          {% endfor %}
+
+          <!-- CTA card for videographers -->
+          <article class="mk-beat-card mk-beat-card-more">
+            <div class="mk-beat-info">
+              <div class="mk-beat-main-title">
+                See more video teams
+              </div>
+              <div class="mk-beat-meta">
+                Compare videographers by style, pricing, and past projects in one place.
+              </div>
+              <div class="mk-beat-bottom">
+                <div class="mk-price-sub">
+                  Explore the video catalog.
+                </div>
+                <a href="#" class="mk-btn-buy-inline">
+                  View all videographers
+                </a>
+              </div>
+            </div>
+          </article>
+        </div>
+      {% else %}
+        <p class="mk-empty">
+          Videographers will appear here once providers start offering video services on BeatFund.
+        </p>
+      {% endif %}
+    </div>
+  </section>
+
+  {# TALENT / VIDEO VIXENS ROW #}
+  <section class="mk-card mk-row-card">
+    <div class="mk-card-inner">
+      <div class="mk-card-title-row">
+        <div class="mk-card-title">Talent &amp; video vixens</div>
+        <button type="button" class="mk-btn-ghost mk-btn-small">
+          Filter talent
+        </button>
+      </div>
+      <div class="mk-card-sub">
+        Build the right cast for your video shoots, campaigns, and live performances.
+      </div>
+
+      {% if talent_profiles is defined and talent_profiles %}
+        <div class="mk-beat-grid">
+          {% for t in talent_profiles %}
+            <article class="mk-beat-card">
+              <div class="mk-beat-cover">
+                <img
+                  class="mk-beat-cover-img"
+                  src="{{ t.cover_url or url_for('static', filename='img/talent-placeholder.jpg') }}"
+                  alt="{{ t.name }} talent photo"
+                >
+                {% if t.has_highlight %}
+                  <span class="mk-beat-featured-badge">
+                    {{ t.highlight_label or 'Featured' }}
+                  </span>
+                {% endif %}
+              </div>
+
+              <div class="mk-beat-info">
+                <div class="mk-beat-title-row">
+                  <div class="mk-beat-main-title">
+                    {{ t.name }}
+                  </div>
+                  {% if t.handle %}
+                    <div class="mk-beat-artist">
+                      @{{ t.handle }}
+                    </div>
+                  {% endif %}
+                </div>
+
+                <div class="mk-beat-meta">
+                  {% if t.city and t.state %}
+                    {{ t.city }}, {{ t.state }}
+                  {% elif t.city %}
+                    {{ t.city }}
+                  {% endif %}
+                  {% if t.roles_text %}
+                    · {{ t.roles_text }}
+                  {% endif %}
+                </div>
+
+                <div class="mk-beat-bottom">
+                  <div>
+                    {% if t.rate_cents %}
+                      <div class="mk-price-row">
+                        From ${{ "%.2f"|format((t.rate_cents or 0) / 100.0) }}/booking
+                      </div>
+                    {% endif %}
+                    <div class="mk-price-sub">Book appearances through BeatFund</div>
+                  </div>
+
+                  {# Replace href with real talent booking route later #}
+                  <a href="#" class="mk-btn-buy-inline">
+                    Book talent
+                  </a>
+                </div>
+              </div>
+            </article>
+          {% endfor %}
+
+          <!-- CTA card for talent -->
+          <article class="mk-beat-card mk-beat-card-more">
+            <div class="mk-beat-info">
+              <div class="mk-beat-main-title">
+                Discover more talent
+              </div>
+              <div class="mk-beat-meta">
+                Browse performers, models, ushers, and more for your next project.
+              </div>
+              <div class="mk-beat-bottom">
+                <div class="mk-price-sub">
+                  Explore the talent catalog.
+                </div>
+                <a href="#" class="mk-btn-buy-inline">
+                  View all talent
+                </a>
+              </div>
+            </div>
+          </article>
+        </div>
+      {% else %}
+        <p class="mk-empty">
+          Talent profiles are coming soon. Once creators start building portfolios, they’ll appear here.
+        </p>
+      {% endif %}
+    </div>
+  </section>
+
+  {# OTHER PROVIDERS ROW #}
+  <section class="mk-card mk-row-card">
+    <div class="mk-card-inner">
+      <div class="mk-card-title-row">
+        <div class="mk-card-title">Other providers</div>
+        <button type="button" class="mk-btn-ghost mk-btn-small">
+          Filter providers
+        </button>
+      </div>
+      <div class="mk-card-sub">
+        Makeup artists, dancers, event planners, photographers, DJs, and more — all paid safely through BeatFund.
+      </div>
+
+      {% if other_providers is defined and other_providers %}
+        <div class="mk-beat-grid">
+          {% for p in other_providers %}
+            <article class="mk-beat-card">
+              <div class="mk-beat-cover">
+                <img
+                  class="mk-beat-cover-img"
+                  src="{{ p.cover_url or url_for('static', filename='img/provider-placeholder.jpg') }}"
+                  alt="{{ p.name }} provider photo"
+                >
+                {% if p.has_highlight %}
+                  <span class="mk-beat-featured-badge">
+                    {{ p.highlight_label or p.category or 'Featured' }}
+                  </span>
+                {% endif %}
+              </div>
+
+              <div class="mk-beat-info">
+                <div class="mk-beat-title-row">
+                  <div class="mk-beat-main-title">
+                    {{ p.name }}
+                  </div>
+                  {% if p.handle %}
+                    <div class="mk-beat-artist">
+                      @{{ p.handle }}
+                    </div>
+                  {% endif %}
+                </div>
+
+                <div class="mk-beat-meta">
+                  {% if p.category %}
+                    {{ p.category }}
+                  {% endif %}
+                  {% if (p.city or p.state) and p.category %}
+                    ·
+                  {% endif %}
+                  {% if p.city and p.state %}
+                    {{ p.city }}, {{ p.state }}
+                  {% elif p.city %}
+                    {{ p.city }}
+                  {% endif %}
+                </div>
+
+                <div class="mk-beat-bottom">
+                  <div>
+                    {% if p.rate_cents %}
+                      <div class="mk-price-row">
+                        From ${{ "%.2f"|format((p.rate_cents or 0) / 100.0) }}/service
+                      </div>
+                    {% endif %}
+                    <div class="mk-price-sub">Book &amp; pay via BeatFund</div>
+                  </div>
+
+                  {# Replace href with real provider booking route later #}
+                  <a href="#" class="mk-btn-buy-inline">
+                    Book provider
+                  </a>
+                </div>
+              </div>
+            </article>
+          {% endfor %}
+
+          <!-- CTA card for other providers -->
+          <article class="mk-beat-card mk-beat-card-more">
+            <div class="mk-beat-info">
+              <div class="mk-beat-main-title">
+                Explore all providers
+              </div>
+              <div class="mk-beat-meta">
+                From glam teams to event coordinators, manage your creative crew in one place.
+              </div>
+              <div class="mk-beat-bottom">
+                <div class="mk-price-sub">
+                  See the full provider list.
+                </div>
+                <a href="#" class="mk-btn-buy-inline">
+                  View all providers
+                </a>
+              </div>
+            </div>
+          </article>
+        </div>
+      {% else %}
+        <p class="mk-empty">
+          Service providers like makeup artists, dancers, and event planners will appear here once they join BeatFund.
+        </p>
+      {% endif %}
+    </div>
+  </section>
 </div>
 
 <script>
   document.addEventListener("DOMContentLoaded", function () {
-    const cards = Array.from(document.querySelectorAll(".mk-beat-card"));
+    const shell = document.getElementById("mk-shell");
+    // Only grab beat cards inside the beats rail, so filters don't mess with studios/other rows
+    const cards = Array.from(document.querySelectorAll("#mk-beat-grid .mk-beat-card"));
     const searchInput = document.getElementById("mk-search");
     const genreSelect = document.getElementById("mk-genre-filter");
     const licenseSelect = document.getElementById("mk-license-filter");
@@ -654,77 +1195,170 @@
     const bpmMaxInput = document.getElementById("mk-bpm-max");
     const priceMaxInput = document.getElementById("mk-price-max");
     const clearBtn = document.getElementById("mk-clear-filters");
+    const applyBtn = document.getElementById("mk-apply-filters");
     const resultsCount = document.getElementById("mk-results-count");
+
+    const toggleBtn = document.getElementById("mk-toggle-find");
+    const producerLinks = Array.from(document.querySelectorAll(".mk-producer-link"));
+
+    // Toggle filters: default is closed (beats full width)
+    if (toggleBtn && shell) {
+      toggleBtn.addEventListener("click", () => {
+        const open = shell.classList.toggle("filters-open");
+        toggleBtn.textContent = open ? "Hide filters" : "Find the right beat";
+
+        if (open) {
+          shell.scrollIntoView({ behavior: "smooth", block: "start" });
+        }
+      });
+    }
 
     function toNumber(val) {
       const n = parseFloat(val);
       return Number.isNaN(n) ? null : n;
     }
 
-    function applyFilters() {
-      const q = (searchInput.value || "").trim().toLowerCase();
-      const genre = (genreSelect.value || "").toLowerCase();
-      const lic = (licenseSelect.value || "").toLowerCase();
-      const bpmMin = toNumber(bpmMinInput.value);
-      const bpmMax = toNumber(bpmMaxInput.value);
-      const priceMax = toNumber(priceMaxInput.value);
+    function applyFilters(options) {
+      const opts = options || {};
+      const producerOnly = opts.producerOnly || null;
+
+      const q = (searchInput && searchInput.value || "").trim().toLowerCase();
+      const genre = (genreSelect && genreSelect.value || "").toLowerCase();
+      const lic = (licenseSelect && licenseSelect.value || "").toLowerCase();
+      const bpmMin = bpmMinInput ? toNumber(bpmMinInput.value) : null;
+      const bpmMax = bpmMaxInput ? toNumber(bpmMaxInput.value) : null;
+      const priceMax = priceMaxInput ? toNumber(priceMaxInput.value) : null;
 
       let visibleCount = 0;
 
-      cards.forEach(card => {
-        let show = true;
+      cards.forEach((card) => {
+        const title = (card.dataset.title || "").toLowerCase();
+        const producer = (card.dataset.producer || "").toLowerCase();
+        const cardGenre = (card.dataset.genre || "").toLowerCase();
+        const cardLic = (card.dataset.license || "").toLowerCase();
+        const cardBpm = card.dataset.bpm ? toNumber(card.dataset.bpm) : null;
+        const cardPrice = card.dataset.price ? toNumber(card.dataset.price) : null;
 
-        const title = card.dataset.title || "";
-        const producer = card.dataset.producer || "";
-        const cardGenre = card.dataset.genre || "";
-        const cardLic = card.dataset.license || "";
-        const cardBpm = toNumber(card.dataset.bpm || "");
-        const cardPrice = toNumber(card.dataset.price || "");
+        let matches = true;
 
-        if (q) {
-          const text = title + " " + producer;
-          if (!text.includes(q)) show = false;
+        // CTA detection: no data fields = CTA (end-of-rail card)
+        const isCTA =
+          !title && !producer && !cardGenre && !cardLic && cardBpm === null && cardPrice === null;
+
+        if (!isCTA) {
+          if (producerOnly && producer !== producerOnly) {
+            matches = false;
+          }
+
+          if (matches && q && !producerOnly) {
+            const inTitle = title.includes(q);
+            const inProducer = producer.includes(q);
+            if (!inTitle && !inProducer) {
+              matches = false;
+            }
+          }
+
+          if (matches && genre && cardGenre !== genre) {
+            matches = false;
+          }
+
+          if (matches && lic && cardLic !== lic) {
+            matches = false;
+          }
+
+          if (matches && bpmMin !== null) {
+            if (cardBpm === null || cardBpm < bpmMin) {
+              matches = false;
+            }
+          }
+
+          if (matches && bpmMax !== null) {
+            if (cardBpm === null || cardBpm > bpmMax) {
+              matches = false;
+            }
+          }
+
+          if (matches && priceMax !== null) {
+            if (cardPrice === null || cardPrice > priceMax) {
+              matches = false;
+            }
+          }
         }
 
-        if (genre && cardGenre !== genre) show = false;
-
-        if (lic && cardLic !== lic) show = false;
-
-        if (bpmMin !== null && cardBpm !== null && cardBpm < bpmMin) show = false;
-        if (bpmMax !== null && cardBpm !== null && cardBpm > bpmMax) show = false;
-
-        if (priceMax !== null && cardPrice !== null && cardPrice > priceMax) show = false;
-
-        card.style.display = show ? "" : "none";
-        if (show) visibleCount += 1;
+        if (matches) {
+          card.style.display = "";
+          if (!isCTA) visibleCount++;
+        } else {
+          card.style.display = "none";
+        }
       });
 
       if (resultsCount) {
-        resultsCount.textContent =
-          "Showing " + visibleCount + " beat" + (visibleCount === 1 ? "" : "s") + ".";
+        const label = visibleCount === 1 ? "beat" : "beats";
+        resultsCount.textContent = `Showing ${visibleCount} ${label}.`;
       }
     }
 
-    [searchInput, genreSelect, licenseSelect, bpmMinInput, bpmMaxInput, priceMaxInput]
-      .forEach(el => {
-        if (!el) return;
-        el.addEventListener("input", applyFilters);
-        el.addEventListener("change", applyFilters);
+    function clearFilters() {
+      if (searchInput) searchInput.value = "";
+      if (genreSelect) genreSelect.value = "";
+      if (licenseSelect) licenseSelect.value = "";
+      if (bpmMinInput) bpmMinInput.value = "";
+      if (bpmMaxInput) bpmMaxInput.value = "";
+      if (priceMaxInput) priceMaxInput.value = "";
+
+      cards.forEach((card) => {
+        card.style.display = "";
       });
 
+      if (resultsCount) {
+        const realCards = cards.filter((card) => card.dataset.title || card.dataset.producer);
+        const total = realCards.length;
+        const label = total === 1 ? "beat" : "beats";
+        resultsCount.textContent = `Showing ${total} ${label}.`;
+      }
+    }
+
+    if (applyBtn) {
+      applyBtn.addEventListener("click", function (e) {
+        e.preventDefault();
+        applyFilters();
+      });
+    }
+
     if (clearBtn) {
-      clearBtn.addEventListener("click", () => {
-        if (searchInput) searchInput.value = "";
+      clearBtn.addEventListener("click", function (e) {
+        e.preventDefault();
+        clearFilters();
+      });
+    }
+
+    if (searchInput) {
+      searchInput.addEventListener("keydown", function (e) {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          applyFilters();
+        }
+      });
+    }
+
+    // Clicking @producer filters to that producer's catalog inside the rail
+    producerLinks.forEach((link) => {
+      link.addEventListener("click", function (e) {
+        e.preventDefault();
+        const producer = (link.dataset.producer || "").toLowerCase();
+        if (!producer) return;
+
         if (genreSelect) genreSelect.value = "";
         if (licenseSelect) licenseSelect.value = "";
         if (bpmMinInput) bpmMinInput.value = "";
         if (bpmMaxInput) bpmMaxInput.value = "";
         if (priceMaxInput) priceMaxInput.value = "";
-        applyFilters();
-      });
-    }
+        if (searchInput) searchInput.value = "@" + link.dataset.producer;
 
-    applyFilters();
+        applyFilters({ producerOnly: producer });
+      });
+    });
   });
 </script>
 {% endblock %}

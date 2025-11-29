@@ -1,40 +1,429 @@
 {% extends "base.html" %}
-{% block title %}Upload Beat{% endblock %}
+{% block title %}Upload Beat · BeatFund{% endblock %}
+
+{% block extra_head %}
+<style>
+  .up-page {
+    max-width: 880px;
+    margin: 32px auto 40px;
+    padding-inline: 16px;
+  }
+
+  .up-header {
+    margin-bottom: 22px;
+  }
+
+  .up-kicker {
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: #6b8bff;
+    margin-bottom: 4px;
+  }
+
+  .up-title-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: flex-end;
+  }
+
+  .up-title {
+    font-size: 24px;
+    font-weight: 650;
+    margin: 0 0 4px;
+  }
+
+  .up-sub {
+    font-size: 13px;
+    color: #9aa4c2;
+    margin: 0;
+  }
+
+  .up-pill {
+    font-size: 11px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    border: 1px solid rgba(148, 163, 184, 0.45);
+    background: radial-gradient(circle at top left,
+      rgba(148, 163, 184, 0.25),
+      rgba(15, 23, 42, 0.9));
+    white-space: nowrap;
+  }
+
+  .up-shell {
+    display: grid;
+    grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+    gap: 16px;
+    align-items: flex-start;
+  }
+  @media (max-width: 900px) {
+    .up-shell {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .up-card {
+    position: relative;
+    border-radius: 18px;
+    border: 1px solid rgba(30, 64, 175, 0.7);
+    background: linear-gradient(135deg,
+      rgba(15, 23, 42, 0.97),
+      rgba(12, 10, 30, 0.98));
+    box-shadow:
+      0 22px 40px rgba(15, 23, 42, 0.9),
+      0 0 0 1px rgba(15, 23, 42, 1) inset;
+    padding: 18px 20px 16px;
+    overflow: hidden;
+  }
+  .up-card::before {
+    content: "";
+    position: absolute;
+    inset: -40%;
+    background:
+      radial-gradient(circle at 0% 0%, rgba(59, 130, 246, 0.22), transparent 55%),
+      radial-gradient(circle at 100% 100%, rgba(16, 185, 129, 0.22), transparent 55%);
+    opacity: 0.2;
+    mix-blend-mode: screen;
+    pointer-events: none;
+  }
+  .up-card-inner {
+    position: relative;
+    z-index: 1;
+  }
+
+  .up-card-title {
+    font-size: 15px;
+    font-weight: 600;
+    margin-bottom: 6px;
+  }
+
+  .up-card-sub {
+    font-size: 12px;
+    color: #9aa4c2;
+    margin-bottom: 14px;
+  }
+
+  .up-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px 16px;
+  }
+  @media (max-width: 640px) {
+    .up-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .up-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #8f9bc6;
+    margin-bottom: 4px;
+  }
+
+  .up-input,
+  .up-select,
+  .up-file {
+    width: 100%;
+    border-radius: 11px;
+    border: 1px solid #303a5c;
+    background: radial-gradient(circle at top,
+      rgba(15, 23, 42, 0.9),
+      rgba(15, 23, 42, 1));
+    color: #e3e9ff;
+    padding: 8px 11px;
+    font-size: 13px;
+    outline: none;
+    transition: border-color 0.15s ease,
+                box-shadow 0.15s ease,
+                background 0.15s ease,
+                transform 0.06s ease;
+  }
+  .up-input::placeholder {
+    color: #6f7aa4;
+  }
+  .up-input:focus,
+  .up-select:focus,
+  .up-file:focus {
+    border-color: #4f8bff;
+    box-shadow: 0 0 0 1px rgba(79, 139, 255, 0.5);
+    transform: translateY(-0.5px);
+  }
+
+  .up-hint {
+    font-size: 11px;
+    color: #94a3b8;
+    margin-top: 3px;
+  }
+
+  .up-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 16px;
+  }
+
+  .up-btn-primary,
+  .up-btn-ghost {
+    border-radius: 999px;
+    padding: 8px 18px;
+    font-size: 13px;
+    border: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    text-decoration: none;
+    white-space: nowrap;
+    transition: transform 0.1s ease,
+                box-shadow 0.1s ease,
+                background 0.12s ease,
+                border-color 0.12s ease;
+  }
+
+  .up-btn-primary {
+    background: linear-gradient(135deg, #4de3ff, #6366f1);
+    color: #ffffff;
+    box-shadow: 0 6px 18px rgba(56, 189, 248, 0.45);
+  }
+  .up-btn-primary:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 10px 26px rgba(79, 70, 229, 0.55);
+  }
+
+  .up-btn-ghost {
+    background: rgba(15, 23, 42, 0.7);
+    color: #c1ccff;
+    border: 1px solid #3b476b;
+  }
+  .up-btn-ghost:hover {
+    background: rgba(34, 43, 75, 0.96);
+    border-color: #4f8bff;
+  }
+
+  /* Preview card (right side) */
+  .up-preview {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .up-preview-cover {
+    border-radius: 18px;
+    overflow: hidden;
+    background: radial-gradient(circle at 0% 0%, #1f2937, #020617 65%);
+    padding: 8px;
+  }
+
+  .up-preview-inner {
+    border-radius: 14px;
+    border: 1px solid rgba(17, 24, 39, 0.9);
+    background:
+      radial-gradient(circle at top left, rgba(59, 130, 246, 0.28), transparent 58%),
+      radial-gradient(circle at bottom right, rgba(15, 23, 42, 1), rgba(15, 23, 42, 1));
+    padding: 10px 10px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .up-preview-img {
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    border-radius: 12px;
+    object-fit: cover;
+    display: block;
+  }
+
+  .up-preview-title {
+    font-size: 13px;
+    font-weight: 560;
+  }
+
+  .up-preview-meta {
+    font-size: 11px;
+    color: #9aa4c2;
+  }
+
+  .up-preview-price {
+    font-size: 13px;
+    font-weight: 600;
+    color: #bbf7d0;
+  }
+
+  .up-preview-note {
+    font-size: 11px;
+    color: #9aa4c2;
+  }
+</style>
+{% endblock %}
+
 {% block content %}
-<h2>Upload Beat</h2>
-<form method="post" style="max-width:640px">
-  <label>Title</label>
-  <input name="title" required style="width:100%;padding:10px;margin:6px 0">
+<div class="up-page">
+  <header class="up-header">
+    <div class="up-kicker">Producer Tools</div>
+    <div class="up-title-row">
+      <div>
+        <h1 class="up-title">Upload a beat</h1>
+        <p class="up-sub">
+          Add your beat to the BeatFund marketplace. Audio is stored securely and paid downloads
+          are unlocked only after purchase.
+        </p>
+      </div>
+      <span class="up-pill">Instant licensing • Wallet payouts</span>
+    </div>
+  </header>
 
-  <div style="display:grid;grid-template-columns: repeat(3, 1fr);gap:8px">
-    <div>
-      <label>Price ($)</label>
-      <input name="price" type="number" step="0.01" min="0" required style="width:100%;padding:10px">
-    </div>
-    <div>
-      <label>BPM</label>
-      <input name="bpm" type="number" min="0" style="width:100%;padding:10px">
-    </div>
-    <div>
-      <label>Key</label>
-      <input name="musical_key" placeholder="e.g. Am" style="width:100%;padding:10px">
-    </div>
+  <div class="up-shell">
+    <!-- LEFT: Form -->
+    <section class="up-card">
+      <div class="up-card-inner">
+        <div class="up-card-title">Beat details</div>
+        <div class="up-card-sub">
+          Fill out the basics, upload your cover, and attach your audio file.
+        </div>
+
+        <form
+          method="POST"
+          enctype="multipart/form-data"
+          action="{{ url_for('market_upload') }}"
+        >
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+          <div class="up-grid">
+            <div>
+              <div class="up-label">Title</div>
+              <input
+                type="text"
+                name="title"
+                class="up-input"
+                placeholder="E.g. Midnight Drive (Afro Drill)"
+                required
+              >
+            </div>
+
+            <div>
+              <div class="up-label">Price (USD)</div>
+              <input
+                type="number"
+                name="price_usd"
+                class="up-input"
+                step="0.01"
+                min="0"
+                placeholder="29.99"
+                required
+              >
+            </div>
+
+            <div>
+              <div class="up-label">BPM (optional)</div>
+              <input
+                type="number"
+                name="bpm"
+                class="up-input"
+                min="0"
+                placeholder="140"
+              >
+            </div>
+
+            <div>
+              <div class="up-label">Genre (optional)</div>
+              <input
+                type="text"
+                name="genre"
+                class="up-input"
+                placeholder="Afrobeat, Drill, Trap..."
+              >
+            </div>
+
+            <div>
+              <div class="up-label">License</div>
+              <select name="license" class="up-select">
+                <option value="standard">Standard</option>
+                <option value="exclusive">Exclusive</option>
+              </select>
+            </div>
+
+            <div></div> <!-- spacer -->
+          </div>
+
+          <div style="margin-top:16px;">
+            <div class="up-label">Cover image (optional)</div>
+            <input
+              type="file"
+              name="cover_file"
+              accept="image/*"
+              class="up-file"
+            >
+            <div class="up-hint">
+              Square images (e.g. 800×800) look best.
+            </div>
+          </div>
+
+          <div style="margin-top:14px;">
+            <div class="up-label">Audio file</div>
+            <input
+              type="file"
+              name="audio_file"
+              accept=".mp3,.wav,.m4a,.ogg,audio/*"
+              class="up-file"
+              required
+            >
+            <div class="up-hint">
+              This file will be used for preview and for the paid download.
+              The full file is only downloadable after purchase.
+            </div>
+          </div>
+
+          <div class="up-actions">
+            <a href="{{ url_for('market_index') }}" class="up-btn-ghost">Cancel</a>
+            <button type="submit" class="up-btn-primary">Upload beat</button>
+          </div>
+        </form>
+      </div>
+    </section>
+
+    <!-- RIGHT: Preview -->
+    <section class="up-card">
+      <div class="up-card-inner up-preview">
+        <div class="up-card-title">Live preview</div>
+        <div class="up-card-sub">
+          This is how your beat card will feel in the marketplace grid.
+        </div>
+
+        <div class="up-preview-cover">
+          <div class="up-preview-inner">
+            <img
+              src="{{ url_for('static', filename='img/beat-placeholder.jpg') }}"
+              alt="Preview cover"
+              class="up-preview-img"
+            >
+            <div class="up-preview-title" style="margin-top:8px;">
+              Midnight Drive (Afro Drill)
+            </div>
+            <div class="up-preview-meta">
+              @{{ current_user.username if current_user.is_authenticated else 'producer' }}
+              · 140 BPM · Afrobeat
+            </div>
+            <div style="margin-top:8px;">
+              <audio controls controlsList="nodownload" style="width:100%; border-radius:10px;">
+                <source src="#" type="audio/mpeg">
+              </audio>
+            </div>
+            <div style="margin-top:6px;">
+              <div class="up-preview-price">$29.99</div>
+              <div class="up-preview-note">Paid from BeatFund wallet balance</div>
+            </div>
+          </div>
+        </div>
+
+        <p class="up-preview-note">
+          Once uploaded, your real cover and audio will appear in the marketplace.
+        </p>
+      </div>
+    </section>
   </div>
-
-  <div style="display:grid;grid-template-columns: 1fr 1fr;gap:8px;margin-top:8px">
-    <div>
-      <label>Genre</label>
-      <input name="genre" style="width:100%;padding:10px">
-    </div>
-    <div>
-      <label>Cover Image URL (optional)</label>
-      <input name="cover_url" placeholder="https://..." style="width:100%;padding:10px">
-    </div>
-  </div>
-
-  <label style="margin-top:8px;display:block">Audio File URL (mp3/wav)</label>
-  <input name="audio_url" required placeholder="https://..." style="width:100%;padding:10px">
-
-  <button style="margin-top:12px;padding:10px 16px;background:#111;color:#fff;border:none;border-radius:8px">List Beat</button>
-</form>
+</div>
 {% endblock %}

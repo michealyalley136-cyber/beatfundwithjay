@@ -202,6 +202,35 @@ class Beat(db.Model):
     created_at = db.Column(db.DateTime, server_default=func.now())
     updated_at = db.Column(db.DateTime, server_default=func.now(), onupdate=func.now())
     owner = db.relationship("User")
+    
+    @property
+    def cover_url(self):
+        """
+        Convenience property for templates:
+        {{ beat.cover_url }} -> /uploads/<cover_path>
+        """
+        if not self.cover_path:
+            return None
+        return url_for("media_file", filename=self.cover_path)
+
+    @property
+    def preview_url(self):
+        """
+        URL to the preview audio file.
+        """
+        if not self.preview_path:
+            return None
+        return url_for("media_file", filename=self.preview_path)
+
+    @property
+    def stems_url(self):
+        """
+        URL to the full deliverable/download file.
+        """
+        if not self.stems_path:
+            return None
+        return url_for("media_file", filename=self.stems_path)
+
 
 
 class OrderStatus(str, enum.Enum):
@@ -1205,6 +1234,95 @@ def market_index():
     items = (Beat.query.filter_by(is_active=True)
              .order_by(Beat.is_featured.desc(), Beat.id.desc()).all())
     return render_template("market_index.html", items=items)
+
+@app.route("/market/upload", methods=["GET", "POST"], endpoint="market_upload")
+@role_required("producer")
+def market_upload():
+    """
+    Simple producer-facing form to upload a beat into the marketplace.
+    Uses existing _save_file / ALLOWED_AUDIO / ALLOWED_IMAGE helpers.
+    """
+    if request.method == "POST":
+        title = (request.form.get("title") or "").strip()
+        price_raw = (request.form.get("price") or "").strip()
+        bpm_raw = (request.form.get("bpm") or "").strip()
+        genre = (request.form.get("genre") or "").strip()
+        license_raw = (request.form.get("license") or "standard").strip().lower()
+
+        if not title:
+            flash("Title is required.", "error")
+            return redirect(url_for("market_upload"))
+
+        if not price_raw:
+            flash("Price is required.", "error")
+            return redirect(url_for("market_upload"))
+
+        # Validate price like the wallet code: positive, max 2 decimals
+        if not re.match(r"^\d+(\.\d{1,2})?$", price_raw):
+            flash("Price must be a positive number with at most 2 decimal places.", "error")
+            return redirect(url_for("market_upload"))
+
+        try:
+            price_dec = Decimal(price_raw)
+        except InvalidOperation:
+            flash("Invalid price format.", "error")
+            return redirect(url_for("market_upload"))
+
+        if price_dec <= 0:
+            flash("Price must be greater than zero.", "error")
+            return redirect(url_for("market_upload"))
+
+        price_cents = int((price_dec * 100).to_integral_value())
+
+        bpm = None
+        if bpm_raw:
+            try:
+                bpm = int(bpm_raw)
+            except ValueError:
+                flash("BPM must be a whole number.", "error")
+                return redirect(url_for("market_upload"))
+
+        cover_file = request.files.get("cover")
+        audio_file = request.files.get("audio")
+
+        if not audio_file or audio_file.filename == "":
+            flash("An audio file is required.", "error")
+            return redirect(url_for("market_upload"))
+
+        # Save audio (preview + full stems as same file for now)
+        audio_fname = _save_file(audio_file, ALLOWED_AUDIO)
+        if not audio_fname:
+            flash("Invalid audio file. Allowed types: mp3, wav, m4a, ogg.", "error")
+            return redirect(url_for("market_upload"))
+
+        cover_fname = None
+        if cover_file and cover_file.filename:
+            cover_fname = _save_file(cover_file, ALLOWED_IMAGE)
+            if not cover_fname:
+                flash("Invalid cover image. Allowed types: png, jpg, jpeg.", "error")
+                return redirect(url_for("market_upload"))
+
+        beat = Beat(
+            owner_id=current_user.id,
+            title=title,
+            price_cents=price_cents,
+            license=license_raw or "standard",
+            bpm=bpm,
+            genre=genre or None,
+            cover_path=cover_fname,
+            preview_path=audio_fname,
+            stems_path=audio_fname,
+            is_active=True,
+        )
+        db.session.add(beat)
+        db.session.commit()
+
+        flash("Beat uploaded to the marketplace.", "success")
+        return redirect(url_for("market_index"))
+
+    # GET: show the upload form template
+    return render_template("market_upload.html")
+
 
 
 @app.route("/market/my-purchases")
