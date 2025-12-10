@@ -1,7 +1,8 @@
 from flask import (
     Flask, render_template, request, redirect, url_for, flash,
-    send_from_directory, abort, jsonify, Response
+    send_from_directory, abort, jsonify, Response, session
 )
+
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import (
     LoginManager, login_user, login_required, logout_user,
@@ -18,18 +19,22 @@ import csv
 from io import StringIO
 from datetime import datetime, timedelta
 from flask_wtf import CSRFProtect
-from flask_wtf.csrf import generate_csrf
+from flask_wtf.csrf import CSRFError, generate_csrf
 from time import time
 import re
 from decimal import Decimal, InvalidOperation
+from collections import Counter
+from calendar import monthrange
+from typing import Optional
+import json  # <-- for providers_json in BookMe directory
 
 HOLD_FEE_CENTS = 2000  # $20 hold fee for accepted bookings
 MAX_TXN_DOLLARS = 10_000  # safety cap: max $10k per wallet action in dev
+MAX_PORTFOLIO_ITEMS = 8  # max portfolio items per provider
 
 # Password / security settings
 PASSWORD_MAX_AGE_DAYS = 90          # admins must change password every 90 days
 RESET_TOKEN_MAX_AGE_HOURS = 1       # reset links valid for 1 hour
-
 
 # =========================================================
 # App / DB setup
@@ -43,6 +48,14 @@ BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 APP_ENV = os.getenv("APP_ENV", "dev").lower()
 IS_DEV = APP_ENV != "prod"
 
+# ------------------------------------------------------
+# Superadmin Owner Panel passcode
+# ------------------------------------------------------
+OWNER_PANEL_PASS = "Acidrain@0911"
+
+# Session key + TTL (how long the unlock lasts)
+OWNER_UNLOCK_SESSION_KEY = "owner_panel_unlocked_at"
+OWNER_UNLOCK_TTL_SECONDS = 30 * 60  # 30 minutes
 app = Flask(__name__, template_folder="templates", static_folder="static")
 
 # SECRET_KEY: MUST be set via env in production
@@ -63,6 +76,14 @@ app.config.update(
     PERMANENT_SESSION_LIFETIME=timedelta(minutes=60),  # 1 hour sessions
 )
 
+@app.route("/debug/owner-pass")
+def debug_owner_pass():
+    return f"OWNER_PANEL_PASS is: {repr(OWNER_PANEL_PASS)}"
+
+
+# Optional: CSRF settings (good defaults for dev)
+app.config.setdefault("WTF_CSRF_TIME_LIMIT", None)   # tokens don't randomly expire on you in dev
+
 # ------------------------------------------------------
 # CSRF protection
 # ------------------------------------------------------
@@ -71,8 +92,36 @@ csrf = CSRFProtect(app)
 
 @app.context_processor
 def inject_csrf_token():
-    # Expose a csrf_token() helper to all templates
+    """
+    Make csrf_token() available in all templates.
+
+    Usage in templates:
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    """
     return dict(csrf_token=generate_csrf)
+
+
+@app.errorhandler(CSRFError)
+def handle_csrf_error(e):
+    """
+    Friendly handler for CSRF failures instead of a plain 400 page.
+    """
+    msg = e.description or "Security error: please refresh the page and try again."
+    flash(msg, "error")
+    return redirect(request.referrer or url_for("home")), 400
+
+
+# ---- Fix for Jinja `is None` template error ----
+@app.template_test("None")
+def jinja_is_None(value):
+    """
+    Allow legacy usage of `is None` in templates.
+
+    Jinja's built-in test is `is none` (lowercase). If a template uses
+    `is None`, Jinja normally throws "No test named 'None' found.".
+    This test makes that safe.
+    """
+    return value is None
 
 
 os.makedirs(os.path.join(BASE_DIR, "instance"), exist_ok=True)
@@ -87,6 +136,7 @@ os.makedirs(UPLOAD_ROOT, exist_ok=True)
 app.config["UPLOAD_FOLDER"] = UPLOAD_ROOT
 ALLOWED_IMAGE = {"png", "jpg", "jpeg"}
 ALLOWED_AUDIO = {"mp3", "wav", "m4a", "ogg"}
+ALLOWED_STEMS = {"zip", "rar", "7z", "mp3", "wav", "m4a", "ogg"}
 
 db = SQLAlchemy(app)
 login_manager = LoginManager(app)
@@ -96,6 +146,7 @@ login_manager.login_view = "login"
 # Models
 # =========================================================
 class RoleEnum(str, enum.Enum):
+    # Core app roles
     admin = "admin"
     artist = "artist"
     producer = "producer"
@@ -106,6 +157,26 @@ class RoleEnum(str, enum.Enum):
     manager = "manager"
     vendor = "vendor"
     funder = "funder"
+    client = "client"
+
+    # Extended industry roles (providers)
+    dancer_choreographer = "dancer_choreographer"
+    makeup_artist = "makeup_artist"
+    hair_stylist_barber = "hair_stylist_barber"
+    wardrobe_stylist = "wardrobe_stylist"
+    photographer = "photographer"
+    event_planner = "event_planner"
+    emcee_host_hypeman = "emcee_host_hypeman"
+    dj = "dj"
+    live_sound_engineer = "live_sound_engineer"
+    mix_master_engineer = "mix_master_engineer"
+    lighting_designer = "lighting_designer"
+    stage_set_designer = "stage_set_designer"
+    decor_vendor = "decor_vendor"
+    caterer_food_truck = "caterer_food_truck"
+    brand_pr_consultant = "brand_pr_consultant"
+    social_media_manager = "social_media_manager"
+    security_usher_crowd_control = "security_usher_crowd_control"
 
 
 class KYCStatus(str, enum.Enum):
@@ -115,27 +186,39 @@ class KYCStatus(str, enum.Enum):
     rejected = "rejected"
 
 
-# Make basic enums available in all Jinja templates
+# Make basic enums + constants available in all Jinja templates
 app.jinja_env.globals["RoleEnum"] = RoleEnum
 app.jinja_env.globals["KYCStatus"] = KYCStatus
+app.jinja_env.globals["MAX_PORTFOLIO_ITEMS"] = MAX_PORTFOLIO_ITEMS
 
 
 class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
+
+    # Identity
     username = db.Column(db.String(150), unique=True, nullable=False, index=True)
+    email = db.Column(db.String(255), unique=True, nullable=True, index=True)
+
+    # Profile names
+    full_name = db.Column(db.String(150), nullable=True)
+    artist_name = db.Column(db.String(150), nullable=True)
+
+    # Auth / role
     password_hash = db.Column(db.String(255), nullable=False)
     role = db.Column(db.Enum(RoleEnum), nullable=False, default=RoleEnum.artist)
     kyc_status = db.Column(db.Enum(KYCStatus), nullable=False, default=KYCStatus.not_started)
     is_active_col = db.Column("is_active", db.Boolean, nullable=False, default=True)
 
-    # 🚨 SUPER ADMIN FLAG
-    # Only the "owner" admin (you) should have this set to True.
+    # SUPER ADMIN FLAG
     is_superadmin = db.Column(db.Boolean, nullable=False, default=False)
 
-    # 🔐 Password metadata
+    # Password metadata
     password_changed_at = db.Column(db.DateTime, nullable=True)
     password_reset_token = db.Column(db.String(255), nullable=True)
     password_reset_sent_at = db.Column(db.DateTime, nullable=True)
+
+    # Avatar field
+    avatar_path = db.Column(db.String(255), nullable=True)
 
     @property
     def is_active(self):
@@ -143,13 +226,18 @@ class User(UserMixin, db.Model):
 
     def set_password(self, pw: str) -> None:
         self.password_hash = generate_password_hash(pw)
-        # When password is set/changed, update timestamp and clear any reset token
         self.password_changed_at = datetime.utcnow()
         self.password_reset_token = None
         self.password_reset_sent_at = None
 
     def check_password(self, pw: str) -> bool:
         return check_password_hash(self.password_hash, pw)
+
+    @property
+    def avatar_url(self):
+        if self.avatar_path:
+            return url_for("media_file", filename=self.avatar_path)
+        return url_for("static", filename="img/default-avatar.png")
 
 
 # ------- Wallet / Ledger -------
@@ -164,7 +252,6 @@ class EntryType(str, enum.Enum):
     purchase_spend = "purchase_spend"
 
 
-# Make EntryType available in Jinja
 app.jinja_env.globals["EntryType"] = EntryType
 
 
@@ -202,35 +289,24 @@ class Beat(db.Model):
     created_at = db.Column(db.DateTime, server_default=func.now())
     updated_at = db.Column(db.DateTime, server_default=func.now(), onupdate=func.now())
     owner = db.relationship("User")
-    
+
     @property
     def cover_url(self):
-        """
-        Convenience property for templates:
-        {{ beat.cover_url }} -> /uploads/<cover_path>
-        """
         if not self.cover_path:
             return None
         return url_for("media_file", filename=self.cover_path)
 
     @property
     def preview_url(self):
-        """
-        URL to the preview audio file.
-        """
         if not self.preview_path:
             return None
         return url_for("media_file", filename=self.preview_path)
 
     @property
     def stems_url(self):
-        """
-        URL to the full deliverable/download file.
-        """
         if not self.stems_path:
             return None
         return url_for("media_file", filename=self.stems_path)
-
 
 
 class OrderStatus(str, enum.Enum):
@@ -253,7 +329,9 @@ class Order(db.Model):
 
 
 # ------- BookMe -------
+
 BOOKME_PROVIDER_ROLES = {
+    RoleEnum.artist.value,
     RoleEnum.producer.value,
     RoleEnum.studio.value,
     RoleEnum.videographer.value,
@@ -261,16 +339,73 @@ BOOKME_PROVIDER_ROLES = {
     RoleEnum.engineer.value,
     RoleEnum.manager.value,
     RoleEnum.vendor.value,
+    RoleEnum.dancer_choreographer.value,
+    RoleEnum.makeup_artist.value,
+    RoleEnum.hair_stylist_barber.value,
+    RoleEnum.wardrobe_stylist.value,
+    RoleEnum.photographer.value,
+    RoleEnum.event_planner.value,
+    RoleEnum.emcee_host_hypeman.value,
+    RoleEnum.dj.value,
+    RoleEnum.live_sound_engineer.value,
+    RoleEnum.mix_master_engineer.value,
+    RoleEnum.lighting_designer.value,
+    RoleEnum.stage_set_designer.value,
+    RoleEnum.decor_vendor.value,
+    RoleEnum.caterer_food_truck.value,
+    RoleEnum.brand_pr_consultant.value,
+    RoleEnum.social_media_manager.value,
+    RoleEnum.security_usher_crowd_control.value,
 }
+
+PORTFOLIO_REQUIRED_ROLES = {
+    RoleEnum.artist,
+    RoleEnum.producer,
+    RoleEnum.studio,
+    RoleEnum.videographer,
+    RoleEnum.designer,
+    RoleEnum.engineer,
+    RoleEnum.vendor,
+    RoleEnum.dancer_choreographer,
+    RoleEnum.makeup_artist,
+    RoleEnum.hair_stylist_barber,
+    RoleEnum.wardrobe_stylist,
+    RoleEnum.photographer,
+    RoleEnum.event_planner,
+    RoleEnum.emcee_host_hypeman,
+    RoleEnum.dj,
+    RoleEnum.live_sound_engineer,
+    RoleEnum.mix_master_engineer,
+    RoleEnum.lighting_designer,
+    RoleEnum.stage_set_designer,
+    RoleEnum.decor_vendor,
+    RoleEnum.caterer_food_truck,
+    RoleEnum.brand_pr_consultant,
+    RoleEnum.social_media_manager,
+}
+
+PORTFOLIO_OPTIONAL_ROLES = {
+    RoleEnum.manager,
+    RoleEnum.security_usher_crowd_control,
+}
+app.jinja_env.globals["BOOKME_PROVIDER_ROLES"] = BOOKME_PROVIDER_ROLES
+
+
+def role_requires_portfolio(role: RoleEnum) -> bool:
+    return role in PORTFOLIO_REQUIRED_ROLES
 
 
 class BookMeProfile(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), unique=True, nullable=False)
+
     display_name = db.Column(db.String(150), nullable=False)
     service_types = db.Column(db.String(255))
     bio = db.Column(db.Text)
     rate_notes = db.Column(db.String(255))
+
+    contact_phone = db.Column(db.String(40))
+
     zip = db.Column(db.String(20))
     city = db.Column(db.String(100))
     state = db.Column(db.String(50))
@@ -280,6 +415,39 @@ class BookMeProfile(db.Model):
     is_visible = db.Column(db.Boolean, nullable=False, default=True)
 
     user = db.relationship("User", backref=db.backref("bookme_profile", uselist=False))
+
+
+class PortfolioMediaType(str, enum.Enum):
+    image = "image"
+    video = "video"
+    audio = "audio"
+    link = "link"
+
+
+class PortfolioItem(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    profile_id = db.Column(db.Integer, db.ForeignKey("book_me_profile.id"), nullable=False)
+
+    media_type = db.Column(db.Enum(PortfolioMediaType), nullable=False, default=PortfolioMediaType.image)
+    title = db.Column(db.String(160), nullable=False)
+    description = db.Column(db.Text, nullable=True)
+
+    stored_filename = db.Column(db.String(255), nullable=True)
+    external_url = db.Column(db.String(500), nullable=True)
+
+    sort_order = db.Column(db.Integer, nullable=False, default=0)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
+    profile = db.relationship(
+        "BookMeProfile",
+        backref=db.backref("portfolio_items", lazy="dynamic")
+    )
+
+    @property
+    def media_url(self):
+        if self.stored_filename:
+            return url_for("media_file", filename=self.stored_filename)
+        return self.external_url
 
 
 class BookingStatus(str, enum.Enum):
@@ -339,14 +507,8 @@ class TicketStatus(str, enum.Enum):
 
 class SupportTicket(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-
-    # which customer this ticket is about
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
-
-    # which admin/support user created the ticket
     created_by_admin_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
-
-    # optional: link to a specific ledger entry (transaction) if relevant
     related_ledger_id = db.Column(db.Integer, db.ForeignKey("ledger_entry.id"), nullable=True)
 
     type = db.Column(db.Enum(TicketType), nullable=False, default=TicketType.other)
@@ -386,9 +548,111 @@ class SupportTicketComment(db.Model):
         return f"<SupportTicketComment ticket={self.ticket_id} admin={self.admin_id}>"
 
 
-# Make ticket enums available in Jinja templates
 app.jinja_env.globals["TicketStatus"] = TicketStatus
 app.jinja_env.globals["TicketType"] = TicketType
+
+
+class Booking(db.Model):
+    __tablename__ = "booking"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    # provider (artist, DJ, dancer, producer, etc.)
+    provider_id = db.Column("artist_id", db.Integer, db.ForeignKey("user.id"), nullable=False)
+    client_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+
+    provider_role = db.Column(db.Enum(RoleEnum), nullable=False)
+
+    event_title = db.Column(db.String(160), nullable=False)
+    event_datetime = db.Column(db.DateTime, nullable=False)
+    duration_minutes = db.Column(db.Integer, nullable=True)
+    location_text = db.Column(db.String(255), nullable=True)
+
+    total_cents = db.Column(db.Integer, nullable=True)
+    status = db.Column(db.String(32), nullable=False, default="pending")
+
+    notes_from_client = db.Column(db.Text, nullable=True)
+    notes_from_provider = db.Column("notes_from_artist", db.Text, nullable=True)
+
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = db.Column(
+        db.DateTime,
+        nullable=False,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+    )
+
+    provider = db.relationship(
+        "User",
+        foreign_keys=[provider_id],
+        backref=db.backref("artist_bookings", lazy="dynamic"),
+    )
+    client = db.relationship(
+        "User",
+        foreign_keys=[client_id],
+        backref=db.backref("client_bookings", lazy="dynamic"),
+    )
+
+    @property
+    def artist(self):
+        return self.provider
+
+    @property
+    def artist_id(self):
+        return self.provider_id
+
+    def is_pending(self):
+        return self.status == "pending"
+
+    def is_confirmed(self):
+        return self.status == "confirmed"
+
+    def is_completed(self):
+        return self.status == "completed"
+
+    def is_cancelled(self):
+        return self.status == "cancelled"
+
+    def is_disputed(self):
+        return self.status == "disputed"
+
+
+class BookingDispute(db.Model):
+    __tablename__ = "booking_dispute"
+
+    id = db.Column(db.Integer, primary_key=True)
+    booking_id = db.Column(db.Integer, db.ForeignKey("booking.id"), nullable=False)
+    opened_by_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+
+    reason = db.Column(db.Text, nullable=False)
+    details = db.Column(db.Text, nullable=True)
+
+    status = db.Column(db.String(32), nullable=False, default="open")
+
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    booking = db.relationship(
+        "Booking",
+        backref=db.backref("disputes", lazy="dynamic")
+    )
+    opened_by = db.relationship("User", foreign_keys=[opened_by_id])
+
+
+# ------- Follows -------
+class UserFollow(db.Model):
+    __tablename__ = "user_follow"
+
+    follower_id = db.Column(db.Integer, db.ForeignKey("user.id"), primary_key=True)
+    followed_id = db.Column(db.Integer, db.ForeignKey("user.id"), primary_key=True)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
+    follower = db.relationship("User", foreign_keys=[follower_id], backref="following")
+    followed = db.relationship("User", foreign_keys=[followed_id], backref="followers")
+
+    def __repr__(self):
+        return f"<UserFollow follower={self.follower_id} followed={self.followed_id}>"
+
 
 # =========================================================
 # Login loader & helpers
@@ -397,17 +661,12 @@ app.jinja_env.globals["TicketType"] = TicketType
 def load_user(user_id):
     return User.query.get(int(user_id))
 
+
 def is_password_expired(user: User) -> bool:
-    """
-    Only enforce expiry for admin accounts.
-    Returns True if the password is older than PASSWORD_MAX_AGE_DAYS
-    or if we've never recorded a password_changed_at.
-    """
     if user.role != RoleEnum.admin:
         return False
 
     if not user.password_changed_at:
-        # Treat "never set" as expired for admins
         return True
 
     age = datetime.utcnow() - user.password_changed_at
@@ -428,9 +687,6 @@ def role_required(*roles):
 
 
 def superadmin_required(f):
-    """
-    Only allow the "owner" admin (is_superadmin=True) to access this route.
-    """
     @wraps(f)
     @login_required
     def wrapper(*args, **kwargs):
@@ -439,6 +695,23 @@ def superadmin_required(f):
             return redirect(url_for("admin_dashboard"))
         return f(*args, **kwargs)
     return wrapper
+
+def owner_panel_unlocked() -> bool:
+    """
+    Returns True if the current superadmin has recently entered
+    the correct OWNER_PANEL_PASS in this browser session.
+    """
+    ts = session.get(OWNER_UNLOCK_SESSION_KEY)
+    if not ts:
+        return False
+
+    try:
+        ts = float(ts)
+    except (TypeError, ValueError):
+        return False
+
+    # still valid?
+    return (time() - ts) < OWNER_UNLOCK_TTL_SECONDS
 
 
 def require_kyc_approved():
@@ -483,7 +756,7 @@ def _ext_ok(filename, allowed):
     return "." in filename and filename.rsplit(".", 1)[1].lower() in allowed
 
 
-def _save_file(fs, allowed_set) -> str | None:
+def _save_file(fs, allowed_set) -> Optional[str]:
     if not fs or fs.filename == "":
         return None
     if not _ext_ok(fs.filename, allowed_set):
@@ -494,7 +767,7 @@ def _save_file(fs, allowed_set) -> str | None:
     return fname
 
 
-def _safe_remove(stored_filename: str | None):
+def _safe_remove(stored_filename: Optional[str]) -> None:
     if not stored_filename:
         return
     try:
@@ -561,12 +834,29 @@ def bookme_search():
     profiles = query.order_by(BookMeProfile.city.asc(), BookMeProfile.display_name.asc()).all()
     current_filters = dict(role=role, zip=zip_code, city=city, state=state, q=q)
 
+    # payload for map pins directly from this view
+    providers_payload = []
+    for p in profiles:
+        if p.lat is None or p.lng is None:
+            continue
+        providers_payload.append({
+            "username": p.user.username if p.user else None,
+            "display_name": p.display_name,
+            "role": p.user.role.value if getattr(p.user, "role", None) else "",
+            "city": p.city or "",
+            "state": p.state or "",
+            "lat": p.lat,
+            "lng": p.lng,
+        })
+    providers_json = json.dumps(providers_payload)
+
     return render_template(
         "bookme_search.html",
         profiles=profiles,
         BookingStatus=BookingStatus,
         RoleEnum=RoleEnum,
         current_filters=current_filters,
+        providers_json=providers_json,  # map data for JS
     )
 
 
@@ -638,6 +928,7 @@ def bookme_profile():
         service_types = (request.form.get("service_types") or "").strip()
         bio = (request.form.get("bio") or "").strip()
         rate_notes = (request.form.get("rate_notes") or "").strip()
+        contact_phone = (request.form.get("contact_phone") or "").strip()
         zip_code = (request.form.get("zip") or "").strip()
         city = (request.form.get("city") or "").strip()
         state = (request.form.get("state") or "").strip()
@@ -647,6 +938,10 @@ def bookme_profile():
 
         if not display_name:
             flash("Display Name is required.")
+            return redirect(url_for("bookme_profile"))
+
+        if contact_phone and not re.match(r"^[0-9+\-\s().]{6,40}$", contact_phone):
+            flash("Contact phone looks invalid. Use digits and + - ( ) spaces only.", "error")
             return redirect(url_for("bookme_profile"))
 
         lat = lng = None
@@ -669,6 +964,7 @@ def bookme_profile():
         prof.service_types = service_types
         prof.bio = bio
         prof.rate_notes = rate_notes
+        prof.contact_phone = contact_phone or None
         prof.zip = zip_code
         prof.city = city
         prof.state = state
@@ -718,21 +1014,57 @@ def bookme_request(provider_id):
 @app.route("/bookme/requests")
 @login_required
 def bookme_requests():
-    as_client = (BookingRequest.query
-                 .filter_by(client_id=current_user.id)
-                 .order_by(BookingRequest.created_at.desc())
-                 .all())
+    """
+    BookMe Requests page.
 
-    as_provider = (BookingRequest.query
-                   .filter_by(provider_id=current_user.id)
-                   .order_by(BookingRequest.created_at.desc())
-                   .all())
+    - incoming_requests: PENDING BookingRequest rows where you are the provider
+    - outgoing_requests: BookingRequest rows you’ve sent (all statuses)
+    - incoming_bookings: Booking rows where you are provider
+    - outgoing_bookings: Booking rows where you are client
+    """
+
+    # Requests TO you (only pending ones – so you just see what needs action)
+    incoming_requests = (
+        BookingRequest.query
+        .filter(
+            BookingRequest.provider_id == current_user.id,
+            BookingRequest.status == BookingStatus.pending,
+        )
+        .order_by(BookingRequest.created_at.desc())
+        .all()
+    )
+
+    # Requests YOU sent to other providers (any status)
+    outgoing_requests = (
+        BookingRequest.query
+        .filter(BookingRequest.client_id == current_user.id)
+        .order_by(BookingRequest.created_at.desc())
+        .all()
+    )
+
+    # Bookings where you are the provider
+    incoming_bookings = (
+        Booking.query
+        .filter(Booking.provider_id == current_user.id)
+        .order_by(Booking.event_datetime.desc().nullslast())
+        .all()
+    )
+
+    # Bookings where you are the client
+    outgoing_bookings = (
+        Booking.query
+        .filter(Booking.client_id == current_user.id)
+        .order_by(Booking.event_datetime.desc().nullslast())
+        .all()
+    )
 
     return render_template(
         "bookme_requests.html",
-        as_client=as_client,
-        as_provider=as_provider,
-        BookingStatus=BookingStatus,
+        incoming_requests=incoming_requests,
+        outgoing_requests=outgoing_requests,
+        incoming_bookings=incoming_bookings,
+        outgoing_bookings=outgoing_bookings,
+        HOLD_FEE_CENTS=HOLD_FEE_CENTS,
     )
 
 
@@ -742,58 +1074,412 @@ def bookme_request_status(req_id):
     req = BookingRequest.query.get_or_404(req_id)
     action = (request.form.get("action") or "").strip().lower()
 
+    # Provider actions
     if current_user.id == req.provider_id and action in ("accept", "decline"):
+
         if action == "decline":
             req.status = BookingStatus.declined
             db.session.commit()
-            flash("Booking request declined.")
+            flash("Booking request declined.", "success")
             return redirect(url_for("bookme_requests"))
 
         if action == "accept":
-            conflict = (BookingRequest.query
-                        .filter(
-                            BookingRequest.id != req.id,
-                            BookingRequest.provider_id == req.provider_id,
-                            BookingRequest.preferred_time == req.preferred_time,
-                            BookingRequest.status == BookingStatus.accepted,
-                        )
-                        .first())
+            # check slot conflict
+            conflict = (
+                BookingRequest.query
+                .filter(
+                    BookingRequest.id != req.id,
+                    BookingRequest.provider_id == req.provider_id,
+                    BookingRequest.preferred_time == req.preferred_time,
+                    BookingRequest.status == BookingStatus.accepted,
+                )
+                .first()
+            )
             if conflict:
-                flash("This time slot is already booked.")
+                flash("This time slot is already booked.", "error")
                 return redirect(url_for("bookme_requests"))
 
             client = User.query.get(req.client_id)
             provider = User.query.get(req.provider_id)
+
+            booking = None
 
             if client and provider:
                 client_wallet = get_or_create_wallet(client.id)
                 provider_wallet = get_or_create_wallet(provider.id)
 
                 if wallet_balance_cents(client_wallet) < HOLD_FEE_CENTS:
-                    flash("Client doesn't have enough balance for the $20 hold fee.")
+                    flash(
+                        "Client doesn't have enough balance for the $20 hold fee. "
+                        "Ask them to add funds to their wallet.",
+                        "error",
+                    )
                     return redirect(url_for("bookme_requests"))
 
-                post_ledger(client_wallet, EntryType.purchase_spend, HOLD_FEE_CENTS,
-                            meta=f"Booking hold fee to @{provider.username} for {req.preferred_time}")
-                post_ledger(provider_wallet, EntryType.sale_income, HOLD_FEE_CENTS,
-                            meta=f"Booking hold fee from @{client.username} for {req.preferred_time}")
+                post_ledger(
+                    client_wallet,
+                    EntryType.purchase_spend,
+                    HOLD_FEE_CENTS,
+                    meta=f"Booking hold fee to @{provider.username} for {req.preferred_time}",
+                )
+                post_ledger(
+                    provider_wallet,
+                    EntryType.sale_income,
+                    HOLD_FEE_CENTS,
+                    meta=f"Booking hold fee from @{client.username} for {req.preferred_time}",
+                )
+
+                event_dt = None
+                if req.preferred_time:
+                    try:
+                        event_dt = datetime.strptime(req.preferred_time, "%Y-%m-%d %H:%M")
+                    except ValueError:
+                        event_dt = None
+
+                if req.message and req.message.strip():
+                    title = req.message.strip()[:80]
+                else:
+                    title = f"BookMe booking with @{provider.username}"
+
+                booking = Booking(
+                    provider_id=provider.id,
+                    provider_role=provider.role,
+                    client_id=client.id,
+                    event_title=title,
+                    event_datetime=event_dt,
+                    duration_minutes=None,
+                    location_text=None,
+                    total_cents=HOLD_FEE_CENTS,
+                    notes_from_client=req.message or None,
+                    status="confirmed",
+                )
+                db.session.add(booking)
 
             req.status = BookingStatus.accepted
             db.session.commit()
-            flash("Booking accepted. Hold fee charged.")
+
+            flash(
+                "Booking accepted. Hold fee charged and a booking record created.",
+                "success",
+            )
+
+            if booking:
+                return redirect(url_for("booking_detail", booking_id=booking.id))
+
             return redirect(url_for("bookme_requests"))
 
+    # Client cancel
     if current_user.id == req.client_id and action == "cancel":
         if req.status in (BookingStatus.pending, BookingStatus.accepted):
             req.status = BookingStatus.cancelled
             db.session.commit()
-            flash("Booking cancelled.")
+            flash("Booking request cancelled.", "success")
         else:
-            flash("You can only cancel pending/accepted bookings.")
+            flash("You can only cancel pending or accepted bookings.", "error")
         return redirect(url_for("bookme_requests"))
 
-    flash("You are not allowed to perform this action.")
+    flash("You are not allowed to perform this action.", "error")
     return redirect(url_for("bookme_requests"))
+
+
+@app.route("/bookings/<int:booking_id>", methods=["GET", "POST"])
+@login_required
+def booking_detail(booking_id):
+    """
+    Detailed view of a single Booking.
+
+    - Only provider, client, or admin can see it.
+    - Provider can add internal notes / mark booking completed.
+    """
+    booking = Booking.query.get_or_404(booking_id)
+
+    # Access control: provider, client, or admin only
+    is_provider = current_user.id == booking.provider_id
+    is_client = current_user.id == booking.client_id
+    is_admin = current_user.role == RoleEnum.admin
+
+    if not (is_provider or is_client or is_admin):
+        flash("You don't have access to this booking.", "error")
+        return redirect(url_for("bookme_requests"))
+
+    if request.method == "POST":
+        # For now, only the provider can update details from this page.
+        if not is_provider:
+            flash("Only the provider can update this booking.", "error")
+            return redirect(url_for("booking_detail", booking_id=booking.id))
+
+        notes_from_provider = (request.form.get("notes_from_provider") or "").strip()
+        status_action = (request.form.get("status_action") or "").strip().lower()
+
+        # Update provider notes
+        booking.notes_from_provider = notes_from_provider or None
+
+        # Optional status transition: mark completed from confirmed
+        if status_action == "mark_completed":
+            if booking.status == "confirmed":
+                booking.status = "completed"
+                flash("Booking marked as completed.", "success")
+            else:
+                flash("Only confirmed bookings can be marked completed.", "error")
+        else:
+            flash("Booking notes updated.", "success")
+
+        db.session.commit()
+        return redirect(url_for("booking_detail", booking_id=booking.id))
+
+    return render_template(
+        "booking_detail.html",
+        booking=booking,
+        is_provider=is_provider,
+        is_client=is_client,
+    )
+
+
+# generic booking link for any provider (designer, DJ, artist, etc.)
+@app.route("/bookme/<username>/book", methods=["GET", "POST"])
+@login_required
+def bookme_book_provider(username):
+    """
+    Generic public booking link for any BookMe provider.
+
+    This simply reuses the same logic as the artist booking page so that
+    all providers share the same booking form and flow.
+    """
+    return book_artist(username)
+
+
+@app.route("/artists/<username>/book", methods=["GET", "POST"])
+@login_required
+def book_artist(username):
+    artist = User.query.filter_by(username=username).first_or_404()
+
+    is_owner = current_user.id == artist.id
+
+    if request.method == "POST":
+        if is_owner:
+            flash(
+                "You can’t send a booking request to yourself. "
+                "Share this booking link with your clients instead.",
+                "error",
+            )
+            return redirect(url_for("book_artist", username=username))
+
+        event_title = (request.form.get("event_title") or "").strip()
+        event_date = (request.form.get("event_date") or "").strip()
+        event_time = (request.form.get("event_time") or "").strip()
+        duration_minutes_raw = (request.form.get("duration_minutes") or "").strip()
+        location_text = (request.form.get("location_text") or "").strip()
+        price_dollars_raw = (request.form.get("price_dollars") or "").strip()
+        notes_from_client = (request.form.get("notes_from_client") or "").strip()
+
+        errors = []
+
+        if not event_title:
+            errors.append("Please enter an event title or description.")
+        if not event_date or not event_time:
+            errors.append("Please choose a date and time for the booking.")
+
+        event_datetime = None
+        if event_date and event_time:
+            try:
+                event_datetime = datetime.strptime(
+                    f"{event_date} {event_time}",
+                    "%Y-%m-%d %H:%M"
+                )
+            except ValueError:
+                errors.append("Event date/time is not in a valid format.")
+
+        duration_minutes = None
+        if duration_minutes_raw:
+            try:
+                duration_minutes = int(duration_minutes_raw)
+            except ValueError:
+                errors.append("Duration must be a number of minutes.")
+
+        total_cents = None
+        if price_dollars_raw:
+            try:
+                price_dollars = float(price_dollars_raw)
+                if price_dollars < 0:
+                    errors.append("Price cannot be negative.")
+                else:
+                    total_cents = int(price_dollars * 100)
+            except ValueError:
+                errors.append("Price must be a valid number.")
+
+        if errors:
+            for msg in errors:
+                flash(msg, "danger")
+            return render_template(
+                "artist_booking.html",
+                artist=artist,
+                form_data=request.form,
+                is_owner=is_owner,
+            )
+
+        booking = Booking(
+            provider_id=artist.id,
+            provider_role=artist.role,
+            client_id=current_user.id,
+            event_title=event_title,
+            event_datetime=event_datetime,
+            duration_minutes=duration_minutes,
+            location_text=location_text or None,
+            total_cents=total_cents,
+            notes_from_client=notes_from_client or None,
+            status="pending",
+        )
+        db.session.add(booking)
+        db.session.commit()
+
+        flash("Booking request submitted. The artist will review and confirm.", "success")
+        return redirect(url_for("route_to_dashboard"))
+
+    return render_template(
+        "artist_booking.html",
+        artist=artist,
+        form_data={},
+        is_owner=is_owner,
+    )
+
+
+@app.route("/bookme/portfolio", methods=["GET", "POST"])
+@login_required
+def bookme_portfolio():
+    if not _ensure_bookme_provider():
+        return redirect(url_for("bookme_search"))
+
+    prof = BookMeProfile.query.filter_by(user_id=current_user.id).first()
+    if not prof:
+        flash("Create your BookMe profile first.", "error")
+        return redirect(url_for("bookme_profile"))
+
+    if request.method == "POST":
+        existing_count = prof.portfolio_items.count()
+        if existing_count >= MAX_PORTFOLIO_ITEMS:
+            flash(
+                f"You can only have up to {MAX_PORTFOLIO_ITEMS} items in your portfolio. "
+                "Delete one before adding another.",
+                "error",
+            )
+            return redirect(url_for("bookme_portfolio"))
+
+        title = (request.form.get("title") or "").strip()
+        description = (request.form.get("description") or "").strip()
+        media_type_raw = (request.form.get("media_type") or "image").strip()
+        external_url = (request.form.get("external_url") or "").strip()
+        file = request.files.get("file")
+
+        if not title:
+            flash("Title is required for a portfolio item.", "error")
+            return redirect(url_for("bookme_portfolio"))
+
+        try:
+            media_type = PortfolioMediaType(media_type_raw)
+        except ValueError:
+            media_type = PortfolioMediaType.image
+
+        stored_filename = None
+
+        if file and file.filename:
+            if media_type == PortfolioMediaType.image:
+                allowed = ALLOWED_IMAGE
+            elif media_type == PortfolioMediaType.audio:
+                allowed = ALLOWED_AUDIO
+            else:
+                allowed = ALLOWED_IMAGE | ALLOWED_AUDIO
+
+            fname = _save_file(file, allowed)
+            if not fname:
+                flash("Problem saving file – check the file type.", "error")
+                return redirect(url_for("bookme_portfolio"))
+            stored_filename = fname
+
+        if not stored_filename and not external_url:
+            flash("Provide either a file upload or an external URL.", "error")
+            return redirect(url_for("bookme_portfolio"))
+
+        last_item = prof.portfolio_items.order_by(PortfolioItem.sort_order.desc()).first()
+        next_sort = (last_item.sort_order + 1) if last_item else 0
+
+        item = PortfolioItem(
+            profile_id=prof.id,
+            media_type=media_type,
+            title=title,
+            description=description or None,
+            stored_filename=stored_filename,
+            external_url=external_url or None,
+            sort_order=next_sort,
+        )
+        db.session.add(item)
+        db.session.commit()
+
+        flash("Portfolio item added.", "success")
+        return redirect(url_for("bookme_portfolio"))
+
+    items = (
+        prof.portfolio_items
+        .order_by(PortfolioItem.sort_order.asc(), PortfolioItem.created_at.desc())
+        .all()
+    )
+    requires_portfolio = role_requires_portfolio(current_user.role)
+
+    return render_template(
+        "bookme_portfolio.html",
+        prof=prof,
+        items=items,
+        PortfolioMediaType=PortfolioMediaType,
+        requires_portfolio=requires_portfolio,
+        MAX_PORTFOLIO_ITEMS=MAX_PORTFOLIO_ITEMS,
+    )
+
+
+@app.route("/bookme/portfolio/<int:item_id>/delete", methods=["POST"])
+@login_required
+def bookme_portfolio_delete(item_id):
+    if not _ensure_bookme_provider():
+        return redirect(url_for("bookme_search"))
+
+    item = PortfolioItem.query.get_or_404(item_id)
+    prof = item.profile
+
+    if prof.user_id != current_user.id:
+        flash("You can't modify another provider's portfolio.", "error")
+        return redirect(url_for("bookme_portfolio"))
+
+    if item.stored_filename:
+        _safe_remove(item.stored_filename)
+
+    db.session.delete(item)
+    db.session.commit()
+    flash("Portfolio item removed.", "success")
+    return redirect(url_for("bookme_portfolio"))
+
+
+@app.route("/bookme/provider/<username>", methods=["GET"])
+@login_required  # make public later if desired
+def provider_portfolio_public(username):
+    user = User.query.filter_by(username=username).first_or_404()
+
+    prof = (
+        BookMeProfile.query
+        .filter_by(user_id=user.id, is_visible=True)
+        .first_or_404()
+    )
+
+    items = (
+        prof.portfolio_items
+        .order_by(PortfolioItem.sort_order.asc(), PortfolioItem.created_at.desc())
+        .all()
+    )
+
+    return render_template(
+        "provider_portfolio_public.html",
+        provider=user,
+        prof=prof,
+        items=items,
+        PortfolioMediaType=PortfolioMediaType,
+    )
 
 
 # =========================================================
@@ -806,16 +1492,42 @@ def home():
 
 @app.route("/register", methods=["GET", "POST"])
 def register():
+    """
+    Registration matching the new BeatFund form:
+
+    - name          -> full_name
+    - artist_name   -> artist_name
+    - email         -> email (required, unique)
+    - username      -> username (required, unique; we strip leading "@")
+    - password / confirm_password
+    - primary_role  -> mapped to RoleEnum
+    """
     if request.method == "POST":
-        username = request.form["username"].strip().lower()
-        password = request.form["password"]
-        role = request.form["role"]
+        full_name = (request.form.get("name") or "").strip()
+        artist_name = (request.form.get("artist_name") or "").strip()
+        email = (request.form.get("email") or "").strip().lower()
+        raw_username = (request.form.get("username") or "").strip()
+        username = raw_username.lstrip("@").lower()
 
-        # -------------------------
+        password = request.form.get("password") or ""
+        confirm = request.form.get("confirm_password") or ""
+        primary_role = (request.form.get("primary_role") or "").strip()
 
+        # Basic required fields
+        if not email:
+            flash("Email is required.", "error")
+            return redirect(url_for("register"))
 
-        # Basic password policy
-        # -------------------------
+        if not username:
+            flash("Username is required.", "error")
+            return redirect(url_for("register"))
+
+        # Very simple email format check (good enough for now)
+        if "@" not in email or "." not in email:
+            flash("Please enter a valid email address.", "error")
+            return redirect(url_for("register"))
+
+        # Password validation
         pw_errors = []
         if len(password) < 8:
             pw_errors.append("Password must be at least 8 characters long.")
@@ -823,36 +1535,70 @@ def register():
             pw_errors.append("Password must contain at least one letter.")
         if not re.search(r"\d", password):
             pw_errors.append("Password must contain at least one number.")
+        if password != confirm:
+            pw_errors.append("Password and confirmation do not match.")
 
         if pw_errors:
-            flash(" ".join(pw_errors))
+            flash(" ".join(pw_errors), "error")
             return redirect(url_for("register"))
 
-        # -------------------------
-        # Username & role checks
-        # -------------------------
-        if User.query.filter_by(username=username).first():
-            flash("Username already taken.")
+        # Username uniqueness
+        existing_user = User.query.filter(
+            func.lower(User.username) == username.lower()
+        ).first()
+        if existing_user:
+            flash("That username is already taken.", "error")
             return redirect(url_for("register"))
 
-        if role not in [r.value for r in RoleEnum]:
-            flash("Invalid role selected.")
-            return redirect(url_for("register"))
+        # Email uniqueness
+        if email:
+            existing_email = User.query.filter(
+                func.lower(User.email) == email.lower()
+            ).first()
+            if existing_email:
+                flash("That email is already registered.", "error")
+                return redirect(url_for("register"))
 
-        # -------------------------
-        # Create user (dev: auto-approve KYC)
-        # -------------------------
-        user = User(username=username, role=RoleEnum(role))
-        user.kyc_status = KYCStatus.approved  # dev only
+        # Map primary_role from the dropdown to RoleEnum
+        # Options in your form:
+        #   artist, producer, studio, videographer,
+        #   talent, provider_other
+        role_map = {
+            "artist": RoleEnum.artist,
+            "producer": RoleEnum.producer,
+            "studio": RoleEnum.studio,
+            "videographer": RoleEnum.videographer,
+        }
+
+        if primary_role == "talent":
+            chosen_role = RoleEnum.artist       # treat talent as artist/creator bucket
+        elif primary_role == "provider_other":
+            chosen_role = RoleEnum.vendor       # generic provider bucket
+        else:
+            chosen_role = role_map.get(primary_role, RoleEnum.artist)
+
+        # Create user
+        user = User(
+            username=username,
+            email=email,
+            full_name=full_name or None,
+            artist_name=artist_name or None,
+            role=chosen_role,
+        )
+
+        # Dev-only: auto-approve KYC so you can use wallet/marketplace
+        if IS_DEV:
+            user.kyc_status = KYCStatus.approved
 
         user.set_password(password)
         db.session.add(user)
         db.session.commit()
 
+        # Auto-create wallet
         get_or_create_wallet(user.id)
-        login_user(user)
 
-        flash("Account created! (KYC auto-approved in dev.)")
+        login_user(user)
+        flash("Account created! (KYC auto-approved in dev.)", "success")
         return redirect(url_for("route_to_dashboard"))
 
     return render_template("register.html")
@@ -860,40 +1606,60 @@ def register():
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
+    """
+    Login supports BOTH:
+
+    - Email:    admin@example.com
+    - Username: admin   or   @admin
+
+    The form can post either:
+      - name="identifier"
+      - or legacy name="username"
+    """
     if request.method == "POST":
-        # Identify caller by IP for rate limiting
         remote_addr = request.remote_addr or "unknown"
 
-        # 1) Check if this IP is temporarily blocked
         if _too_many_failed_logins(remote_addr):
             flash(
                 "Too many failed login attempts. "
-                "Please wait a few minutes and try again."
+                "Please wait a few minutes and try again.",
+                "error",
             )
             return redirect(url_for("login"))
 
-        # 2) Normal credential handling
-        username = request.form["username"].strip().lower()
-        password = request.form["password"]
+        raw_identifier = (
+            (request.form.get("identifier") or "").strip()
+            or (request.form.get("username") or "").strip()
+        )
+        password = (request.form.get("password") or "").strip()
 
-        user = User.query.filter_by(username=username).first()
+        if not raw_identifier or not password:
+            flash("Please enter your email/username and password.", "error")
+            return redirect(url_for("login"))
+
+        identifier = raw_identifier.lower().strip()
+
+        user = None
+        # Very simple heuristic: treat as email if it looks like one
+        if "@" in identifier and "." in identifier:
+            user = User.query.filter(func.lower(User.email) == identifier).first()
+        else:
+            handle = identifier.lstrip("@")
+            user = User.query.filter(func.lower(User.username) == handle).first()
+
         if not user or not user.check_password(password):
-            # Register failed attempt and show generic error
             _register_failed_login(remote_addr)
-            flash("Invalid credentials.")
+            flash("Invalid credentials.", "error")
             return redirect(url_for("login"))
 
         if not user.is_active_col:
-            flash("This account is disabled.")
+            flash("This account is disabled.", "error")
             return redirect(url_for("login"))
 
-        # 3) Successful login: clear failure counter for this IP
         _clear_failed_logins(remote_addr)
 
-        # Log them in
         login_user(user)
 
-        # 4) If admin password is too old, force password reset
         if is_password_expired(user):
             flash(
                 "For security, your admin password must be updated before continuing.",
@@ -901,10 +1667,8 @@ def login():
             )
             return redirect(url_for("force_password_reset"))
 
-        # Normal flow
         return redirect(url_for("route_to_dashboard"))
 
-    # GET request, just render the login form
     return render_template("login.html")
 
 
@@ -914,34 +1678,49 @@ def logout():
     logout_user()
     return redirect(url_for("home"))
 
+
 @app.route("/forgot-password", methods=["GET", "POST"])
 def forgot_password():
     """
-    Request a password reset link by username.
-    In this dev build, we print the reset link to the server console.
+    Password reset request via email OR username.
+
+    The form can post:
+      - name="identifier"   (recommended)
+      - or legacy name="username"
     """
     if request.method == "POST":
-        username = (request.form.get("username") or "").strip().lower()
-        if not username:
-            flash("Please enter your username.", "error")
+        raw_identifier = (
+            (request.form.get("identifier") or "").strip()
+            or (request.form.get("username") or "").strip()
+        )
+
+        if not raw_identifier:
+            flash("Please enter your email or username.", "error")
             return redirect(url_for("forgot_password"))
 
-        user = User.query.filter_by(username=username).first()
+        identifier = raw_identifier.lower().strip()
+
+        user = None
+        if "@" in identifier and "." in identifier:
+            # looks like an email
+            user = User.query.filter(func.lower(User.email) == identifier).first()
+        else:
+            # treat as username, allow leading "@"
+            handle = identifier.lstrip("@")
+            user = User.query.filter(func.lower(User.username) == handle).first()
 
         if user:
-            # Generate a simple random token and store it on the user
             token = uuid.uuid4().hex
             user.password_reset_token = token
             user.password_reset_sent_at = datetime.utcnow()
             db.session.commit()
 
-            # In a real app you'd send email; in dev we print the link
             reset_link = url_for("reset_password", token=token, _external=True)
+            # DEV-ONLY: print reset link to terminal
             print("\n[BeatFund] Password reset link:", reset_link, "\n")
 
-        # Don't reveal whether the username exists
         flash(
-            "If an account with that username exists, a password reset link "
+            "If an account with that email or username exists, a password reset link "
             "has been generated. (In dev, check the terminal output.)",
             "info",
         )
@@ -950,17 +1729,23 @@ def forgot_password():
     return render_template("forgot_password.html")
 
 
+@app.route("/reset-password-request", methods=["GET", "POST"])
+def reset_password_request():
+    """
+    Alias endpoint so templates can use url_for('reset_password_request').
+
+    This reuses the same logic as forgot_password().
+    """
+    return forgot_password()
+
+
 @app.route("/reset-password/<token>", methods=["GET", "POST"])
 def reset_password(token):
-    """
-    Complete the password reset using the one-time token.
-    """
     user = User.query.filter_by(password_reset_token=token).first()
     if not user:
         flash("This reset link is invalid or has already been used.", "error")
         return redirect(url_for("forgot_password"))
 
-    # Check token age
     if not user.password_reset_sent_at or (
         datetime.utcnow() - user.password_reset_sent_at
         > timedelta(hours=RESET_TOKEN_MAX_AGE_HOURS)
@@ -987,7 +1772,6 @@ def reset_password(token):
             return redirect(url_for("reset_password", token=token))
 
         user.set_password(password)
-        # token is cleared inside set_password, but we also null them explicitly
         user.password_reset_token = None
         user.password_reset_sent_at = None
         db.session.commit()
@@ -1001,12 +1785,7 @@ def reset_password(token):
 @app.route("/force-password-reset", methods=["GET", "POST"])
 @login_required
 def force_password_reset():
-    """
-    When an admin password is older than 90 days, force them to change it
-    before accessing the rest of the app.
-    """
     if not is_password_expired(current_user):
-        # If somehow reached but not expired, send to normal dashboard
         return redirect(url_for("route_to_dashboard"))
 
     if request.method == "POST":
@@ -1039,7 +1818,6 @@ def force_password_reset():
         return redirect(url_for("route_to_dashboard"))
 
     return render_template("force_password_reset.html")
-
 
 
 @app.route("/kyc")
@@ -1075,25 +1853,91 @@ def wallet_page():
     return render_template("wallet.html", balance=balance, recent=recent)
 
 
-# =========================================================
-# Simple login rate limiting (anti brute-force)
-# =========================================================
-LOGIN_ATTEMPTS = {}  # key: IP string, value: list of timestamps (float)
+@app.route("/wallet/statement", endpoint="wallet_statement")
+@login_required
+def wallet_statement():
+    if not require_kyc_approved():
+        return redirect(url_for("kyc"))
 
-LOGIN_WINDOW_SECONDS = 300   # 5-minute rolling window
-LOGIN_MAX_ATTEMPTS = 10      # max failed attempts per IP in that window
+    year = request.args.get("year", type=int)
+    month = request.args.get("month", type=int)
+
+    now = datetime.utcnow()
+    if not year:
+        year = now.year
+    if not month or month < 1 or month > 12:
+        month = now.month
+
+    wallet = get_or_create_wallet(current_user.id)
+
+    start_dt = datetime(year, month, 1)
+    last_day = monthrange(year, month)[1]
+    end_dt = datetime(year, month, last_day, 23, 59, 59)
+
+    entries = (
+        LedgerEntry.query
+        .filter_by(wallet_id=wallet.id)
+        .filter(
+            LedgerEntry.created_at >= start_dt,
+            LedgerEntry.created_at <= end_dt,
+        )
+        .order_by(LedgerEntry.created_at.asc())
+        .all()
+    )
+
+    si = StringIO()
+    writer = csv.writer(si)
+
+    writer.writerow(["created_at", "entry_type", "direction", "amount_dollars", "meta"])
+
+    credit_types = {
+        EntryType.deposit,
+        EntryType.transfer_in,
+        EntryType.interest,
+        EntryType.adjustment,
+        EntryType.sale_income,
+    }
+
+    for row in entries:
+        is_credit = row.entry_type in credit_types
+        direction = "credit" if is_credit else "debit"
+        created_str = row.created_at.isoformat(sep=" ") if row.created_at else ""
+        amount_dollars = f"{row.amount_cents / 100.0:.2f}"
+
+        writer.writerow([
+            created_str,
+            row.entry_type.value,
+            direction,
+            amount_dollars,
+            row.meta or "",
+        ])
+
+    output = si.getvalue()
+    filename = f"beatfund_statement_{current_user.username}_{year}_{month:02d}.csv"
+
+    return Response(
+        output,
+        mimetype="text/csv",
+        headers={
+            "Content-Disposition": f"attachment; filename={filename}"
+        },
+    )
+
+
+# =========================================================
+# Simple login rate limiting
+# =========================================================
+LOGIN_ATTEMPTS = {}
+LOGIN_WINDOW_SECONDS = 300
+LOGIN_MAX_ATTEMPTS = 10
 
 
 def _clean_attempts(attempts):
-    """Remove attempts older than the window."""
     now = time()
     return [t for t in attempts if now - t < LOGIN_WINDOW_SECONDS]
 
 
 def _too_many_failed_logins(remote_addr: str) -> bool:
-    """
-    Return True if this IP has too many failed login attempts recently.
-    """
     if not remote_addr:
         remote_addr = "unknown"
 
@@ -1104,9 +1948,6 @@ def _too_many_failed_logins(remote_addr: str) -> bool:
 
 
 def _register_failed_login(remote_addr: str) -> None:
-    """
-    Record a failed login attempt for this IP.
-    """
     if not remote_addr:
         remote_addr = "unknown"
 
@@ -1117,7 +1958,6 @@ def _register_failed_login(remote_addr: str) -> None:
 
 
 def _clear_failed_logins(remote_addr: str) -> None:
-    """Reset the counter for an IP (e.g., after a successful login)."""
     if not remote_addr:
         remote_addr = "unknown"
     LOGIN_ATTEMPTS.pop(remote_addr, None)
@@ -1132,12 +1972,10 @@ def wallet_action():
     action = (request.form.get("action") or "").strip().lower()
     amount_raw = (request.form.get("amount") or "").strip()
 
-    # ---------- Strict amount validation ----------
     if not amount_raw:
         flash("Amount is required.")
         return redirect(url_for("wallet_home"))
 
-    # Allow patterns like "10", "10.5", "10.50" – max 2 decimal places
     if not re.match(r"^\d+(\.\d{1,2})?$", amount_raw):
         flash("Amount must be a positive number with at most 2 decimal places (e.g. 12.50).")
         return redirect(url_for("wallet_home"))
@@ -1156,20 +1994,17 @@ def wallet_action():
         flash(f"Amount exceeds the maximum allowed (${MAX_TXN_DOLLARS:,.2f}) for a single transaction.")
         return redirect(url_for("wallet_home"))
 
-    # Convert to integer cents safely
     cents = int((amt * 100).to_integral_value())
 
     method = (request.form.get("method") or "").strip()
     w = get_or_create_wallet(current_user.id)
 
-    # ---------- Add funds ----------
     if action == "add":
         meta = f"deposit via {method or 'unknown'}"
         post_ledger(w, EntryType.deposit, cents, meta=meta)
         flash(f"Added ${amt:,.2f} (demo).")
         return redirect(url_for("wallet_home"))
 
-    # ---------- Send money ----------
     if action == "send":
         handle = (request.form.get("handle") or "").strip().lower()
         recipient = User.query.filter_by(username=handle).first()
@@ -1201,7 +2036,6 @@ def wallet_action():
         flash(f"Sent ${amt:,.2f} to @{recipient.username}.")
         return redirect(url_for("wallet_home"))
 
-    # ---------- Withdraw ----------
     if action == "withdraw":
         if wallet_balance_cents(w) < cents:
             flash("Insufficient wallet balance.")
@@ -1211,7 +2045,6 @@ def wallet_action():
         flash(f"Withdrew ${amt:,.2f} (demo).")
         return redirect(url_for("wallet_home"))
 
-    # ---------- Unknown action ----------
     flash("Unknown wallet action.")
     return redirect(url_for("wallet_home"))
 
@@ -1225,104 +2058,103 @@ def media_file(filename):
     return send_from_directory(app.config["UPLOAD_FOLDER"], filename, as_attachment=False)
 
 
+@app.route("/profile/avatar", methods=["POST"])
+@login_required
+def update_avatar():
+    file = request.files.get("avatar")
+
+    if not file or file.filename == "":
+        flash("Please choose an image to upload.", "error")
+        return redirect(request.referrer or url_for("route_to_dashboard"))
+
+    if not _ext_ok(file.filename, ALLOWED_IMAGE):
+        flash("Invalid image type. Use png, jpg, or jpeg.", "error")
+        return redirect(request.referrer or url_for("route_to_dashboard"))
+
+    fname = _save_file(file, ALLOWED_IMAGE)
+    if not fname:
+        flash("Problem saving image. Please try again.", "error")
+        return redirect(request.referrer or url_for("route_to_dashboard"))
+
+    if getattr(current_user, "avatar_path", None):
+        _safe_remove(current_user.avatar_path)
+
+    current_user.avatar_path = fname
+    db.session.commit()
+
+    flash("Profile picture updated.", "success")
+    return redirect(request.referrer or url_for("route_to_dashboard"))
+
+
 # =========================================================
 # Marketplace
 # =========================================================
 @app.route("/market", endpoint="market_index")
 @login_required
 def market_index():
-    items = (Beat.query.filter_by(is_active=True)
-             .order_by(Beat.is_featured.desc(), Beat.id.desc()).all())
-    return render_template("market_index.html", items=items)
+    # Top rail: beats
+    items = (
+        Beat.query.filter_by(is_active=True)
+        .order_by(Beat.is_featured.desc(), Beat.id.desc())
+        .all()
+    )
 
-@app.route("/market/upload", methods=["GET", "POST"], endpoint="market_upload")
-@role_required("producer")
-def market_upload():
-    """
-    Simple producer-facing form to upload a beat into the marketplace.
-    Uses existing _save_file / ALLOWED_AUDIO / ALLOWED_IMAGE helpers.
-    """
-    if request.method == "POST":
-        title = (request.form.get("title") or "").strip()
-        price_raw = (request.form.get("price") or "").strip()
-        bpm_raw = (request.form.get("bpm") or "").strip()
-        genre = (request.form.get("genre") or "").strip()
-        license_raw = (request.form.get("license") or "standard").strip().lower()
-
-        if not title:
-            flash("Title is required.", "error")
-            return redirect(url_for("market_upload"))
-
-        if not price_raw:
-            flash("Price is required.", "error")
-            return redirect(url_for("market_upload"))
-
-        # Validate price like the wallet code: positive, max 2 decimals
-        if not re.match(r"^\d+(\.\d{1,2})?$", price_raw):
-            flash("Price must be a positive number with at most 2 decimal places.", "error")
-            return redirect(url_for("market_upload"))
-
-        try:
-            price_dec = Decimal(price_raw)
-        except InvalidOperation:
-            flash("Invalid price format.", "error")
-            return redirect(url_for("market_upload"))
-
-        if price_dec <= 0:
-            flash("Price must be greater than zero.", "error")
-            return redirect(url_for("market_upload"))
-
-        price_cents = int((price_dec * 100).to_integral_value())
-
-        bpm = None
-        if bpm_raw:
-            try:
-                bpm = int(bpm_raw)
-            except ValueError:
-                flash("BPM must be a whole number.", "error")
-                return redirect(url_for("market_upload"))
-
-        cover_file = request.files.get("cover")
-        audio_file = request.files.get("audio")
-
-        if not audio_file or audio_file.filename == "":
-            flash("An audio file is required.", "error")
-            return redirect(url_for("market_upload"))
-
-        # Save audio (preview + full stems as same file for now)
-        audio_fname = _save_file(audio_file, ALLOWED_AUDIO)
-        if not audio_fname:
-            flash("Invalid audio file. Allowed types: mp3, wav, m4a, ogg.", "error")
-            return redirect(url_for("market_upload"))
-
-        cover_fname = None
-        if cover_file and cover_file.filename:
-            cover_fname = _save_file(cover_file, ALLOWED_IMAGE)
-            if not cover_fname:
-                flash("Invalid cover image. Allowed types: png, jpg, jpeg.", "error")
-                return redirect(url_for("market_upload"))
-
-        beat = Beat(
-            owner_id=current_user.id,
-            title=title,
-            price_cents=price_cents,
-            license=license_raw or "standard",
-            bpm=bpm,
-            genre=genre or None,
-            cover_path=cover_fname,
-            preview_path=audio_fname,
-            stems_path=audio_fname,
-            is_active=True,
+    # All visible service providers that have a BookMe profile
+    provider_profiles = (
+        BookMeProfile.query
+        .join(User, BookMeProfile.user_id == User.id)
+        .filter(
+            BookMeProfile.is_visible == True,
+            User.role.in_(BOOKME_PROVIDER_ROLES),
         )
-        db.session.add(beat)
-        db.session.commit()
+        .order_by(BookMeProfile.city.asc(), BookMeProfile.display_name.asc())
+        .all()
+    )
 
-        flash("Beat uploaded to the marketplace.", "success")
-        return redirect(url_for("market_index"))
+    # Helper: check if a BookMeProfile's user has any of these roles
+    def profile_has_role(profile, roles):
+        u = profile.user
+        return (u is not None) and (u.role in roles)
 
-    # GET: show the upload form template
-    return render_template("market_upload.html")
+    # ---- Rail 1: Studios near you ----
+    studios = [
+        p for p in provider_profiles
+        if profile_has_role(p, {RoleEnum.studio})
+    ]
 
+    # ---- Rail 2: Videographers & directors ----
+    videographers = [
+        p for p in provider_profiles
+        if profile_has_role(p, {RoleEnum.videographer})
+    ]
+
+    # ---- Rail 3: Talent & video vixens ----
+    talent_roles = {
+        RoleEnum.artist,
+        RoleEnum.dancer_choreographer,
+        RoleEnum.emcee_host_hypeman,
+        RoleEnum.dj,
+    }
+    talent_profiles = [
+        p for p in provider_profiles
+        if profile_has_role(p, talent_roles)
+    ]
+
+    # ---- Rail 4: Other providers (everything else) ----
+    used_ids = {p.id for p in studios + videographers + talent_profiles}
+    other_providers = [p for p in provider_profiles if p.id not in used_ids]
+
+    # NOTE: we still pass provider_profiles for backwards compatibility
+    return render_template(
+        "market_index.html",
+        items=items,
+        provider_profiles=provider_profiles,
+        studios=studios,
+        videographers=videographers,
+        talent_profiles=talent_profiles,
+        other_providers=other_providers,
+        RoleEnum=RoleEnum,
+    )
 
 
 @app.route("/market/my-purchases")
@@ -1399,13 +2231,303 @@ def market_download(beat_id):
     return send_from_directory(app.config["UPLOAD_FOLDER"], beat.stems_path, as_attachment=True)
 
 
+@app.route("/producers")
+@login_required
+def producer_catalog_index():
+    all_beats = Beat.query.all()
+    producers_map = {}
+
+    for beat in all_beats:
+        owner = getattr(beat, "owner", None)
+        if not owner:
+            continue
+        user_id = getattr(owner, "id", None)
+        if not user_id:
+            continue
+
+        if user_id not in producers_map:
+            producers_map[user_id] = {
+                "user": owner,
+                "beats": [],
+                "genres": set(),
+            }
+
+        producers_map[user_id]["beats"].append(beat)
+        genre_val = getattr(beat, "genre", None)
+        if genre_val:
+            producers_map[user_id]["genres"].add(genre_val)
+
+    producers = []
+    for data in producers_map.values():
+        user = data["user"]
+        beats_for_user = data["beats"]
+        genres = list(data["genres"])
+
+        display_name = (
+            getattr(user, "display_name", None)
+            or getattr(user, "name", None)
+            or getattr(user, "username", "Producer")
+        )
+        avatar_url = getattr(user, "avatar_url", None)
+        location = getattr(user, "location", None)
+        city = getattr(user, "city", None)
+        state = getattr(user, "state", None)
+        followers_count = getattr(user, "followers_count", 0) or 0
+        rating = getattr(user, "rating", None)
+        rating_count = getattr(user, "rating_count", 0) or 0
+
+        producers.append(
+            {
+                "user": user,
+                "display_name": display_name,
+                "username": getattr(user, "username", None),
+                "avatar_url": avatar_url,
+                "location": location,
+                "city": city,
+                "state": state,
+                "followers_count": followers_count,
+                "rating": rating,
+                "rating_count": rating_count,
+                "genres": genres[:3],
+                "beats_count": len(beats_for_user),
+            }
+        )
+
+    producers.sort(key=lambda p: p["beats_count"], reverse=True)
+
+    return render_template("producer_catalog_index.html", producers=producers)
+
+
+@app.route("/producers/<username>")
+@login_required
+def producer_catalog_detail(username):
+    all_beats = Beat.query.all()
+    beats_for_producer = []
+    producer_user = None
+
+    for beat in all_beats:
+        owner = getattr(beat, "owner", None)
+        if not owner:
+            continue
+        owner_username = getattr(owner, "username", None)
+        if not owner_username:
+            continue
+
+        if owner_username.lower() == username.lower():
+            beats_for_producer.append(beat)
+            producer_user = owner
+
+    producer_profile = None
+    if producer_user:
+        genres = sorted(
+            {b.genre for b in beats_for_producer if getattr(b, "genre", None)}
+        )
+
+        display_name = (
+            getattr(producer_user, "display_name", None)
+            or getattr(producer_user, "name", None)
+            or getattr(producer_user, "username", "Producer")
+        )
+        avatar_url = getattr(producer_user, "avatar_url", None)
+        location = getattr(producer_user, "location", None)
+        city = getattr(producer_user, "city", None)
+        state = getattr(producer_user, "state", None)
+        followers_count = getattr(producer_user, "followers_count", 0) or 0
+        rating = getattr(producer_user, "rating", None)
+        rating_count = getattr(producer_user, "rating_count", 0) or 0
+
+        producer_profile = {
+            "user": producer_user,
+            "display_name": display_name,
+            "username": getattr(producer_user, "username", None),
+            "avatar_url": avatar_url,
+            "location": location,
+            "city": city,
+            "state": state,
+            "followers_count": followers_count,
+            "rating": rating,
+            "rating_count": rating_count,
+            "genres": genres,
+            "beats_count": len(beats_for_producer),
+        }
+
+    return render_template(
+        "producer_catalog_detail.html",
+        producer=producer_profile,
+        beats=beats_for_producer,
+        raw_username=username,
+    )
+
+
+@app.route("/producers/<username>/follow", methods=["POST"])
+@login_required
+def follow_producer(username):
+    producer = User.query.filter_by(username=username, role=RoleEnum.producer).first_or_404()
+
+    if producer.id == current_user.id:
+        flash("You can’t follow yourself.", "info")
+        return redirect(request.referrer or url_for("producer_catalog_detail", username=username))
+
+    existing = UserFollow.query.filter_by(
+        follower_id=current_user.id,
+        followed_id=producer.id
+    ).first()
+
+    if existing:
+        db.session.delete(existing)
+        db.session.commit()
+        flash(f"You unfollowed @{producer.username}.", "success")
+    else:
+        follow = UserFollow(follower_id=current_user.id, followed_id=producer.id)
+        db.session.add(follow)
+        db.session.commit()
+        flash(f"You followed @{producer.username}.", "success")
+
+    return redirect(request.referrer or url_for("producer_catalog_detail", username=username))
+
+
+@app.route("/market/producers")
+@login_required
+def market_producer_catalog():
+    beats = Beat.query.all()
+
+    producer_map = {}
+
+    for beat in beats:
+        owner = getattr(beat, "owner", None)
+        if not owner:
+            continue
+
+        pid = owner.id
+        if pid not in producer_map:
+            producer_map[pid] = {
+                "producer": owner,
+                "beat_count": 0,
+                "genres_counter": Counter(),
+            }
+
+        producer_map[pid]["beat_count"] += 1
+
+        genre = getattr(beat, "genre", None)
+        if genre:
+            producer_map[pid]["genres_counter"][genre] += 1
+
+    producers = []
+    for data in producer_map.values():
+        genres_counter = data["genres_counter"]
+        top_genres = [name for name, _ in genres_counter.most_common(3)]
+
+        producers.append({
+            "producer": data["producer"],
+            "beat_count": data["beat_count"],
+            "genres": top_genres,
+            "followers_count": 0,
+            "rating": None,
+        })
+
+    producers.sort(key=lambda row: row["beat_count"], reverse=True)
+
+    return render_template("market_producers.html", producers=producers)
+
+
+@app.route("/producer/beats", methods=["GET", "POST"])
+@role_required("producer")
+def producer_beats():
+    if request.method == "POST":
+        title = (request.form.get("title") or "").strip()
+        price_raw = (request.form.get("price_dollars") or "").strip()
+        bpm_raw = (request.form.get("bpm") or "").strip()
+        genre = (request.form.get("genre") or "").strip()
+        cover_file = request.files.get("cover_file")
+        preview_file = request.files.get("preview_file")
+        stems_file = request.files.get("stems_file")
+
+        errors = []
+
+        if not title:
+            errors.append("Title is required.")
+
+        price_cents = 0
+        if price_raw:
+            try:
+                price = Decimal(price_raw)
+                if price < 0:
+                    errors.append("Price cannot be negative.")
+                else:
+                    price_cents = int((price * 100).to_integral_value())
+            except InvalidOperation:
+                errors.append("Price must be a valid number (e.g. 19.99).")
+
+        bpm = None
+        if bpm_raw:
+            try:
+                bpm = int(bpm_raw)
+            except ValueError:
+                errors.append("BPM must be a whole number (e.g. 130).")
+
+        if errors:
+            for e in errors:
+                flash(e, "error")
+            return redirect(url_for("producer_beats"))
+
+        beat = Beat(
+            owner_id=current_user.id,
+            title=title,
+            price_cents=price_cents,
+            bpm=bpm,
+            genre=genre or None,
+            is_active=True,
+        )
+
+        if cover_file and cover_file.filename:
+            beat.cover_path = _save_file(cover_file, ALLOWED_IMAGE)
+        if preview_file and preview_file.filename:
+            beat.preview_path = _save_file(preview_file, ALLOWED_AUDIO)
+        if stems_file and stems_file.filename:
+            beat.stems_path = _save_file(stems_file, ALLOWED_AUDIO)
+
+        db.session.add(beat)
+        db.session.commit()
+        flash("Beat saved to your catalog.", "success")
+        return redirect(url_for("producer_beats"))
+
+    beats = (
+        Beat.query
+        .filter_by(owner_id=current_user.id)
+        .order_by(Beat.id.desc())
+        .all()
+    )
+    return render_template("producer_beats.html", beats=beats)
+
+
+@app.route("/producer/beats/<int:beat_id>/delete", methods=["POST"], endpoint="producer_beats_delete")
+@role_required("producer")
+def producer_beats_delete(beat_id):
+    beat = Beat.query.get_or_404(beat_id)
+
+    if beat.owner_id != current_user.id:
+        flash("You can’t delete another producer’s beat.", "error")
+        return redirect(url_for("producer_beats"))
+
+    if beat.cover_path:
+        _safe_remove(beat.cover_path)
+    if beat.preview_path:
+        _safe_remove(beat.preview_path)
+    if beat.stems_path:
+        _safe_remove(beat.stems_path)
+
+    db.session.delete(beat)
+    db.session.commit()
+    flash("Beat deleted.", "success")
+    return redirect(url_for("producer_beats"))
+
+
 # =========================================================
 # Admin – Dashboard / Users / KYC
 # =========================================================
 @app.route("/dashboard/admin", endpoint="admin_dashboard")
 @role_required("admin")
 def admin_dashboard():
-    # High-level stats (excluding admin from "users")
     total_users = User.query.filter(User.role != RoleEnum.admin).count()
     total_wallets = Wallet.query.count()
     total_beats = Beat.query.count()
@@ -1418,7 +2540,6 @@ def admin_dashboard():
     total_artists = User.query.filter_by(role=RoleEnum.artist).count()
     total_producers = User.query.filter_by(role=RoleEnum.producer).count()
 
-    # Ticket counters
     total_tickets = SupportTicket.query.count()
     open_tickets = SupportTicket.query.filter_by(status=TicketStatus.open).count()
     in_review_tickets = SupportTicket.query.filter_by(status=TicketStatus.in_review).count()
@@ -1430,7 +2551,6 @@ def admin_dashboard():
         ])
     ).count()
 
-    # Recent events feed: audit logs + tickets
     events = []
 
     audit_rows = (
@@ -1487,14 +2607,9 @@ def admin_dashboard():
         TicketStatus=TicketStatus,
     )
 
-
 @app.route("/dashboard/admin/users", endpoint="admin_users")
 @role_required("admin")
 def admin_users():
-    """
-    Admin users page with search + filters.
-    Hides admin accounts themselves (portal is for managing customers).
-    """
     q = (request.args.get("q") or "").strip()
     role = (request.args.get("role") or "").strip()
     status = (request.args.get("status") or "").strip()
@@ -1502,30 +2617,41 @@ def admin_users():
     page = request.args.get("page", 1, type=int)
     per_page = 25
 
+    # Start with all non-admin users
     query = User.query.filter(User.role != RoleEnum.admin)
 
+    # Text search on username
     if q:
         like = f"%{q.lower()}%"
         query = query.filter(func.lower(User.username).like(like))
 
+    # Filter by role (artist, producer, etc.)
     if role:
         try:
             query = query.filter(User.role == RoleEnum(role))
         except ValueError:
+            # Invalid role string; ignore filter
             pass
 
+    # Filter by KYC status
     if status:
         try:
             query = query.filter(User.kyc_status == KYCStatus(status))
         except ValueError:
+            # Invalid KYC status; ignore filter
             pass
 
+    # Filter by active / inactive
     if active == "active":
         query = query.filter(User.is_active_col.is_(True))
     elif active == "inactive":
         query = query.filter(User.is_active_col.is_(False))
 
-    pagination = query.order_by(User.id.asc()).paginate(page=page, per_page=per_page, error_out=False)
+    pagination = query.order_by(User.id.asc()).paginate(
+        page=page,
+        per_page=per_page,
+        error_out=False,
+    )
     users = pagination.items
 
     return render_template(
@@ -1541,6 +2667,214 @@ def admin_users():
     )
 
 
+@app.route(
+    "/dashboard/admin/superadmin/unlock",
+    methods=["GET", "POST"],
+    endpoint="superadmin_unlock",
+)
+@superadmin_required
+def superadmin_unlock():
+    """
+    Extra passcode gate for the Owner / Superadmin panel.
+
+    - You must already be logged in as an admin with is_superadmin = True.
+    - Then you enter the passphrase: OWNER_PANEL_PASS.
+    """
+    if request.method == "POST":
+        passphrase = (request.form.get("passphrase") or "").strip()
+
+        if passphrase == OWNER_PANEL_PASS:
+            # mark as unlocked in this session
+            session[OWNER_UNLOCK_SESSION_KEY] = time()
+            flash("Owner panel unlocked for this session.", "success")
+            return redirect(url_for("superadmin_dashboard"))
+
+        flash("Incorrect passphrase. Please try again.", "error")
+
+    return render_template("superadmin_unlock.html")
+
+
+@app.route(
+    "/dashboard/admin/superadmin/change-passcode",
+    methods=["GET", "POST"],
+    endpoint="superadmin_change_passcode",
+)
+@superadmin_required
+def superadmin_change_passcode():
+    """
+    Change the OWNER_PANEL_PASS (Owner Panel passcode).
+
+    Security:
+      - Only logged-in admins with is_superadmin = True can access.
+      - Must enter the current passcode correctly.
+    """
+    global OWNER_PANEL_PASS
+
+    if request.method == "POST":
+        current_code = (request.form.get("current_passcode") or "").strip()
+        new_code = (request.form.get("new_passcode") or "").strip()
+        confirm_code = (request.form.get("confirm_passcode") or "").strip()
+
+        # Must match existing passcode
+        if current_code != OWNER_PANEL_PASS:
+            flash("Current owner passcode is incorrect.", "error")
+            return redirect(url_for("superadmin_change_passcode"))
+
+        errors = []
+        if len(new_code) < 8:
+            errors.append("Passcode must be at least 8 characters long.")
+        if not re.search(r"[A-Za-z]", new_code):
+            errors.append("Passcode must contain at least one letter.")
+        if not re.search(r"\d", new_code):
+            errors.append("Passcode must contain at least one number.")
+        if new_code != confirm_code:
+            errors.append("New passcode and confirmation do not match.")
+
+        if errors:
+            flash(" ".join(errors), "error")
+            return redirect(url_for("superadmin_change_passcode"))
+
+        # Update in-memory and process env
+        OWNER_PANEL_PASS = new_code
+        os.environ["OWNER_PANEL_PASS"] = new_code
+
+        flash(
+            "Owner passcode updated for this server instance. "
+            "Remember to also update OWNER_PANEL_PASS in your "
+            "environment/hosting config for production.",
+            "success",
+        )
+        return redirect(url_for("superadmin_dashboard"))
+
+    return render_template("superadmin_change_passcode.html")
+
+
+# >>> SUPERADMIN OWNER PANEL (UPDATED)
+@app.route("/dashboard/admin/owner", endpoint="superadmin_dashboard")
+@superadmin_required
+def superadmin_dashboard():
+    """
+    Owner / Superadmin dashboard.
+
+    Not linked from normal admin navigation and only available to:
+      - role = admin
+      - is_superadmin = True
+      - and the special OWNER_PANEL_PASS has been entered
+    """
+    # Extra gate: require unlock first
+    if not owner_panel_unlocked():
+        return redirect(url_for("superadmin_unlock"))
+
+    # -----------------------------
+    # Core counts (platform size)
+    # -----------------------------
+    total_users = User.query.filter(User.role != RoleEnum.admin).count()
+    total_wallets = Wallet.query.count()
+    total_beats = Beat.query.count()
+    total_orders = Order.query.count()
+
+    # -----------------------------
+    # Aggregate total wallet balance (sensitive)
+    # -----------------------------
+    total_wallet_balance_cents = 0
+    for w in Wallet.query.join(User, Wallet.user_id == User.id).all():
+        total_wallet_balance_cents += wallet_balance_cents(w)
+    total_wallet_balance = total_wallet_balance_cents / 100.0
+
+    # -----------------------------
+    # Money flows (lifetime totals)
+    # -----------------------------
+    total_deposits_cents = (
+        db.session.query(func.coalesce(func.sum(LedgerEntry.amount_cents), 0))
+        .filter(LedgerEntry.entry_type == EntryType.deposit)
+        .scalar()
+        or 0
+    )
+
+    total_withdrawals_cents = (
+        db.session.query(func.coalesce(func.sum(LedgerEntry.amount_cents), 0))
+        .filter(LedgerEntry.entry_type == EntryType.withdrawal)
+        .scalar()
+        or 0
+    )
+
+    total_sales_cents = (
+        db.session.query(func.coalesce(func.sum(Order.amount_cents), 0))
+        .filter(Order.status == OrderStatus.paid)
+        .scalar()
+        or 0
+    )
+
+    total_deposits = total_deposits_cents / 100.0
+    total_withdrawals = total_withdrawals_cents / 100.0
+    total_sales = total_sales_cents / 100.0
+
+    # Same logic as admin_reports "net_wallet"
+    net_wallet_dollars = (total_deposits_cents - total_withdrawals_cents) / 100.0
+
+    # -----------------------------
+    # Chart data
+    # -----------------------------
+    # Bar chart: platform snapshot
+    bar_labels = ["Users", "Wallets", "Beats", "Orders"]
+    bar_values = [total_users, total_wallets, total_beats, total_orders]
+
+    # Doughnut chart: money flows
+    flow_labels = ["Deposits ($)", "Withdrawals ($)", "Sales ($)"]
+    flow_values = [total_deposits, total_withdrawals, total_sales]
+
+    return render_template(
+        "dash_superadmin.html",
+        # Environment flags
+        APP_ENV=APP_ENV,
+        IS_DEV=IS_DEV,
+
+        # Core stats
+        total_users=total_users,
+        total_wallets=total_wallets,
+        total_beats=total_beats,
+        total_orders=total_orders,
+
+        # Money stats
+        total_wallet_balance=total_wallet_balance,
+        total_deposits=total_deposits,
+        total_withdrawals=total_withdrawals,
+        total_sales=total_sales,
+        net_wallet_dollars=net_wallet_dollars,
+
+        # Chart data
+        bar_labels=bar_labels,
+        bar_values=bar_values,
+        flow_labels=flow_labels,
+        flow_values=flow_values,
+    )
+# <<< SUPERADMIN OWNER PANEL (UPDATED)
+
+@app.route("/dashboard/admin/bookme", endpoint="admin_bookme")
+@role_required("admin")
+def admin_bookme():
+    requests = (
+        BookingRequest.query
+        .order_by(BookingRequest.created_at.desc())
+        .limit(50)
+        .all()
+    )
+
+    bookings = (
+        Booking.query
+        .order_by(Booking.created_at.desc())
+        .limit(50)
+        .all()
+    )
+
+    return render_template(
+        "admin_bookme.html",
+        requests=requests,
+        bookings=bookings,
+        BookingStatus=BookingStatus,
+    )
+
+
 # =========================================================
 # Admin – Admin Team (superadmin only)
 # =========================================================
@@ -1551,12 +2885,6 @@ def admin_users():
 )
 @superadmin_required
 def admin_team():
-    """
-    Manage admin/team accounts (superadmin only):
-    - List all admins
-    - Create new admin accounts
-    - Deactivate/reactivate existing admins (via toggle route)
-    """
     if request.method == "POST":
         username = (request.form.get("username") or "").strip().lower()
         password = request.form.get("password") or ""
@@ -1565,7 +2893,6 @@ def admin_team():
             flash("Username is required for a new admin.", "error")
             return redirect(url_for("admin_team"))
 
-        # ---- Basic password policy (same as register) ----
         pw_errors = []
         if len(password) < 8:
             pw_errors.append("Password must be at least 8 characters long.")
@@ -1578,12 +2905,10 @@ def admin_team():
             flash(" ".join(pw_errors), "error")
             return redirect(url_for("admin_team"))
 
-        # ---- Username must be unique ----
         if User.query.filter_by(username=username).first():
             flash("Username already taken.", "error")
             return redirect(url_for("admin_team"))
 
-        # ---- Create the new admin user (non-superadmin) ----
         new_admin = User(
             username=username,
             role=RoleEnum.admin,
@@ -1594,10 +2919,8 @@ def admin_team():
         db.session.add(new_admin)
         db.session.commit()
 
-        # Optional: give them a wallet so audit/export tools don't break if needed
         get_or_create_wallet(new_admin.id)
 
-        # Log this in the audit log for transparency
         log = AuditLog(
             admin_id=current_user.id,
             user_id=new_admin.id,
@@ -1610,7 +2933,6 @@ def admin_team():
         flash(f"Admin @{username} created.", "success")
         return redirect(url_for("admin_team"))
 
-    # GET: list all admin users
     admins = (
         User.query
         .filter(User.role == RoleEnum.admin)
@@ -1628,11 +2950,6 @@ def admin_team():
 )
 @superadmin_required
 def admin_team_toggle_active(user_id):
-    """
-    Superadmin can deactivate/reactivate admin team members.
-    - Cannot deactivate themselves
-    - Cannot deactivate another superadmin (safety)
-    """
     user = User.query.get_or_404(user_id)
 
     if user.id == current_user.id:
@@ -1655,7 +2972,7 @@ def admin_team_toggle_active(user_id):
     return redirect(url_for("admin_team"))
 
 
-@csrf.exempt  # DEV: avoid CSRF errors on this admin action
+@csrf.exempt
 @app.route(
     "/dashboard/admin/users/<int:user_id>/toggle-active",
     methods=["POST"],
@@ -1663,9 +2980,6 @@ def admin_team_toggle_active(user_id):
 )
 @role_required("admin")
 def admin_user_toggle_active(user_id):
-    """
-    Toggle a user's active flag (soft deactivate / reactivate).
-    """
     user = User.query.get_or_404(user_id)
 
     if user.id == current_user.id:
@@ -1708,7 +3022,7 @@ def admin_kyc():
     return render_template("admin_kyc.html", pending=pending, approved=approved, rejected=rejected, KYCStatus=KYCStatus)
 
 
-@csrf.exempt  # DEV: avoid CSRF errors on KYC actions
+@csrf.exempt
 @app.route("/dashboard/admin/kyc/<int:user_id>/<string:action>",
            methods=["POST"], endpoint="admin_kyc_update")
 @role_required("admin")
@@ -1734,13 +3048,6 @@ def admin_kyc_update(user_id, action):
 @app.route("/dashboard/admin/transactions", endpoint="admin_transactions")
 @role_required("admin")
 def admin_transactions():
-    """
-    Admin overview page.
-
-    - Aggregated wallet activity across the system.
-    - Optionally search for a specific user to then open via secure audit flow.
-    - Shows recent audit notes.
-    """
     q = (request.args.get("q") or "").strip()
 
     found_user = None
@@ -1781,9 +3088,6 @@ def admin_transactions():
 @app.route("/dashboard/admin/audit-log", endpoint="admin_audit_log")
 @role_required("admin")
 def admin_audit_log():
-    """
-    Global admin audit log listing (simple text view for now).
-    """
     logs = (
         AuditLog.query
         .order_by(AuditLog.created_at.desc())
@@ -1799,7 +3103,7 @@ def admin_audit_log():
     return "Admin Audit Log\n" + "\n".join(lines)
 
 
-@csrf.exempt  # DEV: avoid CSRF errors on audit reason form
+@csrf.exempt
 @app.route(
     "/dashboard/admin/transactions/user/<int:user_id>/audit",
     methods=["GET", "POST"],
@@ -1807,11 +3111,6 @@ def admin_audit_log():
 )
 @role_required("admin")
 def admin_audit_access(user_id):
-    """
-    Step 1: admin/support must log WHY they are accessing this customer's account.
-    After a valid reason is submitted, we insert an AuditLog row and redirect
-    to the detailed transaction view.
-    """
     customer = User.query.get_or_404(user_id)
 
     if request.method == "POST":
@@ -1842,9 +3141,6 @@ def admin_audit_access(user_id):
 )
 @role_required("admin")
 def admin_transactions_user(user_id):
-    """
-    After logging a reason, show all wallet ledger entries for this user.
-    """
     customer = User.query.get_or_404(user_id)
 
     ledger = (
@@ -1870,10 +3166,6 @@ def admin_transactions_user(user_id):
 )
 @role_required("admin")
 def admin_export_wallet_csv(user_id):
-    """
-    Export the selected user's wallet ledger as a simple CSV.
-    No date filters, just full history in descending time order.
-    """
     user = User.query.get_or_404(user_id)
 
     ledger = (
@@ -1929,10 +3221,6 @@ def admin_export_wallet_csv(user_id):
 )
 @role_required("admin")
 def admin_export_system_ledger_csv():
-    """
-    Export the FULL system wallet ledger (all users) as CSV.
-    Useful for internal / external financial audits.
-    """
     rows = (
         db.session.query(LedgerEntry, Wallet, User)
         .join(Wallet, LedgerEntry.wallet_id == Wallet.id)
@@ -1999,11 +3287,6 @@ def admin_export_system_ledger_csv():
 )
 @role_required("admin")
 def admin_export_audit_log_csv():
-    """
-    Export the FULL admin audit log as CSV.
-    Shows which admin accessed which account, when, and why.
-    Useful for compliance & external audits.
-    """
     logs = (
         AuditLog.query
         .order_by(AuditLog.created_at.desc())
@@ -2100,7 +3383,7 @@ def admin_tickets():
     )
 
 
-@csrf.exempt  # DEV: avoid CSRF errors on ticket creation
+@csrf.exempt
 @app.route(
     "/dashboard/admin/tickets/new",
     methods=["GET", "POST"],
@@ -2108,10 +3391,6 @@ def admin_tickets():
 )
 @role_required("admin")
 def admin_ticket_new():
-    """
-    Create a support ticket about a customer (optionally tied to a specific transaction).
-    Expects user_id query param; optional ledger_id.
-    """
     user_id = request.args.get("user_id", type=int)
     ledger_id = request.args.get("ledger_id", type=int)
 
@@ -2173,7 +3452,7 @@ def admin_ticket_new():
     )
 
 
-@csrf.exempt  # DEV: avoid CSRF errors on ticket update form
+@csrf.exempt
 @app.route(
     "/dashboard/admin/tickets/<int:ticket_id>",
     methods=["GET", "POST"],
@@ -2230,7 +3509,6 @@ def admin_ticket_detail(ticket_id):
 @app.route("/dashboard/admin/reports", endpoint="admin_reports")
 @role_required("admin")
 def admin_reports():
-    # Top-line wallet + sales numbers (in cents)
     total_deposits_cents = db.session.query(func.sum(LedgerEntry.amount_cents)).filter(
         LedgerEntry.entry_type == EntryType.deposit
     ).scalar() or 0
@@ -2243,12 +3521,10 @@ def admin_reports():
         Order.status == OrderStatus.paid
     ).scalar() or 0
 
-    # Convert to dollars for display
     total_deposits = total_deposits_cents / 100.0
     total_withdrawals = total_withdrawals_cents / 100.0
     total_sales = total_sales_cents / 100.0
 
-    # Provide an aggregate "totals" object for the template
     totals = {
         "deposits": total_deposits,
         "withdrawals": total_withdrawals,
@@ -2257,7 +3533,6 @@ def admin_reports():
         "net": (total_deposits_cents - total_withdrawals_cents) / 100.0,
     }
 
-    # Wallet activity by type
     wallet_stats = (
         db.session.query(
             LedgerEntry.entry_type,
@@ -2268,7 +3543,6 @@ def admin_reports():
         .all()
     )
 
-    # User breakdown by role (excluding admin)
     role_stats = (
         db.session.query(
             User.role,
@@ -2279,7 +3553,6 @@ def admin_reports():
         .all()
     )
 
-    # Ticket summary
     ticket_total = SupportTicket.query.count()
     ticket_open = SupportTicket.query.filter_by(status=TicketStatus.open).count()
     ticket_in_review = SupportTicket.query.filter_by(status=TicketStatus.in_review).count()
@@ -2315,32 +3588,108 @@ def admin_reports():
 @app.route("/dashboard")
 @login_required
 def route_to_dashboard():
-    mapping = {
-        "artist": "artist_dashboard",
-        "producer": "producer_dashboard",
-        "studio": "studio_dashboard",
-        "videographer": "videographer_dashboard",
-        "designer": "designer_dashboard",
-        "engineer": "engineer_dashboard",
-        "manager": "manager_dashboard",
-        "vendor": "vendor_dashboard",
-        "funder": "funder_dashboard",
-        "admin": "admin_dashboard",
-    }
-    endpoint = mapping.get(current_user.role.value, "home")
+    role = current_user.role.value
+
+    if role == "admin":
+        # All admins (including superadmins) land on the normal admin dashboard.
+        # The Superadmin Owner Panel is now a sub-page reached via its own link.
+        endpoint = "admin_dashboard"
+    elif role == "artist":
+        endpoint = "artist_dashboard"
+    elif role == "funder":
+        endpoint = "funder_dashboard"
+    elif role == "client":
+        endpoint = "home"
+    elif is_service_provider(current_user):
+        endpoint = "provider_dashboard"
+    else:
+        endpoint = "home"
+
     return redirect(url_for(endpoint))
+
 
 
 @app.route("/dashboard/artist", endpoint="artist_dashboard")
 @role_required("artist")
 def artist_dashboard():
-    return render_template("dash_artist.html")
+    followers_count = UserFollow.query.filter_by(
+        followed_id=current_user.id
+    ).count()
+    following_count = UserFollow.query.filter_by(
+        follower_id=current_user.id
+    ).count()
+
+    total_bookings = (
+        Booking.query
+        .filter_by(provider_id=current_user.id)
+        .count()
+    )
+
+    pending_bookings = (
+        Booking.query
+        .filter_by(provider_id=current_user.id, status="pending")
+        .count()
+    )
+
+    confirmed_bookings = (
+        Booking.query
+        .filter_by(provider_id=current_user.id, status="confirmed")
+        .count()
+    )
+
+    recent_bookings = (
+        Booking.query
+        .filter_by(provider_id=current_user.id)
+        .order_by(Booking.event_datetime.desc())
+        .limit(5)
+        .all()
+    )
+
+    return render_template(
+        "dash_artist.html",
+        followers_count=followers_count,
+        following_count=following_count,
+        bookings_count=total_bookings,
+        pending_bookings=pending_bookings,
+        confirmed_bookings=confirmed_bookings,
+        recent_bookings=recent_bookings,
+    )
+
+
+@app.route("/dashboard/provider", endpoint="provider_dashboard")
+@login_required
+def provider_dashboard():
+    if not is_service_provider(current_user):
+        flash("You don't have access to the provider dashboard.", "error")
+        return redirect(url_for("route_to_dashboard"))
+
+    followers_count = UserFollow.query.filter_by(followed_id=current_user.id).count()
+    incoming_requests = BookingRequest.query.filter_by(provider_id=current_user.id).count()
+    outgoing_requests = BookingRequest.query.filter_by(client_id=current_user.id).count()
+
+    prof = BookMeProfile.query.filter_by(user_id=current_user.id).first()
+    portfolio_count = prof.portfolio_items.count() if prof else 0
+    requires_portfolio = role_requires_portfolio(current_user.role)
+
+    incoming_bookings_count = Booking.query.filter_by(provider_id=current_user.id).count()
+    outgoing_bookings_count = Booking.query.filter_by(client_id=current_user.id).count()
+
+    return render_template(
+        "dash_provider.html",
+        followers_count=followers_count,
+        incoming_requests=incoming_requests,
+        outgoing_requests=outgoing_requests,
+        portfolio_count=portfolio_count,
+        requires_portfolio=requires_portfolio,
+        incoming_bookings_count=incoming_bookings_count,
+        outgoing_bookings_count=outgoing_bookings_count,
+    )
 
 
 @app.route("/dashboard/producer", endpoint="producer_dashboard")
 @role_required("producer")
 def producer_dashboard():
-    return redirect(url_for("market_index"))
+    return redirect(url_for("provider_dashboard"))
 
 
 @app.route("/dashboard/studio", endpoint="studio_dashboard")
@@ -2416,34 +3765,36 @@ if __name__ == "__main__":
     with app.app_context():
         db.create_all()
 
-        # ------------------------------------
         # ADMIN SEED (superadmin / owner)
-        # ------------------------------------
         admin = User.query.filter_by(username="admin").first()
         if not admin:
             admin = User(
                 username="admin",
+                email="admin@example.com",
                 role=RoleEnum.admin,
                 kyc_status=KYCStatus.approved,
-                is_superadmin=True,  # mark as platform owner
+                is_superadmin=True,
             )
             admin.set_password(os.getenv("ADMIN_PASSWORD", "admin123"))
             db.session.add(admin)
             db.session.commit()
             get_or_create_wallet(admin.id)
         else:
-            # Ensure existing admin is flagged as superadmin
+            # Make sure existing admin has superadmin flag
             if not getattr(admin, "is_superadmin", False):
                 admin.is_superadmin = True
                 db.session.commit()
+            # Optionally backfill email in dev if missing
+            if IS_DEV and not admin.email:
+                admin.email = "admin@example.com"
+                db.session.commit()
 
-        # ------------------------------------
         # Sample producer
-        # ------------------------------------
         prod = User.query.filter_by(username="producer1").first()
         if not prod:
             prod = User(
                 username="producer1",
+                email="producer1@example.com",
                 role=RoleEnum.producer,
                 kyc_status=KYCStatus.approved,
             )
@@ -2452,14 +3803,17 @@ if __name__ == "__main__":
             db.session.commit()
             w = get_or_create_wallet(prod.id)
             post_ledger(w, EntryType.deposit, 5_000, meta="seed $50")
+        else:
+            if IS_DEV and not prod.email:
+                prod.email = "producer1@example.com"
+                db.session.commit()
 
-        # ------------------------------------
         # Sample artist
-        # ------------------------------------
         artist = User.query.filter_by(username="artist1").first()
         if not artist:
             artist = User(
                 username="artist1",
+                email="artist1@example.com",
                 role=RoleEnum.artist,
                 kyc_status=KYCStatus.approved,
             )
@@ -2468,7 +3822,10 @@ if __name__ == "__main__":
             db.session.commit()
             w = get_or_create_wallet(artist.id)
             post_ledger(w, EntryType.deposit, 10_000, meta="seed $100")
+        else:
+            if IS_DEV and not artist.email:
+                artist.email = "artist1@example.com"
+                db.session.commit()
 
-    # In dev we default to debug=True, in prod we default to debug=False
     debug_flag = os.getenv("FLASK_DEBUG", "1" if IS_DEV else "0") == "1"
     app.run(debug=debug_flag)

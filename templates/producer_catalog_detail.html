@@ -1,0 +1,413 @@
+{% extends "base.html" %}
+{% block title %}Producer catalog · BeatFund{% endblock %}
+
+{% block extra_head %}
+<style>
+  .pc-page {
+    max-width: 1120px;
+    margin: 32px auto 40px;
+    padding-inline: 16px;
+  }
+
+  .pc-header {
+    display: flex;
+    justify-content: space-between;
+    gap: 20px;
+    align-items: flex-end;
+    margin-bottom: 20px;
+  }
+  @media (max-width: 768px) {
+    .pc-header {
+      flex-direction: column;
+      align-items: flex-start;
+    }
+  }
+
+  .pc-header-main {
+    display: flex;
+    gap: 14px;
+    align-items: center;
+  }
+
+  .pc-avatar {
+    width: 56px;
+    height: 56px;
+    border-radius: 999px;
+    overflow: hidden;
+    background: radial-gradient(circle at 0% 0%, #1f2937, #020617 70%);
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .pc-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+  .pc-avatar-fallback {
+    font-size: 24px;
+    font-weight: 600;
+    color: #e5e7eb;
+  }
+
+  .pc-header-text {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .pc-title {
+    font-size: 22px;
+    font-weight: 650;
+    margin: 0;
+  }
+
+  .pc-username {
+    font-size: 13px;
+    color: #9ca3c8;
+  }
+
+  .pc-header-meta {
+    font-size: 12px;
+    color: #9aa4c2;
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .pc-header-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .pc-btn-ghost,
+  .pc-btn-primary {
+    border-radius: 999px;
+    padding: 7px 16px;
+    font-size: 13px;
+    border: 1px solid #3b476b;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    text-decoration: none;
+    white-space: nowrap;
+    transition: transform 0.1s ease, box-shadow 0.1s ease, background 0.12s ease, border-color 0.12s ease;
+  }
+  .pc-btn-ghost {
+    background: rgba(15, 23, 42, 0.7);
+    color: #c1ccff;
+  }
+  .pc-btn-ghost:hover {
+    background: rgba(34, 43, 75, 0.96);
+    border-color: #4f8bff;
+  }
+
+  .pc-btn-primary {
+    background: linear-gradient(135deg, #4de3ff, #6366f1);
+    color: #ffffff;
+    box-shadow: 0 6px 18px rgba(56, 189, 248, 0.45);
+    border-color: transparent;
+  }
+  .pc-btn-primary:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 10px 26px rgba(79, 70, 229, 0.55);
+  }
+  .pc-btn-small {
+    padding-block: 5px;
+    padding-inline: 13px;
+    font-size: 12px;
+  }
+
+  .pc-section-title {
+    font-size: 16px;
+    font-weight: 600;
+    margin: 8px 0 10px;
+  }
+
+  .pc-empty {
+    font-size: 13px;
+    color: #9aa4c2;
+    margin-top: 10px;
+  }
+
+  /* Beat grid and cards (simplified version of marketplace style) */
+  .pc-beat-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 16px;
+  }
+
+  .pc-beat-card {
+    border-radius: 18px;
+    border: 1px solid rgba(17, 24, 39, 0.95);
+    background:
+      radial-gradient(circle at top left, rgba(59, 130, 246, 0.28), transparent 58%),
+      radial-gradient(circle at bottom right, rgba(15, 23, 42, 1), rgba(15, 23, 42, 1));
+    padding: 8px 8px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    box-shadow:
+      0 14px 30px rgba(15, 23, 42, 0.9),
+      0 0 0 1px rgba(15, 23, 42, 0.9) inset;
+  }
+
+  .pc-beat-cover {
+    position: relative;
+    border-radius: 14px;
+    overflow: hidden;
+    background: radial-gradient(circle at 0% 0%, #1f2937, #020617 65%);
+  }
+
+  .pc-beat-cover img {
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    object-fit: cover;
+    display: block;
+  }
+
+  .pc-badge {
+    position: absolute;
+    left: 8px;
+    top: 8px;
+    padding: 3px 8px;
+    border-radius: 999px;
+    font-size: 11px;
+    background: rgba(250, 204, 21, 0.96);
+    color: #1f2937;
+    font-weight: 600;
+  }
+
+  .pc-beat-info {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding-inline: 2px;
+  }
+
+  .pc-beat-title-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 6px;
+  }
+
+  .pc-beat-title {
+    font-size: 13px;
+    font-weight: 560;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .pc-beat-bpm {
+    font-size: 11px;
+    color: #9aa4c2;
+  }
+
+  .pc-beat-meta {
+    font-size: 11px;
+    color: #9aa4c2;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .pc-beat-audio-row {
+    margin-top: 3px;
+  }
+
+  .pc-beat-audio {
+    width: 100%;
+    outline: none;
+  }
+
+  .pc-beat-bottom {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 6px;
+    margin-top: 2px;
+  }
+
+  .pc-price-row {
+    font-size: 14px;
+    font-weight: 620;
+    color: #bbf7d0;
+  }
+
+  .pc-price-sub {
+    font-size: 11px;
+    color: #9aa4c2;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="pc-page">
+  {% if producer %}
+    <header class="pc-header">
+      <div class="pc-header-main">
+        <div class="pc-avatar">
+          {% if producer.avatar_url %}
+            <img src="{{ producer.avatar_url }}" alt="{{ producer.display_name }} avatar">
+          {% else %}
+            <div class="pc-avatar-fallback">
+              {{ producer.display_name[:1]|upper }}
+            </div>
+          {% endif %}
+        </div>
+        <div class="pc-header-text">
+          <h1 class="pc-title">{{ producer.display_name }}</h1>
+          {% if producer.username %}
+            <div class="pc-username">@{{ producer.username }}</div>
+          {% endif %}
+          <div class="pc-header-meta">
+            {% if producer.city and producer.state %}
+              <span>{{ producer.city }}, {{ producer.state }}</span>
+            {% elif producer.location %}
+              <span>{{ producer.location }}</span>
+            {% endif %}
+
+            <span>
+              {{ producer.beats_count }} beat{{ producer.beats_count != 1 and 's' or '' }} in catalog
+            </span>
+
+            {% if producer.rating %}
+              <span>
+                ⭐ {{ "%.1f"|format(producer.rating) }}
+                · {{ producer.rating_count or 0 }} review{{ (producer.rating_count or 0) != 1 and 's' or '' }}
+              </span>
+            {% else %}
+              <span>New · No ratings yet</span>
+            {% endif %}
+
+            <span>
+              {{ producer.followers_count or 0 }} follower{{ (producer.followers_count or 0) != 1 and 's' or '' }}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div class="pc-header-actions">
+        <a href="{{ url_for('producer_catalog_index') }}" class="pc-btn-ghost">
+          ← All producers
+        </a>
+        <a href="{{ url_for('market_index') }}" class="pc-btn-ghost">
+          ← Marketplace
+        </a>
+
+        {# Placeholder for future "Follow" button #}
+        <button type="button" class="pc-btn-primary pc-btn-small" disabled>
+          Follow (coming soon)
+        </button>
+      </div>
+    </header>
+
+    <section>
+      <h2 class="pc-section-title">Beats by {{ producer.display_name }}</h2>
+
+      {% if beats %}
+        <div class="pc-beat-grid">
+          {% for b in beats %}
+            {% set price = (b.price_cents or 0) / 100.0 %}
+            <article class="pc-beat-card">
+              <div class="pc-beat-cover">
+                <img
+                  src="{{ b.cover_url or url_for('static', filename='img/beat-placeholder.jpg') }}"
+                  alt="{{ b.title }} cover"
+                >
+                {% if b.is_featured %}
+                  <span class="pc-badge">Featured</span>
+                {% endif %}
+              </div>
+
+              <div class="pc-beat-info">
+                <div class="pc-beat-title-row">
+                  <div class="pc-beat-title">
+                    {{ b.title }}
+                  </div>
+                  {% if b.bpm %}
+                    <div class="pc-beat-bpm">
+                      {{ b.bpm }} BPM
+                    </div>
+                  {% endif %}
+                </div>
+
+                <div class="pc-beat-meta">
+                  {% if b.genre %}{{ b.genre }}{% endif %}
+                  {% if b.genre and b.id %} · {% endif %}
+                  {% if b.id %}#{{ b.id }}{% endif %}
+                </div>
+
+                {% set preview_url = b.preview_url or b.audio_url or b.file_url %}
+                {% if preview_url %}
+                  <div class="pc-beat-audio-row">
+                    <audio
+                      class="pc-beat-audio"
+                      controls
+                      controlsList="nodownload noplaybackrate"
+                      preload="none"
+                    >
+                      <source src="{{ preview_url }}" type="audio/mpeg">
+                      Your browser does not support audio playback.
+                    </audio>
+                  </div>
+                {% endif %}
+
+                <div class="pc-beat-bottom">
+                  <div>
+                    <div class="pc-price-row">
+                      ${{ "%.2f"|format(price) }}
+                    </div>
+                    <div class="pc-price-sub">
+                      Paid from wallet balance
+                    </div>
+                  </div>
+
+                  <form
+                    method="POST"
+                    action="{{ url_for('market_buy', beat_id=b.id) }}"
+                  >
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="pc-btn-primary pc-btn-small">
+                      Buy with wallet
+                    </button>
+                  </form>
+                </div>
+              </div>
+            </article>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p class="pc-empty">
+          This producer hasn’t added any beats yet. Check back soon.
+        </p>
+      {% endif %}
+    </section>
+
+  {% else %}
+    <header class="pc-header">
+      <div class="pc-header-main">
+        <div class="pc-header-text">
+          <h1 class="pc-title">Producer not found</h1>
+          <p class="pc-empty">
+            We couldn’t find a producer with username “{{ raw_username }}”.
+          </p>
+        </div>
+      </div>
+      <div class="pc-header-actions">
+        <a href="{{ url_for('producer_catalog_index') }}" class="pc-btn-ghost">
+          ← All producers
+        </a>
+        <a href="{{ url_for('market_index') }}" class="pc-btn-ghost">
+          ← Marketplace
+        </a>
+      </div>
+    </header>
+  {% endif %}
+</div>
+{% endblock %}

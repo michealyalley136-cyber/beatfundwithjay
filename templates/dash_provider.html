@@ -1,0 +1,362 @@
+{% extends "base.html" %}
+
+{% block title %}Provider Dashboard · BeatFund{% endblock %}
+
+{% block content %}
+<style>
+  .bf-page {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 32px 16px 64px;
+    color: #f7f9ff;
+  }
+
+  .bf-page h1 {
+    font-size: 1.6rem;
+    margin-bottom: 0.25rem;
+  }
+
+  .bf-page-subtitle {
+    font-size: 0.9rem;
+    opacity: 0.8;
+    margin-bottom: 1.5rem;
+  }
+
+  .bf-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 2fr) minmax(0, 1.5fr);
+    gap: 24px;
+  }
+
+  @media (max-width: 900px) {
+    .bf-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .bf-card {
+    background: radial-gradient(circle at top left, #182a44, #050712);
+    border-radius: 18px;
+    border: 1px solid rgba(255,255,255,0.08);
+    padding: 18px 20px 20px;
+    box-shadow: 0 16px 40px rgba(0,0,0,0.45);
+  }
+
+  .bf-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 18px;
+  }
+
+  .bf-artist-info {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+
+  .bf-avatar {
+    width: 64px;
+    height: 64px;
+    border-radius: 999px;
+    overflow: hidden;
+    border: 2px solid rgba(255,255,255,0.18);
+    flex-shrink: 0;
+    background: linear-gradient(135deg, #3b82f6, #22c55e);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.4rem;
+    font-weight: 600;
+  }
+
+  .bf-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .bf-artist-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .bf-artist-handle {
+    font-weight: 600;
+    font-size: 1rem;
+  }
+
+  .bf-role-pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: rgba(59,130,246,0.16);
+    border: 1px solid rgba(59,130,246,0.4);
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .bf-change-btn {
+    padding: 6px 10px;
+    border-radius: 999px;
+    border: 1px solid rgba(255,255,255,0.24);
+    background: transparent;
+    font-size: 0.75rem;
+    cursor: pointer;
+    white-space: nowrap;
+    text-decoration: none;
+    color: inherit;
+  }
+
+  .bf-change-btn:hover {
+    background: rgba(255,255,255,0.08);
+  }
+
+  .bf-tip-text {
+    font-size: 0.75rem;
+    opacity: 0.65;
+    margin-top: 4px;
+  }
+
+  .bf-stats-row {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+    margin: 12px 0 18px;
+  }
+
+  .bf-stat-chip {
+    background: rgba(15,23,42,0.7);
+    border-radius: 12px;
+    padding: 10px 12px;
+    border: 1px solid rgba(148,163,184,0.35);
+  }
+
+  .bf-stat-label {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    opacity: 0.7;
+    margin-bottom: 2px;
+  }
+
+  .bf-stat-value {
+    font-size: 1.1rem;
+    font-weight: 600;
+  }
+
+  .bf-stat-caption {
+    font-size: 0.72rem;
+    opacity: 0.7;
+    margin-top: 2px;
+  }
+
+  .bf-quick-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 4px;
+  }
+
+  .bf-pill-link {
+    display: inline-flex;
+    align-items: center;
+    padding: 7px 12px;
+    border-radius: 999px;
+    border: 1px solid rgba(148,163,184,0.5);
+    font-size: 0.78rem;
+    text-decoration: none;
+    color: inherit;
+  }
+
+  .bf-pill-link.primary {
+    border-color: rgba(59,130,246,0.9);
+    background: linear-gradient(135deg, #2563eb, #22c55e);
+    color: #020617;
+    font-weight: 600;
+  }
+
+  .bf-pill-link:hover {
+    background: rgba(148,163,184,0.12);
+  }
+
+  .bf-pill-link.primary:hover {
+    filter: brightness(1.05);
+  }
+
+  .bf-small-note {
+    font-size: 0.75rem;
+    opacity: 0.7;
+    margin-top: 8px;
+  }
+
+  .bf-activity-body ul {
+    padding-left: 18px;
+    margin: 6px 0 12px;
+    font-size: 0.85rem;
+    opacity: 0.88;
+  }
+
+  .bf-activity-body li + li {
+    margin-top: 4px;
+  }
+
+  .bf-activity-footer {
+    margin-top: 10px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .bf-link-muted {
+    font-size: 0.78rem;
+    opacity: 0.8;
+    text-decoration: none;
+  }
+
+  .bf-link-muted:hover {
+    text-decoration: underline;
+    opacity: 1;
+  }
+</style>
+
+<div class="bf-page">
+  <h1>BeatFund Provider</h1>
+  <div class="bf-page-subtitle">
+    Welcome back, @{{ current_user.username }}. Manage your BookMe provider profile, bookings, portfolio, and wallet activity from one place.
+  </div>
+
+  <div class="bf-grid">
+    <!-- LEFT: PROFILE & QUICK ACTIONS -->
+    <section class="bf-card">
+      <div class="bf-card-header">
+        <div class="bf-artist-info">
+          <div class="bf-avatar">
+            {% if current_user.avatar_path %}
+              <img src="{{ url_for('media_file', filename=current_user.avatar_path) }}" alt="Provider avatar">
+            {% else %}
+              {{ current_user.username[0]|upper }}
+            {% endif %}
+          </div>
+          <div class="bf-artist-meta">
+            <div class="bf-artist-handle">@{{ current_user.username }}</div>
+            <div>
+              <span class="bf-role-pill">
+                {{ current_user.role.value.replace('_', ' ')|title }}
+              </span>
+            </div>
+            <div class="bf-tip-text">
+              This is the profile promoters and clients see when they find you in BookMe.
+            </div>
+          </div>
+        </div>
+
+        <a href="{{ url_for('bookme_profile') }}" class="bf-change-btn">
+          Edit BookMe profile
+        </a>
+      </div>
+
+      <div class="bf-stats-row">
+        <div class="bf-stat-chip">
+          <div class="bf-stat-label">Followers</div>
+          <div class="bf-stat-value">{{ followers_count }}</div>
+          <div class="bf-stat-caption">People following your creator profile</div>
+        </div>
+        <div class="bf-stat-chip">
+          <div class="bf-stat-label">Incoming Requests</div>
+          <div class="bf-stat-value">{{ incoming_requests }}</div>
+          <div class="bf-stat-caption">Bookings where you are the provider</div>
+        </div>
+        <div class="bf-stat-chip">
+          <div class="bf-stat-label">Outgoing Requests</div>
+          <div class="bf-stat-value">{{ outgoing_requests }}</div>
+          <div class="bf-stat-caption">Requests you've sent to others</div>
+        </div>
+      </div>
+
+      <div class="bf-quick-actions">
+        <a href="{{ url_for('bookme_profile') }}" class="bf-pill-link primary">
+          Manage BookMe Profile
+        </a>
+        <a href="{{ url_for('bookme_portfolio') }}" class="bf-pill-link">
+          Manage Portfolio
+        </a>
+        <a href="{{ url_for('bookme_requests') }}" class="bf-pill-link">
+          View Booking Requests
+        </a>
+        <a href="{{ url_for('bookme_search', role=current_user.role.value) }}" class="bf-pill-link">
+          View Yourself in Search
+        </a>
+        <a href="{{ url_for('bookme_search') }}" class="bf-pill-link">
+          Browse Other Providers
+        </a>
+        <a href="{{ url_for('wallet_home') }}" class="bf-pill-link">
+          Wallet &amp; Transactions
+        </a>
+
+        {# ⭐ NEW: producers only – manage beats page #}
+        {% if current_user.role == RoleEnum.producer %}
+          <a href="{{ url_for('producer_beats') }}" class="bf-pill-link">
+            Manage My Beats
+          </a>
+        {% endif %}
+      </div>
+
+      <div class="bf-small-note">
+        Portfolio items: {{ portfolio_count }}
+        {% if requires_portfolio and portfolio_count == 0 %}
+          · <a href="{{ url_for('bookme_portfolio') }}" class="bf-link-muted">
+            Add your first portfolio piece
+          </a>
+        {% endif %}
+      </div>
+    </section>
+
+    <!-- RIGHT: BOOKINGS & ACTIVITY SUMMARY -->
+    <section class="bf-card">
+      <div class="bf-card-header">
+        <div>
+          <div style="font-weight:600; font-size:0.95rem;">Bookings &amp; Activity</div>
+          <div style="font-size:0.8rem; opacity:0.75;">
+            As clients send you requests and you respond, this panel summarizes how your provider profile is performing.
+          </div>
+        </div>
+      </div>
+
+      <div class="bf-activity-body">
+        <ul>
+          <li>Incoming requests are created when clients choose you on BookMe and pick a time slot.</li>
+          <li>Outgoing requests are the bookings you create when you contact other providers.</li>
+          <li>Your wallet records hold fees and payouts linked to accepted bookings.</li>
+        </ul>
+
+        <div style="font-size:0.8rem; opacity:0.8; margin-top:10px; margin-bottom:6px;">
+          Recommended next steps:
+        </div>
+        <ul>
+          <li>
+            <strong>Complete your BookMe profile</strong> with services, short bio, and rate notes.
+          </li>
+          <li>
+            <strong>Add portfolio items</strong> so promoters can see what you do without leaving BeatFund.
+          </li>
+          <li>
+            <strong>Share your BeatFund handle</strong> so promoters can easily find you in search.
+          </li>
+        </ul>
+      </div>
+
+      <div class="bf-activity-footer">
+        <a class="bf-pill-link" href="{{ url_for('bookme_portfolio') }}">Add portfolio item</a>
+        <a class="bf-link-muted" href="{{ url_for('bookme_requests') }}">
+          Open booking requests view
+        </a>
+      </div>
+    </section>
+  </div>
+</div>
+{% endblock %}

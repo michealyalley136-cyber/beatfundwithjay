@@ -1,0 +1,371 @@
+{% extends "base.html" %}
+{% block title %}Booking #{{ booking.id }} · BeatFund{% endblock %}
+
+{% block content %}
+<style>
+  .bf-page {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 32px 16px 64px;
+    color: #f7f9ff;
+  }
+  .bf-back-link {
+    font-size: 0.85rem;
+    opacity: 0.8;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 10px;
+  }
+  .bf-back-link:hover {
+    opacity: 1;
+    text-decoration: underline;
+  }
+  .bf-header-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 16px;
+    margin-bottom: 20px;
+  }
+  .bf-header-row h1 {
+    font-size: 1.4rem;
+    margin: 0 0 4px;
+  }
+  .bf-header-sub {
+    font-size: 0.9rem;
+    opacity: 0.8;
+  }
+  .bf-status-pill {
+    border-radius: 999px;
+    padding: 5px 10px;
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    border: 1px solid rgba(148,163,184,0.5);
+    white-space: nowrap;
+  }
+  .bf-status-pending {
+    border-color: rgba(234,179,8,0.8);
+    background: rgba(234,179,8,0.12);
+  }
+  .bf-status-confirmed {
+    border-color: rgba(34,197,94,0.8);
+    background: rgba(34,197,94,0.12);
+  }
+  .bf-status-completed {
+    border-color: rgba(59,130,246,0.8);
+    background: rgba(59,130,246,0.12);
+  }
+  .bf-status-cancelled,
+  .bf-status-disputed {
+    border-color: rgba(248,113,113,0.8);
+    background: rgba(248,113,113,0.12);
+  }
+
+  .bf-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.5fr) minmax(0, 1.2fr);
+    gap: 20px;
+  }
+  @media (max-width: 900px) {
+    .bf-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .bf-card {
+    background: radial-gradient(circle at top left, #182a44, #050712);
+    border-radius: 18px;
+    border: 1px solid rgba(255,255,255,0.08);
+    padding: 18px 20px 20px;
+    box-shadow: 0 16px 40px rgba(0,0,0,0.45);
+  }
+  .bf-card h2 {
+    font-size: 1rem;
+    margin-bottom: 0.75rem;
+  }
+  .bf-meta-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    font-size: 0.85rem;
+    margin-bottom: 6px;
+  }
+  .bf-meta-label {
+    opacity: 0.7;
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .bf-meta-value {
+    font-size: 0.9rem;
+  }
+  .bf-section-title {
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    opacity: 0.8;
+    margin-top: 10px;
+    margin-bottom: 4px;
+  }
+  .bf-user-card {
+    padding: 10px 12px;
+    border-radius: 12px;
+    border: 1px solid rgba(148,163,184,0.4);
+    margin-bottom: 8px;
+    font-size: 0.9rem;
+  }
+  .bf-user-username {
+    font-weight: 600;
+  }
+  .bf-user-role {
+    font-size: 0.75rem;
+    opacity: 0.8;
+  }
+  .bf-note-box {
+    padding: 10px 12px;
+    border-radius: 10px;
+    background: rgba(15,23,42,0.9);
+    border: 1px solid rgba(148,163,184,0.3);
+    font-size: 0.85rem;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .bf-note-empty {
+    opacity: 0.7;
+    font-style: italic;
+  }
+  .bf-contract-box {
+    font-size: 0.82rem;
+    opacity: 0.85;
+    line-height: 1.4;
+  }
+  .bf-contract-box ul {
+    padding-left: 18px;
+    margin: 6px 0;
+  }
+  .bf-contract-box li + li {
+    margin-top: 3px;
+  }
+
+  .bf-form {
+    margin-top: 8px;
+  }
+  .bf-textarea {
+    width: 100%;
+    min-height: 90px;
+    border-radius: 12px;
+    border: 1px solid rgba(148,163,184,0.5);
+    background: rgba(15,23,42,0.95);
+    color: #f9fafb;
+    padding: 8px 10px;
+    font-size: 0.86rem;
+    resize: vertical;
+  }
+  .bf-form-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 8px;
+  }
+  .bf-btn {
+    border-radius: 999px;
+    padding: 6px 12px;
+    border: 1px solid rgba(148,163,184,0.5);
+    background: transparent;
+    color: #f9fafb;
+    cursor: pointer;
+    font-size: 0.8rem;
+  }
+  .bf-btn:hover {
+    background: rgba(148,163,184,0.18);
+  }
+  .bf-btn-primary {
+    border-color: rgba(59,130,246,0.9);
+    background: linear-gradient(135deg, #2563eb, #22c55e);
+    color: #020617;
+    font-weight: 600;
+  }
+  .bf-btn-primary:hover {
+    filter: brightness(1.05);
+  }
+</style>
+
+<div class="bf-page">
+
+  <a href="{{ url_for('bookme_requests') }}" class="bf-back-link">
+    &#8592; Back to BookMe requests
+  </a>
+
+  <div class="bf-header-row">
+    <div>
+      <h1>{{ booking.event_title or ("Booking #" ~ booking.id) }}</h1>
+      <div class="bf-header-sub">
+        Booking #{{ booking.id }} •
+        {% if booking.event_datetime %}
+          {{ booking.event_datetime.strftime("%b %d, %Y · %I:%M %p") }}
+        {% else %}
+          Date/time: TBD
+        {% endif %}
+      </div>
+    </div>
+
+    {% set status = booking.status|lower %}
+    {% set pill_class = "bf-status-pill" %}
+    {% if status == "pending" %}
+      {% set pill_class = pill_class + " bf-status-pending" %}
+    {% elif status == "confirmed" %}
+      {% set pill_class = pill_class + " bf-status-confirmed" %}
+    {% elif status == "completed" %}
+      {% set pill_class = pill_class + " bf-status-completed" %}
+    {% elif status in ["cancelled", "canceled", "disputed"] %}
+      {% set pill_class = pill_class + " bf-status-cancelled" %}
+    {% endif %}
+    <div class="{{ pill_class }}">
+      {{ status|replace("_"," ")|title }}
+    </div>
+  </div>
+
+  <div class="bf-grid">
+    <!-- LEFT: Event + Money + Contract summary -->
+    <section class="bf-card">
+      <h2>Event &amp; Payment Details</h2>
+
+      <div class="bf-meta-row">
+        <div>
+          <div class="bf-meta-label">Date &amp; time</div>
+          <div class="bf-meta-value">
+            {% if booking.event_datetime %}
+              {{ booking.event_datetime.strftime("%A, %b %d, %Y · %I:%M %p") }}
+            {% else %}
+              Not set / discussed separately
+            {% endif %}
+          </div>
+        </div>
+        <div>
+          <div class="bf-meta-label">Duration</div>
+          <div class="bf-meta-value">
+            {% if booking.duration_minutes %}
+              {{ booking.duration_minutes }} minutes
+            {% else %}
+              Not specified
+            {% endif %}
+          </div>
+        </div>
+      </div>
+
+      <div class="bf-meta-row">
+        <div>
+          <div class="bf-meta-label">Location</div>
+          <div class="bf-meta-value">
+            {{ booking.location_text or "Not specified" }}
+          </div>
+        </div>
+        <div>
+          <div class="bf-meta-label">Total / Hold Amount</div>
+          <div class="bf-meta-value">
+            {% if booking.total_cents %}
+              ${{ "%.2f"|format(booking.total_cents / 100.0) }}
+            {% else %}
+              Not set in system
+            {% endif %}
+          </div>
+        </div>
+      </div>
+
+      <div class="bf-section-title">Contract-style summary</div>
+      <div class="bf-contract-box">
+        <p>
+          This booking is between:
+        </p>
+        <ul>
+          <li>
+            <strong>Provider:</strong> @{{ booking.provider.username }}
+            ({{ booking.provider_role.value.replace("_"," ")|title if booking.provider_role else "Provider" }})
+          </li>
+          <li>
+            <strong>Client:</strong> @{{ booking.client.username }}
+          </li>
+        </ul>
+
+        <p>
+          The provider agrees to perform the services described as
+          <strong>{{ booking.event_title or "the booked engagement" }}</strong>
+          at the date / time and location listed above (or as otherwise agreed in writing between both parties).
+        </p>
+
+        <p>
+          Payment details (rate, deposit, remaining balance, and cancellation rules) should be clearly
+          agreed between both sides in writing (DM, email, or uploaded contract).
+          BeatFund's wallet ledger records any holds or transfers made through the platform for this booking.
+        </p>
+      </div>
+    </section>
+
+    <!-- RIGHT: People + messages + provider notes -->
+    <section class="bf-card">
+      <h2>People &amp; Notes</h2>
+
+      <div class="bf-section-title">Provider</div>
+      <div class="bf-user-card">
+        <div class="bf-user-username">@{{ booking.provider.username }}</div>
+        <div class="bf-user-role">
+          {{ booking.provider_role.value.replace("_", " ")|title if booking.provider_role else "Provider" }}
+        </div>
+      </div>
+
+      <div class="bf-section-title">Client</div>
+      <div class="bf-user-card">
+        <div class="bf-user-username">@{{ booking.client.username }}</div>
+        <div class="bf-user-role">Client / event organizer</div>
+      </div>
+
+      <div class="bf-section-title">Client message</div>
+      <div class="bf-note-box {% if not booking.notes_from_client %}bf-note-empty{% endif %}">
+        {{ booking.notes_from_client or "No additional message provided by the client." }}
+      </div>
+
+      <div class="bf-section-title">Provider notes</div>
+
+      {% if is_provider %}
+        <form method="post" class="bf-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <textarea
+            name="notes_from_provider"
+            class="bf-textarea"
+            placeholder="Add your internal notes here (tech rider, arrival time, contact name, etc.)"
+          >{{ booking.notes_from_provider or "" }}</textarea>
+
+          <div class="bf-form-actions">
+            <button type="submit" class="bf-btn bf-btn-primary">
+              Save notes
+            </button>
+
+            {% if booking.status == "confirmed" %}
+              <button
+                type="submit"
+                class="bf-btn"
+                name="status_action"
+                value="mark_completed"
+              >
+                Mark as completed
+              </button>
+            {% endif %}
+          </div>
+        </form>
+      {% else %}
+        <div class="bf-note-box {% if not booking.notes_from_provider %}bf-note-empty{% endif %}">
+          {{ booking.notes_from_provider or "No provider notes recorded yet." }}
+        </div>
+      {% endif %}
+
+      <div style="font-size:0.8rem; opacity:0.75; margin-top:10px;">
+        Tip: Share this page with your client if you want them to see the current status
+        and summary of the booking.
+      </div>
+    </section>
+  </div>
+</div>
+{% endblock %}

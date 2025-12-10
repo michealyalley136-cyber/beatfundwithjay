@@ -1,0 +1,336 @@
+{% extends "base.html" %}
+{% block title %}Owner & Finance Dashboard · BeatFund{% endblock %}
+
+{% block content %}
+<style>
+  .owner-dashboard .card {
+    border-radius: 0.75rem;
+  }
+  .owner-dashboard .card-header {
+    padding-bottom: 0.4rem;
+  }
+  .owner-dashboard .kpi-label {
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    font-size: 0.7rem;
+  }
+</style>
+
+<div class="container-fluid py-4 owner-dashboard">
+
+  <!-- HEADER -->
+  <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-2">
+    <div>
+      <h1 class="h4 mb-1 fw-semibold">Owner &amp; Finance Dashboard</h1>
+      <p class="text-muted mb-0 small">
+        Internal view of platform volume, wallet liability and marketplace performance.
+      </p>
+    </div>
+    <div class="text-end small text-muted">
+      <div>
+        Environment:
+        <span class="badge bg-secondary-subtle border text-secondary ms-1">
+          {{ APP_ENV|upper }}
+        </span>
+        {% if IS_DEV %}
+          <span class="badge bg-warning-subtle border text-warning ms-1">
+            DEV
+          </span>
+        {% endif %}
+      </div>
+      <div class="mt-1">
+        Access: <code>is_superadmin = True</code> &amp; owner passcode.
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-4">
+
+    <!-- LEFT COLUMN: KPIs + CHARTS -->
+    <div class="col-12 col-xl-8">
+
+      <!-- KPI CARDS -->
+      <div class="row g-3 mb-3">
+        <div class="col-6 col-md-3">
+          <div class="card shadow-sm border-0 h-100">
+            <div class="card-body">
+              <div class="kpi-label text-muted mb-1">Users</div>
+              <div class="fs-4 fw-semibold mb-0">{{ "{:,}".format(total_users) }}</div>
+              <div class="small text-muted">Non-admin accounts</div>
+            </div>
+          </div>
+        </div>
+        <div class="col-6 col-md-3">
+          <div class="card shadow-sm border-0 h-100">
+            <div class="card-body">
+              <div class="kpi-label text-muted mb-1">Wallets</div>
+              <div class="fs-4 fw-semibold mb-0">{{ "{:,}".format(total_wallets) }}</div>
+              <div class="small text-muted">Active wallets</div>
+            </div>
+          </div>
+        </div>
+        <div class="col-6 col-md-3">
+          <div class="card shadow-sm border-0 h-100">
+            <div class="card-body">
+              <div class="kpi-label text-muted mb-1">Beats</div>
+              <div class="fs-4 fw-semibold mb-0">{{ "{:,}".format(total_beats) }}</div>
+              <div class="small text-muted">Catalog size</div>
+            </div>
+          </div>
+        </div>
+        <div class="col-6 col-md-3">
+          <div class="card shadow-sm border-0 h-100">
+            <div class="card-body">
+              <div class="kpi-label text-muted mb-1">Orders</div>
+              <div class="fs-4 fw-semibold mb-0">{{ "{:,}".format(total_orders) }}</div>
+              <div class="small text-muted">Paid orders (lifetime)</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- PLATFORM SNAPSHOT CHART -->
+      <div class="card border-0 shadow-sm mb-3">
+        <div class="card-header bg-transparent border-0">
+          <div class="d-flex justify-content-between align-items-center">
+            <h2 class="h6 mb-0">Platform Snapshot</h2>
+            <span class="badge bg-light text-muted border small">
+              Users · Wallets · Beats · Orders
+            </span>
+          </div>
+          <p class="small text-muted mb-0 mt-2">
+            High-level view of platform size and activity.
+          </p>
+        </div>
+        <div class="card-body">
+          <canvas id="platformBarChart" style="max-height: 280px;"></canvas>
+        </div>
+      </div>
+
+      <!-- MONEY FLOWS CHART -->
+      <div class="card border-0 shadow-sm">
+        <div class="card-header bg-transparent border-0">
+          <div class="d-flex justify-content-between align-items-center">
+            <h2 class="h6 mb-0">Money Flows Breakdown</h2>
+            <span class="badge bg-light text-muted border small">
+              Deposits vs Withdrawals vs Sales
+            </span>
+          </div>
+          <p class="small text-muted mb-0 mt-2">
+            Lifetime movement of funds across all BeatFund wallets.
+          </p>
+        </div>
+        <div class="card-body">
+          <canvas id="moneyFlowChart" style="max-height: 280px;"></canvas>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- RIGHT COLUMN: WALLET LIABILITY + TABLE SUMMARY -->
+    <div class="col-12 col-xl-4">
+
+      <!-- TOTAL WALLET BALANCE -->
+      <div class="card border-0 shadow-sm bg-dark text-white mb-3">
+        <div class="card-body">
+          <div class="kpi-label text-uppercase text-light mb-1">
+            Total Wallet Balance (All Users)
+          </div>
+          <div class="display-6 fw-semibold mb-1">
+            ${{ "{:,.2f}".format(total_wallet_balance) }}
+          </div>
+          <div class="small text-light">
+            Aggregate value of all user wallets based on ledger entries.
+            Treat as approximate wallet liability for the platform.
+          </div>
+          <div class="mt-3">
+            <span class="badge bg-warning text-dark rounded-pill px-3 py-2">
+              Sensitive financial metric
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <!-- FINANCIAL TOTALS -->
+      <div class="card shadow-sm border-0 mb-3">
+        <div class="card-body">
+          <h2 class="h6 mb-3">Financial Totals (Lifetime)</h2>
+          <table class="table table-sm table-borderless align-middle mb-0">
+            <tbody>
+              <tr>
+                <td class="text-muted small">Total deposits</td>
+                <td class="text-end fw-semibold text-success">
+                  ${{ "%.2f"|format(total_deposits) }}
+                </td>
+              </tr>
+              <tr>
+                <td class="text-muted small">Total withdrawals</td>
+                <td class="text-end fw-semibold text-danger">
+                  ${{ "%.2f"|format(total_withdrawals) }}
+                </td>
+              </tr>
+              <tr>
+                <td class="text-muted small">Beat sales (gross)</td>
+                <td class="text-end fw-semibold text-primary">
+                  ${{ "%.2f"|format(total_sales) }}
+                </td>
+              </tr>
+              <tr>
+                <td class="text-muted small">Net wallet flow<br>
+                  <span class="text-muted">deposits − withdrawals</span>
+                </td>
+                <td class="text-end fw-semibold">
+                  {% if net_wallet_dollars >= 0 %}
+                    <span class="text-success">
+                      +${{ "%.2f"|format(net_wallet_dollars) }}
+                    </span>
+                  {% else %}
+                    <span class="text-danger">
+                      -${{ "%.2f"|format(net_wallet_dollars|abs) }}
+                    </span>
+                  {% endif %}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- QUICK STATS LIST -->
+      <div class="card shadow-sm border-0">
+        <div class="card-body">
+          <h2 class="h6 mb-3">Quick Stats</h2>
+          <ul class="list-unstyled mb-0 small">
+            <li class="d-flex justify-content-between py-1 border-bottom">
+              <span class="text-muted">Non-admin users</span>
+              <span class="fw-semibold">{{ "{:,}".format(total_users) }}</span>
+            </li>
+            <li class="d-flex justify-content-between py-1 border-bottom">
+              <span class="text-muted">Active wallets</span>
+              <span class="fw-semibold">{{ "{:,}".format(total_wallets) }}</span>
+            </li>
+            <li class="d-flex justify-content-between py-1 border-bottom">
+              <span class="text-muted">Beats listed</span>
+              <span class="fw-semibold">{{ "{:,}".format(total_beats) }}</span>
+            </li>
+            <li class="d-flex justify-content-between py-1 border-bottom">
+              <span class="text-muted">Paid orders</span>
+              <span class="fw-semibold">{{ "{:,}".format(total_orders) }}</span>
+            </li>
+            <li class="d-flex justify-content-between py-1">
+              <span class="text-muted">Wallet balance (aggregate)</span>
+              <span class="fw-semibold">${{ "{:,.2f}".format(total_wallet_balance) }}</span>
+            </li>
+          </ul>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- FOOTNOTE -->
+  <div class="mt-4 small text-muted">
+    This page is intentionally not linked in the standard admin menu. Navigate directly to
+    <code>/dashboard/admin/owner</code> or use the superadmin unlock panel to access it.
+  </div>
+</div>
+
+<!-- Chart.js (if not already loaded in base.html) -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+  (function () {
+    const barLabels = {{ bar_labels|tojson }};
+    const barValues = {{ bar_values|tojson }};
+    const flowLabels = {{ flow_labels|tojson }};
+    const flowValues = {{ flow_values|tojson }};
+
+    const barCtx = document.getElementById('platformBarChart');
+    if (barCtx) {
+      new Chart(barCtx, {
+        type: 'bar',
+        data: {
+          labels: barLabels,
+          datasets: [{
+            label: 'Count',
+            data: barValues,
+            backgroundColor: [
+              '#4B5563', // users - gray
+              '#2563EB', // wallets - blue
+              '#0EA5E9', // beats - cyan
+              '#7C3AED'  // orders - purple
+            ],
+            borderRadius: 6,
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              callbacks: {
+                label: function(context) {
+                  return context.raw.toLocaleString();
+                }
+              }
+            }
+          },
+          scales: {
+            x: {
+              grid: { display: false }
+            },
+            y: {
+              beginAtZero: true,
+              ticks: {
+                stepSize: 1,
+                callback: function(value) {
+                  return value.toLocaleString();
+                }
+              }
+            }
+          }
+        }
+      });
+    }
+
+    const flowCtx = document.getElementById('moneyFlowChart');
+    if (flowCtx) {
+      new Chart(flowCtx, {
+        type: 'doughnut',
+        data: {
+          labels: flowLabels,
+          datasets: [{
+            data: flowValues,
+            backgroundColor: [
+              '#16A34A', // deposits - green
+              '#F97316', // withdrawals - orange
+              '#2563EB'  // sales - blue
+            ],
+            hoverOffset: 6
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { position: 'bottom' },
+            tooltip: {
+              callbacks: {
+                label: function(context) {
+                  const label = context.label || '';
+                  const value = context.raw || 0;
+                  return `${label}: $${value.toLocaleString(undefined, {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2
+                  })}`;
+                }
+              }
+            }
+          },
+          cutout: '65%'
+        }
+      });
+    }
+  })();
+</script>
+{% endblock %}

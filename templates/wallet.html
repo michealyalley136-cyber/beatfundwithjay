@@ -3,449 +3,562 @@
 
 {% block extra_head %}
 <style>
-  .wallet-page-title {
-    font-size: 22px;
-    font-weight: 600;
-    margin-bottom: 4px;
-  }
-  .wallet-page-sub {
-    font-size: 13px;
-    color: #9aa4c2;
-    margin-bottom: 18px;
+  .wallet-page {
+    max-width: 1120px;
+    margin: 32px auto 40px;
+    padding-inline: 16px;
+    display: grid;
+    grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+    gap: 24px;
   }
 
-  .wallet-layout {
-    display: grid;
-    grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.1fr);
-    gap: 16px;
-  }
   @media (max-width: 960px) {
-    .wallet-layout { grid-template-columns: 1fr; }
+    .wallet-page {
+      grid-template-columns: minmax(0, 1fr);
+    }
   }
 
   .wallet-card {
-    background: linear-gradient(135deg, #020617, #020617);
-    border-radius: 16px;
-    border: 1px solid #1f2937;
-    box-shadow: 0 18px 35px rgba(15, 23, 42, 0.9);
-    padding: 16px 18px 14px;
+    border-radius: 22px;
+    border: 1px solid rgba(37, 99, 235, 0.9);
+    background:
+      radial-gradient(circle at 0% 0%, rgba(56, 189, 248, 0.22), transparent 60%),
+      radial-gradient(circle at 100% 100%, rgba(129, 140, 248, 0.28), transparent 60%),
+      rgba(15, 23, 42, 0.98);
+    box-shadow:
+      0 28px 48px rgba(15, 23, 42, 0.95),
+      0 0 0 1px rgba(15, 23, 42, 1) inset;
+    padding: 18px 20px 18px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .wallet-card::before {
+    content: "";
+    position: absolute;
+    inset: -40%;
+    background:
+      radial-gradient(circle at 15% 0%, rgba(59, 130, 246, 0.25), transparent 60%),
+      radial-gradient(circle at 85% 100%, rgba(45, 212, 191, 0.25), transparent 60%);
+    opacity: 0.3;
+    pointer-events: none;
+  }
+
+  .wallet-card-inner {
+    position: relative;
+    z-index: 1;
+  }
+
+  .wallet-title-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 14px;
+  }
+
+  .wallet-title {
+    font-size: 18px;
+    font-weight: 600;
+  }
+
+  .wallet-sub {
+    font-size: 12px;
+    color: #9ca3c8;
+  }
+
+  .wallet-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    font-size: 11px;
+    border-radius: 999px;
+    border: 1px solid rgba(148, 163, 184, 0.45);
+    background: radial-gradient(circle at top, rgba(15, 23, 42, 0.95), rgba(15, 23, 42, 1));
+    color: #e5e7eb;
+  }
+
+  .wallet-pill-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 999px;
+    background: #4ade80;
+  }
+
+  .wallet-balance-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: #8f9bc6;
+    margin-bottom: 4px;
+  }
+
+  .wallet-balance-value {
+    font-size: 30px;
+    font-weight: 650;
+    letter-spacing: 0.02em;
   }
 
   .wallet-balance-row {
     display: flex;
+    align-items: flex-end;
     justify-content: space-between;
-    align-items: flex-start;
-    margin-bottom: 14px;
-  }
-  .wallet-balance-label {
-    font-size: 12px;
-    text-transform: uppercase;
-    letter-spacing: 0.1em;
-    color: #64748b;
-  }
-  .wallet-balance-value {
-    font-size: 28px;
-    font-weight: 600;
-  }
-  .wallet-balance-sub {
-    font-size: 12px;
-    color: #9aa4c2;
-    margin-top: 4px;
+    gap: 16px;
+    margin-bottom: 18px;
   }
 
-  .pill-demo {
+  .wallet-action-toggle {
     display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    padding: 4px 10px;
+    flex-wrap: wrap;
     border-radius: 999px;
-    font-size: 11px;
-    border: 1px solid rgba(56, 189, 248, 0.7);
-    color: #bae6fd;
-    background: rgba(8, 47, 73, 0.6);
-    white-space: nowrap;
+    padding: 2px;
+    background: rgba(15, 23, 42, 0.9);
+    border: 1px solid rgba(51, 65, 85, 0.9);
+    margin-bottom: 10px;
   }
 
-  /* Action selector */
-  .wallet-section-title {
-    font-size: 14px;
+  .wallet-action-pill {
+    border-radius: 999px;
+    padding: 5px 12px;
+    font-size: 11px;
+    border: none;
+    cursor: pointer;
+    background: transparent;
+    color: #a5b4fc;
+    white-space: nowrap;
+    transition: background 0.12s ease, color 0.12s ease, transform 0.07s ease;
+  }
+
+  .wallet-action-pill.active {
+    background: linear-gradient(135deg, #4de3ff, #6366f1);
+    color: white;
+    transform: translateY(-0.5px);
+    box-shadow: 0 4px 14px rgba(79, 70, 229, 0.6);
+  }
+
+  .wallet-form-shell {
+    border-radius: 16px;
+    border: 1px solid rgba(30, 64, 175, 0.9);
+    background:
+      linear-gradient(135deg, rgba(15, 23, 42, 0.98), rgba(15, 23, 42, 1));
+    box-shadow:
+      0 18px 40px rgba(15, 23, 42, 0.9),
+      0 0 0 1px rgba(15, 23, 42, 1) inset;
+    padding: 12px 12px 13px;
+  }
+
+  .wallet-form-title {
+    font-size: 13px;
     font-weight: 600;
     margin-bottom: 4px;
   }
-  .wallet-section-sub {
-    font-size: 12px;
-    color: #9aa4c2;
-    margin-bottom: 10px;
-  }
 
-  .wallet-mode-toggle {
-    display: inline-flex;
-    border-radius: 999px;
-    border: 1px solid #1f2937;
-    padding: 2px;
-    background: #020617;
-    margin-bottom: 10px;
-    gap: 2px;
-  }
-  .wallet-mode-btn {
-    border: none;
-    border-radius: 999px;
-    font-size: 12px;
-    padding: 6px 12px;
-    cursor: pointer;
-    background: transparent;
-    color: #e5e7eb;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-  }
-  .wallet-mode-btn.is-active {
-    background: linear-gradient(135deg, #33b5ff, #447aff);
-    color: #ffffff;
-  }
-
-  .wallet-form {
-    margin-top: 4px;
-    display: grid;
-    gap: 8px;
-  }
-
-  .wallet-label {
+  .wallet-form-helper {
     font-size: 11px;
+    color: #9ca3c8;
+    margin-bottom: 10px;
+  }
+
+  .wallet-field-label {
+    font-size: 10px;
     text-transform: uppercase;
-    letter-spacing: 0.08em;
+    letter-spacing: 0.09em;
     color: #8f9bc6;
-    margin-top: 6px;
     margin-bottom: 2px;
   }
 
-  .wallet-input,
-  .wallet-select,
-  .wallet-textarea {
+  .wallet-input {
     width: 100%;
     border-radius: 10px;
     border: 1px solid #303a5c;
-    background: rgba(12, 16, 36, 0.95);
+    background: radial-gradient(circle at top, rgba(15, 23, 42, 0.92), rgba(15, 23, 42, 1));
     color: #e3e9ff;
-    padding: 8px 10px;
-    font-size: 13px;
+    padding: 7px 9px;
+    font-size: 12px;
+    outline: none;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease, transform 0.06s ease;
   }
-  .wallet-input::placeholder,
-  .wallet-textarea::placeholder {
+
+  .wallet-input::placeholder {
     color: #6f7aa4;
   }
-  .wallet-textarea {
-    min-height: 58px;
-    resize: vertical;
+
+  .wallet-input:focus {
+    border-color: #4f8bff;
+    box-shadow: 0 0 0 1px rgba(79, 139, 255, 0.4);
+    transform: translateY(-0.5px);
   }
 
-  .wallet-muted {
-    font-size: 11px;
-    color: #9aa4c2;
-    margin-top: 4px;
+  .wallet-row-inline {
+    display: grid;
+    grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+    gap: 8px;
   }
 
-  .wallet-btn-primary {
+  @media (max-width: 640px) {
+    .wallet-row-inline {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+
+  .wallet-btn {
     border-radius: 999px;
-    padding: 8px 16px;
+    padding: 8px 14px;
     font-size: 13px;
     border: none;
     cursor: pointer;
+    background: linear-gradient(135deg, #4de3ff, #6366f1);
+    color: #ffffff;
+    box-shadow: 0 6px 18px rgba(56, 189, 248, 0.45);
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    background: linear-gradient(135deg, #33b5ff, #447aff);
-    color: #ffffff;
-    margin-top: 6px;
-  }
-  .wallet-btn-primary:hover {
-    background: linear-gradient(135deg, #45c4ff, #5688ff);
+    width: 100%;
+    margin-top: 10px;
+    transition: transform 0.1s ease, box-shadow 0.1s ease, background 0.12s ease;
   }
 
-  /* Right: Recent activity timeline */
-  .tx-header {
+  .wallet-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 10px 24px rgba(79, 70, 229, 0.55);
+  }
+
+  .wallet-btn:active {
+    transform: translateY(0);
+    box-shadow: 0 4px 12px rgba(30, 64, 175, 0.7);
+  }
+
+  .wallet-secondary-note {
+    font-size: 10px;
+    color: #9ca3c8;
+    margin-top: 6px;
+  }
+
+  .wallet-activity-card {
+    border-radius: 22px;
+    border: 1px solid rgba(51, 65, 85, 0.9);
+    background:
+      radial-gradient(circle at 0% 0%, rgba(30, 64, 175, 0.25), transparent 60%),
+      radial-gradient(circle at 100% 100%, rgba(15, 23, 42, 1), rgba(15, 23, 42, 1));
+    box-shadow:
+      0 24px 40px rgba(15, 23, 42, 0.95),
+      0 0 0 1px rgba(15, 23, 42, 1) inset;
+    padding: 18px 16px 14px;
+  }
+
+  .wallet-activity-title {
     font-size: 14px;
     font-weight: 600;
     margin-bottom: 4px;
   }
-  .tx-sub {
-    font-size: 12px;
-    color: #9aa4c2;
-    margin-bottom: 12px;
+
+  .wallet-activity-sub {
+    font-size: 11px;
+    color: #9ca3c8;
+    margin-bottom: 10px;
   }
 
-  .tx-timeline {
-    position: relative;
-    padding-left: 18px;
-  }
-  .tx-timeline::before {
-    content: "";
-    position: absolute;
-    left: 7px;
-    top: 4px;
-    bottom: 4px;
-    width: 2px;
-    background: radial-gradient(circle, #1f2937, #020617);
-    opacity: 0.9;
+  .wallet-activity-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
   }
 
-  .tx-item {
-    position: relative;
-    padding-left: 8px;
-    padding-bottom: 10px;
-  }
-
-  .tx-item::before {
-    content: "";
-    position: absolute;
-    left: -3px;
-    top: 4px;
-    width: 10px;
-    height: 10px;
-    border-radius: 999px;
-    border: 2px solid #020617;
-    box-sizing: border-box;
-  }
-
-  .tx-dot-credit::before {
-    background: #4ade80;
-  }
-  .tx-dot-debit::before {
-    background: #f97373;
-  }
-
-  .tx-main-row {
+  .wallet-activity-item {
     display: flex;
+    align-items: center;
     justify-content: space-between;
     gap: 10px;
+    padding: 8px 8px;
+    border-radius: 12px;
+    border: 1px solid rgba(51, 65, 85, 0.7);
+    background: radial-gradient(circle at top, rgba(15, 23, 42, 0.96), rgba(15, 23, 42, 1));
+    margin-bottom: 6px;
   }
 
-  .tx-title {
-    font-size: 13px;
+  .wallet-activity-left {
+    min-width: 0;
   }
-  .tx-meta-row {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    margin-top: 2px;
+
+  .wallet-activity-main {
+    font-size: 12px;
   }
-  .tx-type-pill {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    padding: 2px 7px;
-    border-radius: 999px;
-    font-size: 10px;
-    border: 1px solid rgba(148, 163, 184, 0.5);
-    color: #e5e7eb;
-    white-space: nowrap;
-  }
-  .tx-date {
+
+  .wallet-activity-meta {
     font-size: 11px;
-    color: #64748b;
+    color: #9ca3c8;
+    margin-top: 1px;
   }
 
-  .tx-amount {
+  .wallet-activity-date {
+    font-size: 10px;
+    color: #6b7280;
+    margin-top: 1px;
+  }
+
+  .wallet-activity-amount {
     font-size: 13px;
     font-weight: 600;
     white-space: nowrap;
   }
-  .tx-amount-credit {
+
+  .wallet-activity-amount.credit {
     color: #4ade80;
   }
-  .tx-amount-debit {
+
+  .wallet-activity-amount.debit {
     color: #f97373;
   }
+
+  .wallet-empty-state {
+    font-size: 11px;
+    color: #9ca3c8;
+    padding: 8px 6px 4px;
+  }
 </style>
+
+<script>
+  window.addEventListener("DOMContentLoaded", function () {
+    const pills = document.querySelectorAll("[data-wallet-action-pill]");
+    const actionInput = document.getElementById("wallet-action-input");
+    const helperEl = document.getElementById("wallet-helper-text");
+    const submitLabelEl = document.getElementById("wallet-submit-label");
+
+    const rowRecipient = document.getElementById("wallet-row-recipient");
+    const rowMethod = document.getElementById("wallet-row-method");
+    const rowNote = document.getElementById("wallet-row-note");
+
+    function setAction(action) {
+      // Update hidden action value
+      if (actionInput) actionInput.value = action;
+
+      // Toggle pills
+      pills.forEach(p => {
+        if (p.dataset.walletActionPill === action) {
+          p.classList.add("active");
+        } else {
+          p.classList.remove("active");
+        }
+      });
+
+      // Show / hide form rows + text
+      if (action === "add") {
+        if (helperEl) helperEl.textContent =
+          "Top up your BeatFund balance before buying beats or confirming bookings.";
+        if (submitLabelEl) submitLabelEl.textContent = "Add funds (demo)";
+        if (rowRecipient) rowRecipient.style.display = "none";
+        if (rowNote) rowNote.style.display = "none";
+        if (rowMethod) rowMethod.style.display = "block";
+      } else if (action === "send") {
+        if (helperEl) helperEl.textContent =
+          "Pay collaborators by their BeatFund handle. Instant wallet-to-wallet transfer.";
+        if (submitLabelEl) submitLabelEl.textContent = "Send payment";
+        if (rowRecipient) rowRecipient.style.display = "block";
+        if (rowNote) rowNote.style.display = "block";
+        if (rowMethod) rowMethod.style.display = "none";
+      } else if (action === "withdraw") {
+        if (helperEl) helperEl.textContent =
+          "Move funds out of BeatFund in production. In this dev build, this only creates a ledger entry.";
+        if (submitLabelEl) submitLabelEl.textContent = "Withdraw (demo)";
+        if (rowRecipient) rowRecipient.style.display = "none";
+        if (rowNote) rowNote.style.display = "none";
+        if (rowMethod) rowMethod.style.display = "none";
+      }
+    }
+
+    // Attach listeners
+    pills.forEach(p => {
+      p.addEventListener("click", function () {
+        const action = this.dataset.walletActionPill;
+        setAction(action);
+      });
+    });
+
+    // Default to "add"
+    setAction("add");
+  });
+</script>
 {% endblock %}
 
 {% block content %}
-<h1 class="wallet-page-title">Wallet</h1>
-<p class="wallet-page-sub">
-  Add funds, send payments to other handles, or withdraw back to your bank (demo mode).
-</p>
-
-<div class="wallet-layout">
-  <!-- LEFT: unified form -->
-  <div class="wallet-card">
-    <div class="wallet-balance-row">
-      <div>
-        <div class="wallet-balance-label">Current balance</div>
-        <div class="wallet-balance-value">
-          ${{ "%.2f"|format(balance) }}
+<div class="wallet-page">
+  <!-- Left: balance + single consolidated action form -->
+  <section class="wallet-card" aria-label="Wallet overview">
+    <div class="wallet-card-inner">
+      <div class="wallet-title-row">
+        <div>
+          <div class="wallet-title">BeatFund Wallet</div>
+          <div class="wallet-sub">
+            Hold funds for beats, bookings, and provider payouts — no hidden platform fees on deposits.
+          </div>
         </div>
-        <div class="wallet-balance-sub">
-          Available for BeatFund purchases and BookMe holds.
+        <div class="wallet-pill">
+          <span class="wallet-pill-dot"></span>
+          <span>Dev environment · demo money only</span>
         </div>
       </div>
-      <div>
-        <span class="pill-demo">Demo wallet · Internal ledger</span>
-      </div>
-    </div>
 
-    <div>
-      <div class="wallet-section-title" id="wallet-mode-label">Add funds</div>
-      <div class="wallet-section-sub">
-        Choose what you want to do, then enter the details below.
+      <div class="wallet-balance-row">
+        <div>
+          <div class="wallet-balance-label">Available balance</div>
+          <div class="wallet-balance-value">
+            ${{ "%.2f"|format(balance or 0.0) }}
+          </div>
+        </div>
       </div>
 
-      <div class="wallet-mode-toggle">
-        <button type="button" class="wallet-mode-btn is-active" data-wallet-mode="add">
+      <!-- Action toggle -->
+      <div class="wallet-action-toggle" role="tablist" aria-label="Wallet actions">
+        <button type="button"
+                class="wallet-action-pill active"
+                data-wallet-action-pill="add"
+                role="tab">
           Add funds
         </button>
-        <button type="button" class="wallet-mode-btn" data-wallet-mode="send">
-          Send to handle
+        <button type="button"
+                class="wallet-action-pill"
+                data-wallet-action-pill="send"
+                role="tab">
+          Send to user
         </button>
-        <button type="button" class="wallet-mode-btn" data-wallet-mode="withdraw">
-          Withdraw
+        <button type="button"
+                class="wallet-action-pill"
+                data-wallet-action-pill="withdraw"
+                role="tab">
+          Withdraw (demo)
         </button>
       </div>
 
-      <form method="POST" action="{{ url_for('wallet_action') }}" class="wallet-form">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <input type="hidden" name="action" id="wallet-action-input" value="add">
-
-        <!-- shared amount field -->
-        <label class="wallet-label" for="wallet-amount">Amount (USD)</label>
-        <input
-          id="wallet-amount"
-          name="amount"
-          type="text"
-          class="wallet-input"
-          placeholder="e.g. 50.00"
-          inputmode="decimal"
-          required
-        >
-
-        <!-- add funds fields -->
-        <div data-wallet-fields="add">
-          <label class="wallet-label" for="wallet-method">Method</label>
-          <select id="wallet-method" name="method" class="wallet-select">
-            <option value="card">Card (demo)</option>
-            <option value="bank">Bank transfer (demo)</option>
-            <option value="other">Other (demo)</option>
-          </select>
-          <p class="wallet-muted">
-            In production this would be processed via Stripe or another PSP.
-          </p>
+      <!-- Single consolidated form -->
+      <div class="wallet-form-shell">
+        <div class="wallet-form-title">Quick wallet action</div>
+        <div class="wallet-form-helper" id="wallet-helper-text">
+          Top up your BeatFund balance before buying beats or confirming bookings.
         </div>
 
-        <!-- send fields -->
-        <div data-wallet-fields="send" hidden>
-          <label class="wallet-label" for="wallet-handle">Recipient handle</label>
-          <input
-            id="wallet-handle"
-            name="handle"
-            type="text"
-            class="wallet-input"
-            placeholder="e.g. producer1"
-          >
-          <label class="wallet-label" for="wallet-note">Note (optional)</label>
-          <textarea
-            id="wallet-note"
-            name="note"
-            class="wallet-textarea"
-            placeholder="e.g. Studio session deposit"
-          ></textarea>
-          <p class="wallet-muted">
-            Transfers are instant and recorded on both ledgers.
-          </p>
-        </div>
+        <form method="POST" action="{{ url_for('wallet_action') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="action" id="wallet-action-input" value="add">
 
-        <!-- withdraw fields -->
-        <div data-wallet-fields="withdraw" hidden>
-          <p class="wallet-muted">
-            Demo only — no real money moves. In production this would trigger a payout
-            to a linked bank or card.
-          </p>
-        </div>
+          <!-- Amount row (always visible) -->
+          <div class="wallet-row-inline">
+            <div>
+              <div class="wallet-field-label">Amount (USD)</div>
+              <input
+                type="text"
+                name="amount"
+                class="wallet-input"
+                placeholder="e.g. 50.00"
+                required
+              >
+            </div>
 
-        <button type="submit" class="wallet-btn-primary">
-          Continue
-        </button>
-      </form>
-    </div>
-  </div>
-
-  <!-- RIGHT: nicer activity timeline -->
-  <div class="wallet-card">
-    <div class="tx-header">Recent activity</div>
-    <div class="tx-sub">
-      Last 10 ledger entries for your wallet. For full history, an admin can export CSV.
-    </div>
-
-    {% if recent %}
-      <div class="tx-timeline">
-        {% set credit_types = ['deposit', 'transfer_in', 'interest', 'adjustment', 'sale_income'] %}
-        {% for e in recent %}
-          {% set entry_type_value = e.entry_type.value if e.entry_type else '' %}
-          {% set is_credit = entry_type_value in credit_types %}
-          <div class="tx-item {{ 'tx-dot-credit' if is_credit else 'tx-dot-debit' }}">
-            <div class="tx-main-row">
-              <div>
-                <div class="tx-title">
-                  {{ e.meta or 'No description' }}
-                </div>
-                <div class="tx-meta-row">
-                  {% if entry_type_value %}
-                    <span class="tx-type-pill">
-                      {{ entry_type_value.replace('_',' ')|title }}
-                    </span>
-                  {% endif %}
-                  <span class="tx-date">
-                    {{ e.created_at.strftime('%Y-%m-%d %H:%M') if e.created_at else '' }}
-                  </span>
-                </div>
-              </div>
-              <div class="tx-amount {{ 'tx-amount-credit' if is_credit else 'tx-amount-debit' }}">
-                {% set dollars = e.amount_cents / 100.0 %}
-                {{ '+' if is_credit else '-' }}${{ "%.2f"|format(dollars) }}
-              </div>
+            <!-- Recipient handle: send only -->
+            <div id="wallet-row-recipient">
+              <div class="wallet-field-label">Recipient handle</div>
+              <input
+                type="text"
+                name="handle"
+                class="wallet-input"
+                placeholder="@producer1"
+              >
             </div>
           </div>
-        {% endfor %}
+
+          <!-- Method (note): add only -->
+          <div id="wallet-row-method" style="margin-top:8px;">
+            <div class="wallet-field-label">Method (note only)</div>
+            <input
+              type="text"
+              name="method"
+              class="wallet-input"
+              placeholder="Card / bank / mobile money (demo)"
+            >
+          </div>
+
+          <!-- Note: send only -->
+          <div id="wallet-row-note" style="margin-top:8px;">
+            <div class="wallet-field-label">Note (optional)</div>
+            <input
+              type="text"
+              name="note"
+              class="wallet-input"
+              placeholder="e.g. Beat split, session fee"
+            >
+          </div>
+
+          <button type="submit" class="wallet-btn" id="wallet-submit-label">
+            Add funds (demo)
+          </button>
+
+          <div class="wallet-secondary-note">
+            In this dev build, all movements are simulated on the ledger only.
+            When we go live, this screen will connect to real payment rails and payouts.
+          </div>
+        </form>
       </div>
+    </div>
+  </section>
+
+  <!-- Right: recent activity -->
+  <section class="wallet-activity-card" aria-label="Recent wallet activity">
+    <div class="wallet-activity-title">Recent activity</div>
+    <div class="wallet-activity-sub">
+      Last 10 movements in and out of your BeatFund wallet.
+    </div>
+
+    {% if recent and recent|length > 0 %}
+      {% set credit_types = [
+        EntryType.deposit,
+        EntryType.transfer_in,
+        EntryType.interest,
+        EntryType.adjustment,
+        EntryType.sale_income
+      ] %}
+
+      <ul class="wallet-activity-list">
+        {% for entry in recent %}
+          {% set is_credit = entry.entry_type in credit_types %}
+          <li class="wallet-activity-item">
+            <div class="wallet-activity-left">
+              <div class="wallet-activity-main">
+                {% if entry.entry_type == EntryType.deposit %}
+                  Deposit
+                {% elif entry.entry_type == EntryType.withdrawal %}
+                  Withdrawal
+                {% elif entry.entry_type == EntryType.transfer_in %}
+                  Transfer in
+                {% elif entry.entry_type == EntryType.transfer_out %}
+                  Transfer out
+                {% elif entry.entry_type == EntryType.sale_income %}
+                  Sale income
+                {% elif entry.entry_type == EntryType.purchase_spend %}
+                  Purchase
+                {% else %}
+                  {{ entry.entry_type.value|replace("_", " ")|title }}
+                {% endif %}
+              </div>
+              {% if entry.meta %}
+                <div class="wallet-activity-meta">
+                  {{ entry.meta }}
+                </div>
+              {% endif %}
+              <div class="wallet-activity-date">
+                {{ entry.created_at.strftime("%b %d, %Y · %I:%M %p") if entry.created_at else "" }}
+              </div>
+            </div>
+            <div class="wallet-activity-amount {{ 'credit' if is_credit else 'debit' }}">
+              {% if is_credit %}+{% else %}-{% endif %}${{ "%.2f"|format(entry.amount_cents / 100.0) }}
+            </div>
+          </li>
+        {% endfor %}
+      </ul>
     {% else %}
-      <p class="tx-sub" style="margin-top:4px;">
-        No transactions yet. Add funds or send a test payment to see entries here.
-      </p>
+      <div class="wallet-empty-state">
+        No wallet activity yet. Add funds or buy a beat to see movements here.
+      </div>
     {% endif %}
-  </div>
+  </section>
 </div>
-
-<script>
-document.addEventListener("DOMContentLoaded", function () {
-  const buttons = document.querySelectorAll("[data-wallet-mode]");
-  const fieldGroups = document.querySelectorAll("[data-wallet-fields]");
-  const actionInput = document.getElementById("wallet-action-input");
-  const modeLabel = document.getElementById("wallet-mode-label");
-
-  function setMode(mode) {
-    if (!actionInput) return;
-    actionInput.value = mode;
-
-    buttons.forEach(btn => {
-      btn.classList.toggle("is-active", btn.dataset.walletMode === mode);
-    });
-
-    fieldGroups.forEach(group => {
-      group.hidden = group.dataset.walletFields !== mode;
-    });
-
-    if (modeLabel) {
-      modeLabel.textContent =
-        mode === "add" ? "Add funds" :
-        mode === "send" ? "Send to a handle" :
-        "Withdraw to bank (demo)";
-    }
-  }
-
-  buttons.forEach(btn => {
-    btn.addEventListener("click", () => setMode(btn.dataset.walletMode));
-  });
-
-  // default mode
-  setMode("add");
-});
-</script>
 {% endblock %}

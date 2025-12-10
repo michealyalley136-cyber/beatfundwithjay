@@ -1,187 +1,320 @@
 {% extends "base.html" %}
-{% block title %}My BookMe Profile{% endblock %}
-{% block content %}
 
+{% block title %}BookMe Profile · BeatFund{% endblock %}
+
+{% block content %}
 <style>
-  .bm-form-wrap {
-    max-width: 880px;
-    margin: 24px auto;
-    padding: 20px 22px;
-    background: #0f172a;
-    border-radius: 14px;
-    border: 1px solid #1e293b;
+  .bf-page {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 32px 16px 64px;
+    color: #f9fbff;
   }
-  .bm-form-title {
-    font-size: 1.4rem;
-    font-weight: 600;
-    margin-bottom: 4px;
-  }
-  .bm-form-sub {
-    margin: 0 0 16px;
-    color: #9ca3af;
-    font-size: 0.95rem;
-  }
-  .bm-grid {
+  .bf-grid {
     display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 12px;
+    grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.6fr);
+    gap: 24px;
   }
-  .bm-grid label {
+  @media (max-width: 900px) {
+    .bf-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+  .bf-card {
+    background: radial-gradient(circle at top left, #182a44, #050712);
+    border-radius: 18px;
+    border: 1px solid rgba(255,255,255,0.08);
+    padding: 18px 20px 20px;
+    box-shadow: 0 16px 40px rgba(0,0,0,0.45);
+  }
+  .bf-avatar-large {
+    width: 96px;
+    height: 96px;
+    border-radius: 999px;
+    overflow: hidden;
+    border: 2px solid rgba(255,255,255,0.28);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, #3b82f6, #22c55e);
+    font-size: 2.2rem;
+    font-weight: 700;
+  }
+  .bf-avatar-large img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  .bf-label {
     display: block;
-    font-weight: 600;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    opacity: 0.75;
     margin-bottom: 4px;
+  }
+  .bf-input, .bf-textarea, .bf-select {
+    width: 100%;
+    border-radius: 12px;
+    border: 1px solid rgba(148,163,184,0.5);
+    background: rgba(15,23,42,0.9);
+    color: #e5edff;
+    padding: 8px 10px;
     font-size: 0.9rem;
   }
-  .bm-grid input,
-  .bm-grid textarea {
-    width: 100%;
-    padding: 9px 10px;
-    border-radius: 8px;
-    border: 1px solid #1f2937;
-    background: #020617;
-    color: #e5e7eb;
-    font-size: 0.95rem;
-  }
-  .bm-grid textarea {
+  .bf-textarea {
+    min-height: 80px;
     resize: vertical;
   }
-  .bm-grid .wide {
-    grid-column: 1 / -1;
+  .bf-input:focus, .bf-textarea:focus {
+    outline: none;
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 1px rgba(59,130,246,0.5);
   }
-  .bm-actions {
-    margin-top: 14px;
-    display: flex;
-    gap: 10px;
-    align-items: center;
-  }
-  .btn-primary {
-    background: #0ea5e9;
-    border: none;
-    color: #f9fafb;
-    padding: 9px 16px;
+  .bf-btn-primary {
     border-radius: 999px;
+    border: none;
+    padding: 9px 18px;
+    background: linear-gradient(135deg, #2563eb, #22c55e);
+    color: #020617;
     font-weight: 600;
-    cursor: pointer;
-    font-size: 0.95rem;
-  }
-  .btn-primary:hover {
-    background: #0284c7;
-  }
-  .bm-back-link {
     font-size: 0.9rem;
-    color: #93c5fd;
-    text-decoration: none;
+    cursor: pointer;
   }
-  .bm-back-link:hover {
-    text-decoration: underline;
+  .bf-btn-primary:hover {
+    filter: brightness(1.05);
+  }
+  .bf-field-row {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+  @media (max-width: 720px) {
+    .bf-field-row {
+      grid-template-columns: 1fr;
+    }
+  }
+  .bf-small {
+    font-size: 0.76rem;
+    opacity: 0.75;
+  }
+  .bf-pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: rgba(59,130,246,0.16);
+    border: 1px solid rgba(59,130,246,0.4);
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
   }
 </style>
 
-<div class="bm-form-wrap">
-  <h2 class="bm-form-title">My BookMe Profile</h2>
-  <p class="bm-form-sub">
-    This profile is visible to artists and clients searching on BookMe.  
-    Add your location to appear on the map.
+<div class="bf-page">
+  <h1>BookMe Provider Profile</h1>
+  <p class="bf-small" style="margin-bottom: 18px;">
+    This is what clients see when they search for providers in the BeatFund BookMe directory.
   </p>
 
-  <form method="post">
-    <div class="bm-grid">
-      <div>
-        <label>Display Name *</label>
-        <input
-          name="display_name"
-          value="{{ prof.display_name if prof else current_user.username }}"
-          required
-        >
+  <div class="bf-grid">
+    <!-- LEFT: Avatar + status -->
+    <section class="bf-card">
+      <h2 style="font-size:1.05rem; margin-bottom:10px;">Profile Picture &amp; Status</h2>
+
+      <div style="display:flex; align-items:center; gap:16px; margin-bottom:16px;">
+        <div class="bf-avatar-large">
+          {% if current_user.avatar_path %}
+            <img src="{{ url_for('media_file', filename=current_user.avatar_path) }}" alt="Avatar">
+          {% else %}
+            {{ current_user.username[0]|upper }}
+          {% endif %}
+        </div>
+        <div>
+          <div style="font-weight:600; font-size:1rem;">
+            @{{ current_user.username }}
+          </div>
+          <div style="margin-top:4px;">
+            <span class="bf-pill">{{ current_user.role.value.replace('_',' ').title() }}</span>
+          </div>
+          <p class="bf-small" style="margin-top:8px;">
+            This avatar is shared across your dashboards and BookMe listing.
+          </p>
+        </div>
       </div>
 
-      <div>
-        <label>Service Types (comma separated)</label>
-        <input
-          name="service_types"
-          placeholder="recording,mixing,mastering"
-          value="{{ prof.service_types if prof else '' }}"
-        >
-      </div>
+      <!-- Update avatar form -->
+      <form method="post" action="{{ url_for('update_avatar') }}" enctype="multipart/form-data">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label class="bf-label" for="avatar">Update profile picture</label>
+        <input class="bf-input" type="file" name="avatar" id="avatar" accept="image/png,image/jpeg">
+        <p class="bf-small" style="margin-top:4px;">
+          Recommended: square image, at least 400×400px.
+        </p>
+        <button type="submit" class="bf-btn-primary" style="margin-top:10px;">
+          Save picture
+        </button>
+      </form>
 
-      <div class="wide">
-        <label>Short Bio</label>
-        <textarea
-          name="bio"
-          rows="3"
-          placeholder="Tell clients about your experience, credits and style."
-        >{{ prof.bio if prof else '' }}</textarea>
-      </div>
+      <hr style="border-color:rgba(148,163,184,0.3); margin:18px 0;">
 
-      <div>
-        <label>Rate Notes</label>
-        <input
-          name="rate_notes"
-          placeholder="$50/hr, packages available"
-          value="{{ prof.rate_notes if prof else '' }}"
-        >
-      </div>
+      <p class="bf-small" style="margin-bottom:6px;">
+        Once your profile is saved and visible, you’ll appear in the BookMe search for your role.
+      </p>
+      <p class="bf-small">
+        To showcase your work, add up to 8 items in your portfolio:
+        <a href="{{ url_for('bookme_portfolio') }}" style="color:#93c5fd; text-decoration:underline;">
+          Manage portfolio
+        </a>
+      </p>
+    </section>
 
-      <div>
-        <label>ZIP</label>
-        <input
-          name="zip"
-          placeholder="e.g., 43215"
-          value="{{ prof.zip if prof else '' }}"
-        >
-      </div>
+    <!-- RIGHT: BookMe profile form -->
+    <section class="bf-card">
+      <h2 style="font-size:1.05rem; margin-bottom:10px;">Public BookMe Details</h2>
 
-      <div>
-        <label>City</label>
-        <input
-          name="city"
-          value="{{ prof.city if prof else '' }}"
-        >
-      </div>
+      <form method="post" action="{{ url_for('bookme_profile') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
-      <div>
-        <label>State</label>
-        <input
-          name="state"
-          value="{{ prof.state if prof else '' }}"
-        >
-      </div>
+        <div style="margin-bottom:12px;">
+          <label class="bf-label" for="display_name">Display Name</label>
+          <input
+            class="bf-input"
+            id="display_name"
+            name="display_name"
+            type="text"
+            required
+            value="{{ (prof.display_name if prof else current_user.username) }}"
+          >
+          <p class="bf-small">
+            This is the name that appears in the BookMe search (e.g. “DJ Flex”, “Skyline Choreography”).
+          </p>
+        </div>
 
-      <div class="wide">
-        <label>Address (optional)</label>
-        <input
-          name="address"
-          placeholder="123 Studio Ln"
-          value="{{ prof.address if prof else '' }}"
-        >
-      </div>
+        <div style="margin-bottom:12px;">
+          <label class="bf-label" for="service_types">Services / Tags</label>
+          <input
+            class="bf-input"
+            id="service_types"
+            name="service_types"
+            type="text"
+            placeholder="DJ · Afrobeats · Wedding sets"
+            value="{{ prof.service_types if prof else '' }}"
+          >
+          <p class="bf-small">
+            Short list of styles and services you offer (comma- or dot-separated).
+          </p>
+        </div>
 
-      <div>
-        <label>Latitude (optional)</label>
-        <input
-          name="lat"
-          placeholder="40.0"
-          value="{{ prof.lat if prof and prof.lat is not none else '' }}"
-        >
-      </div>
+        <div style="margin-bottom:12px;">
+          <label class="bf-label" for="contact_phone">Contact Phone</label>
+          <input
+            class="bf-input"
+            id="contact_phone"
+            name="contact_phone"
+            type="text"
+            placeholder="+1 555 123 4567"
+            value="{{ prof.contact_phone if prof else '' }}"
+          >
+          <p class="bf-small">
+            This number is shown to clients when they view your BookMe profile.
+          </p>
+        </div>
 
-      <div>
-        <label>Longitude (optional)</label>
-        <input
-          name="lng"
-          placeholder="-83.0"
-          value="{{ prof.lng if prof and prof.lng is not none else '' }}"
-        >
-      </div>
-    </div>
+        <div style="margin-bottom:12px;">
+          <label class="bf-label" for="bio">Bio / About</label>
+          <textarea
+            class="bf-textarea"
+            id="bio"
+            name="bio"
+            placeholder="Tell clients what you do, your experience, and what makes you different."
+          >{{ prof.bio if prof else '' }}</textarea>
+        </div>
 
-    <div class="bm-actions">
-      <button type="submit" class="btn-primary">Save Profile</button>
-      <a href="{{ url_for('bookme_search') }}" class="bm-back-link">
-        ← Back to BookMe
-      </a>
-    </div>
-  </form>
+        <div style="margin-bottom:12px;">
+          <label class="bf-label" for="rate_notes">Rate Notes</label>
+          <textarea
+            class="bf-textarea"
+            id="rate_notes"
+            name="rate_notes"
+            placeholder="Example: Club sets from $300; weddings from $800; travel fees may apply."
+          >{{ prof.rate_notes if prof else '' }}</textarea>
+        </div>
+
+        <div class="bf-field-row" style="margin-bottom:12px;">
+          <div>
+            <label class="bf-label" for="city">City</label>
+            <input
+              class="bf-input"
+              id="city"
+              name="city"
+              type="text"
+              value="{{ prof.city if prof else '' }}"
+            >
+          </div>
+          <div>
+            <label class="bf-label" for="state">State / Region</label>
+            <input
+              class="bf-input"
+              id="state"
+              name="state"
+              type="text"
+              value="{{ prof.state if prof else '' }}"
+            >
+          </div>
+        </div>
+
+        <div class="bf-field-row" style="margin-bottom:12px;">
+          <div>
+            <label class="bf-label" for="zip">ZIP / Postal Code</label>
+            <input
+              class="bf-input"
+              id="zip"
+              name="zip"
+              type="text"
+              value="{{ prof.zip if prof else '' }}"
+            >
+          </div>
+          <div>
+            <label class="bf-label" for="address">Address (optional)</label>
+            <input
+              class="bf-input"
+              id="address"
+              name="address"
+              type="text"
+              value="{{ prof.address if prof else '' }}"
+            >
+          </div>
+        </div>
+
+        <div class="bf-field-row" style="margin-bottom:12px;">
+          <div>
+            <label class="bf-label" for="lat">Latitude (optional)</label>
+            <input
+              class="bf-input"
+              id="lat"
+              name="lat"
+              type="text"
+              value="{{ prof.lat if prof and prof.lat is not none else '' }}"
+            >
+          </div>
+          <div>
+            <label class="bf-label" for="lng">Longitude (optional)</label>
+            <input
+              class="bf-input"
+              id="lng"
+              name="lng"
+              type="text"
+              value="{{ prof.lng if prof and prof.lng is not none else '' }}"
+            >
+          </div>
+        </div>
+
+        <button type="submit" class="bf-btn-primary">
+          Save BookMe profile
+        </button>
+      </form>
+    </section>
+  </div>
 </div>
-
 {% endblock %}

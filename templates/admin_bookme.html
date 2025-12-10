@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}BookMe Overview · Admin · BeatFund{% endblock %}
+
+{% block content %}
+<div style="max-width:1200px;margin:0 auto;padding:24px 12px 40px;">
+  <h1 style="font-size:22px;font-weight:600;margin-bottom:4px;">
+    BookMe Overview
+  </h1>
+  <p style="font-size:13px;color:#9aa4c2;margin-bottom:18px;">
+    Recent booking requests and confirmed bookings. Use the Transactions and Reports
+    pages for full financial detail.
+  </p>
+
+  <h2 style="font-size:16px;font-weight:600;margin:16px 0 6px;">Recent Requests</h2>
+  {% if requests %}
+    <table class="table table-sm" style="width:100%;font-size:12px;">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Client</th>
+          <th>Provider</th>
+          <th>Preferred Time</th>
+          <th>Status</th>
+          <th>Created</th>
+          <th>Message</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in requests %}
+          <tr>
+            <td>#{{ r.id }}</td>
+            <td>@{{ r.client.username if r.client else 'unknown' }}</td>
+            <td>@{{ r.provider.username if r.provider else 'unknown' }}</td>
+            <td>{{ r.preferred_time }}</td>
+            <td>{{ r.status.value.replace('_',' ')|title }}</td>
+            <td>{{ r.created_at.strftime('%Y-%m-%d %H:%M') if r.created_at else '' }}</td>
+            <td>{{ r.message[:80] if r.message else '' }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p style="font-size:12px;color:#9aa4c2;">No recent requests.</p>
+  {% endif %}
+
+  <h2 style="font-size:16px;font-weight:600;margin:24px 0 6px;">Recent Confirmed Bookings</h2>
+  {% if bookings %}
+    <table class="table table-sm" style="width:100%;font-size:12px;">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Artist / Provider</th>
+          <th>Client</th>
+          <th>Event Title</th>
+          <th>Event Date</th>
+          <th>Amount</th>
+          <th>Status</th>
+          <th>Created</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for b in bookings %}
+          <tr>
+            <td>#{{ b.id }}</td>
+            <td>@{{ b.artist.username if b.artist else 'unknown' }}</td>
+            <td>@{{ b.client.username if b.client else 'unknown' }}</td>
+            <td>{{ b.event_title }}</td>
+            <td>{{ b.event_datetime.strftime('%Y-%m-%d %H:%M') if b.event_datetime else '' }}</td>
+            <td>
+              {% if b.total_cents is not none %}
+                ${{ "%.2f"|format(b.total_cents / 100.0) }}
+              {% else %}
+                —
+              {% endif %}
+            </td>
+            <td>{{ b.status.title() }}</td>
+            <td>{{ b.created_at.strftime('%Y-%m-%d %H:%M') if b.created_at else '' }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p style="font-size:12px;color:#9aa4c2;">No recent bookings.</p>
+  {% endif %}
+</div>
+{% endblock %}

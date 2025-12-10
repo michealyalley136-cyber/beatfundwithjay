@@ -1,139 +1,582 @@
 {% extends "base.html" %}
-{% block title %}Request Booking · BeatFund{% endblock %}
+{% block title %}BookMe · Requests & Bookings · BeatFund{% endblock %}
 
 {% block content %}
-<div class="bm-req-shell">
-  <header class="bm-req-header">
-    <h1>Request a booking</h1>
-    <p class="bm-req-sub">
-      You’re contacting <strong>@{{ provider.username }}</strong>.
-      Share what you need and when.
+<div class="page bookme-requests-page">
+  <header class="page-header">
+    <h1>BookMe · Requests & Bookings</h1>
+    <p class="text-muted">
+      See who’s trying to book you, what you’ve requested from others, and all confirmed bookings.
     </p>
   </header>
 
-  <div class="bm-req-card">
-    <form method="POST" class="bm-req-form">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <!-- Summary cards -->
+  <section class="requests-summary-grid">
+    <div class="summary-card">
+      <h2>Requests for you</h2>
+      <p class="summary-subtitle">
+        Incoming requests where you’re the provider.
+      </p>
+      <div class="summary-count">{{ incoming_requests|length }}</div>
+    </div>
 
-      <label class="bm-label" for="preferred_time">Preferred date & time</label>
-      <input
-        id="preferred_time"
-        name="preferred_time"
-        type="text"
-        class="bm-input"
-        placeholder="e.g. Sat Jun 10, 2–5pm"
-        required
-      >
+    <div class="summary-card">
+      <h2>Requests you’ve sent</h2>
+      <p class="summary-subtitle">
+        Requests where you’re the client.
+      </p>
+      <div class="summary-count">{{ outgoing_requests|length }}</div>
+    </div>
 
-      <label class="bm-label" for="message">Message</label>
-      <textarea
-        id="message"
-        name="message"
-        class="bm-textarea"
-        placeholder="Share what you’re looking for: project details, number of hours, references, etc."
-      ></textarea>
+    <div class="summary-card">
+      <h2>Your bookings (as provider)</h2>
+      <p class="summary-subtitle">
+        Confirmed gigs where you’re performing / providing a service.
+      </p>
+      <div class="summary-count">{{ incoming_bookings|length }}</div>
+    </div>
 
-      <div class="bm-req-actions">
-        <button type="submit" class="bm-btn-primary">Send request</button>
-        <a href="{{ url_for('bookme_search') }}" class="bm-btn-secondary">Cancel</a>
-      </div>
-    </form>
+    <div class="summary-card">
+      <h2>Your bookings (as client)</h2>
+      <p class="summary-subtitle">
+        Bookings you’ve made with other providers.
+      </p>
+      <div class="summary-count">{{ outgoing_bookings|length }}</div>
+    </div>
+  </section>
+
+  <!-- Two columns: requests + bookings -->
+  <div class="requests-layout">
+    <!-- LEFT: Requests -->
+    <section class="requests-column">
+      <h2 class="section-title">Requests where you’re the provider</h2>
+      <p class="section-subtitle">
+        These creators chose you on BeatFund or used your public booking link.
+      </p>
+
+      {% if incoming_requests %}
+        <div class="card-list">
+          {% for req in incoming_requests %}
+            <article class="req-card">
+              <div class="req-main">
+                <div class="req-avatar">
+                  {{ req.client.username[0:1] | upper }}
+                </div>
+                <div class="req-info">
+                  <div class="req-top-line">
+                    <span class="req-handle">@{{ req.client.username }}</span>
+                    <span class="req-status-badge status-{{ req.status.value }}">
+                      {{ req.status.value.title() }}
+                    </span>
+                  </div>
+
+                  <div class="req-meta">
+                    <span class="req-label">Requested time:</span>
+                    <span class="req-value">
+                      {{ req.preferred_time or "Not specified" }}
+                    </span>
+                  </div>
+
+                  {% if req.message %}
+                    <div class="req-message">
+                      {{ req.message }}
+                    </div>
+                  {% endif %}
+
+                  <div class="req-meta small">
+                    Sent {{ req.created_at.strftime("%Y-%m-%d %H:%M") if req.created_at }}
+                  </div>
+                </div>
+              </div>
+
+              <div class="req-actions">
+                <form
+                  method="post"
+                  action="{{ url_for('bookme_request_status', req_id=req.id) }}"
+                  style="display:inline;"
+                >
+                  <input type="hidden" name="action" value="accept">
+                  <button type="submit" class="btn btn-primary btn-sm">
+                    Accept &amp; hold fee
+                  </button>
+                </form>
+
+                <form
+                  method="post"
+                  action="{{ url_for('bookme_request_status', req_id=req.id) }}"
+                  style="display:inline;"
+                >
+                  <input type="hidden" name="action" value="decline">
+                  <button type="submit" class="btn btn-secondary btn-sm">
+                    Decline
+                  </button>
+                </form>
+              </div>
+            </article>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p class="empty-state">
+          You don’t have any pending BookMe requests yet. Share your profile and public booking page to get your first one.
+        </p>
+      {% endif %}
+
+      <hr class="section-divider">
+
+      <h2 class="section-title">Requests you’ve sent</h2>
+      <p class="section-subtitle">
+        These are bookings you created when contacting other providers.
+      </p>
+
+      {% if outgoing_requests %}
+        <div class="card-list">
+          {% for req in outgoing_requests %}
+            <article class="req-card">
+              <div class="req-main">
+                <div class="req-avatar">
+                  {{ req.provider.username[0:1] | upper }}
+                </div>
+                <div class="req-info">
+                  <div class="req-top-line">
+                    <span class="req-handle">@{{ req.provider.username }}</span>
+                    <span class="req-status-badge status-{{ req.status.value }}">
+                      {{ req.status.value.title() }}
+                    </span>
+                  </div>
+
+                  <div class="req-meta">
+                    <span class="req-label">Requested time:</span>
+                    <span class="req-value">
+                      {{ req.preferred_time or "Not specified" }}
+                    </span>
+                  </div>
+
+                  {% if req.message %}
+                    <div class="req-message">
+                      {{ req.message }}
+                    </div>
+                  {% endif %}
+
+                  <div class="req-meta small">
+                    Sent {{ req.created_at.strftime("%Y-%m-%d %H:%M") if req.created_at }}
+                  </div>
+                </div>
+              </div>
+
+              <div class="req-actions">
+                {% if req.status in [BookingStatus.pending, BookingStatus.accepted] %}
+                  <form
+                    method="post"
+                    action="{{ url_for('bookme_request_status', req_id=req.id) }}"
+                    style="display:inline;"
+                  >
+                    <input type="hidden" name="action" value="cancel">
+                    <button type="submit" class="btn btn-secondary btn-sm">
+                      Cancel request
+                    </button>
+                  </form>
+                {% else %}
+                  <span class="btn btn-disabled btn-sm">
+                    {{ req.status.value.title() }}
+                  </span>
+                {% endif %}
+              </div>
+            </article>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p class="empty-state">
+          You haven’t sent any BookMe requests yet. Use the BookMe directory to contact producers, studios, DJs, and other providers.
+        </p>
+      {% endif %}
+    </section>
+
+    <!-- RIGHT: Bookings -->
+    <section class="bookings-column">
+      <h2 class="section-title">Your bookings (as provider)</h2>
+      <p class="section-subtitle">
+        Confirmed events &amp; gigs where you’re providing the service.
+      </p>
+
+      {% if incoming_bookings %}
+        <div class="card-list">
+          {% for b in incoming_bookings %}
+            <article class="booking-card">
+              <div class="booking-main">
+                <div class="booking-title">
+                  {{ b.event_title }}
+                </div>
+                <div class="booking-meta-row">
+                  <span class="booking-label">Client:</span>
+                  <span class="booking-value">@{{ b.client.username }}</span>
+                </div>
+                <div class="booking-meta-row">
+                  <span class="booking-label">When:</span>
+                  <span class="booking-value">
+                    {% if b.event_datetime %}
+                      {{ b.event_datetime.strftime("%Y-%m-%d %H:%M") }}
+                    {% else %}
+                      Not set
+                    {% endif %}
+                  </span>
+                </div>
+                {% if b.location_text %}
+                  <div class="booking-meta-row">
+                    <span class="booking-label">Location:</span>
+                    <span class="booking-value">{{ b.location_text }}</span>
+                  </div>
+                {% endif %}
+                {% if b.total_cents %}
+                  <div class="booking-meta-row">
+                    <span class="booking-label">Total:</span>
+                    <span class="booking-value">
+                      ${{ "%.2f" % (b.total_cents / 100.0) }}
+                    </span>
+                  </div>
+                {% endif %}
+              </div>
+              <div class="booking-side">
+                <span class="booking-status status-{{ b.status }}">
+                  {{ b.status.title() }}
+                </span>
+                <a
+                  href="{{ url_for('booking_detail', booking_id=b.id) }}"
+                  class="btn btn-secondary btn-sm"
+                >
+                  View / update
+                </a>
+              </div>
+            </article>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p class="empty-state">
+          You don’t have any bookings as a provider yet. When you accept a BookMe request or get booked via your public page, they’ll show here.
+        </p>
+      {% endif %}
+
+      <hr class="section-divider">
+
+      <h2 class="section-title">Your bookings (as client)</h2>
+      <p class="section-subtitle">
+        Bookings you’ve made with other providers on BeatFund.
+      </p>
+
+      {% if outgoing_bookings %}
+        <div class="card-list">
+          {% for b in outgoing_bookings %}
+            <article class="booking-card">
+              <div class="booking-main">
+                <div class="booking-title">
+                  {{ b.event_title }}
+                </div>
+                <div class="booking-meta-row">
+                  <span class="booking-label">Provider:</span>
+                  <span class="booking-value">
+                    @{{ b.provider.username }} · {{ b.provider_role.value.replace("_", " ").title() }}
+                  </span>
+                </div>
+                <div class="booking-meta-row">
+                  <span class="booking-label">When:</span>
+                  <span class="booking-value">
+                    {% if b.event_datetime %}
+                      {{ b.event_datetime.strftime("%Y-%m-%d %H:%M") }}
+                    {% else %}
+                      Not set
+                    {% endif %}
+                  </span>
+                </div>
+                {% if b.location_text %}
+                  <div class="booking-meta-row">
+                    <span class="booking-label">Location:</span>
+                    <span class="booking-value">{{ b.location_text }}</span>
+                  </div>
+                {% endif %}
+                {% if b.total_cents %}
+                  <div class="booking-meta-row">
+                    <span class="booking-label">Total:</span>
+                    <span class="booking-value">
+                      ${{ "%.2f" % (b.total_cents / 100.0) }}
+                    </span>
+                  </div>
+                {% endif %}
+              </div>
+              <div class="booking-side">
+                <span class="booking-status status-{{ b.status }}">
+                  {{ b.status.title() }}
+                </span>
+                <a
+                  href="{{ url_for('booking_detail', booking_id=b.id) }}"
+                  class="btn btn-secondary btn-sm"
+                >
+                  View details
+                </a>
+              </div>
+            </article>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p class="empty-state">
+          You don’t have any bookings as a client yet. Browse the BookMe directory and send a request to another provider.
+        </p>
+      {% endif %}
+    </section>
   </div>
+
+  <section class="hold-fee-note">
+    <p>
+      <strong>Note:</strong>
+      When you accept a BookMe request, BeatFund places a temporary hold fee of
+      <strong>${{ '%.2f' % (HOLD_FEE_CENTS / 100.0) }}</strong>
+      between the client and provider wallets to secure the slot (demo mode).
+    </p>
+  </section>
 </div>
 
 <style>
-.bm-req-shell {
-  padding-top: 16px;
-}
-.bm-req-header h1 {
-  font-size: 22px;
-  font-weight: 600;
-  margin-bottom: 4px;
-}
-.bm-req-sub {
-  font-size: 13px;
-  color: #9aa4c2;
-  margin-bottom: 12px;
-}
+  .bookme-requests-page {
+    max-width: 1100px;
+    margin: 0 auto;
+  }
+  .requests-summary-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 1rem;
+    margin-top: 1.25rem;
+  }
+  .summary-card {
+    background: #050b1a;
+    border-radius: 12px;
+    padding: 0.9rem 1rem;
+    border: 1px solid rgba(148, 163, 184, 0.25);
+  }
+  .summary-card h2 {
+    margin: 0;
+    font-size: 0.9rem;
+  }
+  .summary-subtitle {
+    margin: 0.35rem 0 0.5rem;
+    font-size: 0.8rem;
+    opacity: 0.75;
+  }
+  .summary-count {
+    font-size: 1.4rem;
+    font-weight: 600;
+  }
 
-.bm-req-card {
-  background: linear-gradient(135deg, #0b1220, #020617);
-  border-radius: 16px;
-  border: 1px solid #1f2937;
-  padding: 16px 16px 12px;
-  box-shadow: 0 18px 35px rgba(15, 23, 42, 0.9);
-}
+  .requests-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+    gap: 1.5rem;
+    margin-top: 1.75rem;
+  }
 
-.bm-req-form {
-  display: grid;
-  gap: 8px;
-}
+  .section-title {
+    margin-bottom: 0.15rem;
+    font-size: 1.05rem;
+  }
+  .section-subtitle {
+    margin-top: 0;
+    font-size: 0.8rem;
+    opacity: 0.75;
+  }
+  .card-list {
+    margin-top: 0.75rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+  }
 
-.bm-label {
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: #8f9bc6;
-  margin-top: 6px;
-  margin-bottom: 2px;
-}
+  .req-card,
+  .booking-card {
+    background: #050b1a;
+    border-radius: 12px;
+    padding: 0.8rem 0.9rem;
+    border: 1px solid rgba(30, 64, 175, 0.35);
+    display: flex;
+    justify-content: space-between;
+    gap: 0.8rem;
+  }
 
-.bm-input,
-.bm-textarea {
-  width: 100%;
-  border-radius: 10px;
-  border: 1px solid #303a5c;
-  background: rgba(12, 16, 36, 0.95);
-  color: #e3e9ff;
-  padding: 8px 10px;
-  font-size: 13px;
-}
+  .req-main {
+    display: flex;
+    gap: 0.7rem;
+  }
+  .req-avatar {
+    width: 34px;
+    height: 34px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #22c55e, #6366f1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.9rem;
+    font-weight: 600;
+  }
+  .req-info {
+    font-size: 0.85rem;
+  }
+  .req-top-line {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin-bottom: 0.05rem;
+  }
+  .req-handle {
+    font-weight: 500;
+  }
+  .req-status-badge {
+    font-size: 0.68rem;
+    padding: 0.1rem 0.45rem;
+    border-radius: 999px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  .status-pending {
+    background: rgba(251, 191, 36, 0.15);
+    color: #facc15;
+  }
+  .status-accepted,
+  .status-confirmed {
+    background: rgba(34, 197, 94, 0.15);
+    color: #4ade80;
+  }
+  .status-declined,
+  .status-cancelled,
+  .status-canceled {
+    background: rgba(239, 68, 68, 0.15);
+    color: #fca5a5;
+  }
 
-.bm-textarea {
-  min-height: 110px;
-  resize: vertical;
-}
+  .req-meta {
+    margin-top: 0.15rem;
+    font-size: 0.78rem;
+  }
+  .req-meta.small {
+    opacity: 0.7;
+  }
+  .req-label {
+    opacity: 0.8;
+  }
+  .req-message {
+    margin-top: 0.25rem;
+    font-size: 0.8rem;
+  }
 
-.bm-input::placeholder,
-.bm-textarea::placeholder {
-  color: #6f7aa4;
-}
+  .req-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    align-items: flex-end;
+    justify-content: center;
+    min-width: 140px;
+  }
 
-.bm-req-actions {
-  margin-top: 10px;
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
+  .booking-main {
+    font-size: 0.85rem;
+  }
+  .booking-title {
+    font-weight: 500;
+    margin-bottom: 0.15rem;
+  }
+  .booking-meta-row {
+    font-size: 0.78rem;
+    margin-top: 0.1rem;
+  }
+  .booking-label {
+    opacity: 0.8;
+    margin-right: 0.25rem;
+  }
+  .booking-side {
+    text-align: right;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    align-items: flex-end;
+    justify-content: center;
+    min-width: 130px;
+  }
+  .booking-status {
+    font-size: 0.7rem;
+    padding: 0.1rem 0.45rem;
+    border-radius: 999px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    background: rgba(148, 163, 184, 0.18);
+    color: #e5e7eb;
+  }
 
-.bm-btn-primary,
-.bm-btn-secondary {
-  border-radius: 999px;
-  padding: 8px 16px;
-  font-size: 13px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  text-decoration: none;
-  cursor: pointer;
-}
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    padding: 0.3rem 0.8rem;
+    font-size: 0.78rem;
+    border: none;
+    cursor: pointer;
+    text-decoration: none;
+  }
+  .btn-primary {
+    background: linear-gradient(135deg, #22c55e, #16a34a);
+    color: white;
+  }
+  .btn-secondary {
+    background: rgba(15, 23, 42, 0.9);
+    color: #e5e7eb;
+    border: 1px solid rgba(148, 163, 184, 0.4);
+  }
+  .btn-disabled {
+    background: rgba(51, 65, 85, 0.6);
+    color: rgba(148, 163, 184, 0.9);
+    cursor: default;
+  }
+  .btn-sm {
+    padding: 0.25rem 0.75rem;
+    font-size: 0.74rem;
+  }
 
-.bm-btn-primary {
-  border: none;
-  background: linear-gradient(135deg, #33b5ff, #447aff);
-  color: #ffffff;
-}
-.bm-btn-primary:hover {
-  background: linear-gradient(135deg, #45c4ff, #5688ff);
-}
+  .empty-state {
+    margin-top: 0.8rem;
+    font-size: 0.85rem;
+    opacity: 0.8;
+  }
 
-.bm-btn-secondary {
-  border: 1px solid #1f2937;
-  color: #e5e7eb;
-  background: rgba(15, 23, 42, 0.8);
-}
-.bm-btn-secondary:hover {
-  border-color: #38bdf8;
-}
+  .section-divider {
+    margin: 1.2rem 0;
+    border: none;
+    border-top: 1px solid rgba(30, 64, 175, 0.3);
+  }
+
+  .hold-fee-note {
+    margin-top: 1.75rem;
+    font-size: 0.8rem;
+    opacity: 0.85;
+  }
+
+  @media (max-width: 980px) {
+    .requests-summary-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .requests-layout {
+      grid-template-columns: 1fr;
+    }
+  }
+  @media (max-width: 640px) {
+    .requests-summary-grid {
+      grid-template-columns: 1fr;
+    }
+    .req-card,
+    .booking-card {
+      flex-direction: column;
+      align-items: flex-start;
+    }
+    .req-actions,
+    .booking-side {
+      flex-direction: row;
+      align-items: center;
+      margin-top: 0.4rem;
+    }
+  }
 </style>
 {% endblock %}

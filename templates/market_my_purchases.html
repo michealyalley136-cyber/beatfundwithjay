@@ -1,188 +1,253 @@
 {% extends "base.html" %}
-{% block title %}My Purchased Beats{% endblock %}
+{% block title %}My Purchased Beats · BeatFund{% endblock %}
 
-{% block content %}
-<div class="bf-page-shell">
-  <div class="bf-page-header">
-    <h1>My Purchased Beats</h1>
-    <p class="bf-muted">
-      These are beats you’ve bought with your BeatFund wallet. You can re-download deliverable files anytime.
-    </p>
-  </div>
-
-  <div class="mp-card">
-    {% if purchases %}
-      <div class="mp-list">
-        {% for item in purchases %}
-          {% set beat = item.beat %}
-          {% set order = item.order %}
-          {% set producer = item.producer %}
-          <div class="mp-row">
-            <div class="mp-main">
-              <div class="mp-title-line">
-                <span class="mp-title">{{ beat.title }}</span>
-                {% if producer %}
-                  <span class="mp-producer">@{{ producer.username }}</span>
-                {% endif %}
-              </div>
-              <div class="mp-meta-line">
-                <span class="mp-meta">
-                  Order #{{ order.id }} · {{ (order.created_at or "") }}
-                </span>
-                <span class="mp-meta">
-                  Paid: ${{ "%.2f"|format(order.amount_cents / 100.0) }}
-                </span>
-              </div>
-              {% if beat.genre or beat.bpm %}
-                <div class="mp-meta-line">
-                  {% if beat.genre %}
-                    <span class="mp-tag">{{ beat.genre }}</span>
-                  {% endif %}
-                  {% if beat.bpm %}
-                    <span class="mp-tag">{{ beat.bpm }} BPM</span>
-                  {% endif %}
-                </div>
-              {% endif %}
-            </div>
-
-            <div class="mp-actions">
-              {% if beat.stems_path %}
-                <a href="{{ url_for('market_download', beat_id=beat.id) }}"
-                   class="mp-btn-primary mp-btn-sm">
-                  Download files
-                </a>
-              {% else %}
-                <span class="mp-note">No files available</span>
-              {% endif %}
-            </div>
-          </div>
-        {% endfor %}
-      </div>
-    {% else %}
-      <p class="mp-empty">
-        You haven’t purchased any beats yet. Visit the
-        <a href="{{ url_for('market_index') }}">Marketplace</a>
-        to browse beats.
-      </p>
-    {% endif %}
-  </div>
-</div>
-
+{% block extra_head %}
 <style>
-  .bf-page-shell {
+  .purchases-page {
     max-width: 1100px;
     margin: 0 auto;
-    padding: 32px 24px 48px;
+    padding: 24px 12px 40px;
   }
-  .bf-page-header h1 {
-    font-size: 26px;
+
+  .purchases-title {
+    font-size: 22px;
+    font-weight: 600;
     margin-bottom: 4px;
   }
-  .bf-muted {
-    color: #9ca7c5;
-    font-size: 14px;
+
+  .purchases-sub {
+    font-size: 13px;
+    color: #9aa4c2;
+    margin-bottom: 18px;
   }
 
-  .mp-card {
-    margin-top: 24px;
-    background: radial-gradient(circle at top left, #273760, #15192b 55%, #0b0f1e);
-    border-radius: 18px;
-    padding: 20px 22px 24px;
-    box-shadow: 0 14px 40px rgba(0,0,0,0.45);
+  .purchases-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 16px;
   }
 
-  .mp-list {
+  .purchase-card {
+    background: radial-gradient(circle at top left, #020617, #020617);
+    border-radius: 16px;
+    border: 1px solid rgba(15,23,42,0.9);
+    box-shadow: 0 14px 30px rgba(15,23,42,0.9);
+    overflow: hidden;
     display: flex;
     flex-direction: column;
-    gap: 10px;
   }
 
-  .mp-row {
+  .purchase-media {
+    position: relative;
+    height: 150px;
+    background: linear-gradient(135deg, #1d293b, #020617);
+    overflow: hidden;
+  }
+  .purchase-media img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    opacity: 0.95;
+  }
+
+  .purchase-tag {
+    position: absolute;
+    left: 10px;
+    top: 10px;
+    font-size: 10px;
+    padding: 3px 8px;
+    border-radius: 999px;
+    background: rgba(15,23,42,0.9);
+    border: 1px solid rgba(148,163,184,0.5);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #e5e7eb;
+  }
+
+  .purchase-body {
+    padding: 12px 14px 10px;
     display: flex;
-    justify-content: space-between;
-    gap: 12px;
-    padding: 10px 12px;
-    border-radius: 14px;
-    background: rgba(8, 12, 30, 0.9);
-    border: 1px solid rgba(68, 90, 160, 0.7);
+    flex-direction: column;
+    gap: 4px;
   }
 
-  .mp-main {
-    flex: 1 1 auto;
-  }
-
-  .mp-title-line {
-    display: flex;
-    align-items: baseline;
-    gap: 8px;
-  }
-
-  .mp-title {
+  .beat-title {
+    font-size: 15px;
     font-weight: 600;
   }
 
-  .mp-producer {
-    font-size: 13px;
-    color: #9ca7c5;
-  }
-
-  .mp-meta-line {
-    margin-top: 3px;
+  .beat-producer {
     font-size: 12px;
-    color: #9ca7c5;
+    color: #9aa4c2;
+  }
+
+  .beat-meta-row {
     display: flex;
-    gap: 12px;
     flex-wrap: wrap;
-  }
-
-  .mp-tag {
-    display: inline-block;
+    gap: 6px;
     margin-top: 4px;
-    padding: 2px 8px;
+  }
+
+  .beat-pill {
     font-size: 11px;
+    padding: 3px 8px;
     border-radius: 999px;
-    background: rgba(57, 114, 255, 0.3);
-    color: #dfe7ff;
+    border: 1px solid rgba(148,163,184,0.5);
+    color: #e5e7eb;
+    white-space: nowrap;
   }
 
-  .mp-actions {
+  .beat-pill-soft {
+    background: rgba(15,23,42,0.9);
+  }
+
+  .purchase-footer {
     display: flex;
-    align-items: center;
-    justify-content: flex-end;
+    justify-content: space-between;
+    align-items: flex-end;
+    padding: 0 14px 12px;
+    gap: 10px;
   }
 
-  .mp-btn-primary {
+  .purchase-date {
+    font-size: 11px;
+    color: #64748b;
+  }
+
+  .purchase-amount {
+    font-size: 14px;
+    font-weight: 600;
+    color: #4ade80;
+    white-space: nowrap;
+  }
+
+  .btn-download-beat {
     border-radius: 999px;
-    padding: 6px 14px;
-    font-size: 13px;
+    padding: 6px 12px;
+    font-size: 12px;
     border: none;
     cursor: pointer;
+    background: linear-gradient(135deg, #33b5ff, #447aff);
+    color: #ffffff;
     text-decoration: none;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    background: linear-gradient(135deg, #33b5ff, #447aff);
-    color: #ffffff;
-    box-shadow: 0 6px 16px rgba(0,0,0,0.55);
+    gap: 6px;
   }
-
-  .mp-btn-primary:hover {
+  .btn-download-beat:hover {
     background: linear-gradient(135deg, #45c4ff, #5688ff);
   }
 
-  .mp-btn-sm {
-    padding: 5px 12px;
-    font-size: 12px;
-  }
-
-  .mp-note {
-    font-size: 12px;
-    color: #9ca7c5;
-  }
-
-  .mp-empty {
-    font-size: 14px;
-    color: #9ca7c5;
+  .purchases-empty {
+    padding: 24px 16px;
+    border-radius: 16px;
+    border: 1px dashed rgba(148,163,184,0.5);
+    background: radial-gradient(circle at top left, #020617, #020617);
+    text-align: center;
+    font-size: 13px;
+    color: #9aa4c2;
   }
 </style>
+{% endblock %}
+
+{% block content %}
+<div class="purchases-page">
+  <h1 class="purchases-title">My Purchased Beats</h1>
+  <p class="purchases-sub">
+    Beats you've bought on BeatFund. Download deliverables or return to the marketplace to discover more.
+  </p>
+
+  {% if purchases %}
+    <div class="purchases-grid">
+      {% for row in purchases %}
+        {% set order = row.order %}
+        {% set beat = row.beat %}
+        {% set producer = row.producer %}
+
+        <article class="purchase-card">
+          <div class="purchase-media">
+            {% if beat.cover_url %}
+              <img src="{{ beat.cover_url }}" alt="Cover for {{ beat.title or 'Untitled beat' }}">
+            {% else %}
+              <!-- simple gradient placeholder -->
+              <svg width="100%" height="100%" preserveAspectRatio="none">
+                <defs>
+                  <linearGradient id="grad-{{ beat.id }}" x1="0%" y1="0%" x2="100%" y2="100%">
+                    <stop offset="0%" style="stop-color:#1d4ed8;stop-opacity:1" />
+                    <stop offset="100%" style="stop-color:#22c55e;stop-opacity:1" />
+                  </linearGradient>
+                </defs>
+                <rect width="100%" height="100%" fill="url(#grad-{{ beat.id }})"></rect>
+              </svg>
+            {% endif %}
+            <div class="purchase-tag">
+              Purchased
+            </div>
+          </div>
+
+          <div class="purchase-body">
+            <div class="beat-title">
+              {{ beat.title or "Untitled beat" }}
+            </div>
+            <div class="beat-producer">
+              by @{{ producer.username if producer else "unknown" }}
+            </div>
+
+            <div class="beat-meta-row">
+              {% if beat.genre %}
+                <span class="beat-pill beat-pill-soft">{{ beat.genre }}</span>
+              {% endif %}
+              {% if beat.bpm %}
+                <span class="beat-pill beat-pill-soft">{{ beat.bpm }} BPM</span>
+              {% endif %}
+              {% if beat.license %}
+                <span class="beat-pill beat-pill-soft">
+                  {{ beat.license.replace('_',' ')|title }}
+                </span>
+              {% endif %}
+              {% if order.status %}
+                <span class="beat-pill">
+                  {{ order.status.value.replace('_',' ')|title }}
+                </span>
+              {% endif %}
+            </div>
+          </div>
+
+          <div class="purchase-footer">
+            <div>
+              <div class="purchase-date">
+                Order #{{ order.id }}
+                {% if order.created_at %}
+                  · {{ order.created_at.strftime('%Y-%m-%d %H:%M') }}
+                {% endif %}
+              </div>
+              <div class="purchase-amount">
+                ${{ "%.2f"|format(order.amount_cents / 100.0) }}
+              </div>
+            </div>
+
+            {% if beat.stems_path %}
+              <a
+                href="{{ url_for('market_download', beat_id=beat.id) }}"
+                class="btn-download-beat"
+              >
+                ⬇ Download Files
+              </a>
+            {% else %}
+              <span style="font-size:11px; color:#9aa4c2;">
+                No deliverable file uploaded yet.
+              </span>
+            {% endif %}
+          </div>
+        </article>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="purchases-empty">
+      You haven’t purchased any beats yet.<br>
+      Once you buy beats in the marketplace, they’ll show up here with download links.
+    </div>
+  {% endif %}
+</div>
 {% endblock %}

@@ -197,7 +197,25 @@
     transform: translateX(0);
   }
 
-  /* Filters */
+  /* Generic filters for marketplace rows */
+  .mk-studio-filters,
+  .mk-video-filters,
+  .mk-talent-filters,
+  .mk-provider-filters {
+    display: none;
+    margin-bottom: 10px;
+    gap: 8px;
+    flex-wrap: wrap;
+    align-items: flex-end;
+  }
+
+  .mk-studio-filters.is-open,
+  .mk-video-filters.is-open,
+  .mk-talent-filters.is-open,
+  .mk-provider-filters.is-open {
+    display: flex;
+  }
+
   .mk-filters-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -512,6 +530,34 @@
     color: #9aa4c2;
     padding: 10px 0 2px;
   }
+
+  /* Studios & other rows filter strip shared styles */
+  .mk-studio-filter-field {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 130px;
+  }
+
+  .mk-studio-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #8f9bc6;
+  }
+
+  .mk-studio-filter-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+
+  .mk-studio-results {
+    font-size: 11px;
+    color: #9aa4c2;
+    margin-top: 4px;
+  }
 </style>
 {% endblock %}
 
@@ -758,9 +804,12 @@
                   <div class="mk-price-sub">
                     Keep exploring new sounds.
                   </div>
-                  <button type="button" class="mk-btn-buy-inline">
+                  <a
+                    href="{{ url_for('market_producer_catalog') }}"
+                    class="mk-btn-buy-inline"
+                  >
                     Producer catalog
-                  </button>
+                  </a>
                 </div>
               </div>
             </article>
@@ -779,7 +828,7 @@
     <div class="mk-card-inner">
       <div class="mk-card-title-row">
         <div class="mk-card-title">Studios near you</div>
-        <button type="button" class="mk-btn-ghost mk-btn-small">
+        <button type="button" id="mk-toggle-studio-filters" class="mk-btn-ghost mk-btn-small">
           Filter studios
         </button>
       </div>
@@ -787,31 +836,79 @@
         Book recording studios by the hour and pay securely with your BeatFund wallet.
       </div>
 
+      <!-- Studio filters strip -->
+      <div id="mk-studio-filters" class="mk-studio-filters">
+        <div class="mk-studio-filter-field">
+          <label for="mk-studio-city" class="mk-studio-label">City</label>
+          <input
+            id="mk-studio-city"
+            class="mk-input"
+            type="text"
+            placeholder="e.g. Columbus"
+          >
+        </div>
+        <div class="mk-studio-filter-field">
+          <label for="mk-studio-state" class="mk-studio-label">State</label>
+          <input
+            id="mk-studio-state"
+            class="mk-input"
+            type="text"
+            placeholder="e.g. OH"
+          >
+        </div>
+        <div class="mk-studio-filter-field">
+          <label for="mk-studio-zip" class="mk-studio-label">ZIP</label>
+          <input
+            id="mk-studio-zip"
+            class="mk-input"
+            type="text"
+            placeholder="e.g. 43201"
+          >
+        </div>
+        <div class="mk-studio-filter-actions">
+          <button type="button" id="mk-apply-studio-filters" class="mk-btn-primary mk-btn-small">
+            Apply
+          </button>
+          <button type="button" id="mk-clear-studio-filters" class="mk-btn-ghost mk-btn-small">
+            Clear
+          </button>
+        </div>
+      </div>
+
+      <div id="mk-studio-results-count" class="mk-studio-results">
+        {% if studios is defined and studios %}
+          Showing {{ studios|length }} studio{{ studios|length != 1 and 's' or '' }}.
+        {% else %}
+          No studios available yet.
+        {% endif %}
+      </div>
+
       {% if studios is defined and studios %}
         <div class="mk-beat-grid">
           {% for s in studios %}
-            <article class="mk-beat-card">
+            <article
+              class="mk-beat-card"
+              data-studio-card="1"
+              data-city="{{ s.city|default('', true)|lower }}"
+              data-state="{{ s.state|default('', true)|lower }}"
+              data-zip="{{ s.zip|default('', true)|lower }}"
+            >
               <div class="mk-beat-cover">
                 <img
                   class="mk-beat-cover-img"
-                  src="{{ s.cover_url or url_for('static', filename='img/studio-placeholder.jpg') }}"
-                  alt="{{ s.name }} studio photo"
+                  src="{{ s.user.avatar_url if s.user else url_for('static', filename='img/studio-placeholder.jpg') }}"
+                  alt="{{ s.display_name }} studio photo"
                 >
-                {% if s.has_discount %}
-                  <span class="mk-beat-featured-badge">
-                    {{ s.discount_label or 'Discount' }}
-                  </span>
-                {% endif %}
               </div>
 
               <div class="mk-beat-info">
                 <div class="mk-beat-title-row">
                   <div class="mk-beat-main-title">
-                    {{ s.name }}
+                    {{ s.display_name }}
                   </div>
-                  {% if s.handle %}
+                  {% if s.user %}
                     <div class="mk-beat-artist">
-                      @{{ s.handle }}
+                      @{{ s.user.username }}
                     </div>
                   {% endif %}
                 </div>
@@ -822,27 +919,29 @@
                   {% elif s.city %}
                     {{ s.city }}
                   {% endif %}
-                  {% if s.base_rate_cents %}
-                    · From ${{ "%.2f"|format((s.base_rate_cents or 0) / 100.0) }}/hr
+                  {% if s.service_types %}
+                    · {{ s.service_types }}
                   {% endif %}
                 </div>
 
                 <div class="mk-beat-bottom">
                   <div>
-                    {% if s.has_discount and s.discount_text %}
-                      <div class="mk-price-row">{{ s.discount_text }}</div>
-                    {% elif s.base_rate_cents %}
-                      <div class="mk-price-row">
-                        From ${{ "%.2f"|format((s.base_rate_cents or 0) / 100.0) }}/hr
-                      </div>
+                    {% if s.rate_notes %}
+                      <div class="mk-price-row">{{ s.rate_notes }}</div>
                     {% endif %}
                     <div class="mk-price-sub">Book and pay via BeatFund</div>
                   </div>
 
-                  {# Replace href with real studio booking route later #}
-                  <a href="#" class="mk-btn-buy-inline">
-                    Book a session
-                  </a>
+                  {% if s.user %}
+                    <a
+                      href="{{ url_for('bookme_book_provider', username=s.user.username) }}"
+                      class="mk-btn-buy-inline"
+                    >
+                      Book a session
+                    </a>
+                  {% else %}
+                    <span class="mk-price-sub">Unavailable</span>
+                  {% endif %}
                 </div>
               </div>
             </article>
@@ -861,8 +960,7 @@
                 <div class="mk-price-sub">
                   Discover more studios.
                 </div>
-                {# Replace href with real studio catalog route later #}
-                <a href="#" class="mk-btn-buy-inline">
+                <a href="{{ url_for('bookme_search', role='studio') }}" class="mk-btn-buy-inline">
                   View all studios
                 </a>
               </div>
@@ -882,7 +980,7 @@
     <div class="mk-card-inner">
       <div class="mk-card-title-row">
         <div class="mk-card-title">Videographers &amp; directors</div>
-        <button type="button" class="mk-btn-ghost mk-btn-small">
+        <button type="button" id="mk-toggle-video-filters" class="mk-btn-ghost mk-btn-small">
           Filter videographers
         </button>
       </div>
@@ -890,31 +988,79 @@
         Find video teams for music videos, promos, and live sessions, then lock in your shoot with BeatFund.
       </div>
 
+      <!-- Videographer filters -->
+      <div id="mk-video-filters" class="mk-video-filters">
+        <div class="mk-studio-filter-field">
+          <label for="mk-video-search" class="mk-studio-label">Search</label>
+          <input
+            id="mk-video-search"
+            class="mk-input"
+            type="text"
+            placeholder="Name, @handle, city…"
+          >
+        </div>
+        <div class="mk-studio-filter-field">
+          <label for="mk-video-city" class="mk-studio-label">City</label>
+          <input
+            id="mk-video-city"
+            class="mk-input"
+            type="text"
+            placeholder="e.g. Columbus"
+          >
+        </div>
+        <div class="mk-studio-filter-field">
+          <label for="mk-video-state" class="mk-studio-label">State</label>
+          <input
+            id="mk-video-state"
+            class="mk-input"
+            type="text"
+            placeholder="e.g. OH"
+          >
+        </div>
+        <div class="mk-studio-filter-actions">
+          <button type="button" id="mk-apply-video-filters" class="mk-btn-primary mk-btn-small">
+            Apply
+          </button>
+          <button type="button" id="mk-clear-video-filters" class="mk-btn-ghost mk-btn-small">
+            Clear
+          </button>
+        </div>
+      </div>
+
+      <div id="mk-video-results-count" class="mk-studio-results">
+        {% if videographers is defined and videographers %}
+          Showing {{ videographers|length }} videographer{{ videographers|length != 1 and 's' or '' }}.
+        {% else %}
+          No videographers available yet.
+        {% endif %}
+      </div>
+
       {% if videographers is defined and videographers %}
         <div class="mk-beat-grid">
           {% for v in videographers %}
-            <article class="mk-beat-card">
+            <article
+              class="mk-beat-card"
+              data-video-card="1"
+              data-city="{{ v.city|default('', true)|lower }}"
+              data-state="{{ v.state|default('', true)|lower }}"
+              data-search="{{ (v.display_name ~ ' ' ~ (v.user.username if v.user else '') ~ ' ' ~ (v.city or '') ~ ' ' ~ (v.state or ''))|lower }}"
+            >
               <div class="mk-beat-cover">
                 <img
                   class="mk-beat-cover-img"
-                  src="{{ v.cover_url or url_for('static', filename='img/videographer-placeholder.jpg') }}"
-                  alt="{{ v.name }} videographer photo"
+                  src="{{ v.user.avatar_url if v.user else url_for('static', filename='img/videographer-placeholder.jpg') }}"
+                  alt="{{ v.display_name }} videographer photo"
                 >
-                {% if v.has_highlight %}
-                  <span class="mk-beat-featured-badge">
-                    {{ v.highlight_label or 'Featured' }}
-                  </span>
-                {% endif %}
               </div>
 
               <div class="mk-beat-info">
                 <div class="mk-beat-title-row">
                   <div class="mk-beat-main-title">
-                    {{ v.name }}
+                    {{ v.display_name }}
                   </div>
-                  {% if v.handle %}
+                  {% if v.user %}
                     <div class="mk-beat-artist">
-                      @{{ v.handle }}
+                      @{{ v.user.username }}
                     </div>
                   {% endif %}
                 </div>
@@ -925,27 +1071,29 @@
                   {% elif v.city %}
                     {{ v.city }}
                   {% endif %}
-                  {% if v.base_rate_cents %}
-                    · From ${{ "%.2f"|format((v.base_rate_cents or 0) / 100.0) }}/project
+                  {% if v.service_types %}
+                    · {{ v.service_types }}
                   {% endif %}
                 </div>
 
                 <div class="mk-beat-bottom">
                   <div>
-                    {% if v.tagline %}
-                      <div class="mk-price-row">{{ v.tagline }}</div>
-                    {% elif v.base_rate_cents %}
-                      <div class="mk-price-row">
-                        From ${{ "%.2f"|format((v.base_rate_cents or 0) / 100.0) }}/project
-                      </div>
+                    {% if v.rate_notes %}
+                      <div class="mk-price-row">{{ v.rate_notes }}</div>
                     {% endif %}
                     <div class="mk-price-sub">Secure your shoot via BeatFund</div>
                   </div>
 
-                  {# Replace href with real videographer booking route later #}
-                  <a href="#" class="mk-btn-buy-inline">
-                    Book a shoot
-                  </a>
+                  {% if v.user %}
+                    <a
+                      href="{{ url_for('bookme_book_provider', username=v.user.username) }}"
+                      class="mk-btn-buy-inline"
+                    >
+                      Book a shoot
+                    </a>
+                  {% else %}
+                    <span class="mk-price-sub">Unavailable</span>
+                  {% endif %}
                 </div>
               </div>
             </article>
@@ -964,7 +1112,7 @@
                 <div class="mk-price-sub">
                   Explore the video catalog.
                 </div>
-                <a href="#" class="mk-btn-buy-inline">
+                <a href="{{ url_for('bookme_search', role='videographer') }}" class="mk-btn-buy-inline">
                   View all videographers
                 </a>
               </div>
@@ -984,7 +1132,7 @@
     <div class="mk-card-inner">
       <div class="mk-card-title-row">
         <div class="mk-card-title">Talent &amp; video vixens</div>
-        <button type="button" class="mk-btn-ghost mk-btn-small">
+        <button type="button" id="mk-toggle-talent-filters" class="mk-btn-ghost mk-btn-small">
           Filter talent
         </button>
       </div>
@@ -992,31 +1140,80 @@
         Build the right cast for your video shoots, campaigns, and live performances.
       </div>
 
+      <!-- Talent filters -->
+      <div id="mk-talent-filters" class="mk-talent-filters">
+        <div class="mk-studio-filter-field">
+          <label for="mk-talent-search" class="mk-studio-label">Search</label>
+          <input
+            id="mk-talent-search"
+            class="mk-input"
+            type="text"
+            placeholder="Name, @handle, roles…"
+          >
+        </div>
+        <div class="mk-studio-filter-field">
+          <label for="mk-talent-city" class="mk-studio-label">City</label>
+          <input
+            id="mk-talent-city"
+            class="mk-input"
+            type="text"
+            placeholder="e.g. Atlanta"
+          >
+        </div>
+        <div class="mk-studio-filter-field">
+          <label for="mk-talent-roles" class="mk-studio-label">Roles</label>
+          <input
+            id="mk-talent-roles"
+            class="mk-input"
+            type="text"
+            placeholder="e.g. vixen, host, model"
+          >
+        </div>
+        <div class="mk-studio-filter-actions">
+          <button type="button" id="mk-apply-talent-filters" class="mk-btn-primary mk-btn-small">
+            Apply
+          </button>
+          <button type="button" id="mk-clear-talent-filters" class="mk-btn-ghost mk-btn-small">
+            Clear
+          </button>
+        </div>
+      </div>
+
+      <div id="mk-talent-results-count" class="mk-studio-results">
+        {% if talent_profiles is defined and talent_profiles %}
+          Showing {{ talent_profiles|length }} talent profile{{ talent_profiles|length != 1 and 's' or '' }}.
+        {% else %}
+          No talent profiles available yet.
+        {% endif %}
+      </div>
+
       {% if talent_profiles is defined and talent_profiles %}
         <div class="mk-beat-grid">
           {% for t in talent_profiles %}
-            <article class="mk-beat-card">
+            <article
+              class="mk-beat-card"
+              data-talent-card="1"
+              data-city="{{ t.city|default('', true)|lower }}"
+              data-state="{{ t.state|default('', true)|lower }}"
+              data-roles="{{ t.service_types|default('', true)|lower }}"
+              data-search="{{ (t.display_name ~ ' ' ~ (t.user.username if t.user else '') ~ ' ' ~ (t.service_types or '') ~ ' ' ~ (t.city or '') ~ ' ' ~ (t.state or ''))|lower }}"
+            >
               <div class="mk-beat-cover">
                 <img
                   class="mk-beat-cover-img"
-                  src="{{ t.cover_url or url_for('static', filename='img/talent-placeholder.jpg') }}"
-                  alt="{{ t.name }} talent photo"
+                  src="{{ t.user.avatar_url if t.user else url_for('static', filename='img/talent-placeholder.jpg') }}"
+                  alt="{{ t.display_name }} talent photo"
                 >
-                {% if t.has_highlight %}
-                  <span class="mk-beat-featured-badge">
-                    {{ t.highlight_label or 'Featured' }}
-                  </span>
-                {% endif %}
               </div>
 
               <div class="mk-beat-info">
                 <div class="mk-beat-title-row">
                   <div class="mk-beat-main-title">
-                    {{ t.name }}
+                    {{ t.display_name }}
                   </div>
-                  {% if t.handle %}
+                  {% if t.user %}
                     <div class="mk-beat-artist">
-                      @{{ t.handle }}
+                      @{{ t.user.username }}
                     </div>
                   {% endif %}
                 </div>
@@ -1027,25 +1224,31 @@
                   {% elif t.city %}
                     {{ t.city }}
                   {% endif %}
-                  {% if t.roles_text %}
-                    · {{ t.roles_text }}
+                  {% if t.service_types %}
+                    · {{ t.service_types }}
                   {% endif %}
                 </div>
 
                 <div class="mk-beat-bottom">
                   <div>
-                    {% if t.rate_cents %}
+                    {% if t.rate_notes %}
                       <div class="mk-price-row">
-                        From ${{ "%.2f"|format((t.rate_cents or 0) / 100.0) }}/booking
+                        {{ t.rate_notes }}
                       </div>
                     {% endif %}
                     <div class="mk-price-sub">Book appearances through BeatFund</div>
                   </div>
 
-                  {# Replace href with real talent booking route later #}
-                  <a href="#" class="mk-btn-buy-inline">
-                    Book talent
-                  </a>
+                  {% if t.user %}
+                    <a
+                      href="{{ url_for('bookme_book_provider', username=t.user.username) }}"
+                      class="mk-btn-buy-inline"
+                    >
+                      Book talent
+                    </a>
+                  {% else %}
+                    <span class="mk-price-sub">Unavailable</span>
+                  {% endif %}
                 </div>
               </div>
             </article>
@@ -1064,7 +1267,7 @@
                 <div class="mk-price-sub">
                   Explore the talent catalog.
                 </div>
-                <a href="#" class="mk-btn-buy-inline">
+                <a href="{{ url_for('bookme_search') }}" class="mk-btn-buy-inline">
                   View all talent
                 </a>
               </div>
@@ -1084,7 +1287,7 @@
     <div class="mk-card-inner">
       <div class="mk-card-title-row">
         <div class="mk-card-title">Other providers</div>
-        <button type="button" class="mk-btn-ghost mk-btn-small">
+        <button type="button" id="mk-toggle-provider-filters" class="mk-btn-ghost mk-btn-small">
           Filter providers
         </button>
       </div>
@@ -1092,40 +1295,89 @@
         Makeup artists, dancers, event planners, photographers, DJs, and more — all paid safely through BeatFund.
       </div>
 
+      <!-- Other providers filters -->
+      <div id="mk-provider-filters" class="mk-provider-filters">
+        <div class="mk-studio-filter-field">
+          <label for="mk-provider-search" class="mk-studio-label">Search</label>
+          <input
+            id="mk-provider-search"
+            class="mk-input"
+            type="text"
+            placeholder="Name, @handle, category…"
+          >
+        </div>
+        <div class="mk-studio-filter-field">
+          <label for="mk-provider-city" class="mk-studio-label">City</label>
+          <input
+            id="mk-provider-city"
+            class="mk-input"
+            type="text"
+            placeholder="e.g. Nashville"
+          >
+        </div>
+        <div class="mk-studio-filter-field">
+          <label for="mk-provider-category" class="mk-studio-label">Category</label>
+          <input
+            id="mk-provider-category"
+            class="mk-input"
+            type="text"
+            placeholder="e.g. makeup, DJ, planner"
+          >
+        </div>
+        <div class="mk-studio-filter-actions">
+          <button type="button" id="mk-apply-provider-filters" class="mk-btn-primary mk-btn-small">
+            Apply
+          </button>
+          <button type="button" id="mk-clear-provider-filters" class="mk-btn-ghost mk-btn-small">
+            Clear
+          </button>
+        </div>
+      </div>
+
+      <div id="mk-provider-results-count" class="mk-studio-results">
+        {% if other_providers is defined and other_providers %}
+          Showing {{ other_providers|length }} provider{{ other_providers|length != 1 and 's' or '' }}.
+        {% else %}
+          No providers available yet.
+        {% endif %}
+      </div>
+
       {% if other_providers is defined and other_providers %}
         <div class="mk-beat-grid">
           {% for p in other_providers %}
-            <article class="mk-beat-card">
+            <article
+              class="mk-beat-card"
+              data-provider-card="1"
+              data-city="{{ p.city|default('', true)|lower }}"
+              data-state="{{ p.state|default('', true)|lower }}"
+              data-category="{{ (p.user.role.value|default('', true))|lower if p.user and p.user.role else '' }}"
+              data-search="{{ (p.display_name ~ ' ' ~ (p.user.username if p.user else '') ~ ' ' ~ (p.service_types or '') ~ ' ' ~ (p.city or '') ~ ' ' ~ (p.state or ''))|lower }}"
+            >
               <div class="mk-beat-cover">
                 <img
                   class="mk-beat-cover-img"
-                  src="{{ p.cover_url or url_for('static', filename='img/provider-placeholder.jpg') }}"
-                  alt="{{ p.name }} provider photo"
+                  src="{{ p.user.avatar_url if p.user else url_for('static', filename='img/provider-placeholder.jpg') }}"
+                  alt="{{ p.display_name }} provider photo"
                 >
-                {% if p.has_highlight %}
-                  <span class="mk-beat-featured-badge">
-                    {{ p.highlight_label or p.category or 'Featured' }}
-                  </span>
-                {% endif %}
               </div>
 
               <div class="mk-beat-info">
                 <div class="mk-beat-title-row">
                   <div class="mk-beat-main-title">
-                    {{ p.name }}
+                    {{ p.display_name }}
                   </div>
-                  {% if p.handle %}
+                  {% if p.user %}
                     <div class="mk-beat-artist">
-                      @{{ p.handle }}
+                      @{{ p.user.username }}
                     </div>
                   {% endif %}
                 </div>
 
                 <div class="mk-beat-meta">
-                  {% if p.category %}
-                    {{ p.category }}
+                  {% if p.user and p.user.role %}
+                    {{ p.user.role.value.replace('_', ' ')|title }}
                   {% endif %}
-                  {% if (p.city or p.state) and p.category %}
+                  {% if (p.city or p.state) and (p.user and p.user.role) %}
                     ·
                   {% endif %}
                   {% if p.city and p.state %}
@@ -1137,18 +1389,24 @@
 
                 <div class="mk-beat-bottom">
                   <div>
-                    {% if p.rate_cents %}
+                    {% if p.rate_notes %}
                       <div class="mk-price-row">
-                        From ${{ "%.2f"|format((p.rate_cents or 0) / 100.0) }}/service
+                        {{ p.rate_notes }}
                       </div>
                     {% endif %}
                     <div class="mk-price-sub">Book &amp; pay via BeatFund</div>
                   </div>
 
-                  {# Replace href with real provider booking route later #}
-                  <a href="#" class="mk-btn-buy-inline">
-                    Book provider
-                  </a>
+                  {% if p.user %}
+                    <a
+                      href="{{ url_for('bookme_book_provider', username=p.user.username) }}"
+                      class="mk-btn-buy-inline"
+                    >
+                      Book provider
+                    </a>
+                  {% else %}
+                    <span class="mk-price-sub">Unavailable</span>
+                  {% endif %}
                 </div>
               </div>
             </article>
@@ -1167,7 +1425,7 @@
                 <div class="mk-price-sub">
                   See the full provider list.
                 </div>
-                <a href="#" class="mk-btn-buy-inline">
+                <a href="{{ url_for('bookme_search') }}" class="mk-btn-buy-inline">
                   View all providers
                 </a>
               </div>
@@ -1201,6 +1459,50 @@
     const toggleBtn = document.getElementById("mk-toggle-find");
     const producerLinks = Array.from(document.querySelectorAll(".mk-producer-link"));
 
+    // --- Studios filter elements ---
+    const studioFilterToggle = document.getElementById("mk-toggle-studio-filters");
+    const studioFiltersBox = document.getElementById("mk-studio-filters");
+    const studioCityInput = document.getElementById("mk-studio-city");
+    const studioStateInput = document.getElementById("mk-studio-state");
+    const studioZipInput = document.getElementById("mk-studio-zip");
+    const studioApplyBtn = document.getElementById("mk-apply-studio-filters");
+    const studioClearBtn = document.getElementById("mk-clear-studio-filters");
+    const studioResults = document.getElementById("mk-studio-results-count");
+    const studioCards = Array.from(document.querySelectorAll("[data-studio-card]"));
+
+    // --- Videographers filter elements ---
+    const videoFilterToggle = document.getElementById("mk-toggle-video-filters");
+    const videoFiltersBox = document.getElementById("mk-video-filters");
+    const videoSearchInput = document.getElementById("mk-video-search");
+    const videoCityInput = document.getElementById("mk-video-city");
+    const videoStateInput = document.getElementById("mk-video-state");
+    const videoApplyBtn = document.getElementById("mk-apply-video-filters");
+    const videoClearBtn = document.getElementById("mk-clear-video-filters");
+    const videoResults = document.getElementById("mk-video-results-count");
+    const videoCards = Array.from(document.querySelectorAll("[data-video-card]"));
+
+    // --- Talent filter elements ---
+    const talentFilterToggle = document.getElementById("mk-toggle-talent-filters");
+    const talentFiltersBox = document.getElementById("mk-talent-filters");
+    const talentSearchInput = document.getElementById("mk-talent-search");
+    const talentCityInput = document.getElementById("mk-talent-city");
+    const talentRolesInput = document.getElementById("mk-talent-roles");
+    const talentApplyBtn = document.getElementById("mk-apply-talent-filters");
+    const talentClearBtn = document.getElementById("mk-clear-talent-filters");
+    const talentResults = document.getElementById("mk-talent-results-count");
+    const talentCards = Array.from(document.querySelectorAll("[data-talent-card]"));
+
+    // --- Other providers filter elements ---
+    const providerFilterToggle = document.getElementById("mk-toggle-provider-filters");
+    const providerFiltersBox = document.getElementById("mk-provider-filters");
+    const providerSearchInput = document.getElementById("mk-provider-search");
+    const providerCityInput = document.getElementById("mk-provider-city");
+    const providerCategoryInput = document.getElementById("mk-provider-category");
+    const providerApplyBtn = document.getElementById("mk-apply-provider-filters");
+    const providerClearBtn = document.getElementById("mk-clear-provider-filters");
+    const providerResults = document.getElementById("mk-provider-results-count");
+    const providerCards = Array.from(document.querySelectorAll("[data-provider-card]"));
+
     // Toggle filters: default is closed (beats full width)
     if (toggleBtn && shell) {
       toggleBtn.addEventListener("click", () => {
@@ -1218,6 +1520,7 @@
       return Number.isNaN(n) ? null : n;
     }
 
+    // --------- BEATS FILTERING ----------
     function applyFilters(options) {
       const opts = options || {};
       const producerOnly = opts.producerOnly || null;
@@ -1359,6 +1662,397 @@
         applyFilters({ producerOnly: producer });
       });
     });
+
+    // --------- STUDIOS FILTERING ----------
+    if (studioFilterToggle && studioFiltersBox) {
+      studioFilterToggle.addEventListener("click", () => {
+        const isOpen = studioFiltersBox.classList.toggle("is-open");
+        studioFilterToggle.textContent = isOpen ? "Hide filters" : "Filter studios";
+      });
+    }
+
+    function updateStudioResults(count) {
+      if (!studioResults) return;
+
+      if (studioCards.length === 0) {
+        studioResults.textContent = "No studios available yet.";
+        return;
+      }
+
+      const label = count === 1 ? "studio" : "studios";
+      studioResults.textContent = `Showing ${count} ${label}.`;
+    }
+
+    function applyStudioFilters() {
+      const cityVal = (studioCityInput && studioCityInput.value || "").trim().toLowerCase();
+      const stateVal = (studioStateInput && studioStateInput.value || "").trim().toLowerCase();
+      const zipVal = (studioZipInput && studioZipInput.value || "").trim().toLowerCase();
+
+      let visibleCount = 0;
+
+      studioCards.forEach((card) => {
+        const city = (card.dataset.city || "").toLowerCase();
+        const state = (card.dataset.state || "").toLowerCase();
+        const zip = (card.dataset.zip || "").toLowerCase();
+
+        let matches = true;
+
+        if (cityVal && !city.includes(cityVal)) {
+          matches = false;
+        }
+
+        if (matches && stateVal && !state.includes(stateVal)) {
+          matches = false;
+        }
+
+        if (matches && zipVal) {
+          if (!zip || !zip.startsWith(zipVal)) {
+            matches = false;
+          }
+        }
+
+        if (matches) {
+          card.style.display = "";
+          visibleCount++;
+        } else {
+          card.style.display = "none";
+        }
+      });
+
+      updateStudioResults(visibleCount);
+    }
+
+    function clearStudioFilters() {
+      if (studioCityInput) studioCityInput.value = "";
+      if (studioStateInput) studioStateInput.value = "";
+      if (studioZipInput) studioZipInput.value = "";
+
+      studioCards.forEach((card) => {
+        card.style.display = "";
+      });
+
+      updateStudioResults(studioCards.length);
+    }
+
+    if (studioApplyBtn) {
+      studioApplyBtn.addEventListener("click", function (e) {
+        e.preventDefault();
+        applyStudioFilters();
+      });
+    }
+
+    if (studioClearBtn) {
+      studioClearBtn.addEventListener("click", function (e) {
+        e.preventDefault();
+        clearStudioFilters();
+      });
+    }
+
+    [studioCityInput, studioStateInput, studioZipInput].forEach((input) => {
+      if (!input) return;
+      input.addEventListener("keydown", function (e) {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          applyStudioFilters();
+        }
+      });
+    });
+
+    // --------- VIDEOGRAPHERS FILTERING ----------
+    if (videoFilterToggle && videoFiltersBox) {
+      videoFilterToggle.addEventListener("click", () => {
+        const isOpen = videoFiltersBox.classList.toggle("is-open");
+        videoFilterToggle.textContent = isOpen ? "Hide filters" : "Filter videographers";
+      });
+    }
+
+    function updateVideoResults(count) {
+      if (!videoResults) return;
+
+      if (videoCards.length === 0) {
+        videoResults.textContent = "No videographers available yet.";
+        return;
+      }
+
+      const label = count === 1 ? "videographer" : "videographers";
+      videoResults.textContent = `Showing ${count} ${label}.`;
+    }
+
+    function applyVideoFilters() {
+      const searchVal = (videoSearchInput && videoSearchInput.value || "").trim().toLowerCase();
+      const cityVal = (videoCityInput && videoCityInput.value || "").trim().toLowerCase();
+      const stateVal = (videoStateInput && videoStateInput.value || "").trim().toLowerCase();
+
+      let visibleCount = 0;
+
+      videoCards.forEach((card) => {
+        const city = (card.dataset.city || "").toLowerCase();
+        const state = (card.dataset.state || "").toLowerCase();
+        const search = (card.dataset.search || "").toLowerCase();
+
+        let matches = true;
+
+        if (searchVal && !search.includes(searchVal)) {
+          matches = false;
+        }
+
+        if (matches && cityVal && !city.includes(cityVal)) {
+          matches = false;
+        }
+
+        if (matches && stateVal && !state.includes(stateVal)) {
+          matches = false;
+        }
+
+        if (matches) {
+          card.style.display = "";
+          visibleCount++;
+        } else {
+          card.style.display = "none";
+        }
+      });
+
+      updateVideoResults(visibleCount);
+    }
+
+    function clearVideoFilters() {
+      if (videoSearchInput) videoSearchInput.value = "";
+      if (videoCityInput) videoCityInput.value = "";
+      if (videoStateInput) videoStateInput.value = "";
+
+      videoCards.forEach((card) => {
+        card.style.display = "";
+      });
+
+      updateVideoResults(videoCards.length);
+    }
+
+    if (videoApplyBtn) {
+      videoApplyBtn.addEventListener("click", function (e) {
+        e.preventDefault();
+        applyVideoFilters();
+      });
+    }
+
+    if (videoClearBtn) {
+      videoClearBtn.addEventListener("click", function (e) {
+        e.preventDefault();
+        clearVideoFilters();
+      });
+    }
+
+    [videoSearchInput, videoCityInput, videoStateInput].forEach((input) => {
+      if (!input) return;
+      input.addEventListener("keydown", function (e) {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          applyVideoFilters();
+        }
+      });
+    });
+
+    // --------- TALENT FILTERING ----------
+    if (talentFilterToggle && talentFiltersBox) {
+      talentFilterToggle.addEventListener("click", () => {
+        const isOpen = talentFiltersBox.classList.toggle("is-open");
+        talentFilterToggle.textContent = isOpen ? "Hide filters" : "Filter talent";
+      });
+    }
+
+    function updateTalentResults(count) {
+      if (!talentResults) return;
+
+      if (talentCards.length === 0) {
+        talentResults.textContent = "No talent profiles available yet.";
+        return;
+      }
+
+      const label = count === 1 ? "talent profile" : "talent profiles";
+      talentResults.textContent = `Showing ${count} ${label}.`;
+    }
+
+    function applyTalentFilters() {
+      const searchVal = (talentSearchInput && talentSearchInput.value || "").trim().toLowerCase();
+      const cityVal = (talentCityInput && talentCityInput.value || "").trim().toLowerCase();
+      const rolesVal = (talentRolesInput && talentRolesInput.value || "").trim().toLowerCase();
+
+      let visibleCount = 0;
+
+      talentCards.forEach((card) => {
+        const city = (card.dataset.city || "").toLowerCase();
+        const roles = (card.dataset.roles || "").toLowerCase();
+        const search = (card.dataset.search || "").toLowerCase();
+
+        let matches = true;
+
+        if (searchVal && !search.includes(searchVal)) {
+          matches = false;
+        }
+
+        if (matches && cityVal && !city.includes(cityVal)) {
+          matches = false;
+        }
+
+        if (matches && rolesVal && !roles.includes(rolesVal)) {
+          matches = false;
+        }
+
+        if (matches) {
+          card.style.display = "";
+          visibleCount++;
+        } else {
+          card.style.display = "none";
+        }
+      });
+
+      updateTalentResults(visibleCount);
+    }
+
+    function clearTalentFilters() {
+      if (talentSearchInput) talentSearchInput.value = "";
+      if (talentCityInput) talentCityInput.value = "";
+      if (talentRolesInput) talentRolesInput.value = "";
+
+      talentCards.forEach((card) => {
+        card.style.display = "";
+      });
+
+      updateTalentResults(talentCards.length);
+    }
+
+    if (talentApplyBtn) {
+      talentApplyBtn.addEventListener("click", function (e) {
+        e.preventDefault();
+        applyTalentFilters();
+      });
+    }
+
+    if (talentClearBtn) {
+      talentClearBtn.addEventListener("click", function (e) {
+        e.preventDefault();
+        clearTalentFilters();
+      });
+    }
+
+    [talentSearchInput, talentCityInput, talentRolesInput].forEach((input) => {
+      if (!input) return;
+      input.addEventListener("keydown", function (e) {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          applyTalentFilters();
+        }
+      });
+    });
+
+    // --------- OTHER PROVIDERS FILTERING ----------
+    if (providerFilterToggle && providerFiltersBox) {
+      providerFilterToggle.addEventListener("click", () => {
+        const isOpen = providerFiltersBox.classList.toggle("is-open");
+        providerFilterToggle.textContent = isOpen ? "Hide filters" : "Filter providers";
+      });
+    }
+
+    function updateProviderResults(count) {
+      if (!providerResults) return;
+
+      if (providerCards.length === 0) {
+        providerResults.textContent = "No providers available yet.";
+        return;
+      }
+
+      const label = count === 1 ? "provider" : "providers";
+      providerResults.textContent = `Showing ${count} ${label}.`;
+    }
+
+    function applyProviderFilters() {
+      const searchVal = (providerSearchInput && providerSearchInput.value || "").trim().toLowerCase();
+      const cityVal = (providerCityInput && providerCityInput.value || "").trim().toLowerCase();
+      const categoryVal = (providerCategoryInput && providerCategoryInput.value || "").trim().toLowerCase();
+
+      let visibleCount = 0;
+
+      providerCards.forEach((card) => {
+        const city = (card.dataset.city || "").toLowerCase();
+        const category = (card.dataset.category || "").toLowerCase();
+        const search = (card.dataset.search || "").toLowerCase();
+
+        let matches = true;
+
+        if (searchVal && !search.includes(searchVal)) {
+          matches = false;
+        }
+
+        if (matches && cityVal && !city.includes(cityVal)) {
+          matches = false;
+        }
+
+        if (matches && categoryVal && !category.includes(categoryVal)) {
+          matches = false;
+        }
+
+        if (matches) {
+          card.style.display = "";
+          visibleCount++;
+        } else {
+          card.style.display = "none";
+        }
+      });
+
+      updateProviderResults(visibleCount);
+    }
+
+    function clearProviderFilters() {
+      if (providerSearchInput) providerSearchInput.value = "";
+      if (providerCityInput) providerCityInput.value = "";
+      if (providerCategoryInput) providerCategoryInput.value = "";
+
+      providerCards.forEach((card) => {
+        card.style.display = "";
+      });
+
+      updateProviderResults(providerCards.length);
+    }
+
+    if (providerApplyBtn) {
+      providerApplyBtn.addEventListener("click", function (e) {
+        e.preventDefault();
+        applyProviderFilters();
+      });
+    }
+
+    if (providerClearBtn) {
+      providerClearBtn.addEventListener("click", function (e) {
+        e.preventDefault();
+        clearProviderFilters();
+      });
+    }
+
+    [providerSearchInput, providerCityInput, providerCategoryInput].forEach((input) => {
+      if (!input) return;
+      input.addEventListener("keydown", function (e) {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          applyProviderFilters();
+        }
+      });
+    });
+
+    // --------- AUTO-APPLY PRODUCER CATALOG FROM QUERY STRING ----------
+    const urlParams = new URLSearchParams(window.location.search);
+    const producerParam = urlParams.get("producer");
+    if (producerParam) {
+      const producerLower = producerParam.trim().toLowerCase();
+      if (searchInput) {
+        // Show which catalog we're viewing
+        searchInput.value = "@" + producerParam;
+      }
+      applyFilters({ producerOnly: producerLower });
+
+      const beatGrid = document.getElementById("mk-beat-grid");
+      if (beatGrid) {
+        beatGrid.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    }
   });
 </script>
 {% endblock %}
