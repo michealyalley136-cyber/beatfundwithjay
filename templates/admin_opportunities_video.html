@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Upload Opportunities Video · BeatFund{% endblock %}
+
+{% block content %}
+<div style="max-width:720px;margin:32px auto;padding:16px;">
+  <h1 style="margin-bottom:8px;">Upload Opportunities Promo Video</h1>
+  <p style="opacity:.85;margin-top:0;">
+    Upload an MP4/WebM/MOV. The Opportunities page will automatically show the latest uploaded video.
+  </p>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      <div style="margin: 12px 0;">
+        {% for category, message in messages %}
+          <div class="flash flash-{{ category }}">{{ message }}</div>
+        {% endfor %}
+      </div>
+    {% endif %}
+  {% endwith %}
+
+  <div class="card" style="padding:16px;">
+    <form method="POST" enctype="multipart/form-data">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+      <label style="display:block;margin-bottom:8px;">Choose video</label>
+      <input type="file" name="video" accept="video/mp4,video/webm,video/quicktime" required>
+
+      <div style="margin-top:14px;">
+        <button class="btn" type="submit">Upload</button>
+      </div>
+
+      {% if meta and meta.filename %}
+        <p style="margin-top:14px;opacity:.85;">
+          Current video: <strong>{{ meta.filename }}</strong><br>
+          Updated: {{ meta.updated_at or "—" }}
+        </p>
+      {% endif %}
+    </form>
+  </div>
+</div>
+{% endblock %}

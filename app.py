@@ -52,11 +52,17 @@ IS_DEV = APP_ENV != "prod"
 # Superadmin Owner Panel passcode
 # ------------------------------------------------------
 OWNER_PANEL_PASS = "Acidrain@0911"
-
 # Session key + TTL (how long the unlock lasts)
 OWNER_UNLOCK_SESSION_KEY = "owner_panel_unlocked_at"
 OWNER_UNLOCK_TTL_SECONDS = 30 * 60  # 30 minutes
-app = Flask(__name__, template_folder="templates", static_folder="static")
+
+# ✅ Force absolute paths for templates/static (prevents 404 issues)
+app = Flask(
+    __name__,
+    template_folder=os.path.join(BASE_DIR, "templates"),
+    static_folder=os.path.join(BASE_DIR, "static"),
+)
+
 
 # SECRET_KEY: MUST be set via env in production
 app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "change-me")
@@ -143,6 +149,95 @@ login_manager = LoginManager(app)
 login_manager.login_view = "login"
 
 # =========================================================
+# Opportunities Promo Video (Admin Upload + Public Serve)
+# =========================================================
+from werkzeug.utils import secure_filename
+
+OPP_VIDEO_DIR = os.path.join(BASE_DIR, "uploads", "opportunities")
+OPP_VIDEO_META = os.path.join(BASE_DIR, "data", "opportunities_video.json")
+ALLOWED_VIDEO_EXTS = {"mp4", "webm", "mov"}
+
+os.makedirs(OPP_VIDEO_DIR, exist_ok=True)
+os.makedirs(os.path.dirname(OPP_VIDEO_META), exist_ok=True)
+
+def _allowed_video(filename: str) -> bool:
+    return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_VIDEO_EXTS
+
+def _load_opp_video_meta() -> dict:
+    if not os.path.exists(OPP_VIDEO_META):
+        return {}
+    try:
+        with open(OPP_VIDEO_META, "r", encoding="utf-8") as f:
+            return json.load(f) or {}
+    except Exception:
+        return {}
+
+def _save_opp_video_meta(data: dict) -> None:
+    with open(OPP_VIDEO_META, "w", encoding="utf-8") as f:
+        json.dump(data, f)
+
+def _current_opp_video_filename() -> str | None:
+    return _load_opp_video_meta().get("filename")
+
+def _set_current_opp_video_filename(filename: str) -> None:
+    meta = _load_opp_video_meta()
+    meta["filename"] = filename
+    meta["updated_at"] = datetime.utcnow().isoformat()
+    _save_opp_video_meta(meta)
+
+def _is_admin() -> bool:
+    # Use your RoleEnum.admin
+    return (current_user.is_authenticated and getattr(current_user, "role", None) == RoleEnum.admin)
+
+@app.route("/admin/opportunities/video", methods=["GET", "POST"])
+@login_required
+def admin_opportunities_video():
+    if not _is_admin():
+        abort(403)
+
+    if request.method == "POST":
+        file = request.files.get("video")
+        if not file or file.filename.strip() == "":
+            flash("Please choose a video file.", "error")
+            return redirect(request.url)
+
+        if not _allowed_video(file.filename):
+            flash("Invalid file type. Upload mp4/webm/mov.", "error")
+            return redirect(request.url)
+
+        # Save with unique filename
+        ext = file.filename.rsplit(".", 1)[1].lower()
+        new_name = secure_filename(f"opportunities_{uuid.uuid4().hex}.{ext}")
+        save_path = os.path.join(OPP_VIDEO_DIR, new_name)
+        file.save(save_path)
+
+        # Optional cleanup: delete old file
+        old = _current_opp_video_filename()
+        if old:
+            old_path = os.path.join(OPP_VIDEO_DIR, old)
+            if os.path.exists(old_path):
+                try:
+                    os.remove(old_path)
+                except Exception:
+                    pass
+
+        _set_current_opp_video_filename(new_name)
+        flash("Opportunities promo video updated!", "success")
+        return redirect(url_for("opportunities"))
+
+    meta = _load_opp_video_meta()
+    return render_template("admin_opportunities_video.html", meta=meta)
+
+@app.route("/media/opportunities/video")
+def opportunities_video_media():
+    filename = _current_opp_video_filename()
+    if not filename:
+        abort(404)
+    return send_from_directory(OPP_VIDEO_DIR, filename)
+
+
+
+# =========================================================
 # Models
 # =========================================================
 class RoleEnum(str, enum.Enum):
@@ -186,10 +281,68 @@ class KYCStatus(str, enum.Enum):
     rejected = "rejected"
 
 
+# ------------------------------------------------------
+# Human-friendly labels for roles
+# (used in dashboards / templates)
+# ------------------------------------------------------
+ROLE_DISPLAY_NAMES = {
+    RoleEnum.admin: "Admin",
+    RoleEnum.artist: "Artist",
+    RoleEnum.producer: "Producer",
+    RoleEnum.studio: "Studio",
+    RoleEnum.videographer: "Videographer",
+    RoleEnum.designer: "Designer",
+    RoleEnum.engineer: "Engineer",
+    RoleEnum.manager: "Manager",
+    RoleEnum.vendor: "Vendor",
+    RoleEnum.funder: "Funder",
+    RoleEnum.client: "Client",
+
+    RoleEnum.dancer_choreographer: "Dancer / Choreographer",
+    RoleEnum.makeup_artist: "Makeup Artist",
+    RoleEnum.hair_stylist_barber: "Hair Stylist / Barber",
+    RoleEnum.wardrobe_stylist: "Wardrobe Stylist",
+    RoleEnum.photographer: "Photographer",
+    RoleEnum.event_planner: "Event Planner",
+    RoleEnum.emcee_host_hypeman: "Host / Hypeman",
+    RoleEnum.dj: "DJ",
+    RoleEnum.live_sound_engineer: "Live Sound Engineer",
+    RoleEnum.mix_master_engineer: "Mix & Master Engineer",
+    RoleEnum.lighting_designer: "Lighting Designer",
+    RoleEnum.stage_set_designer: "Stage / Set Designer",
+    RoleEnum.decor_vendor: "Decor Vendor",
+    RoleEnum.caterer_food_truck: "Caterer / Food Truck",
+    RoleEnum.brand_pr_consultant: "Brand & PR Consultant",
+    RoleEnum.social_media_manager: "Social Media Manager",
+    RoleEnum.security_usher_crowd_control: "Security / Usher / Crowd Control",
+}
+
+
+def get_role_display(role: RoleEnum) -> str:
+    """
+    Return a nice human-readable label for a RoleEnum
+    (or for a plain string role value).
+    """
+    # If it's a RoleEnum already
+    if isinstance(role, RoleEnum):
+        return ROLE_DISPLAY_NAMES.get(role, role.value.replace("_", " ").title())
+
+    # If someone passes a plain string like "videographer"
+    try:
+        role_enum = RoleEnum(str(role))
+        return ROLE_DISPLAY_NAMES.get(
+            role_enum,
+            role_enum.value.replace("_", " ").title(),
+        )
+    except Exception:
+        return str(role).replace("_", " ").title()
+
+
 # Make basic enums + constants available in all Jinja templates
 app.jinja_env.globals["RoleEnum"] = RoleEnum
 app.jinja_env.globals["KYCStatus"] = KYCStatus
 app.jinja_env.globals["MAX_PORTFOLIO_ITEMS"] = MAX_PORTFOLIO_ITEMS
+app.jinja_env.globals["get_role_display"] = get_role_display
 
 
 class User(UserMixin, db.Model):
@@ -397,7 +550,12 @@ def role_requires_portfolio(role: RoleEnum) -> bool:
 
 class BookMeProfile(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), unique=True, nullable=False)
+    user_id = db.Column(
+        db.Integer,
+        db.ForeignKey("user.id"),
+        unique=True,
+        nullable=False,
+    )
 
     display_name = db.Column(db.String(150), nullable=False)
     service_types = db.Column(db.String(255))
@@ -414,7 +572,10 @@ class BookMeProfile(db.Model):
     lng = db.Column(db.Float)
     is_visible = db.Column(db.Boolean, nullable=False, default=True)
 
-    user = db.relationship("User", backref=db.backref("bookme_profile", uselist=False))
+    user = db.relationship(
+        "User",
+        backref=db.backref("bookme_profile", uselist=False),
+    )
 
 
 class PortfolioMediaType(str, enum.Enum):
@@ -653,7 +814,6 @@ class UserFollow(db.Model):
     def __repr__(self):
         return f"<UserFollow follower={self.follower_id} followed={self.followed_id}>"
 
-
 # =========================================================
 # Login loader & helpers
 # =========================================================
@@ -696,6 +856,7 @@ def superadmin_required(f):
         return f(*args, **kwargs)
     return wrapper
 
+
 def owner_panel_unlocked() -> bool:
     """
     Returns True if the current superadmin has recently entered
@@ -734,8 +895,11 @@ def wallet_balance_cents(wallet: Wallet) -> int:
     total = 0
     for e in wallet.entries:
         if e.entry_type in (
-            EntryType.deposit, EntryType.transfer_in, EntryType.interest,
-            EntryType.adjustment, EntryType.sale_income
+            EntryType.deposit,
+            EntryType.transfer_in,
+            EntryType.interest,
+            EntryType.adjustment,
+            EntryType.sale_income,
         ):
             total += e.amount_cents
         else:
@@ -746,8 +910,12 @@ def wallet_balance_cents(wallet: Wallet) -> int:
 def post_ledger(wallet: Wallet, entry_type: EntryType, amount_cents: int, meta: str = ""):
     assert amount_cents > 0, "amount must be positive cents"
     db.session.add(
-        LedgerEntry(wallet_id=wallet.id, entry_type=entry_type,
-                    amount_cents=amount_cents, meta=meta)
+        LedgerEntry(
+            wallet_id=wallet.id,
+            entry_type=entry_type,
+            amount_cents=amount_cents,
+            meta=meta,
+        )
     )
     db.session.commit()
 
@@ -771,19 +939,64 @@ def _safe_remove(stored_filename: Optional[str]) -> None:
     if not stored_filename:
         return
     try:
-        pathlib.Path(os.path.join(app.config["UPLOAD_FOLDER"], stored_filename)).unlink(missing_ok=True)
+        pathlib.Path(os.path.join(app.config["UPLOAD_FOLDER"], stored_filename)).unlink(
+            missing_ok=True
+        )
     except Exception:
         pass
 
 
 def _user_has_paid_for_beat(user_id: int, beat_id: int) -> bool:
-    return db.session.query(Order.id).filter_by(
-        buyer_id=user_id, beat_id=beat_id, status=OrderStatus.paid
-    ).first() is not None
+    return (
+        db.session.query(Order.id)
+        .filter_by(buyer_id=user_id, beat_id=beat_id, status=OrderStatus.paid)
+        .first()
+        is not None
+    )
 
 
 def is_service_provider(u: User) -> bool:
     return u.role.value in BOOKME_PROVIDER_ROLES
+
+
+def get_role_display(role_enum: RoleEnum) -> str:
+    """
+    Turn a RoleEnum into a nice label for dashboards, etc.
+    """
+    custom_map = {
+        # Core creator roles
+        RoleEnum.artist: "Artist",
+        RoleEnum.producer: "Music Producer",
+        RoleEnum.studio: "Recording Studio",
+        RoleEnum.videographer: "Videographer",
+        RoleEnum.designer: "Graphic / Brand Designer",
+        RoleEnum.engineer: "Engineer",
+        RoleEnum.manager: "Artist / Talent Manager",
+        RoleEnum.vendor: "Service Provider",
+        RoleEnum.funder: "Funder / Investor",
+        RoleEnum.client: "Client",
+
+        # Extended provider roles
+        RoleEnum.dancer_choreographer: "Dancer / Choreographer",
+        RoleEnum.makeup_artist: "Makeup Artist",
+        RoleEnum.hair_stylist_barber: "Hair Stylist / Barber",
+        RoleEnum.wardrobe_stylist: "Wardrobe Stylist",
+        RoleEnum.photographer: "Photographer",
+        RoleEnum.event_planner: "Event Planner",
+        RoleEnum.emcee_host_hypeman: "MC / Host / Hypeman",
+        RoleEnum.dj: "DJ",
+        RoleEnum.live_sound_engineer: "Live Sound Engineer",
+        RoleEnum.mix_master_engineer: "Mix & Master Engineer",
+        RoleEnum.lighting_designer: "Lighting Designer",
+        RoleEnum.stage_set_designer: "Stage / Set Designer",
+        RoleEnum.decor_vendor: "Décor Vendor",
+        RoleEnum.caterer_food_truck: "Caterer / Food Truck",
+        RoleEnum.brand_pr_consultant: "Brand / PR Consultant",
+        RoleEnum.social_media_manager: "Social Media Manager",
+        RoleEnum.security_usher_crowd_control: "Security / Ushers",
+    }
+    # Fallback: prettify the enum value if we ever add a new one
+    return custom_map.get(role_enum, role_enum.value.replace("_", " ").title())
 
 
 def _ensure_bookme_provider():
@@ -791,6 +1004,7 @@ def _ensure_bookme_provider():
         flash("Only service providers can edit a BookMe profile.")
         return False
     return True
+
 
 
 # =========================================================
@@ -1500,7 +1714,7 @@ def register():
     - email         -> email (required, unique)
     - username      -> username (required, unique; we strip leading "@")
     - password / confirm_password
-    - primary_role  -> mapped to RoleEnum
+    - role          -> mapped directly to RoleEnum from the custom dropdown
     """
     if request.method == "POST":
         full_name = (request.form.get("name") or "").strip()
@@ -1511,7 +1725,9 @@ def register():
 
         password = request.form.get("password") or ""
         confirm = request.form.get("confirm_password") or ""
-        primary_role = (request.form.get("primary_role") or "").strip()
+
+        # 🔴 THIS IS THE KEY CHANGE: read from "role", not "primary_role"
+        role_key = (request.form.get("role") or "").strip()
 
         # Basic required fields
         if not email:
@@ -1559,23 +1775,18 @@ def register():
                 flash("That email is already registered.", "error")
                 return redirect(url_for("register"))
 
-        # Map primary_role from the dropdown to RoleEnum
-        # Options in your form:
-        #   artist, producer, studio, videographer,
-        #   talent, provider_other
-        role_map = {
-            "artist": RoleEnum.artist,
-            "producer": RoleEnum.producer,
-            "studio": RoleEnum.studio,
-            "videographer": RoleEnum.videographer,
-        }
+        # 🔴 Validate and map the role from the hidden input
+        if not role_key:
+            flash("Please select your main role.", "error")
+            return redirect(url_for("register"))
 
-        if primary_role == "talent":
-            chosen_role = RoleEnum.artist       # treat talent as artist/creator bucket
-        elif primary_role == "provider_other":
-            chosen_role = RoleEnum.vendor       # generic provider bucket
-        else:
-            chosen_role = role_map.get(primary_role, RoleEnum.artist)
+        try:
+            # role_key should match one of the RoleEnum values, e.g.
+            # "artist", "producer", "videographer", "funder", "client", etc.
+            chosen_role = RoleEnum(role_key)
+        except ValueError:
+            flash("Invalid account type. Please pick a role from the list.", "error")
+            return redirect(url_for("register"))
 
         # Create user
         user = User(
@@ -1602,7 +1813,6 @@ def register():
         return redirect(url_for("route_to_dashboard"))
 
     return render_template("register.html")
-
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
@@ -3663,16 +3873,32 @@ def provider_dashboard():
         flash("You don't have access to the provider dashboard.", "error")
         return redirect(url_for("route_to_dashboard"))
 
-    followers_count = UserFollow.query.filter_by(followed_id=current_user.id).count()
-    incoming_requests = BookingRequest.query.filter_by(provider_id=current_user.id).count()
-    outgoing_requests = BookingRequest.query.filter_by(client_id=current_user.id).count()
+    followers_count = UserFollow.query.filter_by(
+        followed_id=current_user.id
+    ).count()
+
+    incoming_requests = BookingRequest.query.filter_by(
+        provider_id=current_user.id
+    ).count()
+
+    outgoing_requests = BookingRequest.query.filter_by(
+        client_id=current_user.id
+    ).count()
 
     prof = BookMeProfile.query.filter_by(user_id=current_user.id).first()
     portfolio_count = prof.portfolio_items.count() if prof else 0
     requires_portfolio = role_requires_portfolio(current_user.role)
 
-    incoming_bookings_count = Booking.query.filter_by(provider_id=current_user.id).count()
-    outgoing_bookings_count = Booking.query.filter_by(client_id=current_user.id).count()
+    incoming_bookings_count = Booking.query.filter_by(
+        provider_id=current_user.id
+    ).count()
+
+    outgoing_bookings_count = Booking.query.filter_by(
+        client_id=current_user.id
+    ).count()
+
+    # 👇 Human-friendly label like "Videographer", "Studio", "DJ", etc.
+    role_label = get_role_display(current_user.role)
 
     return render_template(
         "dash_provider.html",
@@ -3683,6 +3909,7 @@ def provider_dashboard():
         requires_portfolio=requires_portfolio,
         incoming_bookings_count=incoming_bookings_count,
         outgoing_bookings_count=outgoing_bookings_count,
+        role_label=role_label,
     )
 
 
@@ -3742,6 +3969,79 @@ def funder_dashboard():
 def loans_home():
     flash("Loans module coming soon.")
     return redirect(url_for("route_to_dashboard"))
+
+@app.route("/opportunities", methods=["GET", "POST"])
+@login_required
+def opportunities():
+    """
+    Funding & Opportunities page.
+
+    - Visually explains Creative Loans + Scholarships & Programs.
+    - Lets users submit an "interest" form.
+    - For now, each submission becomes a SupportTicket so admins
+      can see who is interested in loans / scholarships.
+    """
+    if request.method == "POST":
+        interest_type = (request.form.get("interest_type") or "").strip().lower()
+        goal_amount = (request.form.get("goal_amount") or "").strip()
+        program_type = (request.form.get("program_type") or "").strip()
+        location = (request.form.get("location") or "").strip()
+        details = (request.form.get("details") or "").strip()
+
+        if not interest_type:
+            flash("Please choose whether you're interested in Loans or Scholarships.", "error")
+            return redirect(url_for("opportunities"))
+
+        # Build a subject and description for the admin SupportTicket
+        if interest_type == "loan":
+            subject = f"Creative loan interest from @{current_user.username}"
+        elif interest_type == "scholarship":
+            subject = f"Scholarship/program interest from @{current_user.username}"
+        else:
+            subject = f"Opportunities interest from @{current_user.username}"
+
+        # Compose a description that captures everything the user entered
+        desc_lines = [
+            f"Interest type: {interest_type}",
+        ]
+        if goal_amount:
+            desc_lines.append(f"Goal amount (approx): {goal_amount}")
+        if program_type:
+            desc_lines.append(f"Program type: {program_type}")
+        if location:
+            desc_lines.append(f"Location preference: {location}")
+        if details:
+            desc_lines.append("")
+            desc_lines.append("Details / goals:")
+            desc_lines.append(details)
+
+        description = "\n".join(desc_lines)
+
+        # Associate this ticket with a 'creator' admin if available, otherwise with the user.
+        admin_user = User.query.filter_by(username="admin").first()
+        created_by_id = admin_user.id if admin_user else current_user.id
+
+        ticket = SupportTicket(
+            user_id=current_user.id,
+            created_by_admin_id=created_by_id,
+            type=TicketType.other,
+            status=TicketStatus.open,
+            priority="low",
+            subject=subject,
+            description=description,
+        )
+        db.session.add(ticket)
+        db.session.commit()
+
+        flash(
+            "Thanks for sharing your interest! "
+            "We’ll reach out when Creative Loans and Scholarships go live.",
+            "success",
+        )
+        return redirect(url_for("opportunities"))
+
+    return render_template("opportunities.html")
+
 
 
 # =========================================================

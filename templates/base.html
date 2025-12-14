@@ -47,6 +47,8 @@
         {% if current_user.is_authenticated %}
             <span class="nav-username">@{{ current_user.username }}</span>
             <a href="{{ url_for('route_to_dashboard') }}">Dashboard</a>
+            {# 🔥 New: Opportunities visible to ALL logged-in users #}
+            <a href="{{ url_for('opportunities') }}">Opportunities</a>
             <a href="{{ url_for('logout') }}">Log out</a>
         {% else %}
             <a href="{{ url_for('login') }}">Log in</a>

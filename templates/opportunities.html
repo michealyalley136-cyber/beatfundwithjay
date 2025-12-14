@@ -1,0 +1,405 @@
+{# templates/opportunities.html #}
+{% extends ("base_admin.html" if (current_user.is_authenticated and current_user.role == RoleEnum.admin) else "base.html") %}
+{% block title %}Opportunities · BeatFund{% endblock %}
+
+{% macro opportunities_body() %}
+
+<style>
+  /* Page shell */
+  .opps-shell{
+    max-width: 1180px;
+    margin: 24px auto 48px;
+    padding: 0 16px;
+  }
+
+  /* Big hero card (blue glowing container) */
+  .opps-hero-card{
+    position: relative;
+    border-radius: 22px;
+    padding: 26px;
+    background: radial-gradient(1200px 600px at 10% 10%, rgba(59,130,246,.22), transparent 55%),
+                radial-gradient(900px 500px at 80% 20%, rgba(99,102,241,.18), transparent 50%),
+                linear-gradient(180deg, rgba(17,24,39,.92), rgba(15,23,42,.92));
+    border: 1px solid rgba(59,130,246,.25);
+    box-shadow: 0 0 0 1px rgba(59,130,246,.08), 0 18px 60px rgba(0,0,0,.45);
+    overflow: hidden;
+  }
+
+  .opps-hero-grid{
+    display: grid;
+    grid-template-columns: 1.1fr .9fr;
+    gap: 22px;
+    align-items: start;
+  }
+
+  @media (max-width: 980px){
+    .opps-hero-grid{ grid-template-columns: 1fr; }
+  }
+
+  .opps-kicker{
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    font-weight: 700;
+    font-size: 12px;
+    color: rgba(226,232,240,.85);
+    margin-bottom: 10px;
+  }
+
+  .opps-pill{
+    display:inline-flex;
+    align-items:center;
+    gap:8px;
+    padding: 6px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    color: rgba(253,230,138,.95);
+    background: rgba(245,158,11,.12);
+    border: 1px solid rgba(245,158,11,.22);
+  }
+
+  .opps-title{
+    margin: 6px 0 10px;
+    font-size: 40px;
+    line-height: 1.05;
+    font-weight: 850;
+    color: rgba(241,245,249, .95);
+  }
+
+  @media (max-width: 520px){
+    .opps-title{ font-size: 30px; }
+  }
+
+  .opps-sub{
+    max-width: 56ch;
+    color: rgba(226,232,240,.82);
+    line-height: 1.55;
+    font-size: 14px;
+    margin-bottom: 14px;
+  }
+
+  .opps-chips{
+    display:flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin: 12px 0 14px;
+  }
+
+  .opps-chip{
+    display:inline-flex;
+    padding: 7px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    color: rgba(226,232,240,.9);
+    background: rgba(59,130,246,.10);
+    border: 1px solid rgba(59,130,246,.18);
+  }
+
+  /* Video card */
+  .opps-video-wrap{
+    border-radius: 18px;
+    background: rgba(2,6,23,.55);
+    border: 1px solid rgba(148,163,184,.14);
+    padding: 14px;
+  }
+
+  .opps-video-head{
+    display:flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: baseline;
+    margin-bottom: 10px;
+  }
+
+  .opps-video-title{
+    margin: 0;
+    font-size: 13px;
+    font-weight: 800;
+    color: rgba(226,232,240,.92);
+  }
+
+  .opps-video-note{
+    font-size: 12px;
+    color: rgba(148,163,184,.9);
+  }
+
+  .opps-admin-link{
+    display:inline-flex;
+    align-items:center;
+    gap:8px;
+    font-size: 12px;
+    padding: 7px 10px;
+    border-radius: 10px;
+    background: rgba(59,130,246,.14);
+    border: 1px solid rgba(59,130,246,.22);
+    color: rgba(226,232,240,.92);
+    text-decoration: none;
+    white-space: nowrap;
+  }
+  .opps-admin-link:hover{
+    background: rgba(59,130,246,.20);
+  }
+
+  .opps-video{
+    width: 100%;
+    border-radius: 14px;
+    background: rgba(2,6,23,.8);
+    display:block;
+  }
+
+  .opps-video-caption{
+    margin-top: 10px;
+    font-size: 12px;
+    color: rgba(148,163,184,.95);
+  }
+
+  /* 3 feature cards */
+  .opps-cards{
+    display:grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 14px;
+    margin-top: 16px;
+  }
+  @media (max-width: 980px){
+    .opps-cards{ grid-template-columns: 1fr; }
+  }
+
+  .opps-mini{
+    border-radius: 16px;
+    padding: 14px;
+    background: rgba(2,6,23,.45);
+    border: 1px solid rgba(148,163,184,.14);
+  }
+
+  .opps-mini h3{
+    margin: 0 0 6px;
+    font-size: 14px;
+    color: rgba(241,245,249,.95);
+    font-weight: 800;
+    display:flex;
+    align-items:center;
+    gap:10px;
+  }
+
+  .opps-mini p{
+    margin: 0 0 10px;
+    color: rgba(226,232,240,.80);
+    font-size: 12.5px;
+    line-height: 1.5;
+  }
+
+  .opps-mini .tag{
+    display:inline-flex;
+    font-size: 11px;
+    padding: 5px 9px;
+    border-radius: 999px;
+    border: 1px solid rgba(148,163,184,.18);
+    background: rgba(148,163,184,.08);
+    color: rgba(226,232,240,.9);
+  }
+
+  /* Interest form (optional but helpful) */
+  .opps-form{
+    margin-top: 18px;
+    padding-top: 16px;
+    border-top: 1px solid rgba(148,163,184,.14);
+  }
+
+  .opps-form-title{
+    margin: 0 0 10px;
+    font-size: 14px;
+    font-weight: 850;
+    color: rgba(241,245,249,.95);
+  }
+
+  .opps-form-grid{
+    display:grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+  @media (max-width: 980px){
+    .opps-form-grid{ grid-template-columns: 1fr; }
+  }
+
+  .opps-form label{
+    display:block;
+    margin: 0 0 6px;
+    font-size: 12px;
+    color: rgba(226,232,240,.85);
+    font-weight: 700;
+  }
+
+  .opps-form input,
+  .opps-form select,
+  .opps-form textarea{
+    width: 100%;
+    border-radius: 12px;
+    padding: 10px 12px;
+    border: 1px solid rgba(148,163,184,.18);
+    background: rgba(2,6,23,.35);
+    color: rgba(241,245,249,.92);
+    outline: none;
+  }
+
+  .opps-form textarea{ min-height: 110px; resize: vertical; }
+
+  .opps-actions{
+    margin-top: 12px;
+    display:flex;
+    gap: 10px;
+    justify-content: flex-end;
+  }
+
+  .opps-btn{
+    cursor:pointer;
+    border-radius: 12px;
+    padding: 10px 14px;
+    border: 1px solid rgba(59,130,246,.25);
+    background: rgba(59,130,246,.16);
+    color: rgba(241,245,249,.95);
+    font-weight: 800;
+  }
+  .opps-btn:hover{ background: rgba(59,130,246,.22); }
+</style>
+
+<div class="opps-shell">
+
+  <div class="opps-hero-card">
+    <div class="opps-hero-grid">
+      <!-- Left -->
+      <div>
+        <div class="opps-kicker">
+          BEATFUND OPPORTUNITIES
+          <span class="opps-pill">● Coming soon · Not live yet</span>
+        </div>
+
+        <div class="opps-title">Funding & opportunities for your<br>creative journey</div>
+
+        <div class="opps-sub">
+          We’re building a way to help artists, producers, videographers and other creatives access funding,
+          scholarships and gear — all through the same BeatFund account you use for beats, bookings and your wallet.
+        </div>
+
+        <div class="opps-chips">
+          <span class="opps-chip">Creative project loans</span>
+          <span class="opps-chip">Scholarships & courses</span>
+          <span class="opps-chip">Gear & merch marketplace</span>
+        </div>
+
+        <div class="opps-sub" style="margin-bottom:0;">
+          Tell us what you’d use funding for and we’ll use it to design the first round of programs and partnerships.
+        </div>
+      </div>
+
+      <!-- Right (Video) -->
+      <div class="opps-video-wrap">
+        <div class="opps-video-head">
+          <div>
+            <p class="opps-video-title">BeatFund Creative Funding · Explainer video</p>
+            <div class="opps-video-note">(Videos are for promo use only )</div>
+          </div>
+
+          {% if current_user.is_authenticated and current_user.role == RoleEnum.admin %}
+            <a class="opps-admin-link" href="{{ url_for('admin_opportunities_video') }}">
+              Upload / Change Video
+            </a>
+          {% endif %}
+        </div>
+
+        <video class="opps-video" controls preload="metadata">
+          <source src="{{ url_for('opportunities_video_media') }}">
+          Your browser does not support HTML5 video.
+        </video>
+
+        <div class="opps-video-caption">Studio time · Video shoots · Tours & shows</div>
+      </div>
+    </div>
+
+    <!-- Feature cards -->
+    <div class="opps-cards">
+      <div class="opps-mini">
+        <h3>🪙 Creative Project Loans</h3>
+        <p>
+          Small to mid-sized loans to fund things like visuals, recording, marketing and tours,
+          repaid over time through your BeatFund activity.
+        </p>
+        <span class="tag">Coming soon</span>
+      </div>
+
+      <div class="opps-mini">
+        <h3>🎓 Scholarships & Programs</h3>
+        <p>
+          Partnerships with creative schools and online programs so BeatFund users can access discounted
+          courses in production, DJing, film, design and more.
+        </p>
+        <span class="tag">Coming soon</span>
+      </div>
+
+      <div class="opps-mini">
+        <h3>🛒 Store & Gear Marketplace</h3>
+        <p>
+          Future idea: an in-app store for gear, merch and creator tools — including affiliate products and items
+          sold by BeatFund users.
+        </p>
+        <span class="tag">Future idea</span>
+      </div>
+    </div>
+
+    <!-- Interest form (POSTs to /opportunities and creates a SupportTicket like your app.py) -->
+    <form class="opps-form" method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+      <div class="opps-form-title">Tell us what you want funding for</div>
+
+      <div class="opps-form-grid">
+        <div>
+          <label for="interest_type">I’m interested in</label>
+          <select id="interest_type" name="interest_type" required>
+            <option value="">Choose one…</option>
+            <option value="loan">Creative Project Loans</option>
+            <option value="scholarship">Scholarships / Programs</option>
+          </select>
+        </div>
+
+        <div>
+          <label for="goal_amount">Goal amount (optional)</label>
+          <input id="goal_amount" name="goal_amount" placeholder="e.g. $2,500">
+        </div>
+
+        <div>
+          <label for="program_type">Program type (optional)</label>
+          <input id="program_type" name="program_type" placeholder="e.g. Music production course, film program…">
+        </div>
+
+        <div>
+          <label for="location">Location preference (optional)</label>
+          <input id="location" name="location" placeholder="City / State or Online">
+        </div>
+
+        <div style="grid-column: 1 / -1;">
+          <label for="details">Details (optional)</label>
+          <textarea id="details" name="details" placeholder="Tell us what you’re building and what you’d use funding for…"></textarea>
+        </div>
+      </div>
+
+      <div class="opps-actions">
+        <button class="opps-btn" type="submit">Submit Interest</button>
+      </div>
+    </form>
+
+  </div>
+</div>
+
+{% endmacro %}
+
+{# base.html uses block content #}
+{% block content %}
+  {{ opportunities_body() }}
+{% endblock %}
+
+{# base_admin.html uses block admin_content #}
+{% block admin_content %}
+  {{ opportunities_body() }}
+{% endblock %}
