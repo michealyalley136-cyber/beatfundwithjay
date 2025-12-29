@@ -1,7 +1,21 @@
 {% extends "base.html" %}
-{% block title %}Vendor Dashboard{% endblock %}
+{% block title %}Vendor Dashboard · BeatFund{% endblock %}
+
 {% block content %}
-  <h2>Welcome, {{ current_user.username }} (Vendor)</h2>
-  <p>Coming soon: gear/merch inventory, orders, payouts.</p>
-  <p><a href="{{ url_for('wallet_home') }}">Go to Wallet</a></p>
+<div class="page">
+  <div class="card">
+    <h2 style="margin-top:0;">Vendor Dashboard</h2>
+    <div class="muted">Show your services, get booked, and grow your community.</div>
+
+    <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:14px;">
+      <a class="btn" href="{{ url_for('bookme_profile') }}">Edit BookMe profile</a>
+      <a class="btn btn-secondary" href="{{ url_for('bookme_portfolio') }}">Portfolio</a>
+      <a class="btn btn-secondary" href="{{ url_for('bookme_requests') }}">Requests</a>
+      <a class="btn btn-secondary" href="{{ url_for('bookme_search') }}">Directory</a>
+      <a class="btn btn-secondary" href="{{ url_for('wallet_home') }}">Wallet</a>
+    </div>
+  </div>
+
+  {% include "_community_card.html" %}
+</div>
 {% endblock %}

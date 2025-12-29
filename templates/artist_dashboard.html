@@ -1,20 +1,107 @@
 {% extends "base.html" %}
-{% block title %}Artist Dashboard{% endblock %}
-{% block content %}
-<h2>Your Funding Requests</h2>
-<a href="{{ url_for('create_request') }}" class="btn">+ New Request</a>
+{% block title %}Artist Dashboard · BeatFund{% endblock %}
 
-<table>
-    <tr><th>ID</th><th>Description</th><th>Amount</th><th>Status</th></tr>
-    {% for r in requests %}
-    <tr>
-        <td>{{ r.id }}</td>
-        <td>{{ r.description }}</td>
-        <td>${{ "%.2f"|format(r.amount) }}</td>
-        <td><strong>{{ r.status.capitalize() }}</strong></td>
-    </tr>
+{% block content %}
+<div class="page">
+  <div class="card">
+    <div class="dash-header">
+      <div class="dash-identity">
+        <img class="dash-avatar" src="{{ current_user.avatar_url }}" alt="avatar">
+        <div class="dash-title">
+          <h2 class="h2">BeatFund Artist</h2>
+          <div class="muted">
+            Welcome back, @{{ current_user.username }}. Manage your profile, bookings, and marketplace activity.
+          </div>
+        </div>
+      </div>
+
+      {# ✅ Only an Edit Profile button on dashboard #}
+      <div class="dash-cta">
+        <a class="btn btn-primary" href="{{ url_for('profile') }}">Edit profile</a>
+      </div>
+    </div>
+
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-label">FOLLOWERS</div>
+        <div class="stat-value">{{ followers_count or my_followers_count }}</div>
+        <div class="muted">People tracking your journey</div>
+      </div>
+
+      <div class="stat-card">
+        <div class="stat-label">FOLLOWING</div>
+        <div class="stat-value">{{ following_count or my_following_count }}</div>
+        <div class="muted">Creators &amp; providers you follow</div>
+      </div>
+
+      <div class="stat-card">
+        <div class="stat-label">BOOKINGS</div>
+        <div class="stat-value">{{ bookings_count }}</div>
+        <div class="muted">Total bookings as an artist</div>
+      </div>
+    </div>
+
+    <div class="action-row">
+      <a class="btn" href="{{ url_for('market_index') }}">BeatFund Marketplace</a>
+      <a class="btn btn-secondary" href="{{ url_for('wallet_home') }}">Wallet &amp; Transactions</a>
+      <a class="btn btn-secondary" href="{{ url_for('market_my_purchases') }}">My Beat Purchases</a>
+      <a class="btn btn-secondary" href="{{ url_for('bookme_search') }}">BookMe Directory</a>
+      <a class="btn btn-secondary" href="{{ url_for('bookme_requests') }}">BookMe Requests</a>
+      <a class="btn btn-secondary" href="{{ url_for('book_artist', username=current_user.username) }}">Public booking page</a>
+    </div>
+
+    <div class="muted" style="margin-top:12px;">
+      Share your public booking link with promoters:
+      <div class="codebox" style="margin-top:8px;">
+        <code>{{ url_for('book_artist', username=current_user.username, _external=True) }}</code>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="section-head">
+      <h3 class="h3">Bookings &amp; Activity</h3>
+    </div>
+
+    <div class="mini-grid">
+      <div class="mini-card">
+        <div class="stat-label">CONFIRMED</div>
+        <div class="mini-value">{{ confirmed_bookings }}</div>
+      </div>
+      <div class="mini-card">
+        <div class="stat-label">PENDING</div>
+        <div class="mini-value">{{ pending_bookings }}</div>
+      </div>
+      <div class="mini-card">
+        <div class="stat-label">TOTAL</div>
+        <div class="mini-value">{{ bookings_count }}</div>
+      </div>
+    </div>
+
+    {% if recent_bookings and recent_bookings|length > 0 %}
+      <div class="muted" style="margin:12px 0 10px;">Recent bookings</div>
+
+      <div class="list">
+        {% for b in recent_bookings %}
+          <div class="list-item">
+            <div class="list-left">
+              <div class="list-title">{{ b.event_title }}</div>
+              <div class="muted">
+                {% if b.event_datetime %}{{ b.event_datetime }}{% else %}No date set{% endif %}
+                · status: {{ b.status }}
+              </div>
+            </div>
+            <div class="list-right">
+              <a class="btn btn-secondary" href="{{ url_for('booking_detail', booking_id=b.id) }}">View</a>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
     {% else %}
-    <tr><td colspan="4">No requests yet.</td></tr>
-    {% endfor %}
-</table>
+      <div class="muted">No bookings yet. Share your booking link to get your first request.</div>
+    {% endif %}
+  </div>
+
+  {% include "_community_card.html" %}
+</div>
 {% endblock %}

@@ -1,474 +1,106 @@
 {% extends "base.html" %}
-
 {% block title %}Artist Dashboard · BeatFund{% endblock %}
 
 {% block content %}
-<style>
-  .bf-page {
-    max-width: 1200px;
-    margin: 0 auto;
-    padding: 32px 16px 64px;
-    color: #f7f9ff;
-  }
+<div class="page">
+  <div class="card">
+    <div style="display:flex; align-items:center; gap:14px; flex-wrap:wrap;">
+      <img src="{{ current_user.avatar_url }}" alt="avatar"
+           style="width:72px;height:72px;border-radius:16px;object-fit:cover;">
 
-  .bf-page h1 {
-    font-size: 1.6rem;
-    margin-bottom: 0.25rem;
-  }
-
-  .bf-page-subtitle {
-    font-size: 0.9rem;
-    opacity: 0.8;
-    margin-bottom: 1.5rem;
-  }
-
-  .bf-grid {
-    display: grid;
-    grid-template-columns: minmax(0, 2fr) minmax(0, 1.5fr);
-    gap: 24px;
-  }
-
-  @media (max-width: 900px) {
-    .bf-grid {
-      grid-template-columns: 1fr;
-    }
-  }
-
-  .bf-card {
-    background: radial-gradient(circle at top left, #182a44, #050712);
-    border-radius: 18px;
-    border: 1px solid rgba(255,255,255,0.08);
-    padding: 18px 20px 20px;
-    box-shadow: 0 16px 40px rgba(0,0,0,0.45);
-  }
-
-  .bf-card-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 16px;
-    margin-bottom: 18px;
-  }
-
-  .bf-artist-info {
-    display: flex;
-    align-items: center;
-    gap: 14px;
-  }
-
-  .bf-avatar {
-    width: 64px;
-    height: 64px;
-    border-radius: 999px;
-    overflow: hidden;
-    border: 2px solid rgba(255,255,255,0.18);
-    flex-shrink: 0;
-    background: linear-gradient(135deg, #3b82f6, #22c55e);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 1.4rem;
-    font-weight: 600;
-  }
-
-  .bf-avatar img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-  }
-
-  .bf-artist-meta {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-  }
-
-  .bf-artist-handle {
-    font-weight: 600;
-    font-size: 1rem;
-  }
-
-  .bf-role-pill {
-    display: inline-flex;
-    align-items: center;
-    padding: 2px 8px;
-    border-radius: 999px;
-    background: rgba(59,130,246,0.16);
-    border: 1px solid rgba(59,130,246,0.4);
-    font-size: 0.7rem;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-  }
-
-  .bf-tip-text {
-    font-size: 0.75rem;
-    opacity: 0.65;
-    margin-top: 4px;
-  }
-
-  .bf-stats-row {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 10px;
-    margin: 12px 0 18px;
-  }
-
-  .bf-stat-chip {
-    background: rgba(15,23,42,0.7);
-    border-radius: 12px;
-    padding: 10px 12px;
-    border: 1px solid rgba(148,163,184,0.35);
-  }
-
-  .bf-stat-label {
-    font-size: 0.7rem;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    opacity: 0.7;
-    margin-bottom: 2px;
-  }
-
-  .bf-stat-value {
-    font-size: 1.1rem;
-    font-weight: 600;
-  }
-
-  .bf-stat-caption {
-    font-size: 0.72rem;
-    opacity: 0.7;
-    margin-top: 2px;
-  }
-
-  .bf-quick-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    margin-bottom: 4px;
-  }
-
-  .bf-pill-link {
-    display: inline-flex;
-    align-items: center;
-    padding: 7px 12px;
-    border-radius: 999px;
-    border: 1px solid rgba(148,163,184,0.5);
-    font-size: 0.78rem;
-    text-decoration: none;
-    color: inherit;
-  }
-
-  .bf-pill-link.primary {
-    border-color: rgba(59,130,246,0.9);
-    background: linear-gradient(135deg, #2563eb, #22c55e);
-    color: #020617;
-    font-weight: 600;
-  }
-
-  .bf-pill-link:hover {
-    background: rgba(148,163,184,0.12);
-  }
-
-  .bf-pill-link.primary:hover {
-    filter: brightness(1.05);
-  }
-
-  .bf-small-note {
-    font-size: 0.75rem;
-    opacity: 0.7;
-    margin-top: 8px;
-  }
-
-  /* Activity card extras */
-  .bf-activity-body {
-    font-size: 0.85rem;
-  }
-
-  .bf-activity-metrics {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 10px;
-    margin-bottom: 10px;
-  }
-
-  .bf-activity-metric {
-    padding: 8px 10px;
-    border-radius: 10px;
-    background: rgba(15,23,42,0.8);
-    border: 1px solid rgba(148,163,184,0.35);
-    font-size: 0.8rem;
-  }
-
-  .bf-activity-metric span {
-    display: block;
-  }
-
-  .bf-activity-metric strong {
-    font-size: 1rem;
-  }
-
-  .bf-booking-list {
-    margin-top: 6px;
-  }
-
-  .bf-booking-item {
-    padding: 8px 10px;
-    border-radius: 10px;
-    background: rgba(15,23,42,0.75);
-    border: 1px solid rgba(30,64,175,0.6);
-    margin-bottom: 6px;
-  }
-
-  .bf-booking-title {
-    font-size: 0.85rem;
-    font-weight: 600;
-    margin-bottom: 2px;
-  }
-
-  .bf-booking-link {
-    color: inherit;
-    text-decoration: none;
-  }
-
-  .bf-booking-link:hover {
-    text-decoration: underline;
-  }
-
-  .bf-booking-meta {
-    font-size: 0.78rem;
-    opacity: 0.8;
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    align-items: center;
-  }
-
-  .bf-badge {
-    display: inline-flex;
-    align-items: center;
-    padding: 2px 8px;
-    border-radius: 999px;
-    font-size: 0.7rem;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-  }
-
-  .bf-badge.pending {
-    background: rgba(250,204,21,0.18);
-    border: 1px solid rgba(250,204,21,0.65);
-    color: #facc15;
-  }
-
-  .bf-badge.confirmed {
-    background: rgba(52,211,153,0.18);
-    border: 1px solid rgba(52,211,153,0.65);
-    color: #4ade80;
-  }
-
-  .bf-badge.completed {
-    background: rgba(59,130,246,0.18);
-    border: 1px solid rgba(59,130,246,0.65);
-    color: #60a5fa;
-  }
-
-  .bf-badge.cancelled,
-  .bf-badge.canceled,
-  .bf-badge.disputed {
-    background: rgba(239,68,68,0.18);
-    border: 1px solid rgba(239,68,68,0.65);
-    color: #f87171;
-  }
-
-  .bf-activity-footer {
-    margin-top: 14px;
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-  }
-
-  .bf-link-muted {
-    font-size: 0.78rem;
-    opacity: 0.8;
-    text-decoration: none;
-  }
-
-  .bf-link-muted:hover {
-    text-decoration: underline;
-    opacity: 1;
-  }
-</style>
-
-<div class="bf-page">
-  <h1>BeatFund Artist</h1>
-  <div class="bf-page-subtitle">
-    Welcome back, @{{ current_user.username }}. Manage your artist profile, bookings, and marketplace activity from one place.
-  </div>
-
-  <div class="bf-grid">
-    <!-- LEFT: PROFILE & QUICK ACTIONS -->
-    <section class="bf-card">
-      <div class="bf-card-header">
-        <div class="bf-artist-info">
-          <div class="bf-avatar">
-            {% if current_user.avatar_path %}
-              <img src="{{ url_for('media_file', filename=current_user.avatar_path) }}" alt="Artist avatar">
-            {% else %}
-              {{ current_user.username[0]|upper }}
-            {% endif %}
-          </div>
-          <div class="bf-artist-meta">
-            <div class="bf-artist-handle">@{{ current_user.username }}</div>
-            <div>
-              <span class="bf-role-pill">BeatFund Artist</span>
-            </div>
-            <div class="bf-tip-text">
-              Keep this profile sharp – this is what promoters and fans see first.
-            </div>
-          </div>
-        </div>
-        <!-- Link to edit BookMe profile / avatar -->
-        <a href="{{ url_for('bookme_profile') }}" class="bf-pill-link">
-          Edit profile &amp; avatar
-        </a>
-      </div>
-
-      <!-- STATS from artist_dashboard route -->
-      <div class="bf-stats-row">
-        <div class="bf-stat-chip">
-          <div class="bf-stat-label">Followers</div>
-          <div class="bf-stat-value">{{ followers_count }}</div>
-          <div class="bf-stat-caption">People tracking your journey</div>
-        </div>
-        <div class="bf-stat-chip">
-          <div class="bf-stat-label">Following</div>
-          <div class="bf-stat-value">{{ following_count }}</div>
-          <div class="bf-stat-caption">Producers &amp; creatives you follow</div>
-        </div>
-        <div class="bf-stat-chip">
-          <div class="bf-stat-label">Bookings</div>
-          <div class="bf-stat-value">{{ bookings_count }}</div>
-          <div class="bf-stat-caption">Total events booked as an artist</div>
+      <div style="flex:1; min-width:240px;">
+        <h2 style="margin:0;">BeatFund Artist</h2>
+        <div class="muted">
+          Welcome back, @{{ current_user.username }}. Manage your profile, bookings, and marketplace activity.
         </div>
       </div>
 
-      <div class="bf-quick-actions">
-        <a href="{{ url_for('market_index') }}" class="bf-pill-link primary">
-          BeatFund Marketplace
-        </a>
-        <a href="{{ url_for('wallet_home') }}" class="bf-pill-link">
-          Wallet &amp; Transactions
-        </a>
-        <a href="{{ url_for('market_my_purchases') }}" class="bf-pill-link">
-          My Beat Purchases
-        </a>
-        <a href="{{ url_for('bookme_search') }}" class="bf-pill-link">
-          BookMe Directory
-        </a>
-        <a href="{{ url_for('bookme_requests') }}" class="bf-pill-link">
-          BookMe Requests
-        </a>
-        <a href="{{ url_for('book_artist', username=current_user.username) }}" class="bf-pill-link">
-          Public booking page
-        </a>
+      <!-- ✅ Dashboard action (no upload here anymore) -->
+      <div style="display:flex; gap:10px; align-items:center;">
+        <a class="btn btn-primary" href="{{ url_for('profile_edit') }}">Edit profile</a>
+      </div>
+    </div>
+
+    <div style="display:flex; gap:12px; flex-wrap:wrap; margin-top:14px;">
+      <div class="card" style="flex:1; min-width:180px;">
+        <div class="muted">FOLLOWERS</div>
+        <div style="font-size:28px; font-weight:700;">{{ followers_count or my_followers_count }}</div>
+        <div class="muted">People tracking your journey</div>
       </div>
 
-      <div class="bf-small-note">
-        Share your public booking link with promoters so they can request shows:<br>
+      <div class="card" style="flex:1; min-width:180px;">
+        <div class="muted">FOLLOWING</div>
+        <div style="font-size:28px; font-weight:700;">{{ following_count or my_following_count }}</div>
+        <div class="muted">Creators &amp; providers you follow</div>
+      </div>
+
+      <div class="card" style="flex:1; min-width:180px;">
+        <div class="muted">BOOKINGS</div>
+        <div style="font-size:28px; font-weight:700;">{{ bookings_count }}</div>
+        <div class="muted">Total bookings as an artist</div>
+      </div>
+    </div>
+
+    <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:14px;">
+      <a class="btn" href="{{ url_for('market_index') }}">BeatFund Marketplace</a>
+      <a class="btn btn-secondary" href="{{ url_for('wallet_home') }}">Wallet &amp; Transactions</a>
+      <a class="btn btn-secondary" href="{{ url_for('market_my_purchases') }}">My Beat Purchases</a>
+      <a class="btn btn-secondary" href="{{ url_for('bookme_search') }}">BookMe Directory</a>
+      <a class="btn btn-secondary" href="{{ url_for('bookme_requests') }}">BookMe Requests</a>
+      <a class="btn btn-secondary" href="{{ url_for('book_artist', username=current_user.username) }}">Public booking page</a>
+    </div>
+
+    <div class="muted" style="margin-top:12px;">
+      Share your public booking link with promoters:
+      <div style="margin-top:6px;">
         <code>{{ url_for('book_artist', username=current_user.username, _external=True) }}</code>
       </div>
-    </section>
+    </div>
+  </div>
 
-    <!-- RIGHT: BOOKINGS & ACTIVITY SUMMARY -->
-    <section class="bf-card">
-      <div class="bf-card-header">
-        <div>
-          <div style="font-weight:600; font-size:0.95rem;">Bookings &amp; Activity</div>
-          <div style="font-size:0.8rem; opacity:0.75;">
-            Live snapshot of your upcoming gigs and wallet activity.
-          </div>
-        </div>
+  <div class="card">
+    <h3 style="margin-top:0;">Bookings &amp; Activity</h3>
+
+    <div style="display:flex; gap:12px; flex-wrap:wrap; margin:10px 0;">
+      <div class="card" style="flex:1; min-width:140px;">
+        <div class="muted">CONFIRMED</div>
+        <div style="font-size:22px; font-weight:700;">{{ confirmed_bookings }}</div>
       </div>
+      <div class="card" style="flex:1; min-width:140px;">
+        <div class="muted">PENDING</div>
+        <div style="font-size:22px; font-weight:700;">{{ pending_bookings }}</div>
+      </div>
+      <div class="card" style="flex:1; min-width:140px;">
+        <div class="muted">TOTAL</div>
+        <div style="font-size:22px; font-weight:700;">{{ bookings_count }}</div>
+      </div>
+    </div>
 
-      <div class="bf-activity-body">
-        <!-- High-level metrics -->
-        <div class="bf-activity-metrics">
-          <div class="bf-activity-metric">
-            <span style="opacity:0.75; text-transform:uppercase; letter-spacing:0.06em; font-size:0.7rem;">Confirmed</span>
-            <strong>{{ confirmed_bookings }}</strong>
-          </div>
-          <div class="bf-activity-metric">
-            <span style="opacity:0.75; text-transform:uppercase; letter-spacing:0.06em; font-size:0.7rem;">Pending</span>
-            <strong>{{ pending_bookings }}</strong>
-          </div>
-          <div class="bf-activity-metric">
-            <span style="opacity:0.75; text-transform:uppercase; letter-spacing:0.06em; font-size:0.7rem;">Total</span>
-            <strong>{{ bookings_count }}</strong>
-          </div>
-        </div>
+    {% if recent_bookings and recent_bookings|length > 0 %}
+      <div class="muted" style="margin:10px 0 6px;">Recent bookings</div>
 
-        <!-- Recent bookings list -->
-        <div style="font-size:0.8rem; opacity:0.8; margin-bottom:4px;">
-          Recent bookings (click a booking to view full details):
-        </div>
-
-        <div class="bf-booking-list">
-          {% if recent_bookings %}
-            {% for b in recent_bookings %}
-              <div class="bf-booking-item">
-                <div class="bf-booking-title">
-                  <a
-                    href="{{ url_for('booking_detail', booking_id=b.id) }}"
-                    class="bf-booking-link"
-                  >
-                    {{ b.event_title or 'Untitled event' }}
-                  </a>
-                </div>
-                <div class="bf-booking-meta">
-                  <span>
-                    {% if b.event_datetime %}
-                      {{ b.event_datetime.strftime('%Y-%m-%d %H:%M') }}
-                    {% else %}
-                      Date/time TBA
-                    {% endif %}
-                  </span>
-                  <span>· Client: @{{ b.client.username }}</span>
-                  <span>· Budget:
-                    {% if b.total_cents %}
-                      ${{ '%.2f' % (b.total_cents / 100.0) }}
-                    {% else %}
-                      TBD
-                    {% endif %}
-                  </span>
-                  <span class="bf-badge {{ b.status|lower }}">
-                    {{ b.status|capitalize }}
-                  </span>
+      <div style="display:flex; flex-direction:column; gap:10px;">
+        {% for b in recent_bookings %}
+          <div class="card" style="padding:12px;">
+            <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;">
+              <div>
+                <b>{{ b.event_title }}</b>
+                <div class="muted">
+                  {% if b.event_datetime %}{{ b.event_datetime }}{% else %}No date set{% endif %}
+                  · status: {{ b.status }}
                 </div>
               </div>
-            {% endfor %}
-          {% else %}
-            <div style="font-size:0.8rem; opacity:0.8; margin-top:4px;">
-              No bookings yet. Share your public booking link with promoters to get your first request.
+              <a class="btn btn-secondary" href="{{ url_for('booking_detail', booking_id=b.id) }}">View</a>
             </div>
-          {% endif %}
-        </div>
-
-        <!-- Extra guidance -->
-        <div style="font-size:0.8rem; opacity:0.8; margin-top:12px; margin-bottom:6px;">
-          Recommended next steps:
-        </div>
-        <ul style="padding-left:18px; margin:0; font-size:0.85rem; opacity:0.88;">
-          <li><strong>Top up your wallet</strong> so you can explore and buy beats in the marketplace.</li>
-          <li><strong>Follow a few producers</strong> so you always see fresh catalogs and styles.</li>
-          <li><strong>Share your booking link</strong> with promoters and event organizers.</li>
-        </ul>
+          </div>
+        {% endfor %}
       </div>
 
-      <div class="bf-activity-footer">
-        <a class="bf-pill-link" href="{{ url_for('wallet_home') }}">Add funds to wallet</a>
-        <a class="bf-link-muted" href="{{ url_for('book_artist', username=current_user.username) }}">
-          Open public booking page
-        </a>
-      </div>
-    </section>
+    {% else %}
+      <div class="muted">No bookings yet. Share your booking link to get your first request.</div>
+    {% endif %}
   </div>
+
+  {% include "_community_card.html" %}
 </div>
 {% endblock %}

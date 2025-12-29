@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{% block title %}Edit Profile · BeatFund{% endblock %}
+
+{% block content %}
+<div class="page">
+  <div class="card">
+    <div class="section-head">
+      <div>
+        <h2 class="h2" style="margin:0;">Edit Profile</h2>
+        <div class="muted">Update your public info, contact details, and avatar.</div>
+      </div>
+      <div class="section-actions">
+        <a class="btn btn-secondary" href="{{ url_for('artist_dashboard') }}">Back to dashboard</a>
+      </div>
+    </div>
+
+    <div class="profile-grid">
+      <!-- LEFT: Avatar -->
+      <div class="profile-left">
+        <div class="avatar-card">
+          <img class="profile-avatar" src="{{ current_user.avatar_url }}" alt="avatar">
+          <div class="muted" style="margin-top:10px;">Recommended: square image, 600×600+</div>
+
+          <!-- Avatar upload goes here (inside profile page) -->
+          <form method="post" action="{{ url_for('update_avatar') }}" enctype="multipart/form-data" class="stack" style="margin-top:12px;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input class="form-control" type="file" name="avatar" accept="image/*" required>
+            <button class="btn btn-primary" type="submit">Upload new avatar</button>
+          </form>
+        </div>
+      </div>
+
+      <!-- RIGHT: Profile fields -->
+      <div class="profile-right">
+        <form method="post" class="stack">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+          <div class="form-grid">
+            <div class="form-group">
+              <label class="form-label">Display name</label>
+              <input class="form-control" name="display_name"
+                     value="{% if current_user.display_name is defined %}{{ current_user.display_name }}{% endif %}"
+                     placeholder="e.g., Artist Name">
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Phone number</label>
+              <input class="form-control" name="phone"
+                     value="{% if current_user.phone is defined %}{{ current_user.phone }}{% endif %}"
+                     placeholder="e.g., +1 (865) 555-1234">
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">City</label>
+              <input class="form-control" name="city"
+                     value="{% if current_user.city is defined %}{{ current_user.city }}{% endif %}"
+                     placeholder="e.g., Sevierville">
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">State</label>
+              <input class="form-control" name="state"
+                     value="{% if current_user.state is defined %}{{ current_user.state }}{% endif %}"
+                     placeholder="e.g., TN">
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Bio</label>
+            <textarea class="form-control" name="bio" rows="5"
+                      placeholder="Tell promoters and collaborators what you do...">{% if current_user.bio is defined %}{{ current_user.bio }}{% endif %}</textarea>
+          </div>
+
+          <div class="form-grid">
+            <div class="form-group">
+              <label class="form-label">Website</label>
+              <input class="form-control" name="website"
+                     value="{% if current_user.website is defined %}{{ current_user.website }}{% endif %}"
+                     placeholder="https://...">
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Instagram</label>
+              <input class="form-control" name="instagram"
+                     value="{% if current_user.instagram is defined %}{{ current_user.instagram }}{% endif %}"
+                     placeholder="@handle">
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">TikTok</label>
+              <input class="form-control" name="tiktok"
+                     value="{% if current_user.tiktok is defined %}{{ current_user.tiktok }}{% endif %}"
+                     placeholder="@handle">
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">YouTube</label>
+              <input class="form-control" name="youtube"
+                     value="{% if current_user.youtube is defined %}{{ current_user.youtube }}{% endif %}"
+                     placeholder="Channel link">
+            </div>
+          </div>
+
+          <div class="form-actions">
+            <button class="btn btn-primary" type="submit">Save changes</button>
+            <a class="btn btn-secondary" href="{{ url_for('artist_dashboard') }}">Cancel</a>
+          </div>
+
+          <div class="muted" style="margin-top:10px;">
+            Tip: Keep your phone + city updated so bookings go smoother.
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

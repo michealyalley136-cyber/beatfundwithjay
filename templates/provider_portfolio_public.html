@@ -1,157 +1,91 @@
 {% extends "base.html" %}
-
-{% block title %}{{ prof.display_name }} · Portfolio · BeatFund BookMe{% endblock %}
+{% block title %}{{ provider.display_name }} · BookMe · BeatFund{% endblock %}
 
 {% block content %}
-<style>
-  .bf-page { max-width: 1100px; margin: 0 auto; padding: 32px 16px 64px; color:#f9fbff; }
-  .bf-header {
-    display:flex; align-items:center; gap:16px; margin-bottom:18px;
-  }
-  @media (max-width:700px) { .bf-header { flex-direction:column; align-items:flex-start; } }
-  .bf-avatar {
-    width:80px; height:80px; border-radius:999px; overflow:hidden;
-    border:2px solid rgba(255,255,255,0.25);
-    display:flex; align-items:center; justify-content:center;
-    background:linear-gradient(135deg,#3b82f6,#22c55e);
-    font-size:2rem; font-weight:700;
-  }
-  .bf-avatar img { width:100%; height:100%; object-fit:cover; }
-  .bf-pill {
-    display:inline-flex; align-items:center; padding:2px 8px;
-    border-radius:999px; background:rgba(59,130,246,0.16);
-    border:1px solid rgba(59,130,246,0.4);
-    font-size:0.7rem; text-transform:uppercase; letter-spacing:0.04em;
-  }
-  .bf-small { font-size:0.76rem; opacity:0.8; }
-  .bf-btn-primary {
-    border-radius:999px; border:none; padding:8px 16px;
-    background:linear-gradient(135deg,#2563eb,#22c55e);
-    color:#020617; font-weight:600; font-size:0.9rem; cursor:pointer;
-    text-decoration:none; display:inline-flex; align-items:center; gap:4px;
-  }
-  .bf-card {
-    background:radial-gradient(circle at top left,#182a44,#050712);
-    border-radius:18px; border:1px solid rgba(255,255,255,0.08);
-    padding:18px 20px 20px; box-shadow:0 16px 40px rgba(0,0,0,0.45);
-    margin-bottom:20px;
-  }
-  .bf-grid {
-    display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); gap:14px;
-  }
-  .bf-item {
-    border-radius:14px; border:1px solid rgba(148,163,184,0.5);
-    background:rgba(15,23,42,0.85); padding:8px 10px;
-  }
-  .bf-thumb {
-    width:100%; border-radius:10px; overflow:hidden;
-    background:#020617; margin-bottom:6px;
-  }
-  .bf-thumb img, .bf-thumb video, .bf-thumb audio { width:100%; display:block; }
-  .bf-badge {
-    display:inline-flex; padding:2px 8px; border-radius:999px;
-    font-size:0.7rem; text-transform:uppercase; letter-spacing:0.05em;
-    border:1px solid rgba(148,163,184,0.7); margin-bottom:4px;
-  }
-</style>
+<div class="page">
 
-<div class="bf-page">
-  <div class="bf-header">
-    <div class="bf-avatar">
-      {% if provider.avatar_path %}
-        <img src="{{ url_for('media_file', filename=provider.avatar_path) }}" alt="Avatar">
-      {% else %}
-        {{ provider.username[0]|upper }}
-      {% endif %}
-    </div>
-    <div>
-      <h1 style="margin:0 0 4px 0;">{{ prof.display_name }}</h1>
-      <div style="margin-bottom:6px;">
-        <span class="bf-pill">
-          {{ provider.role.value.replace('_',' ')|title }}
-        </span>
+  <div class="card">
+    <div style="display:flex; align-items:center; gap:14px; flex-wrap:wrap;">
+      <img src="{{ provider.avatar_url }}" alt="avatar"
+           style="width:72px;height:72px;border-radius:16px;object-fit:cover;">
+      <div style="flex:1; min-width:240px;">
+        <h2 style="margin:0;">{{ prof.display_name }}</h2>
+        <div class="muted">@{{ provider.username }} · {{ get_role_display(provider.role) }}</div>
+        <div class="muted">
+          {% if prof.city or prof.state %}
+            {{ prof.city or "" }}{% if prof.city and prof.state %}, {% endif %}{{ prof.state or "" }}
+          {% endif %}
+        </div>
       </div>
-      <p class="bf-small">
-        {{ prof.service_types or '' }}
-      </p>
-      <p class="bf-small">
-        {% if prof.city or prof.state %}
-          {{ prof.city or '' }}{% if prof.city and prof.state %}, {% endif %}{{ prof.state or '' }}
-        {% endif %}
-        {% if prof.contact_phone %}
-          · Phone: {{ prof.contact_phone }}
-        {% endif %}
-      </p>
-      <a class="bf-btn-primary" href="{{ url_for('bookme_request', provider_id=provider.id) }}">
-        Request booking
-      </a>
+
+      {% if current_user.is_authenticated and current_user.id != provider.id %}
+        <a class="btn" href="{{ url_for('bookme_request', provider_id=provider.id) }}">Request booking</a>
+      {% endif %}
     </div>
   </div>
 
-  {% if prof.bio %}
-    <section class="bf-card">
-      <h2 style="font-size:1.0rem; margin-bottom:8px;">About</h2>
-      <p class="bf-small" style="opacity:0.95;">
-        {{ prof.bio }}
-      </p>
-    </section>
-  {% endif %}
+  {# FOLLOW WIDGET (your requested addition) #}
+  {% set profile_user = provider %}
+  {% include "_follow_widget.html" %}
 
-  <section class="bf-card">
-    <h2 style="font-size:1.0rem; margin-bottom:8px;">Portfolio ({{ items|length }})</h2>
+  <div class="card">
+    <h3 style="margin-top:0;">About</h3>
+    {% if prof.service_types %}
+      <div><b>Services:</b> {{ prof.service_types }}</div>
+    {% endif %}
+    {% if prof.rate_notes %}
+      <div style="margin-top:8px;"><b>Rates:</b> {{ prof.rate_notes }}</div>
+    {% endif %}
+    {% if prof.contact_phone %}
+      <div style="margin-top:8px;"><b>Phone:</b> {{ prof.contact_phone }}</div>
+    {% endif %}
+    {% if prof.bio %}
+      <div style="margin-top:10px;" class="muted">{{ prof.bio }}</div>
+    {% else %}
+      <div class="muted">No bio provided yet.</div>
+    {% endif %}
+  </div>
 
-    {% if items %}
-      <div class="bf-grid">
+  <div class="card">
+    <h3 style="margin-top:0;">Portfolio</h3>
+
+    {% if items and items|length > 0 %}
+      <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap:12px;">
         {% for item in items %}
-          <article class="bf-item">
-            <div class="bf-thumb">
-              {% if item.media_type == PortfolioMediaType.image and item.media_url %}
-                <img src="{{ item.media_url }}" alt="{{ item.title }}">
-              {% elif item.media_type == PortfolioMediaType.audio and item.media_url %}
-                <audio controls>
-                  <source src="{{ item.media_url }}">
-                  Your browser does not support the audio element.
-                </audio>
-              {% elif item.media_type == PortfolioMediaType.video and item.external_url %}
-                <div class="bf-small" style="padding:6px;">
-                  Video:
-                  <a href="{{ item.external_url }}" target="_blank" rel="noopener">
-                    {{ item.external_url }}
-                  </a>
-                </div>
-              {% elif item.external_url %}
-                <div class="bf-small" style="padding:6px;">
-                  Link:
-                  <a href="{{ item.external_url }}" target="_blank" rel="noopener">
-                    {{ item.external_url }}
-                  </a>
-                </div>
-              {% else %}
-                <div class="bf-small" style="padding:6px;">
-                  No preview available.
-                </div>
-              {% endif %}
-            </div>
-
-            <span class="bf-badge">
-              {{ item.media_type.value|replace('_',' ')|title }}
-            </span>
-            <div style="font-weight:600; font-size:0.9rem; margin-top:4px;">
-              {{ item.title }}
-            </div>
+          <div class="card" style="padding:12px;">
+            <div style="font-weight:700;">{{ item.title }}</div>
             {% if item.description %}
-              <div class="bf-small" style="margin-top:4px;">
-                {{ item.description }}
-              </div>
+              <div class="muted" style="margin:6px 0 10px;">{{ item.description }}</div>
             {% endif %}
-          </article>
+
+            {% if item.media_type.value == "image" %}
+              <img src="{{ item.media_url }}" alt="{{ item.title }}"
+                   style="width:100%; max-height:240px; object-fit:cover; border-radius:12px;">
+
+            {% elif item.media_type.value == "audio" %}
+              <audio controls style="width:100%;">
+                <source src="{{ item.media_url }}">
+              </audio>
+
+            {% elif item.media_type.value == "video" %}
+              {% if item.stored_filename %}
+                <video controls style="width:100%; border-radius:12px;">
+                  <source src="{{ item.media_url }}">
+                </video>
+              {% else %}
+                <a class="btn btn-secondary" href="{{ item.media_url }}" target="_blank" rel="noopener">Open video</a>
+              {% endif %}
+
+            {% else %}
+              <a class="btn btn-secondary" href="{{ item.media_url }}" target="_blank" rel="noopener">Open link</a>
+            {% endif %}
+          </div>
         {% endfor %}
       </div>
     {% else %}
-      <p class="bf-small">
-        This provider has not added any portfolio items yet.
-      </p>
+      <div class="muted">No portfolio items yet.</div>
     {% endif %}
-  </section>
+  </div>
+
 </div>
 {% endblock %}

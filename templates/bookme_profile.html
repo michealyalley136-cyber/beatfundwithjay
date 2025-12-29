@@ -109,6 +109,32 @@
     text-transform: uppercase;
     letter-spacing: 0.04em;
   }
+
+  /* NEW: secondary button style to match theme */
+  .bf-btn-secondary {
+    border-radius: 999px;
+    border: 1px solid rgba(148,163,184,0.45);
+    padding: 9px 14px;
+    background: rgba(15,23,42,0.75);
+    color: #e5edff;
+    font-weight: 600;
+    font-size: 0.9rem;
+    cursor: pointer;
+  }
+  .bf-btn-secondary:hover {
+    border-color: rgba(59,130,246,0.65);
+  }
+  .bf-inline-status {
+    margin-top: 6px;
+    font-size: 0.78rem;
+    opacity: 0.85;
+  }
+  .bf-inline-status.ok {
+    color: #86efac; /* green-ish */
+  }
+  .bf-inline-status.err {
+    color: #fca5a5; /* red-ish */
+  }
 </style>
 
 <div class="bf-page">
@@ -287,7 +313,7 @@
           </div>
         </div>
 
-        <div class="bf-field-row" style="margin-bottom:12px;">
+        <div class="bf-field-row" style="margin-bottom:8px;">
           <div>
             <label class="bf-label" for="lat">Latitude (optional)</label>
             <input
@@ -296,6 +322,8 @@
               name="lat"
               type="text"
               value="{{ prof.lat if prof and prof.lat is not none else '' }}"
+              inputmode="decimal"
+              placeholder="e.g. 35.868145"
             >
           </div>
           <div>
@@ -306,9 +334,24 @@
               name="lng"
               type="text"
               value="{{ prof.lng if prof and prof.lng is not none else '' }}"
+              inputmode="decimal"
+              placeholder="e.g. -83.561523"
             >
           </div>
         </div>
+
+        <!-- NEW: Use my location button + status -->
+        <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:12px;">
+          <button type="button" class="bf-btn-secondary" id="useMyLocation">
+            Use my current location
+          </button>
+          <div id="geoStatus" class="bf-inline-status" aria-live="polite"></div>
+        </div>
+
+        <p class="bf-small" style="margin-top:-6px; margin-bottom:12px;">
+          Tip: adding latitude &amp; longitude makes your pin show on the BookMe map.
+          After clicking “Use my current location”, click “Save BookMe profile”.
+        </p>
 
         <button type="submit" class="bf-btn-primary">
           Save BookMe profile
@@ -317,4 +360,59 @@
     </section>
   </div>
 </div>
+
+<script>
+  (function () {
+    const btn = document.getElementById("useMyLocation");
+    const statusEl = document.getElementById("geoStatus");
+    const latInput = document.getElementById("lat");
+    const lngInput = document.getElementById("lng");
+
+    function setStatus(msg, kind) {
+      if (!statusEl) return;
+      statusEl.textContent = msg || "";
+      statusEl.classList.remove("ok", "err");
+      if (kind) statusEl.classList.add(kind);
+    }
+
+    if (!btn) return;
+
+    btn.addEventListener("click", function () {
+      setStatus("", null);
+
+      if (!navigator.geolocation) {
+        setStatus("Geolocation is not supported in this browser.", "err");
+        return;
+      }
+
+      btn.disabled = true;
+      btn.style.opacity = "0.7";
+      setStatus("Getting your location…", null);
+
+      navigator.geolocation.getCurrentPosition(
+        function (pos) {
+          const lat = pos.coords.latitude;
+          const lng = pos.coords.longitude;
+
+          if (latInput) latInput.value = Number(lat).toFixed(6);
+          if (lngInput) lngInput.value = Number(lng).toFixed(6);
+
+          setStatus("Location added. Click “Save BookMe profile” to store it.", "ok");
+
+          btn.disabled = false;
+          btn.style.opacity = "1";
+        },
+        function (err) {
+          let msg = "Could not get location.";
+          if (err && err.message) msg += " " + err.message;
+          setStatus(msg, "err");
+
+          btn.disabled = false;
+          btn.style.opacity = "1";
+        },
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
+      );
+    });
+  })();
+</script>
 {% endblock %}

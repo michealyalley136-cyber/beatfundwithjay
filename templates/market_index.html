@@ -114,19 +114,19 @@
   /* Layout: shell switches between 1-column and 2-column */
   .mk-shell {
     display: grid;
-    grid-template-columns: minmax(0, 1fr); /* default: beats full width */
+    grid-template-columns: minmax(0, 1fr);
     gap: 16px;
     align-items: flex-start;
     transition: grid-template-columns 0.18s ease;
   }
 
   .mk-shell.filters-open {
-    grid-template-columns: minmax(0, 1.02fr) minmax(0, 1.6fr); /* left filters + right beats */
+    grid-template-columns: minmax(0, 1.02fr) minmax(0, 1.6fr);
   }
 
   @media (max-width: 980px) {
     .mk-shell.filters-open {
-      grid-template-columns: 1fr; /* stack filters above beats on smaller screens */
+      grid-template-columns: 1fr;
     }
   }
 
@@ -178,7 +178,6 @@
     margin-bottom: 4px;
   }
 
-  /* Extra spacing for rows under the main shell */
   .mk-row-card {
     margin-top: 20px;
   }
@@ -342,7 +341,7 @@
     opacity: 0.9;
   }
 
-  /* Horizontal rail (used by beats + all other rows) */
+  /* Horizontal rail */
   .mk-beat-grid {
     display: flex;
     flex-wrap: nowrap;
@@ -377,7 +376,6 @@
       0 0 0 1px rgba(30, 64, 175, 0.8);
   }
 
-  /* Special CTA card at end */
   .mk-beat-card-more {
     background:
       radial-gradient(circle at top left, rgba(45, 212, 191, 0.28), transparent 60%),
@@ -422,7 +420,8 @@
   .mk-beat-title-row {
     display: flex;
     justify-content: space-between;
-    gap: 4px;
+    gap: 6px;
+    align-items: baseline;
   }
 
   .mk-beat-main-title {
@@ -442,16 +441,15 @@
     text-align: right;
   }
 
-  /* Make producer link look like subtle text but clickable */
+  /* Clickable @username (now a link, not a button) */
   .mk-producer-link {
-    background: none;
-    border: none;
     padding: 0;
     margin: 0;
     font: inherit;
     color: #9ca3c8;
     cursor: pointer;
     text-align: right;
+    text-decoration: none;
   }
   .mk-producer-link:hover {
     color: #e5e7eb;
@@ -466,15 +464,8 @@
     text-overflow: ellipsis;
   }
 
-  /* Audio preview row */
-  .mk-beat-audio-row {
-    margin-top: 4px;
-  }
-
-  .mk-beat-audio {
-    width: 100%;
-    outline: none;
-  }
+  .mk-beat-audio-row { margin-top: 4px; }
+  .mk-beat-audio { width: 100%; outline: none; }
 
   .mk-beat-bottom {
     display: flex;
@@ -495,9 +486,7 @@
     color: #9aa4c2;
   }
 
-  .mk-buy-inline-form {
-    margin: 0;
-  }
+  .mk-buy-inline-form { margin: 0; }
 
   .mk-btn-buy-inline {
     border-radius: 999px;
@@ -513,6 +502,7 @@
     justify-content: center;
     transition: transform 0.1s ease, box-shadow 0.1s ease, background 0.12s ease;
     white-space: nowrap;
+    text-decoration: none;
   }
 
   .mk-btn-buy-inline:hover {
@@ -531,7 +521,6 @@
     padding: 10px 0 2px;
   }
 
-  /* Studios & other rows filter strip shared styles */
   .mk-studio-filter-field {
     display: flex;
     flex-direction: column;
@@ -595,7 +584,7 @@
   </header>
 
   <div class="mk-shell" id="mk-shell">
-    <!-- LEFT: "Find the right beat" filters (hidden until pill is clicked) -->
+    <!-- LEFT: "Find the right beat" filters -->
     <section class="mk-card mk-filters-card">
       <div class="mk-card-inner">
         <div class="mk-card-title">Find the right beat</div>
@@ -606,12 +595,7 @@
         <div class="mk-filters-grid">
           <div>
             <div class="mk-label">Search</div>
-            <input
-              id="mk-search"
-              class="mk-input"
-              type="text"
-              placeholder="Title, producer, tags…"
-            >
+            <input id="mk-search" class="mk-input" type="text" placeholder="Title, producer, tags…">
           </div>
 
           <div>
@@ -639,47 +623,24 @@
 
           <div>
             <div class="mk-label">BPM (min)</div>
-            <input
-              id="mk-bpm-min"
-              class="mk-input"
-              type="number"
-              min="0"
-              placeholder="Any"
-            >
+            <input id="mk-bpm-min" class="mk-input" type="number" min="0" placeholder="Any">
           </div>
 
           <div>
             <div class="mk-label">BPM (max)</div>
-            <input
-              id="mk-bpm-max"
-              class="mk-input"
-              type="number"
-              min="0"
-              placeholder="Any"
-            >
+            <input id="mk-bpm-max" class="mk-input" type="number" min="0" placeholder="Any">
           </div>
 
           <div>
             <div class="mk-label">Max price ($)</div>
-            <input
-              id="mk-price-max"
-              class="mk-input"
-              type="number"
-              min="0"
-              step="1"
-              placeholder="Any"
-            >
+            <input id="mk-price-max" class="mk-input" type="number" min="0" step="1" placeholder="Any">
           </div>
         </div>
 
         <div class="mk-filter-footer">
           <div class="mk-filter-actions">
-            <button type="button" id="mk-clear-filters" class="mk-btn-ghost mk-btn-small">
-              Clear
-            </button>
-            <button type="button" id="mk-apply-filters" class="mk-btn-primary mk-btn-small">
-              Find beats
-            </button>
+            <button type="button" id="mk-clear-filters" class="mk-btn-ghost mk-btn-small">Clear</button>
+            <button type="button" id="mk-apply-filters" class="mk-btn-primary mk-btn-small">Find beats</button>
           </div>
           <div id="mk-results-count">
             Showing {{ items|length }} beat{{ items|length != 1 and 's' or '' }}.
@@ -698,10 +659,7 @@
       <div class="mk-card-inner">
         <div class="mk-card-title-row">
           <div class="mk-card-title">Available beats</div>
-          <!-- Pill: tacked-in Find the right beat toggle -->
-          <button type="button" id="mk-toggle-find" class="mk-btn-ghost mk-btn-small">
-            Find the right beat
-          </button>
+          <button type="button" id="mk-toggle-find" class="mk-btn-ghost mk-btn-small">Find the right beat</button>
         </div>
         <div class="mk-card-sub">
           Click “Buy with wallet” to purchase instantly using your BeatFund balance.
@@ -733,17 +691,15 @@
 
                 <div class="mk-beat-info">
                   <div class="mk-beat-title-row">
-                    <div class="mk-beat-main-title">
-                      {{ b.title }}
-                    </div>
+                    <div class="mk-beat-main-title">{{ b.title }}</div>
                     {% if b.owner %}
-                      <button
-                        type="button"
+                      <a
                         class="mk-beat-artist mk-producer-link"
-                        data-producer="{{ b.owner.username|lower }}"
+                        href="{{ url_for('user_profile', username=b.owner.username) }}"
+                        title="View @{{ b.owner.username }}"
                       >
                         @{{ b.owner.username }}
-                      </button>
+                      </a>
                     {% endif %}
                   </div>
 
@@ -754,16 +710,10 @@
                     {% if b.id %} · #{{ b.id }}{% endif %}
                   </div>
 
-                  {# Audio preview (sample only, no download) #}
                   {% set preview_url = b.preview_url or b.audio_url or b.file_url %}
                   {% if preview_url %}
                     <div class="mk-beat-audio-row">
-                      <audio
-                        class="mk-beat-audio"
-                        controls
-                        controlsList="nodownload noplaybackrate"
-                        preload="none"
-                      >
+                      <audio class="mk-beat-audio" controls controlsList="nodownload noplaybackrate" preload="none">
                         <source src="{{ preview_url }}" type="audio/mpeg">
                         Your browser does not support audio playback.
                       </audio>
@@ -776,40 +726,24 @@
                       <div class="mk-price-sub">Paid from wallet balance</div>
                     </div>
 
-                    <form
-                      method="POST"
-                      action="{{ url_for('market_buy', beat_id=b.id) }}"
-                      class="mk-buy-inline-form"
-                    >
+                    <form method="POST" action="{{ url_for('market_buy', beat_id=b.id) }}" class="mk-buy-inline-form">
                       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                      <button type="submit" class="mk-btn-buy-inline">
-                        Buy with wallet
-                      </button>
+                      <button type="submit" class="mk-btn-buy-inline">Buy with wallet</button>
                     </form>
                   </div>
                 </div>
               </article>
             {% endfor %}
 
-            <!-- CTA card at the end of the rail -->
             <article class="mk-beat-card mk-beat-card-more">
               <div class="mk-beat-info">
-                <div class="mk-beat-main-title">
-                  Reached the end?
-                </div>
+                <div class="mk-beat-main-title">Reached the end?</div>
                 <div class="mk-beat-meta">
-                  Tap a producer’s @name to view their catalog in this rail, or browse the full producer catalog for even more beats.
+                  Tap a producer’s @name to view their profile, or browse the producer catalog for even more beats.
                 </div>
                 <div class="mk-beat-bottom">
-                  <div class="mk-price-sub">
-                    Keep exploring new sounds.
-                  </div>
-                  <a
-                    href="{{ url_for('market_producer_catalog') }}"
-                    class="mk-btn-buy-inline"
-                  >
-                    Producer catalog
-                  </a>
+                  <div class="mk-price-sub">Keep exploring new sounds.</div>
+                  <a href="{{ url_for('market_producer_catalog') }}" class="mk-btn-buy-inline">Producer catalog</a>
                 </div>
               </div>
             </article>
@@ -823,55 +757,31 @@
     </section>
   </div>
 
-  {# STUDIOS ROW – always visible, content depends on `studios` #}
+  {# STUDIOS ROW #}
   <section class="mk-card mk-row-card">
     <div class="mk-card-inner">
       <div class="mk-card-title-row">
         <div class="mk-card-title">Studios near you</div>
-        <button type="button" id="mk-toggle-studio-filters" class="mk-btn-ghost mk-btn-small">
-          Filter studios
-        </button>
+        <button type="button" id="mk-toggle-studio-filters" class="mk-btn-ghost mk-btn-small">Filter studios</button>
       </div>
-      <div class="mk-card-sub">
-        Book recording studios by the hour and pay securely with your BeatFund wallet.
-      </div>
+      <div class="mk-card-sub">Book recording studios by the hour and pay securely with your BeatFund wallet.</div>
 
-      <!-- Studio filters strip -->
       <div id="mk-studio-filters" class="mk-studio-filters">
         <div class="mk-studio-filter-field">
           <label for="mk-studio-city" class="mk-studio-label">City</label>
-          <input
-            id="mk-studio-city"
-            class="mk-input"
-            type="text"
-            placeholder="e.g. Columbus"
-          >
+          <input id="mk-studio-city" class="mk-input" type="text" placeholder="e.g. Columbus">
         </div>
         <div class="mk-studio-filter-field">
           <label for="mk-studio-state" class="mk-studio-label">State</label>
-          <input
-            id="mk-studio-state"
-            class="mk-input"
-            type="text"
-            placeholder="e.g. OH"
-          >
+          <input id="mk-studio-state" class="mk-input" type="text" placeholder="e.g. OH">
         </div>
         <div class="mk-studio-filter-field">
           <label for="mk-studio-zip" class="mk-studio-label">ZIP</label>
-          <input
-            id="mk-studio-zip"
-            class="mk-input"
-            type="text"
-            placeholder="e.g. 43201"
-          >
+          <input id="mk-studio-zip" class="mk-input" type="text" placeholder="e.g. 43201">
         </div>
         <div class="mk-studio-filter-actions">
-          <button type="button" id="mk-apply-studio-filters" class="mk-btn-primary mk-btn-small">
-            Apply
-          </button>
-          <button type="button" id="mk-clear-studio-filters" class="mk-btn-ghost mk-btn-small">
-            Clear
-          </button>
+          <button type="button" id="mk-apply-studio-filters" class="mk-btn-primary mk-btn-small">Apply</button>
+          <button type="button" id="mk-clear-studio-filters" class="mk-btn-ghost mk-btn-small">Clear</button>
         </div>
       </div>
 
@@ -903,40 +813,28 @@
 
               <div class="mk-beat-info">
                 <div class="mk-beat-title-row">
-                  <div class="mk-beat-main-title">
-                    {{ s.display_name }}
-                  </div>
+                  <div class="mk-beat-main-title">{{ s.display_name }}</div>
                   {% if s.user %}
-                    <div class="mk-beat-artist">
+                    <a class="mk-beat-artist mk-producer-link"
+                       href="{{ url_for('user_profile', username=s.user.username) }}">
                       @{{ s.user.username }}
-                    </div>
+                    </a>
                   {% endif %}
                 </div>
 
                 <div class="mk-beat-meta">
-                  {% if s.city and s.state %}
-                    {{ s.city }}, {{ s.state }}
-                  {% elif s.city %}
-                    {{ s.city }}
-                  {% endif %}
-                  {% if s.service_types %}
-                    · {{ s.service_types }}
-                  {% endif %}
+                  {% if s.city and s.state %}{{ s.city }}, {{ s.state }}{% elif s.city %}{{ s.city }}{% endif %}
+                  {% if s.service_types %} · {{ s.service_types }}{% endif %}
                 </div>
 
                 <div class="mk-beat-bottom">
                   <div>
-                    {% if s.rate_notes %}
-                      <div class="mk-price-row">{{ s.rate_notes }}</div>
-                    {% endif %}
+                    {% if s.rate_notes %}<div class="mk-price-row">{{ s.rate_notes }}</div>{% endif %}
                     <div class="mk-price-sub">Book and pay via BeatFund</div>
                   </div>
 
                   {% if s.user %}
-                    <a
-                      href="{{ url_for('bookme_book_provider', username=s.user.username) }}"
-                      class="mk-btn-buy-inline"
-                    >
+                    <a href="{{ url_for('bookme_book_provider', username=s.user.username) }}" class="mk-btn-buy-inline">
                       Book a session
                     </a>
                   {% else %}
@@ -947,30 +845,19 @@
             </article>
           {% endfor %}
 
-          <!-- CTA card for studios -->
           <article class="mk-beat-card mk-beat-card-more">
             <div class="mk-beat-info">
-              <div class="mk-beat-main-title">
-                Need more options?
-              </div>
-              <div class="mk-beat-meta">
-                Browse the full studio catalog to compare locations, rates, and availability.
-              </div>
+              <div class="mk-beat-main-title">Need more options?</div>
+              <div class="mk-beat-meta">Browse the full studio catalog to compare locations, rates, and availability.</div>
               <div class="mk-beat-bottom">
-                <div class="mk-price-sub">
-                  Discover more studios.
-                </div>
-                <a href="{{ url_for('bookme_search', role='studio') }}" class="mk-btn-buy-inline">
-                  View all studios
-                </a>
+                <div class="mk-price-sub">Discover more studios.</div>
+                <a href="{{ url_for('bookme_search', role='studio') }}" class="mk-btn-buy-inline">View all studios</a>
               </div>
             </div>
           </article>
         </div>
       {% else %}
-        <p class="mk-empty">
-          Studios marketplace is coming soon. Once studios are onboarded near you, they’ll appear here.
-        </p>
+        <p class="mk-empty">Studios marketplace is coming soon. Once studios are onboarded near you, they’ll appear here.</p>
       {% endif %}
     </div>
   </section>
@@ -980,50 +867,26 @@
     <div class="mk-card-inner">
       <div class="mk-card-title-row">
         <div class="mk-card-title">Videographers &amp; directors</div>
-        <button type="button" id="mk-toggle-video-filters" class="mk-btn-ghost mk-btn-small">
-          Filter videographers
-        </button>
+        <button type="button" id="mk-toggle-video-filters" class="mk-btn-ghost mk-btn-small">Filter videographers</button>
       </div>
-      <div class="mk-card-sub">
-        Find video teams for music videos, promos, and live sessions, then lock in your shoot with BeatFund.
-      </div>
+      <div class="mk-card-sub">Find video teams for music videos, promos, and live sessions, then lock in your shoot with BeatFund.</div>
 
-      <!-- Videographer filters -->
       <div id="mk-video-filters" class="mk-video-filters">
         <div class="mk-studio-filter-field">
           <label for="mk-video-search" class="mk-studio-label">Search</label>
-          <input
-            id="mk-video-search"
-            class="mk-input"
-            type="text"
-            placeholder="Name, @handle, city…"
-          >
+          <input id="mk-video-search" class="mk-input" type="text" placeholder="Name, @handle, city…">
         </div>
         <div class="mk-studio-filter-field">
           <label for="mk-video-city" class="mk-studio-label">City</label>
-          <input
-            id="mk-video-city"
-            class="mk-input"
-            type="text"
-            placeholder="e.g. Columbus"
-          >
+          <input id="mk-video-city" class="mk-input" type="text" placeholder="e.g. Columbus">
         </div>
         <div class="mk-studio-filter-field">
           <label for="mk-video-state" class="mk-studio-label">State</label>
-          <input
-            id="mk-video-state"
-            class="mk-input"
-            type="text"
-            placeholder="e.g. OH"
-          >
+          <input id="mk-video-state" class="mk-input" type="text" placeholder="e.g. OH">
         </div>
         <div class="mk-studio-filter-actions">
-          <button type="button" id="mk-apply-video-filters" class="mk-btn-primary mk-btn-small">
-            Apply
-          </button>
-          <button type="button" id="mk-clear-video-filters" class="mk-btn-ghost mk-btn-small">
-            Clear
-          </button>
+          <button type="button" id="mk-apply-video-filters" class="mk-btn-primary mk-btn-small">Apply</button>
+          <button type="button" id="mk-clear-video-filters" class="mk-btn-ghost mk-btn-small">Clear</button>
         </div>
       </div>
 
@@ -1046,49 +909,35 @@
               data-search="{{ (v.display_name ~ ' ' ~ (v.user.username if v.user else '') ~ ' ' ~ (v.city or '') ~ ' ' ~ (v.state or ''))|lower }}"
             >
               <div class="mk-beat-cover">
-                <img
-                  class="mk-beat-cover-img"
-                  src="{{ v.user.avatar_url if v.user else url_for('static', filename='img/videographer-placeholder.jpg') }}"
-                  alt="{{ v.display_name }} videographer photo"
-                >
+                <img class="mk-beat-cover-img"
+                     src="{{ v.user.avatar_url if v.user else url_for('static', filename='img/videographer-placeholder.jpg') }}"
+                     alt="{{ v.display_name }} videographer photo">
               </div>
 
               <div class="mk-beat-info">
                 <div class="mk-beat-title-row">
-                  <div class="mk-beat-main-title">
-                    {{ v.display_name }}
-                  </div>
+                  <div class="mk-beat-main-title">{{ v.display_name }}</div>
                   {% if v.user %}
-                    <div class="mk-beat-artist">
+                    <a class="mk-beat-artist mk-producer-link"
+                       href="{{ url_for('user_profile', username=v.user.username) }}">
                       @{{ v.user.username }}
-                    </div>
+                    </a>
                   {% endif %}
                 </div>
 
                 <div class="mk-beat-meta">
-                  {% if v.city and v.state %}
-                    {{ v.city }}, {{ v.state }}
-                  {% elif v.city %}
-                    {{ v.city }}
-                  {% endif %}
-                  {% if v.service_types %}
-                    · {{ v.service_types }}
-                  {% endif %}
+                  {% if v.city and v.state %}{{ v.city }}, {{ v.state }}{% elif v.city %}{{ v.city }}{% endif %}
+                  {% if v.service_types %} · {{ v.service_types }}{% endif %}
                 </div>
 
                 <div class="mk-beat-bottom">
                   <div>
-                    {% if v.rate_notes %}
-                      <div class="mk-price-row">{{ v.rate_notes }}</div>
-                    {% endif %}
+                    {% if v.rate_notes %}<div class="mk-price-row">{{ v.rate_notes }}</div>{% endif %}
                     <div class="mk-price-sub">Secure your shoot via BeatFund</div>
                   </div>
 
                   {% if v.user %}
-                    <a
-                      href="{{ url_for('bookme_book_provider', username=v.user.username) }}"
-                      class="mk-btn-buy-inline"
-                    >
+                    <a href="{{ url_for('bookme_book_provider', username=v.user.username) }}" class="mk-btn-buy-inline">
                       Book a shoot
                     </a>
                   {% else %}
@@ -1099,83 +948,48 @@
             </article>
           {% endfor %}
 
-          <!-- CTA card for videographers -->
           <article class="mk-beat-card mk-beat-card-more">
             <div class="mk-beat-info">
-              <div class="mk-beat-main-title">
-                See more video teams
-              </div>
-              <div class="mk-beat-meta">
-                Compare videographers by style, pricing, and past projects in one place.
-              </div>
+              <div class="mk-beat-main-title">See more video teams</div>
+              <div class="mk-beat-meta">Compare videographers by style, pricing, and past projects in one place.</div>
               <div class="mk-beat-bottom">
-                <div class="mk-price-sub">
-                  Explore the video catalog.
-                </div>
-                <a href="{{ url_for('bookme_search', role='videographer') }}" class="mk-btn-buy-inline">
-                  View all videographers
-                </a>
+                <div class="mk-price-sub">Explore the video catalog.</div>
+                <a href="{{ url_for('bookme_search', role='videographer') }}" class="mk-btn-buy-inline">View all videographers</a>
               </div>
             </div>
           </article>
         </div>
       {% else %}
-        <p class="mk-empty">
-          Videographers will appear here once providers start offering video services on BeatFund.
-        </p>
+        <p class="mk-empty">Videographers will appear here once providers start offering video services on BeatFund.</p>
       {% endif %}
     </div>
   </section>
 
-  {# TALENT / VIDEO VIXENS ROW #}
+  {# TALENT ROW #}
   <section class="mk-card mk-row-card">
     <div class="mk-card-inner">
       <div class="mk-card-title-row">
         <div class="mk-card-title">Talent &amp; video vixens</div>
-        <button type="button" id="mk-toggle-talent-filters" class="mk-btn-ghost mk-btn-small">
-          Filter talent
-        </button>
+        <button type="button" id="mk-toggle-talent-filters" class="mk-btn-ghost mk-btn-small">Filter talent</button>
       </div>
-      <div class="mk-card-sub">
-        Build the right cast for your video shoots, campaigns, and live performances.
-      </div>
+      <div class="mk-card-sub">Build the right cast for your video shoots, campaigns, and live performances.</div>
 
-      <!-- Talent filters -->
       <div id="mk-talent-filters" class="mk-talent-filters">
         <div class="mk-studio-filter-field">
           <label for="mk-talent-search" class="mk-studio-label">Search</label>
-          <input
-            id="mk-talent-search"
-            class="mk-input"
-            type="text"
-            placeholder="Name, @handle, roles…"
-          >
+          <input id="mk-talent-search" class="mk-input" type="text" placeholder="Name, @handle, roles…">
         </div>
         <div class="mk-studio-filter-field">
           <label for="mk-talent-city" class="mk-studio-label">City</label>
-          <input
-            id="mk-talent-city"
-            class="mk-input"
-            type="text"
-            placeholder="e.g. Atlanta"
-          >
+          <input id="mk-talent-city" class="mk-input" type="text" placeholder="e.g. Atlanta">
         </div>
         <div class="mk-studio-filter-field">
           <label for="mk-talent-roles" class="mk-studio-label">Roles</label>
-          <input
-            id="mk-talent-roles"
-            class="mk-input"
-            type="text"
-            placeholder="e.g. vixen, host, model"
-          >
+          <input id="mk-talent-roles" class="mk-input" type="text" placeholder="e.g. vixen, host, model">
         </div>
         <div class="mk-studio-filter-actions">
-          <button type="button" id="mk-apply-talent-filters" class="mk-btn-primary mk-btn-small">
-            Apply
-          </button>
-          <button type="button" id="mk-clear-talent-filters" class="mk-btn-ghost mk-btn-small">
-            Clear
-          </button>
+          <button type="button" id="mk-apply-talent-filters" class="mk-btn-primary mk-btn-small">Apply</button>
+          <button type="button" id="mk-clear-talent-filters" class="mk-btn-ghost mk-btn-small">Clear</button>
         </div>
       </div>
 
@@ -1199,51 +1013,35 @@
               data-search="{{ (t.display_name ~ ' ' ~ (t.user.username if t.user else '') ~ ' ' ~ (t.service_types or '') ~ ' ' ~ (t.city or '') ~ ' ' ~ (t.state or ''))|lower }}"
             >
               <div class="mk-beat-cover">
-                <img
-                  class="mk-beat-cover-img"
-                  src="{{ t.user.avatar_url if t.user else url_for('static', filename='img/talent-placeholder.jpg') }}"
-                  alt="{{ t.display_name }} talent photo"
-                >
+                <img class="mk-beat-cover-img"
+                     src="{{ t.user.avatar_url if t.user else url_for('static', filename='img/talent-placeholder.jpg') }}"
+                     alt="{{ t.display_name }} talent photo">
               </div>
 
               <div class="mk-beat-info">
                 <div class="mk-beat-title-row">
-                  <div class="mk-beat-main-title">
-                    {{ t.display_name }}
-                  </div>
+                  <div class="mk-beat-main-title">{{ t.display_name }}</div>
                   {% if t.user %}
-                    <div class="mk-beat-artist">
+                    <a class="mk-beat-artist mk-producer-link"
+                       href="{{ url_for('user_profile', username=t.user.username) }}">
                       @{{ t.user.username }}
-                    </div>
+                    </a>
                   {% endif %}
                 </div>
 
                 <div class="mk-beat-meta">
-                  {% if t.city and t.state %}
-                    {{ t.city }}, {{ t.state }}
-                  {% elif t.city %}
-                    {{ t.city }}
-                  {% endif %}
-                  {% if t.service_types %}
-                    · {{ t.service_types }}
-                  {% endif %}
+                  {% if t.city and t.state %}{{ t.city }}, {{ t.state }}{% elif t.city %}{{ t.city }}{% endif %}
+                  {% if t.service_types %} · {{ t.service_types }}{% endif %}
                 </div>
 
                 <div class="mk-beat-bottom">
                   <div>
-                    {% if t.rate_notes %}
-                      <div class="mk-price-row">
-                        {{ t.rate_notes }}
-                      </div>
-                    {% endif %}
+                    {% if t.rate_notes %}<div class="mk-price-row">{{ t.rate_notes }}</div>{% endif %}
                     <div class="mk-price-sub">Book appearances through BeatFund</div>
                   </div>
 
                   {% if t.user %}
-                    <a
-                      href="{{ url_for('bookme_book_provider', username=t.user.username) }}"
-                      class="mk-btn-buy-inline"
-                    >
+                    <a href="{{ url_for('bookme_book_provider', username=t.user.username) }}" class="mk-btn-buy-inline">
                       Book talent
                     </a>
                   {% else %}
@@ -1254,30 +1052,19 @@
             </article>
           {% endfor %}
 
-          <!-- CTA card for talent -->
           <article class="mk-beat-card mk-beat-card-more">
             <div class="mk-beat-info">
-              <div class="mk-beat-main-title">
-                Discover more talent
-              </div>
-              <div class="mk-beat-meta">
-                Browse performers, models, ushers, and more for your next project.
-              </div>
+              <div class="mk-beat-main-title">Discover more talent</div>
+              <div class="mk-beat-meta">Browse performers, models, ushers, and more for your next project.</div>
               <div class="mk-beat-bottom">
-                <div class="mk-price-sub">
-                  Explore the talent catalog.
-                </div>
-                <a href="{{ url_for('bookme_search') }}" class="mk-btn-buy-inline">
-                  View all talent
-                </a>
+                <div class="mk-price-sub">Explore the talent catalog.</div>
+                <a href="{{ url_for('bookme_search') }}" class="mk-btn-buy-inline">View all talent</a>
               </div>
             </div>
           </article>
         </div>
       {% else %}
-        <p class="mk-empty">
-          Talent profiles are coming soon. Once creators start building portfolios, they’ll appear here.
-        </p>
+        <p class="mk-empty">Talent profiles are coming soon. Once creators start building portfolios, they’ll appear here.</p>
       {% endif %}
     </div>
   </section>
@@ -1287,50 +1074,26 @@
     <div class="mk-card-inner">
       <div class="mk-card-title-row">
         <div class="mk-card-title">Other providers</div>
-        <button type="button" id="mk-toggle-provider-filters" class="mk-btn-ghost mk-btn-small">
-          Filter providers
-        </button>
+        <button type="button" id="mk-toggle-provider-filters" class="mk-btn-ghost mk-btn-small">Filter providers</button>
       </div>
-      <div class="mk-card-sub">
-        Makeup artists, dancers, event planners, photographers, DJs, and more — all paid safely through BeatFund.
-      </div>
+      <div class="mk-card-sub">Makeup artists, dancers, event planners, photographers, DJs, and more — all paid safely through BeatFund.</div>
 
-      <!-- Other providers filters -->
       <div id="mk-provider-filters" class="mk-provider-filters">
         <div class="mk-studio-filter-field">
           <label for="mk-provider-search" class="mk-studio-label">Search</label>
-          <input
-            id="mk-provider-search"
-            class="mk-input"
-            type="text"
-            placeholder="Name, @handle, category…"
-          >
+          <input id="mk-provider-search" class="mk-input" type="text" placeholder="Name, @handle, category…">
         </div>
         <div class="mk-studio-filter-field">
           <label for="mk-provider-city" class="mk-studio-label">City</label>
-          <input
-            id="mk-provider-city"
-            class="mk-input"
-            type="text"
-            placeholder="e.g. Nashville"
-          >
+          <input id="mk-provider-city" class="mk-input" type="text" placeholder="e.g. Nashville">
         </div>
         <div class="mk-studio-filter-field">
           <label for="mk-provider-category" class="mk-studio-label">Category</label>
-          <input
-            id="mk-provider-category"
-            class="mk-input"
-            type="text"
-            placeholder="e.g. makeup, DJ, planner"
-          >
+          <input id="mk-provider-category" class="mk-input" type="text" placeholder="e.g. makeup, DJ, planner">
         </div>
         <div class="mk-studio-filter-actions">
-          <button type="button" id="mk-apply-provider-filters" class="mk-btn-primary mk-btn-small">
-            Apply
-          </button>
-          <button type="button" id="mk-clear-provider-filters" class="mk-btn-ghost mk-btn-small">
-            Clear
-          </button>
+          <button type="button" id="mk-apply-provider-filters" class="mk-btn-primary mk-btn-small">Apply</button>
+          <button type="button" id="mk-clear-provider-filters" class="mk-btn-ghost mk-btn-small">Clear</button>
         </div>
       </div>
 
@@ -1354,54 +1117,36 @@
               data-search="{{ (p.display_name ~ ' ' ~ (p.user.username if p.user else '') ~ ' ' ~ (p.service_types or '') ~ ' ' ~ (p.city or '') ~ ' ' ~ (p.state or ''))|lower }}"
             >
               <div class="mk-beat-cover">
-                <img
-                  class="mk-beat-cover-img"
-                  src="{{ p.user.avatar_url if p.user else url_for('static', filename='img/provider-placeholder.jpg') }}"
-                  alt="{{ p.display_name }} provider photo"
-                >
+                <img class="mk-beat-cover-img"
+                     src="{{ p.user.avatar_url if p.user else url_for('static', filename='img/provider-placeholder.jpg') }}"
+                     alt="{{ p.display_name }} provider photo">
               </div>
 
               <div class="mk-beat-info">
                 <div class="mk-beat-title-row">
-                  <div class="mk-beat-main-title">
-                    {{ p.display_name }}
-                  </div>
+                  <div class="mk-beat-main-title">{{ p.display_name }}</div>
                   {% if p.user %}
-                    <div class="mk-beat-artist">
+                    <a class="mk-beat-artist mk-producer-link"
+                       href="{{ url_for('user_profile', username=p.user.username) }}">
                       @{{ p.user.username }}
-                    </div>
+                    </a>
                   {% endif %}
                 </div>
 
                 <div class="mk-beat-meta">
-                  {% if p.user and p.user.role %}
-                    {{ p.user.role.value.replace('_', ' ')|title }}
-                  {% endif %}
-                  {% if (p.city or p.state) and (p.user and p.user.role) %}
-                    ·
-                  {% endif %}
-                  {% if p.city and p.state %}
-                    {{ p.city }}, {{ p.state }}
-                  {% elif p.city %}
-                    {{ p.city }}
-                  {% endif %}
+                  {% if p.user and p.user.role %}{{ p.user.role.value.replace('_', ' ')|title }}{% endif %}
+                  {% if (p.city or p.state) and (p.user and p.user.role) %} · {% endif %}
+                  {% if p.city and p.state %}{{ p.city }}, {{ p.state }}{% elif p.city %}{{ p.city }}{% endif %}
                 </div>
 
                 <div class="mk-beat-bottom">
                   <div>
-                    {% if p.rate_notes %}
-                      <div class="mk-price-row">
-                        {{ p.rate_notes }}
-                      </div>
-                    {% endif %}
+                    {% if p.rate_notes %}<div class="mk-price-row">{{ p.rate_notes }}</div>{% endif %}
                     <div class="mk-price-sub">Book &amp; pay via BeatFund</div>
                   </div>
 
                   {% if p.user %}
-                    <a
-                      href="{{ url_for('bookme_book_provider', username=p.user.username) }}"
-                      class="mk-btn-buy-inline"
-                    >
+                    <a href="{{ url_for('bookme_book_provider', username=p.user.username) }}" class="mk-btn-buy-inline">
                       Book provider
                     </a>
                   {% else %}
@@ -1412,30 +1157,19 @@
             </article>
           {% endfor %}
 
-          <!-- CTA card for other providers -->
           <article class="mk-beat-card mk-beat-card-more">
             <div class="mk-beat-info">
-              <div class="mk-beat-main-title">
-                Explore all providers
-              </div>
-              <div class="mk-beat-meta">
-                From glam teams to event coordinators, manage your creative crew in one place.
-              </div>
+              <div class="mk-beat-main-title">Explore all providers</div>
+              <div class="mk-beat-meta">From glam teams to event coordinators, manage your creative crew in one place.</div>
               <div class="mk-beat-bottom">
-                <div class="mk-price-sub">
-                  See the full provider list.
-                </div>
-                <a href="{{ url_for('bookme_search') }}" class="mk-btn-buy-inline">
-                  View all providers
-                </a>
+                <div class="mk-price-sub">See the full provider list.</div>
+                <a href="{{ url_for('bookme_search') }}" class="mk-btn-buy-inline">View all providers</a>
               </div>
             </div>
           </article>
         </div>
       {% else %}
-        <p class="mk-empty">
-          Service providers like makeup artists, dancers, and event planners will appear here once they join BeatFund.
-        </p>
+        <p class="mk-empty">Service providers like makeup artists, dancers, and event planners will appear here once they join BeatFund.</p>
       {% endif %}
     </div>
   </section>
@@ -1444,7 +1178,8 @@
 <script>
   document.addEventListener("DOMContentLoaded", function () {
     const shell = document.getElementById("mk-shell");
-    // Only grab beat cards inside the beats rail, so filters don't mess with studios/other rows
+
+    // Beats filtering only affects the beats rail
     const cards = Array.from(document.querySelectorAll("#mk-beat-grid .mk-beat-card"));
     const searchInput = document.getElementById("mk-search");
     const genreSelect = document.getElementById("mk-genre-filter");
@@ -1457,7 +1192,6 @@
     const resultsCount = document.getElementById("mk-results-count");
 
     const toggleBtn = document.getElementById("mk-toggle-find");
-    const producerLinks = Array.from(document.querySelectorAll(".mk-producer-link"));
 
     // --- Studios filter elements ---
     const studioFilterToggle = document.getElementById("mk-toggle-studio-filters");
@@ -1503,15 +1237,12 @@
     const providerResults = document.getElementById("mk-provider-results-count");
     const providerCards = Array.from(document.querySelectorAll("[data-provider-card]"));
 
-    // Toggle filters: default is closed (beats full width)
+    // Toggle filters (beats)
     if (toggleBtn && shell) {
       toggleBtn.addEventListener("click", () => {
         const open = shell.classList.toggle("filters-open");
         toggleBtn.textContent = open ? "Hide filters" : "Find the right beat";
-
-        if (open) {
-          shell.scrollIntoView({ behavior: "smooth", block: "start" });
-        }
+        if (open) shell.scrollIntoView({ behavior: "smooth", block: "start" });
       });
     }
 
@@ -1521,10 +1252,7 @@
     }
 
     // --------- BEATS FILTERING ----------
-    function applyFilters(options) {
-      const opts = options || {};
-      const producerOnly = opts.producerOnly || null;
-
+    function applyFilters() {
       const q = (searchInput && searchInput.value || "").trim().toLowerCase();
       const genre = (genreSelect && genreSelect.value || "").toLowerCase();
       const lic = (licenseSelect && licenseSelect.value || "").toLowerCase();
@@ -1544,47 +1272,27 @@
 
         let matches = true;
 
-        // CTA detection: no data fields = CTA (end-of-rail card)
         const isCTA =
           !title && !producer && !cardGenre && !cardLic && cardBpm === null && cardPrice === null;
 
         if (!isCTA) {
-          if (producerOnly && producer !== producerOnly) {
-            matches = false;
-          }
-
-          if (matches && q && !producerOnly) {
+          if (matches && q) {
             const inTitle = title.includes(q);
             const inProducer = producer.includes(q);
-            if (!inTitle && !inProducer) {
-              matches = false;
-            }
+            if (!inTitle && !inProducer) matches = false;
           }
 
-          if (matches && genre && cardGenre !== genre) {
-            matches = false;
-          }
-
-          if (matches && lic && cardLic !== lic) {
-            matches = false;
-          }
+          if (matches && genre && cardGenre !== genre) matches = false;
+          if (matches && lic && cardLic !== lic) matches = false;
 
           if (matches && bpmMin !== null) {
-            if (cardBpm === null || cardBpm < bpmMin) {
-              matches = false;
-            }
+            if (cardBpm === null || cardBpm < bpmMin) matches = false;
           }
-
           if (matches && bpmMax !== null) {
-            if (cardBpm === null || cardBpm > bpmMax) {
-              matches = false;
-            }
+            if (cardBpm === null || cardBpm > bpmMax) matches = false;
           }
-
           if (matches && priceMax !== null) {
-            if (cardPrice === null || cardPrice > priceMax) {
-              matches = false;
-            }
+            if (cardPrice === null || cardPrice > priceMax) matches = false;
           }
         }
 
@@ -1610,9 +1318,7 @@
       if (bpmMaxInput) bpmMaxInput.value = "";
       if (priceMaxInput) priceMaxInput.value = "";
 
-      cards.forEach((card) => {
-        card.style.display = "";
-      });
+      cards.forEach((card) => { card.style.display = ""; });
 
       if (resultsCount) {
         const realCards = cards.filter((card) => card.dataset.title || card.dataset.producer);
@@ -1622,45 +1328,10 @@
       }
     }
 
-    if (applyBtn) {
-      applyBtn.addEventListener("click", function (e) {
-        e.preventDefault();
-        applyFilters();
-      });
-    }
-
-    if (clearBtn) {
-      clearBtn.addEventListener("click", function (e) {
-        e.preventDefault();
-        clearFilters();
-      });
-    }
-
-    if (searchInput) {
-      searchInput.addEventListener("keydown", function (e) {
-        if (e.key === "Enter") {
-          e.preventDefault();
-          applyFilters();
-        }
-      });
-    }
-
-    // Clicking @producer filters to that producer's catalog inside the rail
-    producerLinks.forEach((link) => {
-      link.addEventListener("click", function (e) {
-        e.preventDefault();
-        const producer = (link.dataset.producer || "").toLowerCase();
-        if (!producer) return;
-
-        if (genreSelect) genreSelect.value = "";
-        if (licenseSelect) licenseSelect.value = "";
-        if (bpmMinInput) bpmMinInput.value = "";
-        if (bpmMaxInput) bpmMaxInput.value = "";
-        if (priceMaxInput) priceMaxInput.value = "";
-        if (searchInput) searchInput.value = "@" + link.dataset.producer;
-
-        applyFilters({ producerOnly: producer });
-      });
+    if (applyBtn) applyBtn.addEventListener("click", (e) => { e.preventDefault(); applyFilters(); });
+    if (clearBtn) clearBtn.addEventListener("click", (e) => { e.preventDefault(); clearFilters(); });
+    if (searchInput) searchInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") { e.preventDefault(); applyFilters(); }
     });
 
     // --------- STUDIOS FILTERING ----------
@@ -1673,12 +1344,7 @@
 
     function updateStudioResults(count) {
       if (!studioResults) return;
-
-      if (studioCards.length === 0) {
-        studioResults.textContent = "No studios available yet.";
-        return;
-      }
-
+      if (studioCards.length === 0) { studioResults.textContent = "No studios available yet."; return; }
       const label = count === 1 ? "studio" : "studios";
       studioResults.textContent = `Showing ${count} ${label}.`;
     }
@@ -1696,27 +1362,12 @@
         const zip = (card.dataset.zip || "").toLowerCase();
 
         let matches = true;
+        if (cityVal && !city.includes(cityVal)) matches = false;
+        if (matches && stateVal && !state.includes(stateVal)) matches = false;
+        if (matches && zipVal) { if (!zip || !zip.startsWith(zipVal)) matches = false; }
 
-        if (cityVal && !city.includes(cityVal)) {
-          matches = false;
-        }
-
-        if (matches && stateVal && !state.includes(stateVal)) {
-          matches = false;
-        }
-
-        if (matches && zipVal) {
-          if (!zip || !zip.startsWith(zipVal)) {
-            matches = false;
-          }
-        }
-
-        if (matches) {
-          card.style.display = "";
-          visibleCount++;
-        } else {
-          card.style.display = "none";
-        }
+        if (matches) { card.style.display = ""; visibleCount++; }
+        else { card.style.display = "none"; }
       });
 
       updateStudioResults(visibleCount);
@@ -1726,35 +1377,17 @@
       if (studioCityInput) studioCityInput.value = "";
       if (studioStateInput) studioStateInput.value = "";
       if (studioZipInput) studioZipInput.value = "";
-
-      studioCards.forEach((card) => {
-        card.style.display = "";
-      });
-
+      studioCards.forEach((card) => { card.style.display = ""; });
       updateStudioResults(studioCards.length);
     }
 
-    if (studioApplyBtn) {
-      studioApplyBtn.addEventListener("click", function (e) {
-        e.preventDefault();
-        applyStudioFilters();
-      });
-    }
-
-    if (studioClearBtn) {
-      studioClearBtn.addEventListener("click", function (e) {
-        e.preventDefault();
-        clearStudioFilters();
-      });
-    }
+    if (studioApplyBtn) studioApplyBtn.addEventListener("click", (e) => { e.preventDefault(); applyStudioFilters(); });
+    if (studioClearBtn) studioClearBtn.addEventListener("click", (e) => { e.preventDefault(); clearStudioFilters(); });
 
     [studioCityInput, studioStateInput, studioZipInput].forEach((input) => {
       if (!input) return;
-      input.addEventListener("keydown", function (e) {
-        if (e.key === "Enter") {
-          e.preventDefault();
-          applyStudioFilters();
-        }
+      input.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") { e.preventDefault(); applyStudioFilters(); }
       });
     });
 
@@ -1768,12 +1401,7 @@
 
     function updateVideoResults(count) {
       if (!videoResults) return;
-
-      if (videoCards.length === 0) {
-        videoResults.textContent = "No videographers available yet.";
-        return;
-      }
-
+      if (videoCards.length === 0) { videoResults.textContent = "No videographers available yet."; return; }
       const label = count === 1 ? "videographer" : "videographers";
       videoResults.textContent = `Showing ${count} ${label}.`;
     }
@@ -1791,25 +1419,12 @@
         const search = (card.dataset.search || "").toLowerCase();
 
         let matches = true;
+        if (searchVal && !search.includes(searchVal)) matches = false;
+        if (matches && cityVal && !city.includes(cityVal)) matches = false;
+        if (matches && stateVal && !state.includes(stateVal)) matches = false;
 
-        if (searchVal && !search.includes(searchVal)) {
-          matches = false;
-        }
-
-        if (matches && cityVal && !city.includes(cityVal)) {
-          matches = false;
-        }
-
-        if (matches && stateVal && !state.includes(stateVal)) {
-          matches = false;
-        }
-
-        if (matches) {
-          card.style.display = "";
-          visibleCount++;
-        } else {
-          card.style.display = "none";
-        }
+        if (matches) { card.style.display = ""; visibleCount++; }
+        else { card.style.display = "none"; }
       });
 
       updateVideoResults(visibleCount);
@@ -1819,35 +1434,17 @@
       if (videoSearchInput) videoSearchInput.value = "";
       if (videoCityInput) videoCityInput.value = "";
       if (videoStateInput) videoStateInput.value = "";
-
-      videoCards.forEach((card) => {
-        card.style.display = "";
-      });
-
+      videoCards.forEach((card) => { card.style.display = ""; });
       updateVideoResults(videoCards.length);
     }
 
-    if (videoApplyBtn) {
-      videoApplyBtn.addEventListener("click", function (e) {
-        e.preventDefault();
-        applyVideoFilters();
-      });
-    }
-
-    if (videoClearBtn) {
-      videoClearBtn.addEventListener("click", function (e) {
-        e.preventDefault();
-        clearVideoFilters();
-      });
-    }
+    if (videoApplyBtn) videoApplyBtn.addEventListener("click", (e) => { e.preventDefault(); applyVideoFilters(); });
+    if (videoClearBtn) videoClearBtn.addEventListener("click", (e) => { e.preventDefault(); clearVideoFilters(); });
 
     [videoSearchInput, videoCityInput, videoStateInput].forEach((input) => {
       if (!input) return;
-      input.addEventListener("keydown", function (e) {
-        if (e.key === "Enter") {
-          e.preventDefault();
-          applyVideoFilters();
-        }
+      input.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") { e.preventDefault(); applyVideoFilters(); }
       });
     });
 
@@ -1861,12 +1458,7 @@
 
     function updateTalentResults(count) {
       if (!talentResults) return;
-
-      if (talentCards.length === 0) {
-        talentResults.textContent = "No talent profiles available yet.";
-        return;
-      }
-
+      if (talentCards.length === 0) { talentResults.textContent = "No talent profiles available yet."; return; }
       const label = count === 1 ? "talent profile" : "talent profiles";
       talentResults.textContent = `Showing ${count} ${label}.`;
     }
@@ -1884,25 +1476,12 @@
         const search = (card.dataset.search || "").toLowerCase();
 
         let matches = true;
+        if (searchVal && !search.includes(searchVal)) matches = false;
+        if (matches && cityVal && !city.includes(cityVal)) matches = false;
+        if (matches && rolesVal && !roles.includes(rolesVal)) matches = false;
 
-        if (searchVal && !search.includes(searchVal)) {
-          matches = false;
-        }
-
-        if (matches && cityVal && !city.includes(cityVal)) {
-          matches = false;
-        }
-
-        if (matches && rolesVal && !roles.includes(rolesVal)) {
-          matches = false;
-        }
-
-        if (matches) {
-          card.style.display = "";
-          visibleCount++;
-        } else {
-          card.style.display = "none";
-        }
+        if (matches) { card.style.display = ""; visibleCount++; }
+        else { card.style.display = "none"; }
       });
 
       updateTalentResults(visibleCount);
@@ -1912,35 +1491,17 @@
       if (talentSearchInput) talentSearchInput.value = "";
       if (talentCityInput) talentCityInput.value = "";
       if (talentRolesInput) talentRolesInput.value = "";
-
-      talentCards.forEach((card) => {
-        card.style.display = "";
-      });
-
+      talentCards.forEach((card) => { card.style.display = ""; });
       updateTalentResults(talentCards.length);
     }
 
-    if (talentApplyBtn) {
-      talentApplyBtn.addEventListener("click", function (e) {
-        e.preventDefault();
-        applyTalentFilters();
-      });
-    }
-
-    if (talentClearBtn) {
-      talentClearBtn.addEventListener("click", function (e) {
-        e.preventDefault();
-        clearTalentFilters();
-      });
-    }
+    if (talentApplyBtn) talentApplyBtn.addEventListener("click", (e) => { e.preventDefault(); applyTalentFilters(); });
+    if (talentClearBtn) talentClearBtn.addEventListener("click", (e) => { e.preventDefault(); clearTalentFilters(); });
 
     [talentSearchInput, talentCityInput, talentRolesInput].forEach((input) => {
       if (!input) return;
-      input.addEventListener("keydown", function (e) {
-        if (e.key === "Enter") {
-          e.preventDefault();
-          applyTalentFilters();
-        }
+      input.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") { e.preventDefault(); applyTalentFilters(); }
       });
     });
 
@@ -1954,12 +1515,7 @@
 
     function updateProviderResults(count) {
       if (!providerResults) return;
-
-      if (providerCards.length === 0) {
-        providerResults.textContent = "No providers available yet.";
-        return;
-      }
-
+      if (providerCards.length === 0) { providerResults.textContent = "No providers available yet."; return; }
       const label = count === 1 ? "provider" : "providers";
       providerResults.textContent = `Showing ${count} ${label}.`;
     }
@@ -1977,25 +1533,12 @@
         const search = (card.dataset.search || "").toLowerCase();
 
         let matches = true;
+        if (searchVal && !search.includes(searchVal)) matches = false;
+        if (matches && cityVal && !city.includes(cityVal)) matches = false;
+        if (matches && categoryVal && !category.includes(categoryVal)) matches = false;
 
-        if (searchVal && !search.includes(searchVal)) {
-          matches = false;
-        }
-
-        if (matches && cityVal && !city.includes(cityVal)) {
-          matches = false;
-        }
-
-        if (matches && categoryVal && !category.includes(categoryVal)) {
-          matches = false;
-        }
-
-        if (matches) {
-          card.style.display = "";
-          visibleCount++;
-        } else {
-          card.style.display = "none";
-        }
+        if (matches) { card.style.display = ""; visibleCount++; }
+        else { card.style.display = "none"; }
       });
 
       updateProviderResults(visibleCount);
@@ -2005,54 +1548,19 @@
       if (providerSearchInput) providerSearchInput.value = "";
       if (providerCityInput) providerCityInput.value = "";
       if (providerCategoryInput) providerCategoryInput.value = "";
-
-      providerCards.forEach((card) => {
-        card.style.display = "";
-      });
-
+      providerCards.forEach((card) => { card.style.display = ""; });
       updateProviderResults(providerCards.length);
     }
 
-    if (providerApplyBtn) {
-      providerApplyBtn.addEventListener("click", function (e) {
-        e.preventDefault();
-        applyProviderFilters();
-      });
-    }
-
-    if (providerClearBtn) {
-      providerClearBtn.addEventListener("click", function (e) {
-        e.preventDefault();
-        clearProviderFilters();
-      });
-    }
+    if (providerApplyBtn) providerApplyBtn.addEventListener("click", (e) => { e.preventDefault(); applyProviderFilters(); });
+    if (providerClearBtn) providerClearBtn.addEventListener("click", (e) => { e.preventDefault(); clearProviderFilters(); });
 
     [providerSearchInput, providerCityInput, providerCategoryInput].forEach((input) => {
       if (!input) return;
-      input.addEventListener("keydown", function (e) {
-        if (e.key === "Enter") {
-          e.preventDefault();
-          applyProviderFilters();
-        }
+      input.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") { e.preventDefault(); applyProviderFilters(); }
       });
     });
-
-    // --------- AUTO-APPLY PRODUCER CATALOG FROM QUERY STRING ----------
-    const urlParams = new URLSearchParams(window.location.search);
-    const producerParam = urlParams.get("producer");
-    if (producerParam) {
-      const producerLower = producerParam.trim().toLowerCase();
-      if (searchInput) {
-        // Show which catalog we're viewing
-        searchInput.value = "@" + producerParam;
-      }
-      applyFilters({ producerOnly: producerLower });
-
-      const beatGrid = document.getElementById("mk-beat-grid");
-      if (beatGrid) {
-        beatGrid.scrollIntoView({ behavior: "smooth", block: "start" });
-      }
-    }
   });
 </script>
 {% endblock %}

@@ -1,0 +1,20 @@
+{# templates/dash_client.html #}
+{% extends "base.html" %}
+{% block title %}Client Dashboard · BeatFund{% endblock %}
+
+{% block content %}
+<div class="page">
+  <div class="card">
+    <h2 style="margin-top:0;">Client Dashboard</h2>
+    <p class="muted">Discover providers, request bookings, and build your community.</p>
+
+    <div style="display:flex; gap:10px; flex-wrap:wrap;">
+      <a class="btn" href="{{ url_for('bookme_search') }}">BookMe Directory</a>
+      <a class="btn btn-secondary" href="{{ url_for('bookme_requests') }}">My Requests</a>
+      <a class="btn btn-secondary" href="{{ url_for('wallet_home') }}">Wallet</a>
+    </div>
+  </div>
+
+  {% include "_community_card.html" %}
+</div>
+{% endblock %}

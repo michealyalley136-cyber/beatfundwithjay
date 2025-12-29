@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{% block title %}@{{ provider.username }} · Provider{% endblock %}
+
+{% block content %}
+<style>
+  .pp-page{max-width:1100px;margin:0 auto;padding:28px 16px 64px;color:#f7f9ff;}
+  .pp-card{background:radial-gradient(circle at top left,#182a44,#050712);border-radius:18px;border:1px solid rgba(255,255,255,.08);padding:18px 20px 20px;box-shadow:0 16px 40px rgba(0,0,0,.45);}
+  .pp-top{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;flex-wrap:wrap;}
+  .pp-left{display:flex;align-items:center;gap:12px;min-width:260px;}
+  .pp-avatar{width:64px;height:64px;border-radius:18px;object-fit:cover;border:1px solid rgba(148,163,184,.35);background:rgba(15,23,42,.9);}
+  .pp-name{margin:0;font-size:1.25rem;line-height:1.15;}
+  .pp-handle{margin:2px 0 0;opacity:.85;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;}
+  .pp-meta{margin-top:6px;font-size:.92rem;opacity:.82;}
+  .pp-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
+  .pp-btn{border-radius:999px;padding:8px 12px;border:1px solid rgba(148,163,184,.45);background:rgba(15,23,42,.35);color:#f9fafb;cursor:pointer;font-size:.9rem;text-decoration:none;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;transition:transform .08s ease,background .12s ease,border-color .12s ease;}
+  .pp-btn:hover{background:rgba(148,163,184,.14);border-color:rgba(99,102,241,.7);transform:translateY(-1px);}
+  .pp-btn-primary{border-color:rgba(56,189,248,.9);background:radial-gradient(circle at top left,rgba(56,189,248,.22),rgba(15,23,42,.9));}
+  .pp-btn-primary:hover{background:radial-gradient(circle at top left,rgba(56,189,248,.35),rgba(15,23,42,1));}
+  .pp-btn-danger{border-color:rgba(248,113,113,.8);color:#fecaca;}
+  .pp-section{margin-top:14px;padding-top:12px;border-top:1px solid rgba(148,163,184,.18);}
+  .pp-section h3{margin:0 0 8px;font-size:1rem;}
+  .pp-text{margin:0;opacity:.86;line-height:1.55;}
+  .pp-badges{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;}
+  .pp-badge{font-size:.78rem;padding:3px 9px;border-radius:999px;border:1px solid rgba(148,163,184,.35);background:rgba(15,23,42,.55);opacity:.9;}
+  .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;}
+  @media (max-width:980px){.grid{grid-template-columns:repeat(2,1fr);}}
+  @media (max-width:680px){.grid{grid-template-columns:1fr;}}
+  .item{border:1px solid rgba(148,163,184,.18);background:rgba(2,6,23,.45);border-radius:14px;padding:10px;}
+  .item-title{margin:0 0 6px;font-size:.95rem;}
+  .item-desc{margin:0;opacity:.78;font-size:.88rem;}
+  .media{margin-top:8px;}
+  .media img{width:100%;border-radius:12px;border:1px solid rgba(148,163,184,.18);display:block;}
+  .media audio,.media video{width:100%;}
+  .link{display:inline-block;margin-top:8px;opacity:.9;}
+</style>
+
+<div class="pp-page">
+  <div class="pp-card">
+    <div class="pp-top">
+      <div class="pp-left">
+        <img class="pp-avatar" src="{{ provider.avatar_url }}" alt="{{ provider.username }} avatar">
+        <div>
+          <h1 class="pp-name">{{ prof.display_name }}</h1>
+          <div class="pp-handle">@{{ provider.username }}</div>
+          <div class="pp-meta">
+            {{ get_role_display(provider.role) }} · {{ follower_count }} follower{{ follower_count != 1 and 's' or '' }}
+          </div>
+        </div>
+      </div>
+
+      <div class="pp-actions">
+        <a class="pp-btn" href="{{ url_for('market_index') }}">Marketplace</a>
+
+        {% if current_user.is_authenticated and current_user.id != provider.id %}
+          <form method="POST" action="{{ url_for('user_follow_toggle', username=provider.username) }}" style="margin:0;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            {% if is_following %}
+              <button class="pp-btn pp-btn-danger" type="submit">Unfollow</button>
+            {% else %}
+              <button class="pp-btn" type="submit">Follow</button>
+            {% endif %}
+          </form>
+
+          <a class="pp-btn pp-btn-primary" href="{{ url_for('bookme_book_provider', username=provider.username) }}">
+            Request booking
+          </a>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="pp-section">
+      <h3>About</h3>
+      <p class="pp-text">{{ prof.bio or "No bio yet." }}</p>
+
+      <div class="pp-badges">
+        {% if prof.service_types %}<span class="pp-badge">{{ prof.service_types }}</span>{% endif %}
+        {% if prof.city or prof.state %}<span class="pp-badge">{{ prof.city or "" }}{% if prof.state %}, {{ prof.state }}{% endif %}</span>{% endif %}
+        {% if prof.rate_notes %}<span class="pp-badge">{{ prof.rate_notes }}</span>{% endif %}
+      </div>
+    </div>
+
+    <div class="pp-section">
+      <h3>Portfolio</h3>
+
+      {% if items %}
+        <div class="grid">
+          {% for item in items %}
+            <div class="item">
+              <h4 class="item-title">{{ item.title }}</h4>
+              {% if item.description %}<p class="item-desc">{{ item.description }}</p>{% endif %}
+
+              <div class="media">
+                {% if item.media_type == PortfolioMediaType.image %}
+                  <img src="{{ item.media_url }}" alt="{{ item.title }}">
+                {% elif item.media_type == PortfolioMediaType.audio %}
+                  <audio controls src="{{ item.media_url }}"></audio>
+                {% elif item.media_type == PortfolioMediaType.video %}
+                  {% set u = item.media_url or "" %}
+                  {% if u.endswith('.mp4') or u.endswith('.webm') or u.endswith('.mov') %}
+                    <video controls src="{{ item.media_url }}"></video>
+                  {% else %}
+                    <a class="link" href="{{ item.media_url }}" target="_blank" rel="noopener">Open video</a>
+                  {% endif %}
+                {% else %}
+                  <a class="link" href="{{ item.media_url }}" target="_blank" rel="noopener">Open link</a>
+                {% endif %}
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p class="pp-text" style="opacity:.78;">No portfolio items yet.</p>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

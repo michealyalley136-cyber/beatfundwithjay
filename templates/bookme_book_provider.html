@@ -1,0 +1,197 @@
+{% extends "base.html" %}
+{% block title %}Request Booking · BeatFund{% endblock %}
+
+{% block content %}
+<style>
+  .pb-page{max-width:980px;margin:0 auto;padding:28px 16px 64px;color:#f7f9ff;}
+  .pb-card{background:radial-gradient(circle at top left,#182a44,#050712);border-radius:18px;border:1px solid rgba(255,255,255,.08);padding:18px 20px 20px;box-shadow:0 16px 40px rgba(0,0,0,.45);}
+  .pb-header{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:14px;}
+  .pb-left{display:flex;align-items:center;gap:12px;min-width:260px;}
+  .pb-avatar{width:46px;height:46px;border-radius:14px;object-fit:cover;border:1px solid rgba(148,163,184,.35);background:rgba(15,23,42,.9);}
+  .pb-title{margin:0;font-size:1.05rem;line-height:1.2;}
+  .pb-sub{margin:2px 0 0;font-size:.85rem;opacity:.82;}
+  .pb-tag{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;}
+  .pb-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
+  .pb-btn{border-radius:999px;padding:7px 12px;border:1px solid rgba(148,163,184,.45);background:rgba(15,23,42,.35);color:#f9fafb;cursor:pointer;font-size:.85rem;text-decoration:none;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;transition:transform .08s ease,background .12s ease,border-color .12s ease;}
+  .pb-btn:hover{background:rgba(148,163,184,.14);border-color:rgba(99,102,241,.7);transform:translateY(-1px);}
+  .pb-btn-primary{border-color:rgba(56,189,248,.9);background:radial-gradient(circle at top left,rgba(56,189,248,.22),rgba(15,23,42,.9));}
+  .pb-btn-primary:hover{background:radial-gradient(circle at top left,rgba(56,189,248,.35),rgba(15,23,42,1));}
+  .pb-btn-danger{border-color:rgba(248,113,113,.8);color:#fecaca;}
+  .pb-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:10px;}
+  @media (max-width:860px){.pb-grid{grid-template-columns:1fr;}}
+  .pb-field{display:flex;flex-direction:column;gap:5px;}
+  .pb-label{font-size:11px;text-transform:uppercase;letter-spacing:.08em;opacity:.85;}
+  .pb-input,.pb-select,.pb-textarea{width:100%;border-radius:12px;border:1px solid rgba(148,163,184,.28);background:rgba(2,6,23,.55);color:#e5e7eb;padding:10px 12px;outline:none;}
+  .pb-textarea{min-height:120px;resize:vertical;}
+  .pb-hint{font-size:.82rem;opacity:.75;margin-top:10px;}
+  .pb-section{margin-top:14px;padding-top:12px;border-top:1px solid rgba(148,163,184,.18);}
+  .pb-section-title{margin:0 0 8px;font-size:.95rem;}
+  .pb-footer{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:14px;}
+</style>
+
+{% set role_val = (provider.role.value if provider.role and provider.role.value is defined else (provider.role|string))|lower %}
+
+<div class="pb-page">
+  <div class="pb-card">
+    <div class="pb-header">
+      <div class="pb-left">
+        <img class="pb-avatar" src="{{ provider.avatar_url }}" alt="{{ provider.username }} avatar">
+        <div>
+          <h1 class="pb-title">Request booking</h1>
+          <div class="pb-sub">
+            Provider: <span class="pb-tag">@{{ provider.username }}</span>
+            {% if provider.role %} · {{ get_role_display(provider.role) }}{% endif %}
+          </div>
+          <div class="pb-sub" style="opacity:.7;">
+            {{ follower_count }} follower{{ follower_count != 1 and 's' or '' }}
+          </div>
+        </div>
+      </div>
+
+      <div class="pb-actions">
+        <a class="pb-btn" href="{{ url_for('provider_portfolio_public', username=provider.username) }}">View profile</a>
+
+        <form method="POST" action="{{ url_for('user_follow_toggle', username=provider.username) }}" style="margin:0;">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          {% if is_following %}
+            <button type="submit" class="pb-btn pb-btn-danger">Unfollow</button>
+          {% else %}
+            <button type="submit" class="pb-btn">Follow</button>
+          {% endif %}
+        </form>
+      </div>
+    </div>
+
+    <form method="POST" action="{{ url_for('bookme_book_provider', username=provider.username) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+      <div class="pb-grid">
+        <div class="pb-field">
+          <label class="pb-label" for="event_date">Date</label>
+          <input class="pb-input" id="event_date" name="event_date" type="date" value="{{ form_data.get('event_date','') }}">
+        </div>
+        <div class="pb-field">
+          <label class="pb-label" for="event_time">Time</label>
+          <input class="pb-input" id="event_time" name="event_time" type="time" value="{{ form_data.get('event_time','') }}">
+        </div>
+      </div>
+
+      <div class="pb-grid">
+        <div class="pb-field">
+          <label class="pb-label" for="budget">Budget (optional)</label>
+          <input class="pb-input" id="budget" name="budget" type="text" placeholder="e.g. $150/hr or $400 flat" value="{{ form_data.get('budget','') }}">
+        </div>
+        <div class="pb-field">
+          <label class="pb-label" for="preferred_time">Preferred time (fallback)</label>
+          <input class="pb-input" id="preferred_time" name="preferred_time" type="text" placeholder="YYYY-MM-DD HH:MM" value="{{ form_data.get('preferred_time','') }}">
+        </div>
+      </div>
+
+      <div class="pb-section">
+        <h3 class="pb-section-title">Project details</h3>
+
+        {% set is_studio = role_val in ["studio"] %}
+        {% set is_producer = role_val in ["producer"] %}
+        {% set is_mixmaster = role_val in ["mix_master_engineer"] %}
+
+        {% if is_studio %}
+          <div class="pb-grid">
+            <div class="pb-field">
+              <label class="pb-label" for="session_type">Session type</label>
+              <select class="pb-select" id="session_type" name="session_type">
+                <option value="">Choose…</option>
+                <option {% if form_data.get('session_type')=='Recording session' %}selected{% endif %}>Recording session</option>
+                <option {% if form_data.get('session_type')=='Vocal tracking' %}selected{% endif %}>Vocal tracking</option>
+                <option {% if form_data.get('session_type')=='Rehearsal' %}selected{% endif %}>Rehearsal</option>
+                <option {% if form_data.get('session_type')=='Mixing session' %}selected{% endif %}>Mixing session</option>
+                <option {% if form_data.get('session_type')=='Mastering session' %}selected{% endif %}>Mastering session</option>
+              </select>
+            </div>
+            <div class="pb-field">
+              <label class="pb-label" for="hours">Estimated hours</label>
+              <input class="pb-input" id="hours" name="hours" type="number" min="1" step="1" value="{{ form_data.get('hours','') }}">
+            </div>
+            <div class="pb-field">
+              <label class="pb-label" for="people">People attending</label>
+              <input class="pb-input" id="people" name="people" type="number" min="1" step="1" value="{{ form_data.get('people','') }}">
+            </div>
+            <div class="pb-field">
+              <label class="pb-label" for="engineer_needed">Engineer needed?</label>
+              <select class="pb-select" id="engineer_needed" name="engineer_needed">
+                <option value="">Choose…</option>
+                <option {% if form_data.get('engineer_needed')=='Yes' %}selected{% endif %}>Yes</option>
+                <option {% if form_data.get('engineer_needed')=='No' %}selected{% endif %}>No</option>
+              </select>
+            </div>
+          </div>
+
+        {% elif is_producer %}
+          <div class="pb-grid">
+            <div class="pb-field">
+              <label class="pb-label" for="style">Style / vibe</label>
+              <input class="pb-input" id="style" name="style" type="text" value="{{ form_data.get('style','') }}">
+            </div>
+            <div class="pb-field">
+              <label class="pb-label" for="deliverables">Deliverables</label>
+              <select class="pb-select" id="deliverables" name="deliverables">
+                <option value="">Choose…</option>
+                <option {% if form_data.get('deliverables')=='Beat only' %}selected{% endif %}>Beat only</option>
+                <option {% if form_data.get('deliverables')=='Beat + trackouts' %}selected{% endif %}>Beat + trackouts</option>
+                <option {% if form_data.get('deliverables')=='Full production (arrangement)' %}selected{% endif %}>Full production (arrangement)</option>
+              </select>
+            </div>
+            <div class="pb-field">
+              <label class="pb-label" for="songs"># of songs</label>
+              <input class="pb-input" id="songs" name="songs" type="number" min="1" step="1" value="{{ form_data.get('songs','') }}">
+            </div>
+            <div class="pb-field">
+              <label class="pb-label" for="deadline">Deadline</label>
+              <input class="pb-input" id="deadline" name="deadline" type="text" value="{{ form_data.get('deadline','') }}">
+            </div>
+          </div>
+
+        {% elif is_mixmaster %}
+          <div class="pb-grid">
+            <div class="pb-field">
+              <label class="pb-label" for="service">Service</label>
+              <select class="pb-select" id="service" name="service">
+                <option value="">Choose…</option>
+                <option {% if form_data.get('service')=='Mix' %}selected{% endif %}>Mix</option>
+                <option {% if form_data.get('service')=='Master' %}selected{% endif %}>Master</option>
+                <option {% if form_data.get('service')=='Mix + Master' %}selected{% endif %}>Mix + Master</option>
+              </select>
+            </div>
+            <div class="pb-field">
+              <label class="pb-label" for="stems">Estimated stems/tracks</label>
+              <input class="pb-input" id="stems" name="stems" type="number" min="1" step="1" value="{{ form_data.get('stems','') }}">
+            </div>
+            <div class="pb-field">
+              <label class="pb-label" for="format">File format</label>
+              <input class="pb-input" id="format" name="format" type="text" value="{{ form_data.get('format','') }}">
+            </div>
+            <div class="pb-field">
+              <label class="pb-label" for="revisions">Revisions requested</label>
+              <input class="pb-input" id="revisions" name="revisions" type="number" min="0" step="1" value="{{ form_data.get('revisions','') }}">
+            </div>
+          </div>
+        {% else %}
+          <div class="pb-hint">This provider uses the general request form — add any details below.</div>
+        {% endif %}
+      </div>
+
+      <div class="pb-section">
+        <div class="pb-field">
+          <label class="pb-label" for="message">Message to provider</label>
+          <textarea class="pb-textarea" id="message" name="message" placeholder="Describe what you need, references, links, etc...">{{ form_data.get('message','') }}</textarea>
+        </div>
+        <div class="pb-hint">Any extra fields above will be included in the booking request automatically.</div>
+      </div>
+
+      <div class="pb-footer">
+        <a class="pb-btn" href="{{ url_for('provider_portfolio_public', username=provider.username) }}">← Back</a>
+        <button type="submit" class="pb-btn pb-btn-primary">Send booking request</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

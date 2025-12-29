@@ -1,507 +1,101 @@
 {% extends "base.html" %}
-
 {% block title %}My Beats · BeatFund{% endblock %}
 
 {% block content %}
-<style>
-  .bf-page {
-    max-width: 1200px;
-    margin: 0 auto;
-    padding: 32px 16px 64px;
-    color: #f9fbff;
-  }
-
-  .bf-page h1 {
-    font-size: 1.8rem;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    margin-bottom: 0.35rem;
-  }
-
-  .bf-page-subtitle {
-    font-size: 0.95rem;
-    opacity: 0.78;
-    margin-bottom: 2rem;
-  }
-
-  .bf-grid {
-    display: grid;
-    grid-template-columns: minmax(0, 1.6fr) minmax(0, 1.4fr);
-    gap: 24px;
-  }
-
-  @media (max-width: 960px) {
-    .bf-grid {
-      grid-template-columns: 1fr;
-    }
-  }
-
-  .bf-card {
-    position: relative;
-    border-radius: 18px;
-    padding: 22px 22px 24px;
-    background:
-      radial-gradient(circle at -20% -20%, rgba(56,189,248,0.25), transparent 55%),
-      radial-gradient(circle at 120% 120%, rgba(129,140,248,0.28), transparent 55%),
-      linear-gradient(135deg, rgba(15,23,42,0.96), rgba(15,23,42,0.94));
-    border: 1px solid rgba(148,163,184,0.35);
-    box-shadow:
-      0 18px 40px rgba(0,0,0,0.65),
-      0 0 0 1px rgba(15,23,42,0.9) inset;
-    overflow: hidden;
-  }
-
-  .bf-card::before {
-    content: "";
-    position: absolute;
-    inset: 0;
-    pointer-events: none;
-    border-radius: inherit;
-    border: 1px solid rgba(148,163,184,0.35);
-    mix-blend-mode: screen;
-    opacity: 0.35;
-  }
-
-  .bf-card-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 14px;
-    margin-bottom: 18px;
-  }
-
-  .bf-card-title {
-    font-size: 1.05rem;
-    font-weight: 600;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-  }
-
-  .bf-pill {
-    padding: 5px 10px;
-    border-radius: 999px;
-    border: 1px solid rgba(96,165,250,0.6);
-    font-size: 0.68rem;
-    text-transform: uppercase;
-    letter-spacing: 0.11em;
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    background: linear-gradient(120deg, rgba(59,130,246,0.18), rgba(56,189,248,0.16));
-  }
-
-  .bf-pill-dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 999px;
-    background: #22c55e;
-    box-shadow: 0 0 10px rgba(34,197,94,0.9);
-  }
-
-  /* form layout */
-  .bf-form {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 14px 16px;
-  }
-
-  .bf-form-full {
-    grid-column: 1 / -1;
-  }
-
-  .bf-field-label {
-    font-size: 0.78rem;
-    text-transform: uppercase;
-    letter-spacing: 0.09em;
-    opacity: 0.78;
-    margin-bottom: 4px;
-  }
-
-  .bf-input,
-  .bf-select {
-    width: 100%;
-    padding: 9px 11px;
-    border-radius: 10px;
-    border: 1px solid rgba(148,163,184,0.55);
-    background: radial-gradient(circle at top left, rgba(15,23,42,0.97), rgba(15,23,42,0.96));
-    color: #e5edff;
-    font-size: 0.86rem;
-    outline: none;
-    transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
-  }
-
-  .bf-input::placeholder {
-    color: rgba(148,163,184,0.7);
-  }
-
-  .bf-input:focus,
-  .bf-select:focus {
-    border-color: rgba(96,165,250,0.9);
-    box-shadow:
-      0 0 0 1px rgba(56,189,248,0.45),
-      0 0 0 12px rgba(37,99,235,0.15);
-  }
-
-  .bf-input[readonly] {
-    opacity: 0.9;
-    cursor: default;
-  }
-
-  .bf-file-input {
-    width: 100%;
-    font-size: 0.8rem;
-    border-radius: 10px;
-    padding: 7px 9px;
-    border: 1px dashed rgba(148,163,184,0.7);
-    background: rgba(15,23,42,0.92);
-  }
-
-  .bf-help {
-    font-size: 0.72rem;
-    opacity: 0.72;
-    margin-top: 2px;
-  }
-
-  .bf-actions-row {
-    grid-column: 1 / -1;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-top: 10px;
-    gap: 8px;
-    flex-wrap: wrap;
-  }
-
-  .bf-btn-primary {
-    border: none;
-    outline: none;
-    border-radius: 999px;
-    padding: 9px 18px;
-    font-size: 0.85rem;
-    font-weight: 600;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    cursor: pointer;
-    background: linear-gradient(135deg, #22c55e, #4ade80, #38bdf8);
-    color: #020617;
-    box-shadow: 0 12px 30px rgba(34,197,94,0.45);
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-  }
-
-  .bf-btn-primary:hover {
-    filter: brightness(1.05);
-    box-shadow: 0 14px 40px rgba(34,197,94,0.55);
-    transform: translateY(-1px);
-  }
-
-  .bf-btn-primary:active {
-    transform: translateY(0);
-    box-shadow: 0 8px 22px rgba(22,163,74,0.6);
-  }
-
-  .bf-mini-caption {
-    font-size: 0.72rem;
-    opacity: 0.7;
-  }
-
-  /* Beats list */
-  .bf-empty-state {
-    padding: 14px 0 4px;
-    font-size: 0.82rem;
-    opacity: 0.78;
-  }
-
-  .bf-beat-list {
-    margin-top: 8px;
-    border-radius: 14px;
-    border: 1px solid rgba(30,64,175,0.6);
-    background: radial-gradient(circle at top left, rgba(30,64,175,0.5), rgba(15,23,42,0.98));
-    max-height: 430px;
-    overflow: hidden;
-    display: flex;
-    flex-direction: column;
-  }
-
-  .bf-beat-list-header,
-  .bf-beat-row {
-    display: grid;
-    grid-template-columns: minmax(0, 2.1fr) 0.9fr 0.9fr minmax(0, 0.8fr);
-    gap: 12px;
-    align-items: center;
-    padding: 8px 12px;
-    font-size: 0.78rem;
-  }
-
-  .bf-beat-list-header {
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    font-size: 0.72rem;
-    opacity: 0.72;
-    border-bottom: 1px solid rgba(148,163,184,0.35);
-  }
-
-  .bf-beat-scroll {
-    overflow-y: auto;
-  }
-
-  .bf-beat-row {
-    border-bottom: 1px solid rgba(15,23,42,0.9);
-    background: rgba(15,23,42,0.88);
-  }
-
-  .bf-beat-row:nth-child(2n) {
-    background: rgba(15,23,42,0.94);
-  }
-
-  .bf-beat-title {
-    font-size: 0.82rem;
-    font-weight: 500;
-  }
-
-  .bf-badge-pill {
-    display: inline-flex;
-    align-items: center;
-    border-radius: 999px;
-    padding: 2px 8px;
-    font-size: 0.7rem;
-    border: 1px solid rgba(148,163,184,0.55);
-    opacity: 0.9;
-  }
-
-  .bf-badge-pill.live {
-    border-color: rgba(34,197,94,0.8);
-    color: #bbf7d0;
-  }
-
-  .bf-beat-actions {
-    display: flex;
-    gap: 6px;
-    justify-content: flex-end;
-  }
-
-  .bf-btn-ghost {
-    border-radius: 999px;
-    padding: 4px 9px;
-    border: 1px solid rgba(248,250,252,0.22);
-    background: transparent;
-    font-size: 0.7rem;
-    cursor: pointer;
-    color: #e5e7eb;
-  }
-
-  .bf-btn-ghost:hover {
-    background: rgba(248,250,252,0.06);
-  }
-
-  .bf-btn-danger {
-    border-color: rgba(248,113,113,0.8);
-    color: #fecaca;
-  }
-
-  .bf-small-meta {
-    font-size: 0.7rem;
-    opacity: 0.75;
-    margin-top: 2px;
-  }
-</style>
-
-<div class="bf-page">
-  <h1>My Beats</h1>
-  <div class="bf-page-subtitle">
-    Upload beats to sell in the BeatFund marketplace and keep your catalog organized in one futuristic console.
+<div class="page">
+  <div class="page-header">
+    <h1>My Beats</h1>
+    <p>Upload beats for the marketplace. Preview is what people play. Stems are the deliverable after purchase.</p>
   </div>
 
-  <div class="bf-grid">
-    <!-- LEFT: Add / edit beat -->
-    <section class="bf-card">
-      <div class="bf-card-header">
-        <div>
-          <div class="bf-card-title">Add New Beat</div>
-          <div class="bf-mini-caption">
-            Upload a cover, preview, and full file. You can always come back to tweak price and details.
-          </div>
+  <div class="card">
+    <h2>Upload a Beat</h2>
+    <form method="POST" enctype="multipart/form-data">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+      <div class="form-group">
+        <label>Title *</label>
+        <input class="form-control" name="title" required>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label>Price (USD)</label>
+          <input class="form-control" name="price_dollars" placeholder="19.99">
         </div>
-        <div class="bf-pill">
-          <span class="bf-pill-dot"></span>
-          Producer Console
+
+        <div class="form-group">
+          <label>BPM</label>
+          <input class="form-control" name="bpm" placeholder="130">
+        </div>
+
+        <div class="form-group">
+          <label>Genre</label>
+          <input class="form-control" name="genre" placeholder="Afrobeats / Trap / R&B...">
         </div>
       </div>
 
-      <form method="post" enctype="multipart/form-data" class="bf-form">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-
-        <div class="bf-form-full">
-          <label class="bf-field-label" for="title">Title</label>
-          <input
-            id="title"
-            name="title"
-            maxlength="180"
-            class="bf-input"
-            type="text"
-            placeholder="Midnight Skyline, Drill Anthem, Afro Glow..."
-            required
-          >
-        </div>
-
-        <div>
-          <label class="bf-field-label" for="price_dollars">Price (USD)</label>
-          <input
-            id="price_dollars"
-            name="price_dollars"
-            class="bf-input"
-            type="text"
-            placeholder="e.g. 29.99"
-          >
-          <div class="bf-help">Leave blank for free / promo.</div>
-        </div>
-
-        <div>
-          <label class="bf-field-label" for="bpm">BPM</label>
-          <input
-            id="bpm"
-            name="bpm"
-            class="bf-input"
-            type="number"
-            placeholder="e.g. 140"
-          >
-        </div>
-
-        <div class="bf-form-full">
-          <label class="bf-field-label" for="genre">Genre / Mood Tags</label>
-          <input
-            id="genre"
-            name="genre"
-            class="bf-input"
-            type="text"
-            placeholder="Afrobeats, Trap, R&B, Drill, Mood…"
-          >
-          <div class="bf-help">Comma-separate a few key tags so artists can find your sound faster.</div>
-        </div>
-
-        <div class="bf-form-full">
-          <label class="bf-field-label" for="cover_file">Cover Image (jpg / png)</label>
-          <input
-            id="cover_file"
-            name="cover_file"
-            class="bf-file-input"
-            type="file"
-            accept=".jpg,.jpeg,.png"
-          >
-          <div class="bf-help">Square artwork works best (e.g. 1000×1000).</div>
-        </div>
-
-        <div class="bf-form-full">
-          <label class="bf-field-label" for="preview_file">Preview Audio (mp3 / wav / m4a / ogg)</label>
-          <input
-            id="preview_file"
-            name="preview_file"
-            class="bf-file-input"
-            type="file"
-            accept=".mp3,.wav,.m4a,.ogg"
-          >
-          <div class="bf-help">Short preview that plays in the marketplace.</div>
-        </div>
-
-        <div class="bf-form-full">
-          <label class="bf-field-label" for="stems_file">Stems / Full File (audio / zip)</label>
-          <input
-            id="stems_file"
-            name="stems_file"
-            class="bf-file-input"
-            type="file"
-            accept=".mp3,.wav,.m4a,.ogg,.zip,.rar,.7z"
-          >
-          <div class="bf-help">What buyers get access to after purchase.</div>
-        </div>
-
-        <div class="bf-actions-row">
-          <button type="submit" class="bf-btn-primary">
-            <span>Save Beat</span>
-          </button>
-          <div class="bf-mini-caption">
-            Pro tip: consistent cover art + clear genre tags = more plays.
-          </div>
-        </div>
-      </form>
-    </section>
-
-    <!-- RIGHT: Existing beats -->
-    <section class="bf-card">
-      <div class="bf-card-header">
-        <div>
-          <div class="bf-card-title">Beats You've Uploaded</div>
-          <div class="bf-mini-caption">
-            Manage your catalog, see status, and remove beats that are no longer for sale.
-          </div>
-        </div>
+      <div class="form-group">
+        <label>Cover Image (jpg/png)</label>
+        <input class="form-control" type="file" name="cover_file" accept=".jpg,.jpeg,.png">
       </div>
 
-      {% if beats|length == 0 %}
-        <div class="bf-empty-state">
-          You haven’t uploaded any beats yet. Drop your first one on the left to launch your BeatFund catalog.
-        </div>
-      {% else %}
-        <div class="bf-beat-list">
-          <div class="bf-beat-list-header">
-            <div>Beat</div>
-            <div>Price</div>
-            <div>BPM / Genre</div>
-            <div style="text-align:right;">Actions</div>
-          </div>
+      <div class="form-group">
+        <label>Preview Audio (mp3/wav/m4a/ogg)</label>
+        <input class="form-control" type="file" name="preview_file" accept=".mp3,.wav,.m4a,.ogg">
+      </div>
 
-          <div class="bf-beat-scroll">
-            {% for beat in beats %}
-              <div class="bf-beat-row">
-                <div>
-                  <div class="bf-beat-title">{{ beat.title }}</div>
-                  <div class="bf-small-meta">
-                    ID #{{ beat.id }} ·
-                    {% if beat.is_active %}
-                      <span class="bf-badge-pill live">Live</span>
-                    {% else %}
-                      <span class="bf-badge-pill">Hidden</span>
-                    {% endif %}
-                    {% if beat.created_at %}
-                      · {{ beat.created_at.strftime("%b %d, %Y") }}
-                    {% endif %}
-                  </div>
-                </div>
+      <div class="form-group">
+        <label>Stems / Deliverable (zip/rar/7z or audio)</label>
+        <input class="form-control" type="file" name="stems_file" accept=".zip,.rar,.7z,.mp3,.wav,.m4a,.ogg">
+      </div>
 
-                <div>
-                  {% if beat.price_cents and beat.price_cents > 0 %}
-                    ${{ '%.2f' % (beat.price_cents / 100.0) }}
-                  {% else %}
-                    <span class="bf-small-meta">Free / promo</span>
-                  {% endif %}
-                </div>
+      <button class="btn btn-primary" type="submit">Save Beat</button>
+      <a class="btn btn-secondary" href="{{ url_for('market_index') }}">Go to Market</a>
+    </form>
+  </div>
 
-                <div>
-                  {% if beat.bpm %}
-                    <span>{{ beat.bpm }} bpm</span>
-                    {% if beat.genre %} · {{ beat.genre }}{% endif %}
-                  {% elif beat.genre %}
-                    {{ beat.genre }}
-                  {% else %}
-                    <span class="bf-small-meta">—</span>
-                  {% endif %}
-                </div>
+  <div class="card">
+    <h2>Your Uploaded Beats</h2>
 
-                <div class="bf-beat-actions">
-                  <form method="post" action="{{ url_for('producer_beats_delete', beat_id=beat.id) }}">
-                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <button type="submit" class="bf-btn-ghost bf-btn-danger">
-                      Delete
-                    </button>
-                  </form>
-                </div>
+    {% if beats %}
+      <div class="grid">
+        {% for b in beats %}
+          <div class="beat-card">
+            <div class="beat-cover">
+              {% if b.cover_url %}
+                <img src="{{ b.cover_url }}" alt="{{ b.title }}">
+              {% else %}
+                <div class="cover-placeholder">No Cover</div>
+              {% endif %}
+            </div>
+
+            <div class="beat-meta">
+              <div class="beat-title">{{ b.title }}</div>
+              <div class="beat-sub">
+                {% if b.genre %}{{ b.genre }} · {% endif %}
+                {% if b.bpm %}{{ b.bpm }} BPM · {% endif %}
+                ${{ "%.2f"|format((b.price_cents or 0)/100) }}
               </div>
-            {% endfor %}
+
+              {% if b.preview_url %}
+                <audio controls preload="none" style="width:100%;">
+                  <source src="{{ b.preview_url }}">
+                </audio>
+              {% endif %}
+
+              <form method="POST" action="{{ url_for('producer_beats_delete', beat_id=b.id) }}"
+                    onsubmit="return confirm('Delete this beat?');">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button class="btn btn-danger" type="submit">Delete</button>
+              </form>
+            </div>
           </div>
-        </div>
-      {% endif %}
-    </section>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p>No beats uploaded yet.</p>
+    {% endif %}
   </div>
 </div>
 {% endblock %}

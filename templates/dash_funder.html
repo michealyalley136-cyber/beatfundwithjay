@@ -1,7 +1,21 @@
 {% extends "base.html" %}
-{% block title %}Funder Dashboard{% endblock %}
+{% block title %}Funder Dashboard · BeatFund{% endblock %}
+
 {% block content %}
-  <h2>Welcome, {{ current_user.username }} (Funder)</h2>
-  <p>Coming soon: project funding, escrow releases, performance reports.</p>
-  <p><a href="{{ url_for('wallet_home') }}">Go to Wallet</a></p>
+<div class="page">
+  <div class="card">
+    <h2 style="margin-top:0;">Funder Dashboard</h2>
+    <div class="muted">Welcome back, @{{ current_user.username }}. Track opportunities and community.</div>
+
+    <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:14px;">
+      <a class="btn" href="{{ url_for('opportunities') }}">Opportunities</a>
+      <a class="btn btn-secondary" href="{{ url_for('wallet_home') }}">Wallet</a>
+      <a class="btn btn-secondary" href="{{ url_for('my_tickets') }}">My tickets</a>
+      <a class="btn btn-secondary" href="{{ url_for('bookme_search') }}">Find providers</a>
+      <a class="btn btn-secondary" href="{{ url_for('producer_catalog_index') }}">Find producers</a>
+    </div>
+  </div>
+
+  {% include "_community_card.html" %}
+</div>
 {% endblock %}

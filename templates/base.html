@@ -1,74 +1,83 @@
 <!doctype html>
 <html lang="en">
 <head>
-    <meta charset="utf-8">
-    <title>{% block title %}BeatFund{% endblock %}</title>
+  <meta charset="utf-8">
+  <meta name="csrf-token" content="{{ csrf_token() }}">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
 
-    {# Main theme CSS #}
-    <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+  <title>{% block title %}BeatFund{% endblock %}</title>
 
-    {% block extra_head %}{% endblock %}
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+  {% block extra_head %}{% endblock %}
 </head>
+
 <body>
 <header class="top-nav">
-    <div class="nav-left">
-        {# Simple text brand only – no circle, no SVG #}
-        <div class="brand-text">
-            <div class="brand-main">BEATFUND</div>
-            <div class="brand-sub">
-                {# Admin subtitle for admins, global tagline for everyone else #}
-                {% if current_user.is_authenticated and current_user.role == RoleEnum.admin %}
-                    Admin
-                {% else %}
-                    Fintech for Creators
-                {% endif %}
-            </div>
-        </div>
-    </div>
-
-    <nav class="nav-center">
-        {# Show the admin tabs only when an admin is logged in #}
+  <div class="nav-left">
+    <div class="brand-text">
+      <div class="brand-main">BEATFUND</div>
+      <div class="brand-sub">
         {% if current_user.is_authenticated and current_user.role == RoleEnum.admin %}
-            <a href="{{ url_for('admin_dashboard') }}">Admin Dashboard</a>
-            <a href="{{ url_for('admin_users') }}">Users</a>
-            <a href="{{ url_for('admin_kyc') }}">KYC Queue</a>
-            <a href="{{ url_for('admin_transactions') }}">Transactions</a>
-            <a href="{{ url_for('admin_tickets') }}">Tickets</a>
-            <a href="{{ url_for('admin_reports') }}">Reports</a>
-
-            {# Only the superadmin (owner) sees Admin Team #}
-            {% if current_user.is_superadmin %}
-                <a href="{{ url_for('admin_team') }}">Admin Team</a>
-            {% endif %}
-        {% endif %}
-    </nav>
-
-    <div class="nav-right">
-        {% if current_user.is_authenticated %}
-            <span class="nav-username">@{{ current_user.username }}</span>
-            <a href="{{ url_for('route_to_dashboard') }}">Dashboard</a>
-            {# 🔥 New: Opportunities visible to ALL logged-in users #}
-            <a href="{{ url_for('opportunities') }}">Opportunities</a>
-            <a href="{{ url_for('logout') }}">Log out</a>
+          Admin
         {% else %}
-            <a href="{{ url_for('login') }}">Log in</a>
-            <a href="{{ url_for('register') }}">Sign up</a>
+          Fintech for Creators
         {% endif %}
+      </div>
     </div>
+  </div>
+
+  <nav class="nav-center">
+    {% if current_user.is_authenticated and current_user.role == RoleEnum.admin %}
+      <a href="{{ url_for('admin_dashboard') }}">Admin Dashboard</a>
+      <a href="{{ url_for('admin_users') }}">Users</a>
+      <a href="{{ url_for('admin_kyc') }}">KYC Queue</a>
+      <a href="{{ url_for('admin_transactions') }}">Transactions</a>
+      <a href="{{ url_for('admin_tickets') }}">Tickets</a>
+      <a href="{{ url_for('admin_reports') }}">Reports</a>
+
+      {% if current_user.is_superadmin %}
+        <a href="{{ url_for('admin_team') }}">Admin Team</a>
+      {% endif %}
+    {% endif %}
+  </nav>
+
+  <div class="nav-right">
+    {% if current_user.is_authenticated %}
+      <span class="nav-username">@{{ current_user.username }}</span>
+
+      <a href="{{ url_for('route_to_dashboard') }}">Dashboard</a>
+      <a href="{{ url_for('market_index') }}">Market</a>
+      <a href="{{ url_for('bookme_search') }}">BookMe</a>
+      <a href="{{ url_for('producer_catalog_index') }}">Producers</a>
+
+      {# ✅ Wallet is the umbrella for balance + transactions #}
+      <a href="{{ url_for('wallet_home') }}">Wallet</a>
+
+      <a href="{{ url_for('opportunities') }}">Opportunities</a>
+
+      {# Logout should NOT change state on GET. This GET only shows confirm page. #}
+      <form method="get" action="{{ url_for('logout_get') }}" class="logout-form">
+        <button type="submit" class="nav-link-button">Logout</button>
+      </form>
+    {% else %}
+      <a href="{{ url_for('login') }}">Log in</a>
+      <a href="{{ url_for('register') }}">Sign up</a>
+    {% endif %}
+  </div>
 </header>
 
 <main class="page-main">
-    {% with msgs = get_flashed_messages(with_categories=true) %}
-      {% if msgs %}
-        <div class="flash-container">
-          {% for category, msg in msgs %}
-            <div class="flash flash-{{ category }}">{{ msg }}</div>
-          {% endfor %}
-        </div>
-      {% endif %}
-    {% endwith %}
+  {% with msgs = get_flashed_messages(with_categories=true) %}
+    {% if msgs %}
+      <div class="flash-container">
+        {% for category, msg in msgs %}
+          <div class="flash flash-{{ category }}">{{ msg }}</div>
+        {% endfor %}
+      </div>
+    {% endif %}
+  {% endwith %}
 
-    {% block content %}{% endblock %}
+  {% block content %}{% endblock %}
 </main>
 </body>
 </html>

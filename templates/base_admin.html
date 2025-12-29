@@ -321,7 +321,10 @@
     <div class="admin-user">
         @{{ current_user.username }}
         <a href="{{ url_for('route_to_dashboard') }}">Dashboard</a> ·
-        <a href="{{ url_for('logout') }}">Log out</a>
+        <form method="post" action="{{ url_for('logout') }}" class="logout-form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <button type="submit" class="nav-link-button">Logout</button>
+</form>
     </div>
 </header>
 
