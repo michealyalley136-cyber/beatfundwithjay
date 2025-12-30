@@ -34,6 +34,7 @@ body{
   font-family: system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
   background: radial-gradient(circle at top left, #1d283a 0, #020617 50%, #000 100%);
   color: var(--text);
+  overflow-x: hidden;
 }
 
 /* ---- Layout ---- */
@@ -125,6 +126,9 @@ code{
   padding: 2px 8px;
   border-radius: 10px;
   color: #e2e8f0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 /* ---- Cards ---- */
@@ -415,83 +419,17 @@ code{
   flex-wrap: wrap;
 }
 
-/* Responsive (existing) */
+/* =========================================================
+   Basic responsive dashboard
+   ========================================================= */
 @media (max-width: 900px){
   .page, .page-main{ margin-top: 72px; }
-  .nav-center{ display:none; }
+
   .stats-grid{ grid-template-columns: repeat(2, minmax(0,1fr)); }
   .dash-grid{ grid-template-columns: 1fr; }
   .action-grid{ grid-template-columns: 1fr; }
 }
 
-/* =========================================================
-   UNIVERSAL MOBILE COMPATIBILITY LAYER
-   iPhone + Android
-   ========================================================= */
-
-/* Prevent horizontal overflow */
-html, body { max-width: 100%; overflow-x: hidden; }
-
-/* Make media responsive */
-img, video, canvas { max-width: 100%; height: auto; display: block; }
-
-/* Improve touch + text rendering */
-html { -webkit-text-size-adjust: 100%; }
-button, input, select, textarea { font: inherit; }
-
-/* Mobile-safe sticky header */
-.top-nav { min-width: 0; }
-
-/* ---------- Responsive nav: chips with horizontal scroll ---------- */
-@media (max-width: 900px){
-  .top-nav{
-    flex-wrap: wrap;
-    gap: 10px;
-    padding: 12px 14px;
-  }
-
-  /* Keep admin center hidden on small screens */
-  .nav-center{ display:none; }
-
-  /* Brand full-width row */
-  .nav-left{
-    width: 100%;
-    justify-content: space-between;
-  }
-
-  /* Logged-in links become horizontal-scroll chips */
-  .nav-right{
-    width: 100%;
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    gap: 10px;
-    padding-bottom: 6px;
-  }
-
-  .nav-username{
-    flex: 0 0 auto;
-    color: var(--muted);
-    white-space: nowrap;
-  }
-
-  .nav-right a,
-  .nav-link-button{
-    flex: 0 0 auto;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    padding: 8px 10px;
-    border-radius: 999px;
-    border: 1px solid var(--border);
-    background: rgba(2, 6, 23, 0.35);
-    text-decoration: none;
-    opacity: .92;
-    white-space: nowrap;
-  }
-}
-
-/* ---------- Phone layout ---------- */
 @media (max-width: 600px){
   .page-main,
   .page{
@@ -500,29 +438,156 @@ button, input, select, textarea { font: inherit; }
     padding: 0 14px 48px;
   }
 
-  /* Make dashboard and cards fill width */
-  .dashboard,
-  .dash-wrap,
-  .dash-hero-card,
-  .dash-grid,
-  .dash-col,
-  .card{
-    width: 100%;
-    max-width: 100%;
-  }
-
-  /* Remove min-width constraints that break phones */
   .dash-identity{ min-width: 0; width: 100%; }
   .dash-identity-text{ min-width: 0; }
-
-  /* Better typography on small screens */
   .dash-name{ font-size: 24px; overflow-wrap: anywhere; }
 
-  /* Stack grids on phones */
   .stats-grid{ grid-template-columns: 1fr; }
-  .action-grid{ grid-template-columns: 1fr; }
 
-  /* Buttons full width on phone */
-  .btn-row{ display: grid; grid-template-columns: 1fr; gap: 10px; }
+  .btn-row{ display:grid; grid-template-columns: 1fr; gap: 10px; }
   .btn{ width: 100%; }
+
+  .suggested-row{ flex-direction: column; align-items: stretch; }
+}
+
+/* =========================================================
+   Mobile Hamburger Menu (iPhone + Android)
+   Requires base.html with: .nav-toggle + #mobileMenu + backdrop
+   ========================================================= */
+
+/* Hamburger button (hidden on desktop) */
+.nav-toggle{
+  display: none;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--border);
+  background: rgba(2, 6, 23, 0.35);
+  color: var(--text);
+  border-radius: 999px;
+  padding: 10px 12px;
+  cursor: pointer;
+  font: inherit;
+}
+.nav-toggle-label{
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  opacity: .9;
+}
+.nav-toggle-icon{
+  width: 18px;
+  height: 12px;
+  position: relative;
+  display: inline-block;
+}
+.nav-toggle-icon::before,
+.nav-toggle-icon::after{
+  content:"";
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: rgba(229,231,235,0.9);
+  border-radius: 999px;
+}
+.nav-toggle-icon::before{ top: 1px; }
+.nav-toggle-icon::after{ bottom: 1px; }
+
+/* Backdrop + menu */
+.mobile-menu-backdrop{
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.55);
+  backdrop-filter: blur(6px);
+  opacity: 0;
+  transition: opacity .16s ease;
+  z-index: 50;
+}
+.mobile-menu-backdrop.open{ opacity: 1; }
+
+.mobile-menu{
+  position: fixed;
+  left: 12px;
+  right: 12px;
+  top: calc(62px + env(safe-area-inset-top));
+  background: rgba(2, 6, 23, 0.96);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  box-shadow: var(--shadow);
+  padding: 14px;
+  z-index: 60;
+  transform: translateY(-10px);
+  opacity: 0;
+  transition: transform .16s ease, opacity .16s ease;
+}
+.mobile-menu.open{
+  transform: translateY(0);
+  opacity: 1;
+}
+
+.mobile-menu-head{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.mobile-user{
+  font-weight: 900;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+.mobile-close{
+  border: 1px solid var(--border);
+  background: rgba(2, 6, 23, 0.35);
+  color: var(--text);
+  border-radius: 999px;
+  padding: 8px 10px;
+  cursor: pointer;
+}
+
+.mobile-menu-section{
+  display: grid;
+  gap: 10px;
+}
+.mobile-menu-section a{
+  display: block;
+  padding: 12px 12px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: rgba(2,6,23,0.30);
+  text-decoration: none;
+  color: var(--text);
+  font-weight: 800;
+}
+.mobile-menu-divider{
+  height: 1px;
+  background: rgba(148,163,184,0.16);
+  margin: 12px 0;
+}
+
+.mobile-logout{ margin: 0; }
+.mobile-logout-btn{
+  width: 100%;
+  padding: 12px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(239,68,68,0.35);
+  background: rgba(239,68,68,0.10);
+  color: var(--text);
+  font-weight: 900;
+  cursor: pointer;
+}
+
+/* Mobile behavior: hide desktop navs, show hamburger */
+@media (max-width: 900px){
+  .top-nav{
+    padding: 12px 14px;
+    gap: 10px;
+  }
+
+  .nav-center{ display:none; }
+  .nav-right{ display:none; }
+
+  .nav-toggle{ display:inline-flex; }
 }
