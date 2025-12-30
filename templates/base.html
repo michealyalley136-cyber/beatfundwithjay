@@ -26,6 +26,7 @@
     </div>
   </div>
 
+  {# Desktop admin nav (hidden on mobile by CSS) #}
   <nav class="nav-center">
     {% if current_user.is_authenticated and current_user.role == RoleEnum.admin %}
       <a href="{{ url_for('admin_dashboard') }}">Admin Dashboard</a>
@@ -34,22 +35,20 @@
       <a href="{{ url_for('admin_transactions') }}">Transactions</a>
       <a href="{{ url_for('admin_tickets') }}">Tickets</a>
       <a href="{{ url_for('admin_reports') }}">Reports</a>
-
       {% if current_user.is_superadmin %}
         <a href="{{ url_for('admin_team') }}">Admin Team</a>
       {% endif %}
     {% endif %}
   </nav>
 
+  {# Desktop main nav (hidden on mobile by CSS) #}
   <div class="nav-right">
     {% if current_user.is_authenticated %}
       <span class="nav-username">@{{ current_user.username }}</span>
-
       <a href="{{ url_for('route_to_dashboard') }}">Dashboard</a>
       <a href="{{ url_for('market_index') }}">Market</a>
       <a href="{{ url_for('bookme_search') }}">BookMe</a>
       <a href="{{ url_for('producer_catalog_index') }}">Producers</a>
-
       <a href="{{ url_for('wallet_home') }}">Wallet</a>
       <a href="{{ url_for('opportunities') }}">Opportunities</a>
 
@@ -61,7 +60,67 @@
       <a href="{{ url_for('register') }}">Sign up</a>
     {% endif %}
   </div>
+
+  {# Mobile hamburger button (shown on mobile by CSS) #}
+  <button class="nav-toggle" type="button" aria-controls="mobileMenu" aria-expanded="false">
+    <span class="nav-toggle-icon" aria-hidden="true"></span>
+    <span class="nav-toggle-label">Menu</span>
+  </button>
 </header>
+
+{# Mobile menu overlay #}
+<div id="mobileMenuBackdrop" class="mobile-menu-backdrop" hidden></div>
+
+{# Mobile menu panel #}
+<nav id="mobileMenu" class="mobile-menu" hidden>
+  {% if current_user.is_authenticated %}
+    <div class="mobile-menu-head">
+      <div class="mobile-user">@{{ current_user.username }}</div>
+      <button class="mobile-close" type="button" aria-label="Close menu">✕</button>
+    </div>
+
+    <div class="mobile-menu-section">
+      <a href="{{ url_for('route_to_dashboard') }}">Dashboard</a>
+      <a href="{{ url_for('market_index') }}">Market</a>
+      <a href="{{ url_for('bookme_search') }}">BookMe</a>
+      <a href="{{ url_for('producer_catalog_index') }}">Producers</a>
+      <a href="{{ url_for('wallet_home') }}">Wallet</a>
+      <a href="{{ url_for('opportunities') }}">Opportunities</a>
+    </div>
+
+    {% if current_user.role == RoleEnum.admin %}
+      <div class="mobile-menu-divider"></div>
+      <div class="mobile-menu-section">
+        <a href="{{ url_for('admin_dashboard') }}">Admin Dashboard</a>
+        <a href="{{ url_for('admin_users') }}">Users</a>
+        <a href="{{ url_for('admin_kyc') }}">KYC Queue</a>
+        <a href="{{ url_for('admin_transactions') }}">Transactions</a>
+        <a href="{{ url_for('admin_tickets') }}">Tickets</a>
+        <a href="{{ url_for('admin_reports') }}">Reports</a>
+        {% if current_user.is_superadmin %}
+          <a href="{{ url_for('admin_team') }}">Admin Team</a>
+        {% endif %}
+      </div>
+    {% endif %}
+
+    <div class="mobile-menu-divider"></div>
+
+    <form method="get" action="{{ url_for('logout_get') }}" class="mobile-logout">
+      <button type="submit" class="mobile-logout-btn">Logout</button>
+    </form>
+
+  {% else %}
+    <div class="mobile-menu-head">
+      <div class="mobile-user">Welcome</div>
+      <button class="mobile-close" type="button" aria-label="Close menu">✕</button>
+    </div>
+
+    <div class="mobile-menu-section">
+      <a href="{{ url_for('login') }}">Log in</a>
+      <a href="{{ url_for('register') }}">Sign up</a>
+    </div>
+  {% endif %}
+</nav>
 
 <main class="page-main">
   {% with msgs = get_flashed_messages(with_categories=true) %}
@@ -76,5 +135,56 @@
 
   {% block content %}{% endblock %}
 </main>
+
+<script>
+  (function () {
+    const btn = document.querySelector('.nav-toggle');
+    const menu = document.getElementById('mobileMenu');
+    const backdrop = document.getElementById('mobileMenuBackdrop');
+    const closeBtn = menu ? menu.querySelector('.mobile-close') : null;
+
+    function openMenu() {
+      if (!menu || !backdrop) return;
+      menu.hidden = false;
+      backdrop.hidden = false;
+      requestAnimationFrame(() => {
+        menu.classList.add('open');
+        backdrop.classList.add('open');
+        btn.setAttribute('aria-expanded', 'true');
+      });
+    }
+
+    function closeMenu() {
+      if (!menu || !backdrop) return;
+      menu.classList.remove('open');
+      backdrop.classList.remove('open');
+      btn.setAttribute('aria-expanded', 'false');
+      setTimeout(() => {
+        menu.hidden = true;
+        backdrop.hidden = true;
+      }, 160);
+    }
+
+    btn && btn.addEventListener('click', () => {
+      const isOpen = btn.getAttribute('aria-expanded') === 'true';
+      isOpen ? closeMenu() : openMenu();
+    });
+
+    backdrop && backdrop.addEventListener('click', closeMenu);
+    closeBtn && closeBtn.addEventListener('click', closeMenu);
+
+    // Close when clicking a link in the menu
+    menu && menu.addEventListener('click', (e) => {
+      const t = e.target;
+      if (t && t.tagName === 'A') closeMenu();
+    });
+
+    // Close on ESC
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') closeMenu();
+    });
+  })();
+</script>
+
 </body>
 </html>
