@@ -943,6 +943,11 @@ class UserFollow(db.Model):
     )
 
 
+# ---- One-time DB bootstrap (for a fresh Postgres DB) ----
+# Turn on only once by setting BOOTSTRAP_DB=1 on Render, then remove it.
+if os.getenv("BOOTSTRAP_DB") == "1":
+    with app.app_context():
+        db.create_all()
 
 
 # =========================================================
