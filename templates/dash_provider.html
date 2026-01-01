@@ -1,45 +1,33 @@
 {% extends "base.html" %}
-{% block title %}Provider Dashboard · BeatFund{% endblock %}
+{% block title %}Artist Dashboard · BeatFund{% endblock %}
 
 {% block extra_head %}
-<meta name="csrf-token" content="{{ csrf_token() }}">
-
 <style>
-  /* =========================================================
-     BeatFund Provider Dashboard — Vibrant / Energetic Theme
-     (Scoped so it won’t mess up your global CSS)
-     ========================================================= */
-
+  /* Same energetic theme as provider dashboard (scoped) */
   .bf-dash {
     --bg0: #070A12;
     --bg1: #0B1220;
     --card: rgba(255,255,255,.06);
-    --card2: rgba(255,255,255,.08);
     --border: rgba(255,255,255,.12);
     --text: rgba(255,255,255,.92);
     --muted: rgba(255,255,255,.70);
 
-    --p1: #7C3AED;   /* purple */
-    --p2: #EC4899;   /* pink */
-    --p3: #22C55E;   /* green */
-    --p4: #06B6D4;   /* cyan */
-    --p5: #F59E0B;   /* amber */
-    --p6: #3B82F6;   /* blue */
+    --p1: #7C3AED;
+    --p2: #EC4899;
+    --p3: #22C55E;
+    --p4: #06B6D4;
 
     --shadow: 0 18px 60px rgba(0,0,0,.55);
     --shadow2: 0 10px 28px rgba(0,0,0,.45);
     --r: 18px;
-    --r2: 14px;
 
     max-width: 1220px;
     margin: 0 auto;
     padding: 18px 16px 46px;
-
     color: var(--text);
   }
 
-  /* Ambient background */
-  .bf-dash-bg {
+  .bf-dash-bg{
     position: relative;
     border-radius: calc(var(--r) + 8px);
     background:
@@ -53,39 +41,32 @@
     overflow: hidden;
   }
 
-  /* Soft animated glow */
-  .bf-glow {
-    position: absolute;
-    inset: -120px;
+  .bf-glow{
+    position:absolute;
+    inset:-120px;
     background:
       radial-gradient(420px 420px at 20% 30%, rgba(124, 58, 237, .22), transparent 60%),
       radial-gradient(420px 420px at 70% 40%, rgba(236, 72, 153, .18), transparent 60%),
       radial-gradient(420px 420px at 55% 85%, rgba(6, 182, 212, .14), transparent 60%);
     filter: blur(30px);
     opacity: .9;
+    pointer-events:none;
     animation: bfFloat 12s ease-in-out infinite;
-    pointer-events: none;
   }
-
   @keyframes bfFloat {
     0%,100% { transform: translate3d(0,0,0) scale(1); }
     50%     { transform: translate3d(10px,-12px,0) scale(1.02); }
   }
 
-  .bf-inner {
-    position: relative;
-    padding: 18px;
-  }
+  .bf-inner{ position:relative; padding:18px; }
 
-  /* HERO */
-  .bf-hero {
+  .bf-hero{
     display:flex;
     align-items:flex-start;
     justify-content:space-between;
-    gap: 14px;
-    flex-wrap: wrap;
-
-    padding: 16px;
+    gap:14px;
+    flex-wrap:wrap;
+    padding:16px;
     border-radius: calc(var(--r) + 6px);
     background: linear-gradient(135deg, rgba(255,255,255,.08), rgba(255,255,255,.03));
     border: 1px solid rgba(255,255,255,.12);
@@ -93,109 +74,56 @@
     backdrop-filter: blur(10px);
   }
 
-  .bf-identity {
-    display:flex;
-    align-items:center;
-    gap: 12px;
-    min-width: 260px;
-  }
-
-  .bf-avatar {
-    width: 56px;
-    height: 56px;
-    border-radius: 999px;
-    object-fit: cover;
+  .bf-identity{ display:flex; align-items:center; gap:12px; min-width:260px; }
+  .bf-avatar{
+    width:56px; height:56px; border-radius:999px; object-fit:cover;
     border: 1px solid rgba(255,255,255,.18);
     background: rgba(255,255,255,.10);
     box-shadow: 0 12px 28px rgba(0,0,0,.35);
   }
 
-  .bf-title h1 {
-    margin: 0;
-    font-size: 1.35rem;
-    line-height: 1.15;
-    letter-spacing: .2px;
-  }
+  .bf-title h1{ margin:0; font-size:1.35rem; line-height:1.15; }
+  .bf-sub{ margin-top:6px; color: var(--muted); font-size:.95rem; max-width:650px; }
 
-  .bf-sub {
-    margin-top: 6px;
-    color: var(--muted);
-    font-size: .95rem;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    max-width: 620px;
-  }
-
-  .bf-badges {
-    display:flex;
-    flex-wrap:wrap;
-    gap: 8px;
-    margin-top: 10px;
-  }
-
-  .bf-badge {
-    display:inline-flex;
-    align-items:center;
-    gap: 8px;
-    padding: 7px 10px;
-    border-radius: 999px;
+  .bf-badges{ display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
+  .bf-badge{
+    display:inline-flex; align-items:center; gap:8px;
+    padding:7px 10px; border-radius:999px;
     border: 1px solid rgba(255,255,255,.16);
     background: rgba(0,0,0,.22);
-    font-size: .85rem;
+    font-size:.85rem;
   }
-
-  .bf-dot {
-    width: 9px;
-    height: 9px;
-    border-radius: 999px;
+  .bf-dot{
+    width:9px; height:9px; border-radius:999px;
     background: linear-gradient(135deg, var(--p1), var(--p2));
     box-shadow: 0 0 16px rgba(236,72,153,.35);
   }
 
-  /* Buttons (scoped) */
-  .bf-actions {
-    display:flex;
-    flex-wrap:wrap;
-    gap: 10px;
-    justify-content:flex-end;
-  }
-
-  .bf-dash .btn {
-    border-radius: 999px !important;
-    padding: 10px 14px !important;
+  .bf-actions{ display:flex; flex-wrap:wrap; gap:10px; justify-content:flex-end; }
+  .bf-dash .btn{
+    border-radius:999px !important;
+    padding:10px 14px !important;
     border: 1px solid rgba(255,255,255,.14) !important;
     background: rgba(255,255,255,.06);
     color: var(--text) !important;
     backdrop-filter: blur(10px);
     transition: transform .12s ease, box-shadow .12s ease, background .12s ease;
+    text-decoration:none;
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    gap:8px;
+    font-weight:800;
   }
-
-  .bf-dash .btn:hover { transform: translateY(-1px); box-shadow: 0 12px 22px rgba(0,0,0,.35); }
-
-  .bf-dash .btn.btn-primary {
-    border: none !important;
+  .bf-dash .btn:hover{ transform: translateY(-1px); box-shadow: 0 12px 22px rgba(0,0,0,.35); }
+  .bf-dash .btn.btn-primary{
+    border:none !important;
     background: linear-gradient(135deg, var(--p1), var(--p2)) !important;
-    box-shadow: 0 14px 28px rgba(124,58,237,.22);
   }
+  .bf-dash .btn.btn-secondary{ background: rgba(255,255,255,.08) !important; }
 
-  .bf-dash .btn.btn-primary:hover {
-    box-shadow: 0 18px 34px rgba(236,72,153,.22);
-  }
-
-  .bf-dash .btn.btn-secondary {
-    background: rgba(255,255,255,.08) !important;
-  }
-
-  /* GRID / CARDS */
-  .bf-grid {
-    display:grid;
-    grid-template-columns: repeat(12, 1fr);
-    gap: 14px;
-    margin-top: 14px;
-  }
-
-  .bf-card {
+  .bf-grid{ display:grid; grid-template-columns: repeat(12, 1fr); gap:14px; margin-top:14px; }
+  .bf-card{
     background: linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,.05));
     border: 1px solid rgba(255,255,255,.12);
     border-radius: 18px;
@@ -203,49 +131,23 @@
     box-shadow: 0 10px 28px rgba(0,0,0,.45);
     backdrop-filter: blur(10px);
   }
+  .bf-card-title{ display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; margin-bottom:10px; }
+  .bf-card-title h2{ margin:0; font-size:1.02rem; }
+  .bf-card-title p{ margin:4px 0 0; color: rgba(255,255,255,.70); font-size:.92rem; }
 
-  .bf-card-title {
-    display:flex;
-    align-items:center;
-    justify-content:space-between;
-    gap: 10px;
-    flex-wrap:wrap;
-    margin-bottom: 10px;
-  }
-
-  .bf-card-title h2 {
-    margin: 0;
-    font-size: 1.02rem;
-    letter-spacing: .2px;
-  }
-
-  .bf-card-title p {
-    margin: 4px 0 0;
-    color: rgba(255,255,255,.70);
-    font-size: .92rem;
-  }
-
-  .bf-cols-12 { grid-column: span 12; }
-  .bf-cols-8  { grid-column: span 8; }
-  .bf-cols-6  { grid-column: span 6; }
-  .bf-cols-4  { grid-column: span 4; }
+  .bf-cols-12{ grid-column: span 12; }
+  .bf-cols-6{ grid-column: span 6; }
 
   @media (max-width: 820px){
-    .bf-cols-8,.bf-cols-6,.bf-cols-4 { grid-column: span 12; }
-    .bf-sub { max-width: 100%; }
+    .bf-cols-6{ grid-column: span 12; }
+    .bf-sub{ max-width:100%; }
   }
 
-  /* KPI Tiles */
-  .bf-kpis {
-    display:grid;
-    grid-template-columns: repeat(6, 1fr);
-    gap: 12px;
-  }
+  .bf-kpis{ display:grid; grid-template-columns: repeat(6, 1fr); gap:12px; }
+  @media (max-width: 1050px){ .bf-kpis{ grid-template-columns: repeat(3, 1fr); } }
+  @media (max-width: 520px){ .bf-kpis{ grid-template-columns: repeat(2, 1fr); } }
 
-  @media (max-width: 1050px){ .bf-kpis { grid-template-columns: repeat(3, 1fr); } }
-  @media (max-width: 520px){ .bf-kpis { grid-template-columns: repeat(2, 1fr); } }
-
-  .bf-kpi {
+  .bf-kpi{
     position: relative;
     padding: 12px;
     border-radius: 14px;
@@ -253,144 +155,25 @@
     background: rgba(0,0,0,.22);
     overflow: hidden;
   }
+  .bf-kpi .label{ color: rgba(255,255,255,.70); font-size:.88rem; margin-bottom:6px; }
+  .bf-kpi .value{ font-size:1.35rem; font-weight:900; line-height:1.1; }
+  .bf-kpi .hint{ margin-top:6px; color: rgba(255,255,255,.70); font-size:.85rem; }
 
-  .bf-kpi::before{
-    content:"";
-    position:absolute;
-    inset:-2px;
-    opacity:.35;
-    filter: blur(18px);
-    pointer-events:none;
-  }
-
-  .bf-kpi.k1::before { background: radial-gradient(200px 120px at 20% 20%, rgba(236,72,153,.65), transparent 60%); }
-  .bf-kpi.k2::before { background: radial-gradient(200px 120px at 20% 20%, rgba(124,58,237,.65), transparent 60%); }
-  .bf-kpi.k3::before { background: radial-gradient(200px 120px at 20% 20%, rgba(34,197,94,.60), transparent 60%); }
-  .bf-kpi.k4::before { background: radial-gradient(200px 120px at 20% 20%, rgba(6,182,212,.60), transparent 60%); }
-  .bf-kpi.k5::before { background: radial-gradient(200px 120px at 20% 20%, rgba(245,158,11,.60), transparent 60%); }
-  .bf-kpi.k6::before { background: radial-gradient(200px 120px at 20% 20%, rgba(59,130,246,.60), transparent 60%); }
-
-  .bf-kpi .label {
-    color: rgba(255,255,255,.70);
-    font-size: .88rem;
-    margin-bottom: 6px;
-  }
-
-  .bf-kpi .value {
-    font-size: 1.35rem;
-    font-weight: 900;
-    line-height: 1.1;
-  }
-
-  .bf-kpi .hint {
-    margin-top: 6px;
-    color: rgba(255,255,255,.70);
-    font-size: .85rem;
-  }
-
-  /* Progress */
-  .bf-progress-shell {
-    width: 100%;
-    height: 12px;
-    background: rgba(255,255,255,.10);
-    border-radius: 999px;
-    overflow: hidden;
-    border: 1px solid rgba(255,255,255,.10);
-  }
-
-  .bf-progress-bar {
-    height: 12px;
-    width: 0%;
-    background: linear-gradient(90deg, #22C55E, #06B6D4, #7C3AED, #EC4899);
-    background-size: 220% 100%;
-    animation: bfGradient 4s ease infinite;
-  }
-
-  @keyframes bfGradient {
-    0% { background-position: 0% 50%; }
-    50% { background-position: 100% 50%; }
-    100% { background-position: 0% 50%; }
-  }
-
-  .bf-steps {
-    margin: 10px 0 0;
-    padding-left: 18px;
-  }
-  .bf-steps li {
-    margin: 6px 0;
-    color: rgba(255,255,255,.70);
-  }
-
-  /* Suggested list */
-  .bf-suggest-list {
-    display:flex;
-    flex-direction:column;
-    gap: 10px;
-    margin-top: 10px;
-  }
-
-  .bf-suggest-item {
-    display:flex;
-    align-items:center;
-    justify-content:space-between;
-    gap: 12px;
-    padding: 12px;
-    border-radius: 14px;
+  .bf-list{ display:flex; flex-direction:column; gap:10px; margin-top:10px; }
+  .bf-row{
+    display:flex; align-items:center; justify-content:space-between; gap:12px;
+    padding: 12px; border-radius: 14px;
     border: 1px solid rgba(255,255,255,.12);
     background: rgba(0,0,0,.22);
   }
-
-  .bf-suggest-left {
-    display:flex;
-    align-items:center;
-    gap: 10px;
-    min-width: 0;
-  }
-
-  .bf-mini-avatar {
-    width: 46px;
-    height: 46px;
-    border-radius: 999px;
-    object-fit: cover;
-    border: 1px solid rgba(255,255,255,.14);
-    background: rgba(255,255,255,.08);
-  }
-
-  .bf-namewrap { min-width: 0; }
-  .bf-namewrap .name {
-    font-weight: 900;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    max-width: 560px;
-  }
-
-  .bf-namewrap .meta {
-    margin-top: 4px;
-    font-size: .92rem;
-    color: rgba(255,255,255,.70);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    max-width: 560px;
-  }
-
-  .bf-link { color: rgba(255,255,255,.92); text-decoration: none; }
-  .bf-link:hover { text-decoration: underline; }
-
-  .bf-suggest-actions { display:flex; align-items:center; gap: 10px; flex-wrap:wrap; justify-content:flex-end; }
-
-  .bf-divider {
-    height: 1px;
-    background: rgba(255,255,255,.10);
-    margin: 12px 0;
-  }
+  .bf-row .left{ min-width:0; }
+  .bf-row .title{ font-weight:900; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width: 560px; }
+  .bf-row .meta{ margin-top:4px; color: rgba(255,255,255,.70); font-size:.92rem; }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="bf-dash">
-
   <div class="bf-dash-bg">
     <div class="bf-glow"></div>
 
@@ -407,30 +190,28 @@
             </div>
 
             <div class="bf-badges">
-              <span class="bf-badge"><span class="bf-dot"></span> Followers <strong>{{ my_followers_count }}</strong></span>
-              <span class="bf-badge">Following <strong>{{ my_following_count }}</strong></span>
-              <span class="bf-badge">Completion <strong>{{ profile_progress }}%</strong></span>
+              <span class="bf-badge"><span class="bf-dot"></span> Followers <strong>{{ followers_count }}</strong></span>
+              <span class="bf-badge">Following <strong>{{ following_count }}</strong></span>
+              <span class="bf-badge">
+                Gigs Profile:
+                <strong>{{ "Live" if artist_can_take_gigs else "Off" }}</strong>
+              </span>
             </div>
           </div>
         </div>
 
         <div class="bf-actions">
-          <!-- ✅ Wallet = hub -->
           <a class="btn btn-primary" href="{{ url_for('wallet_home') }}">Wallet</a>
-
-          <!-- ✅ Transactions = Wallet tab -->
           <a class="btn btn-secondary" href="{{ url_for('wallet_home', tab='transactions') }}">Transactions</a>
-
           <a class="btn btn-secondary" href="{{ url_for('market_index') }}">Marketplace</a>
-
-          {% if current_user.role == RoleEnum.producer %}
-            <a class="btn btn-secondary" href="{{ url_for('producer_beats') }}">Upload Beats</a>
+          <a class="btn btn-secondary" href="{{ url_for('bookme_search') }}">BookMe</a>
+          <a class="btn btn-secondary" href="{{ url_for('bookme_profile') }}">
+            {{ "Edit Gig Profile" if artist_can_take_gigs else "Create Gig Profile" }}
+          </a>
+          {% if artist_can_take_gigs %}
+            <a class="btn btn-secondary" href="{{ url_for('provider_portfolio_public', username=current_user.username) }}">Public Gig Profile</a>
           {% endif %}
-
-          <a class="btn btn-secondary" href="{{ url_for('bookme_profile') }}">Edit BookMe</a>
-          <a class="btn btn-secondary" href="{{ url_for('bookme_portfolio') }}">Portfolio</a>
           <a class="btn btn-secondary" href="{{ url_for('profile_edit') }}">Account</a>
-          <a class="btn btn-secondary" href="{{ url_for('provider_portfolio_public', username=current_user.username) }}">Public Profile</a>
         </div>
       </div>
 
@@ -441,159 +222,110 @@
         <div class="bf-card bf-cols-12">
           <div class="bf-card-title">
             <div>
-              <h2>Activity overview</h2>
-              <p>Your requests, bookings, and portfolio — in one place.</p>
+              <h2>Your activity overview</h2>
+              <p>Both sides: you booking others + others booking you for gigs.</p>
             </div>
           </div>
 
           <div class="bf-kpis">
-            <div class="bf-kpi k1">
+            <div class="bf-kpi">
               <div class="label">Incoming Requests</div>
               <div class="value">{{ incoming_requests }}</div>
-              <div class="hint">Clients requesting you</div>
+              <div class="hint">People requesting you</div>
             </div>
 
-            <div class="bf-kpi k2">
+            <div class="bf-kpi">
               <div class="label">Outgoing Requests</div>
               <div class="value">{{ outgoing_requests }}</div>
               <div class="hint">Requests you sent</div>
             </div>
 
-            <div class="bf-kpi k3">
-              <div class="label">Incoming Bookings</div>
-              <div class="value">{{ incoming_bookings_count }}</div>
-              <div class="hint">Booked by clients</div>
+            <div class="bf-kpi">
+              <div class="label">Gigs (as provider)</div>
+              <div class="value">{{ provider_bookings_count }}</div>
+              <div class="hint">Booked to perform</div>
             </div>
 
-            <div class="bf-kpi k4">
-              <div class="label">Outgoing Bookings</div>
-              <div class="value">{{ outgoing_bookings_count }}</div>
-              <div class="hint">Bookings you made</div>
+            <div class="bf-kpi">
+              <div class="label">Gigs pending</div>
+              <div class="value">{{ provider_pending_bookings }}</div>
+              <div class="hint">Awaiting action</div>
             </div>
 
-            <div class="bf-kpi k5">
-              <div class="label">Portfolio Items</div>
-              <div class="value">{{ portfolio_count }} / {{ MAX_PORTFOLIO_ITEMS }}</div>
-              <div class="hint">
-                {% if requires_portfolio %}Required{% else %}Optional{% endif %}
+            <div class="bf-kpi">
+              <div class="label">Bookings made</div>
+              <div class="value">{{ client_bookings_count }}</div>
+              <div class="hint">You booked others</div>
+            </div>
+
+            <div class="bf-kpi">
+              <div class="label">Bookings pending</div>
+              <div class="value">{{ client_pending_bookings }}</div>
+              <div class="hint">Waiting confirmation</div>
+            </div>
+          </div>
+
+          {% if not artist_can_take_gigs %}
+            <div style="margin-top:12px; color: rgba(255,255,255,.75);">
+              Want gigs? Turn on your BookMe gig profile so clients can book you.
+              <div style="margin-top:10px;">
+                <a class="btn btn-primary" href="{{ url_for('bookme_profile') }}">Create Gig Profile</a>
               </div>
             </div>
-
-            <div class="bf-kpi k6">
-              <div class="label">Profile completion</div>
-              <div class="value">{{ profile_progress }}%</div>
-              <div class="hint">Higher = more bookings</div>
-            </div>
-          </div>
-
-          <div style="margin-top:10px;">
-            <a class="bf-link" href="{{ url_for('bookme_portfolio') }}">Manage portfolio →</a>
-          </div>
-        </div>
-
-        <!-- PROFILE COMPLETION -->
-        <div class="bf-card bf-cols-8">
-          <div class="bf-card-title">
-            <div>
-              <h2>Profile completion</h2>
-              <p>Finish key fields to look premium to clients.</p>
-            </div>
-            <span class="bf-badge"><span class="bf-dot"></span> {{ profile_progress }}%</span>
-          </div>
-
-          <div style="margin-top: 10px;">
-            <div class="bf-progress-shell">
-              <div class="bf-progress-bar" id="profileProgressBar"></div>
-            </div>
-          </div>
-
-          {% if profile_next_steps and profile_next_steps|length > 0 %}
-            <div style="margin-top:12px; font-weight:900;">Next steps</div>
-            <ul class="bf-steps">
-              {% for step in profile_next_steps %}
-                <li>{{ step }}</li>
-              {% endfor %}
-            </ul>
-
-            <div class="bf-actions" style="justify-content:flex-start; margin-top: 10px;">
-              <a class="btn btn-secondary" href="{{ url_for('bookme_profile') }}">Update BookMe</a>
-              <a class="btn btn-secondary" href="{{ url_for('bookme_portfolio') }}">Add Portfolio</a>
-              <a class="btn btn-secondary" href="{{ url_for('profile_edit') }}">Update Account</a>
-            </div>
-          {% else %}
-            <p style="margin-top:10px; color: rgba(255,255,255,.70);">
-              Nice — your profile is solid. Keep your portfolio fresh to attract more bookings.
-            </p>
           {% endif %}
         </div>
 
-        <!-- WALLET / EARNINGS QUICK ACCESS -->
-        <div class="bf-card bf-cols-4">
+        <!-- RECENT GIGS -->
+        <div class="bf-card bf-cols-6">
           <div class="bf-card-title">
             <div>
-              <h2>Wallet & earnings</h2>
-              <p>Manage funds & view transactions.</p>
+              <h2>Recent gigs (people booking you)</h2>
+              <p>Latest bookings where you are the provider.</p>
             </div>
           </div>
 
-          <div class="bf-kpi" style="background: rgba(0,0,0,.22);">
-            <div class="label">Quick actions</div>
-            <div class="value" style="font-size:1.05rem; font-weight:900;">Open Wallet</div>
-            <div class="hint" style="margin-top:10px;">
-              <div class="bf-actions" style="justify-content:flex-start;">
-                <a class="btn btn-primary" href="{{ url_for('wallet_home') }}">Go to Wallet</a>
-                <a class="btn btn-secondary" href="{{ url_for('wallet_home', tab='transactions') }}">Transactions</a>
-              </div>
-            </div>
-          </div>
-
-          <div class="bf-divider"></div>
-
-          <p style="margin:0; color: rgba(255,255,255,.70); font-size:.92rem;">
-            Tip: Keep some balance for booking holds and quick purchases.
-          </p>
-        </div>
-
-        <!-- SUGGESTED -->
-        <div class="bf-card bf-cols-12">
-          <div class="bf-card-title">
-            <div>
-              <h2>Suggested creators/providers</h2>
-              <p>Follow accounts to grow your network and visibility.</p>
-            </div>
-          </div>
-
-          {% if suggested and suggested|length > 0 %}
-            <div class="bf-suggest-list">
-              {% for s in suggested %}
-                <div class="bf-suggest-item">
-                  <div class="bf-suggest-left">
-                    <img class="bf-mini-avatar" src="{{ s.avatar_url }}" alt="{{ s.display_name }}">
-                    <div class="bf-namewrap">
-                      <div class="name">
-                        <a class="bf-link" href="{{ s.profile_url }}">{{ s.display_name }}</a>
-                      </div>
-                      <div class="meta">
-                        @{{ s.username }} · {{ s.role_label }} · {{ s.followers_count }} followers
-                      </div>
+          {% if provider_recent_bookings and provider_recent_bookings|length > 0 %}
+            <div class="bf-list">
+              {% for b in provider_recent_bookings %}
+                <div class="bf-row">
+                  <div class="left">
+                    <div class="title">Booking #{{ b.id }} · {{ b.status }}</div>
+                    <div class="meta">
+                      {% if b.event_datetime %}{{ b.event_datetime.strftime("%b %d, %Y %I:%M %p") }}{% endif %}
                     </div>
-                  </div>
-
-                  <div class="bf-suggest-actions">
-                    <a class="btn btn-secondary" href="{{ s.profile_url }}">View</a>
-                    <button
-                      class="btn btn-primary follow-btn"
-                      data-user-id="{{ s.user_id }}"
-                      data-following="{{ '1' if s.is_following else '0' }}"
-                    >
-                      {{ "Following" if s.is_following else "Follow" }}
-                    </button>
                   </div>
                 </div>
               {% endfor %}
             </div>
           {% else %}
-            <p style="margin: 10px 0 0; color: rgba(255,255,255,.70);">No suggestions yet.</p>
+            <div style="color: rgba(255,255,255,.70);">No gigs yet.</div>
+          {% endif %}
+        </div>
+
+        <!-- RECENT BOOKINGS YOU MADE -->
+        <div class="bf-card bf-cols-6">
+          <div class="bf-card-title">
+            <div>
+              <h2>Recent bookings (you booking others)</h2>
+              <p>Latest bookings where you are the client.</p>
+            </div>
+          </div>
+
+          {% if client_recent_bookings and client_recent_bookings|length > 0 %}
+            <div class="bf-list">
+              {% for b in client_recent_bookings %}
+                <div class="bf-row">
+                  <div class="left">
+                    <div class="title">Booking #{{ b.id }} · {{ b.status }}</div>
+                    <div class="meta">
+                      {% if b.event_datetime %}{{ b.event_datetime.strftime("%b %d, %Y %I:%M %p") }}{% endif %}
+                    </div>
+                  </div>
+                </div>
+              {% endfor %}
+            </div>
+          {% else %}
+            <div style="color: rgba(255,255,255,.70);">No bookings yet.</div>
           {% endif %}
         </div>
 
@@ -601,55 +333,4 @@
     </div>
   </div>
 </div>
-
-<script>
-  // Progress bar fill
-  (function(){
-    var pct = {{ profile_progress|int }};
-    var bar = document.getElementById("profileProgressBar");
-    if (bar) bar.style.width = Math.max(0, Math.min(100, pct)) + "%";
-  })();
-
-  // Follow/unfollow (uses your /users/<id>/toggle-follow JSON route)
-  (function(){
-    function getCSRF() {
-      var m = document.querySelector('meta[name="csrf-token"]');
-      return m ? m.getAttribute("content") : "";
-    }
-
-    async function toggleFollow(userId) {
-      const res = await fetch(`/users/${userId}/toggle-follow`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-CSRFToken": getCSRF()
-        },
-        body: JSON.stringify({})
-      });
-      return await res.json();
-    }
-
-    document.querySelectorAll(".follow-btn").forEach(btn => {
-      btn.addEventListener("click", async () => {
-        const userId = btn.getAttribute("data-user-id");
-        btn.disabled = true;
-
-        try {
-          const data = await toggleFollow(userId);
-          if (!data.ok) {
-            alert(data.error || "Unable to follow/unfollow.");
-          } else {
-            const following = !!data.following;
-            btn.textContent = following ? "Following" : "Follow";
-            btn.setAttribute("data-following", following ? "1" : "0");
-          }
-        } catch (e) {
-          alert("Network error. Please try again.");
-        } finally {
-          btn.disabled = false;
-        }
-      });
-    });
-  })();
-</script>
 {% endblock %}

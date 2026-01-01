@@ -591,3 +591,42 @@ code{
 
   .nav-toggle{ display:inline-flex; }
 }
+
+/* =========================================================
+   Role accents for dashboards (same layout, different vibe)
+   Add this at the VERY BOTTOM of app.css
+   ========================================================= */
+
+.dashboard[data-role="artist"] .dash-hero-card{
+  background: radial-gradient(circle at top left, rgba(168,85,247,.18), rgba(2,6,23,.60));
+}
+.dashboard[data-role="producer"] .dash-hero-card{
+  background: radial-gradient(circle at top left, rgba(34,197,94,.18), rgba(2,6,23,.60));
+}
+.dashboard[data-role="provider"] .dash-hero-card{
+  background: radial-gradient(circle at top left, rgba(56,189,248,.18), rgba(2,6,23,.60));
+}
+.dashboard[data-role="admin"] .dash-hero-card{
+  background: radial-gradient(circle at top left, rgba(251,113,133,.18), rgba(2,6,23,.60));
+}
+
+/* A pill you can reuse in every dashboard header */
+.role-pill{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(148,163,184,0.22);
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  background: rgba(2,6,23,0.32);
+  color: #e2e8f0;
+}
+
+.dashboard[data-role="artist"] .role-pill{ border-color: rgba(168,85,247,0.35); background: rgba(168,85,247,0.12); }
+.dashboard[data-role="producer"] .role-pill{ border-color: rgba(34,197,94,0.35); background: rgba(34,197,94,0.12); }
+.dashboard[data-role="provider"] .role-pill{ border-color: rgba(56,189,248,0.35); background: rgba(56,189,248,0.12); }
+.dashboard[data-role="admin"] .role-pill{ border-color: rgba(251,113,133,0.35); background: rgba(251,113,133,0.12); }
+

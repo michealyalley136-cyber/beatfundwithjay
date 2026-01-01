@@ -173,13 +173,11 @@
     backdrop && backdrop.addEventListener('click', closeMenu);
     closeBtn && closeBtn.addEventListener('click', closeMenu);
 
-    // Close when clicking a link in the menu
     menu && menu.addEventListener('click', (e) => {
       const t = e.target;
       if (t && t.tagName === 'A') closeMenu();
     });
 
-    // Close on ESC
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') closeMenu();
     });

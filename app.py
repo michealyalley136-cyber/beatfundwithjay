@@ -229,15 +229,40 @@ def jinja_is_None(value):
     return value is None
 
 
-# Database
-app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv(
-    "DATABASE_URL", f"sqlite:///{os.path.join(INSTANCE_DIR, 'app.db')}"
-)
+# =========================================================
+# Database (Render Postgres in prod, SQLite locally)
+# =========================================================
+db_url = os.getenv("DATABASE_URL", "").strip()
+
+if db_url:
+    # Render sometimes uses old scheme: postgres://
+    if db_url.startswith("postgres://"):
+        db_url = db_url.replace("postgres://", "postgresql://", 1)
+
+    # Force psycopg v3 driver (you installed psycopg[binary])
+    if db_url.startswith("postgresql://") and not db_url.startswith("postgresql+psycopg://"):
+        db_url = db_url.replace("postgresql://", "postgresql+psycopg://", 1)
+
+    app.config["SQLALCHEMY_DATABASE_URI"] = db_url
+else:
+    app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{os.path.join(INSTANCE_DIR, 'app.db')}"
+
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
+# ✅ IMPORTANT: db must be created AFTER the DB URI is set
 db = SQLAlchemy(app)
+
+# Login manager (if you use Flask-Login)
 login_manager = LoginManager(app)
 login_manager.login_view = "login"
+
+# ---- One-time DB bootstrap (for a fresh Postgres DB) ----
+# Turn on only once by setting BOOTSTRAP_DB=1 on Render, then remove it.
+if os.getenv("BOOTSTRAP_DB") == "1":
+    with app.app_context():
+        db.create_all()
+        print("✅ BOOTSTRAP_DB=1 -> db.create_all() completed")
+
 
 # Uploads
 UPLOAD_ROOT = os.path.join(BASE_DIR, "uploads")
@@ -3878,6 +3903,7 @@ def admin_reports():
     )
 
 
+
 # =========================================================
 # Dashboards routing
 # =========================================================
@@ -3901,18 +3927,57 @@ def route_to_dashboard():
 
     return redirect(url_for(endpoint))
 
-
 @app.route("/dashboard/artist", endpoint="artist_dashboard")
 @role_required("artist")
 def artist_dashboard():
     followers_count = UserFollow.query.filter_by(followed_id=current_user.id).count()
     following_count = UserFollow.query.filter_by(follower_id=current_user.id).count()
 
-    total_bookings = Booking.query.filter_by(provider_id=current_user.id).count()
-    pending_bookings = Booking.query.filter_by(provider_id=current_user.id, status="pending").count()
-    confirmed_bookings = Booking.query.filter_by(provider_id=current_user.id, status="confirmed").count()
+    # BookMe profile (gig profile)
+    prof = BookMeProfile.query.filter_by(user_id=current_user.id).first()
+    artist_can_take_gigs = bool(prof and getattr(prof, "is_visible", False))
 
-    recent_bookings = (
+    # -----------------------------
+    # Requests (optional but useful)
+    # -----------------------------
+    incoming_requests = (
+        db.session.query(func.count())
+        .select_from(BookingRequest)
+        .filter(BookingRequest.provider_id == current_user.id)
+        .scalar()
+        or 0
+    )
+    outgoing_requests = (
+        db.session.query(func.count())
+        .select_from(BookingRequest)
+        .filter(BookingRequest.client_id == current_user.id)
+        .scalar()
+        or 0
+    )
+
+    # -----------------------------
+    # Artist as CLIENT (booking others)
+    # -----------------------------
+    client_bookings_count = Booking.query.filter_by(client_id=current_user.id).count()
+    client_pending_bookings = Booking.query.filter_by(client_id=current_user.id, status="pending").count()
+    client_confirmed_bookings = Booking.query.filter_by(client_id=current_user.id, status="confirmed").count()
+
+    client_recent_bookings = (
+        Booking.query
+        .filter_by(client_id=current_user.id)
+        .order_by(Booking.event_datetime.desc())
+        .limit(5)
+        .all()
+    )
+
+    # -----------------------------
+    # Artist as PROVIDER (getting booked for gigs)
+    # -----------------------------
+    provider_bookings_count = Booking.query.filter_by(provider_id=current_user.id).count()
+    provider_pending_bookings = Booking.query.filter_by(provider_id=current_user.id, status="pending").count()
+    provider_confirmed_bookings = Booking.query.filter_by(provider_id=current_user.id, status="confirmed").count()
+
+    provider_recent_bookings = (
         Booking.query
         .filter_by(provider_id=current_user.id)
         .order_by(Booking.event_datetime.desc())
@@ -3920,16 +3985,30 @@ def artist_dashboard():
         .all()
     )
 
+    role_label = get_role_display(current_user.role)
+
     return render_template(
         "dash_artist.html",
+        role_label=role_label,
+        prof=prof,
+        artist_can_take_gigs=artist_can_take_gigs,
         followers_count=followers_count,
         following_count=following_count,
-        bookings_count=total_bookings,
-        pending_bookings=pending_bookings,
-        confirmed_bookings=confirmed_bookings,
-        recent_bookings=recent_bookings,
-    )
+        incoming_requests=incoming_requests,
+        outgoing_requests=outgoing_requests,
 
+        # Client side
+        client_bookings_count=client_bookings_count,
+        client_pending_bookings=client_pending_bookings,
+        client_confirmed_bookings=client_confirmed_bookings,
+        client_recent_bookings=client_recent_bookings,
+
+        # Provider side
+        provider_bookings_count=provider_bookings_count,
+        provider_pending_bookings=provider_pending_bookings,
+        provider_confirmed_bookings=provider_confirmed_bookings,
+        provider_recent_bookings=provider_recent_bookings,
+    )
 
 @app.route("/dashboard/provider", endpoint="provider_dashboard")
 @login_required
@@ -4280,22 +4359,37 @@ def whoami():
         f"active={current_user.is_active_col}"
     )
 
+def _is_sqlite() -> bool:
+    try:
+        return str(db.engine.url).startswith("sqlite")
+    except Exception:
+        return False
 
-# =========================================================
-# Main / DB init + seed
-# =========================================================
-if __name__ == "__main__":
+def init_db_schema():
+    """
+    Safe schema initializer:
+    - Runs SQLite-specific fixups ONLY if SQLite
+    - Creates missing tables (create_all)
+    NOTE: In true production, prefer migrations, but this is safe as a baseline.
+    """
     with app.app_context():
-        # ✅ Run dev schema fixes FIRST (so create_all doesn't create the "new" table too early)
-        try:
-            _ensure_sqlite_follow_table_name_and_indexes()
-            _ensure_sqlite_booking_request_booking_id()
-        except Exception:
-            db.session.rollback()
+        if _is_sqlite():
+            try:
+                _ensure_sqlite_follow_table_name_and_indexes()
+                _ensure_sqlite_booking_request_booking_id()
+            except Exception:
+                db.session.rollback()
 
-        # ✅ THEN create missing tables
         db.create_all()
 
+def seed_demo_data():
+    """
+    Seeds demo users. Should NOT run automatically in production.
+    """
+    with app.app_context():
+        # ----------------------------
+        # Admin
+        # ----------------------------
         admin = User.query.filter_by(username="admin").first()
         if not admin:
             admin = User(
@@ -4310,11 +4404,14 @@ if __name__ == "__main__":
             db.session.commit()
             get_or_create_wallet(admin.id)
         else:
+            changed = False
             if not getattr(admin, "is_superadmin", False):
                 admin.is_superadmin = True
-                db.session.commit()
-            if IS_DEV and not admin.email:
+                changed = True
+            if not admin.email:
                 admin.email = "admin@example.com"
+                changed = True
+            if changed:
                 db.session.commit()
 
         # ----------------------------
@@ -4328,17 +4425,13 @@ if __name__ == "__main__":
                 role=RoleEnum.producer,
                 kyc_status=KYCStatus.approved,
             )
-            prod.set_password("producer1123")
+            prod.set_password(os.getenv("PRODUCER1_PASSWORD", "producer1123"))
             db.session.add(prod)
             db.session.commit()
 
             with db_txn():
                 w = get_or_create_wallet(prod.id, commit=False)
                 post_ledger(w, EntryType.deposit, 5_000, meta="seed $50")
-        else:
-            if IS_DEV and not prod.email:
-                prod.email = "producer1@example.com"
-                db.session.commit()
 
         # ----------------------------
         # Seed artist1 (+$100)
@@ -4351,17 +4444,51 @@ if __name__ == "__main__":
                 role=RoleEnum.artist,
                 kyc_status=KYCStatus.approved,
             )
-            artist.set_password("artist1123")
+            artist.set_password(os.getenv("ARTIST1_PASSWORD", "artist1123"))
             db.session.add(artist)
             db.session.commit()
 
             with db_txn():
                 w = get_or_create_wallet(artist.id, commit=False)
                 post_ledger(w, EntryType.deposit, 10_000, meta="seed $100")
-        else:
-            if IS_DEV and not artist.email:
-                artist.email = "artist1@example.com"
-                db.session.commit()
 
+
+# ============================
+# Flask CLI commands (works in dev + prod)
+# ============================
+
+@app.cli.command("init-db")
+def init_db_command():
+    """Initialize DB schema (SQLite fixups + create_all)."""
+    init_db_schema()
+    click.echo("✅ Database schema initialized.")
+
+
+@app.cli.command("seed-demo")
+@click.option("--force", is_flag=True, help="Allow seeding even if not dev (requires SEED_DEMO=1 or --force).")
+def seed_demo_command(force: bool):
+    """
+    Seed demo users. Protected so it doesn't run accidentally in production.
+    Allow if:
+      - IS_DEV is true, OR
+      - env SEED_DEMO=1, OR
+      - --force flag is used
+    """
+    allow = bool(IS_DEV) or (os.getenv("SEED_DEMO", "0") == "1") or force
+    if not allow:
+        raise click.ClickException(
+            "Refusing to seed demo data. Set SEED_DEMO=1 or run with --force (be careful in production)."
+        )
+
+    # Make sure schema exists first
+    init_db_schema()
+    seed_demo_data()
+    click.echo("✅ Demo data seeded.")
+
+
+# ============================
+# Main (no DB writes here)
+# ============================
+if __name__ == "__main__":
     debug_flag = os.getenv("FLASK_DEBUG", "1" if IS_DEV else "0") == "1"
     app.run(debug=debug_flag)
