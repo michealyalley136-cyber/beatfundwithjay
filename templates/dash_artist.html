@@ -2,105 +2,170 @@
 {% block title %}Artist Dashboard · BeatFund{% endblock %}
 
 {% block content %}
-<div class="page">
-  <div class="card">
-    <div style="display:flex; align-items:center; gap:14px; flex-wrap:wrap;">
-      <img src="{{ current_user.avatar_url }}" alt="avatar"
-           style="width:72px;height:72px;border-radius:16px;object-fit:cover;">
+<div class="dashboard" data-role="artist">
 
-      <div style="flex:1; min-width:240px;">
-        <h2 style="margin:0;">BeatFund Artist</h2>
-        <div class="muted">
-          Welcome back, @{{ current_user.username }}. Manage your profile, bookings, and marketplace activity.
+  <!-- HERO -->
+  <div class="dash-hero">
+    <div class="dash-hero-card">
+      <div class="dash-identity">
+        {% set avatar_url = (current_user.avatar_url|default('', true)) %}
+        {% if avatar_url %}
+          <img class="avatar avatar-lg" src="{{ avatar_url }}" alt="Avatar">
+        {% else %}
+          <div class="avatar avatar-lg avatar-fallback">
+            {{ (current_user.username[:1] if current_user.username else 'A')|upper }}
+          </div>
+        {% endif %}
+
+        <div class="dash-identity-text">
+          <div class="dash-kicker">Dashboard</div>
+          <div class="dash-name-row">
+            <h1 class="dash-name">{{ current_user.display_name|default(current_user.username, true) }}</h1>
+            <span class="role-pill">ARTIST</span>
+          </div>
+          <div class="muted dash-handle">@{{ current_user.username }}</div>
         </div>
       </div>
 
-      <!-- ✅ Dashboard action (no upload here anymore) -->
-      <div style="display:flex; gap:10px; align-items:center;">
-        <a class="btn btn-primary" href="{{ url_for('profile_edit') }}">Edit profile</a>
+      <div class="dash-actions">
+        <a class="btn btn-primary" href="{{ url_for('wallet_home') }}">Wallet</a>
+        <a class="btn btn-secondary" href="{{ url_for('market_index') }}">Market</a>
+        <a class="btn btn-ghost" href="{{ url_for('bookme_search') }}">BookMe</a>
       </div>
     </div>
 
-    <div style="display:flex; gap:12px; flex-wrap:wrap; margin-top:14px;">
-      <div class="card" style="flex:1; min-width:180px;">
-        <div class="muted">FOLLOWERS</div>
-        <div style="font-size:28px; font-weight:700;">{{ followers_count or my_followers_count }}</div>
-        <div class="muted">People tracking your journey</div>
+    <!-- STATS -->
+    <div class="stats-grid">
+      <div class="stat">
+        <div class="stat-label">Followers</div>
+        <div class="stat-value">{{ followers_count|default(0, true) }}</div>
+        <div class="muted">People following you</div>
       </div>
 
-      <div class="card" style="flex:1; min-width:180px;">
-        <div class="muted">FOLLOWING</div>
-        <div style="font-size:28px; font-weight:700;">{{ following_count or my_following_count }}</div>
-        <div class="muted">Creators &amp; providers you follow</div>
+      <div class="stat">
+        <div class="stat-label">Following</div>
+        <div class="stat-value">{{ following_count|default(0, true) }}</div>
+        <div class="muted">People you follow</div>
       </div>
 
-      <div class="card" style="flex:1; min-width:180px;">
-        <div class="muted">BOOKINGS</div>
-        <div style="font-size:28px; font-weight:700;">{{ bookings_count }}</div>
-        <div class="muted">Total bookings as an artist</div>
+      <div class="stat">
+        <div class="stat-label">Bookings</div>
+        <div class="stat-value">{{ bookings_count|default(0, true) }}</div>
+        <div class="muted">Total bookings</div>
       </div>
-    </div>
 
-    <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:14px;">
-      <a class="btn" href="{{ url_for('market_index') }}">BeatFund Marketplace</a>
-      <a class="btn btn-secondary" href="{{ url_for('wallet_home') }}">Wallet &amp; Transactions</a>
-      <a class="btn btn-secondary" href="{{ url_for('market_my_purchases') }}">My Beat Purchases</a>
-      <a class="btn btn-secondary" href="{{ url_for('bookme_search') }}">BookMe Directory</a>
-      <a class="btn btn-secondary" href="{{ url_for('bookme_requests') }}">BookMe Requests</a>
-      <a class="btn btn-secondary" href="{{ url_for('book_artist', username=current_user.username) }}">Public booking page</a>
-    </div>
-
-    <div class="muted" style="margin-top:12px;">
-      Share your public booking link with promoters:
-      <div style="margin-top:6px;">
-        <code>{{ url_for('book_artist', username=current_user.username, _external=True) }}</code>
+      <div class="stat">
+        <div class="stat-label">Confirmed</div>
+        <div class="stat-value">{{ confirmed_bookings|default(0, true) }}</div>
+        <div class="muted">Confirmed bookings</div>
       </div>
     </div>
   </div>
 
-  <div class="card">
-    <h3 style="margin-top:0;">Bookings &amp; Activity</h3>
+  <!-- MAIN GRID -->
+  <div class="dash-grid">
 
-    <div style="display:flex; gap:12px; flex-wrap:wrap; margin:10px 0;">
-      <div class="card" style="flex:1; min-width:140px;">
-        <div class="muted">CONFIRMED</div>
-        <div style="font-size:22px; font-weight:700;">{{ confirmed_bookings }}</div>
-      </div>
-      <div class="card" style="flex:1; min-width:140px;">
-        <div class="muted">PENDING</div>
-        <div style="font-size:22px; font-weight:700;">{{ pending_bookings }}</div>
-      </div>
-      <div class="card" style="flex:1; min-width:140px;">
-        <div class="muted">TOTAL</div>
-        <div style="font-size:22px; font-weight:700;">{{ bookings_count }}</div>
-      </div>
-    </div>
+    <!-- LEFT -->
+    <div class="dash-col">
+      <div class="card">
+        <div class="card-head">
+          <h2 class="card-title">Quick Actions</h2>
+        </div>
 
-    {% if recent_bookings and recent_bookings|length > 0 %}
-      <div class="muted" style="margin:10px 0 6px;">Recent bookings</div>
+        <div class="action-grid">
+          <a class="action-card" href="{{ url_for('wallet_home') }}">
+            <div class="action-title">Open Wallet</div>
+            <div class="muted">Deposit, withdraw, transactions</div>
+          </a>
 
-      <div style="display:flex; flex-direction:column; gap:10px;">
-        {% for b in recent_bookings %}
-          <div class="card" style="padding:12px;">
-            <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;">
-              <div>
-                <b>{{ b.event_title }}</b>
-                <div class="muted">
-                  {% if b.event_datetime %}{{ b.event_datetime }}{% else %}No date set{% endif %}
-                  · status: {{ b.status }}
+          <a class="action-card" href="{{ url_for('producer_catalog_index') }}">
+            <div class="action-title">Producers</div>
+            <div class="muted">Browse producer catalogs</div>
+          </a>
+
+          <a class="action-card" href="{{ url_for('bookme_search') }}">
+            <div class="action-title">BookMe</div>
+            <div class="muted">Find creators & request bookings</div>
+          </a>
+
+          <a class="action-card" href="{{ url_for('opportunities') }}">
+            <div class="action-title">Opportunities</div>
+            <div class="muted">Loans, scholarships, programs</div>
+          </a>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h2 class="card-title">Recent Bookings</h2>
+        </div>
+
+        {% if recent_bookings and recent_bookings|length > 0 %}
+          <div class="suggested-list">
+            {% for b in recent_bookings %}
+              <div class="suggested-row">
+                <div class="suggested-left">
+                  <div class="suggested-meta">
+                    <div class="suggested-name">Booking #{{ b.id }}</div>
+                    <div class="muted">
+                      {{ b.status }} · {{ b.event_datetime }}
+                    </div>
+                  </div>
+                </div>
+                <div class="suggested-actions">
+                  <span class="pill pill-neutral">{{ b.status }}</span>
                 </div>
               </div>
-              <a class="btn btn-secondary" href="{{ url_for('booking_detail', booking_id=b.id) }}">View</a>
+            {% endfor %}
+          </div>
+        {% else %}
+          <div class="muted">No recent bookings yet.</div>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- RIGHT -->
+    <div class="dash-col">
+      <div class="card">
+        <div class="card-head">
+          <h2 class="card-title">Booking Breakdown</h2>
+        </div>
+
+        <div class="suggested-list">
+          <div class="suggested-row">
+            <div class="suggested-left">
+              <div class="suggested-meta">
+                <div class="suggested-name">Pending</div>
+                <div class="muted">Awaiting confirmation</div>
+              </div>
+            </div>
+            <div class="suggested-actions">
+              <span class="pill pill-neutral">{{ pending_bookings|default(0, true) }}</span>
             </div>
           </div>
-        {% endfor %}
+
+          <div class="suggested-row">
+            <div class="suggested-left">
+              <div class="suggested-meta">
+                <div class="suggested-name">Confirmed</div>
+                <div class="muted">Approved bookings</div>
+              </div>
+            </div>
+            <div class="suggested-actions">
+              <span class="pill pill-neutral">{{ confirmed_bookings|default(0, true) }}</span>
+            </div>
+          </div>
+        </div>
       </div>
 
-    {% else %}
-      <div class="muted">No bookings yet. Share your booking link to get your first request.</div>
-    {% endif %}
-  </div>
+      <div class="card">
+        <div class="card-head">
+          <h2 class="card-title">Next Step</h2>
+        </div>
+        <div class="muted">Add a profile picture + connect with creators to grow faster.</div>
+      </div>
+    </div>
 
-  {% include "_community_card.html" %}
+  </div>
 </div>
 {% endblock %}

@@ -2,106 +2,164 @@
 {% block title %}Artist Dashboard · BeatFund{% endblock %}
 
 {% block content %}
-<div class="page">
-  <div class="card">
-    <div class="dash-header">
+<div class="dashboard" data-role="artist">
+
+  <!-- HERO -->
+  <div class="dash-hero">
+    <div class="dash-hero-card">
       <div class="dash-identity">
-        <img class="dash-avatar" src="{{ current_user.avatar_url }}" alt="avatar">
-        <div class="dash-title">
-          <h2 class="h2">BeatFund Artist</h2>
-          <div class="muted">
-            Welcome back, @{{ current_user.username }}. Manage your profile, bookings, and marketplace activity.
+        {# Avatar (safe defaults) #}
+        {% set avatar_url = (current_user.avatar_url|default('', true)) %}
+        {% if avatar_url %}
+          <img class="avatar avatar-lg" src="{{ avatar_url }}" alt="Avatar">
+        {% else %}
+          <div class="avatar avatar-lg avatar-fallback">
+            {{ (current_user.username[:1] if current_user.username else 'A')|upper }}
           </div>
+        {% endif %}
+
+        <div class="dash-identity-text">
+          <div class="dash-kicker">Dashboard</div>
+
+          <div class="dash-name-row">
+            <h1 class="dash-name">{{ current_user.display_name|default(current_user.username, true) }}</h1>
+            <span class="role-pill">ARTIST</span>
+          </div>
+
+          <div class="muted dash-handle">@{{ current_user.username }}</div>
+          {% if current_user.location %}
+            <div class="muted dash-loc">{{ current_user.location }}</div>
+          {% endif %}
         </div>
       </div>
 
-      {# ✅ Only an Edit Profile button on dashboard #}
-      <div class="dash-cta">
-        <a class="btn btn-primary" href="{{ url_for('profile') }}">Edit profile</a>
+      <div class="dash-actions">
+        <a class="btn btn-primary" href="{{ url_for('wallet_home') }}">Open Wallet</a>
+        <a class="btn btn-secondary" href="{{ url_for('market_index') }}">Go to Market</a>
+        <a class="btn btn-ghost" href="{{ url_for('bookme_search') }}">BookMe</a>
       </div>
     </div>
 
+    <!-- STATS -->
     <div class="stats-grid">
-      <div class="stat-card">
-        <div class="stat-label">FOLLOWERS</div>
-        <div class="stat-value">{{ followers_count or my_followers_count }}</div>
-        <div class="muted">People tracking your journey</div>
+      <div class="stat">
+        <div class="stat-label">Wallet Balance</div>
+        <div class="stat-value">${{ (wallet_balance|default(0, true)) }}</div>
+        <div class="muted">Available funds</div>
       </div>
 
-      <div class="stat-card">
-        <div class="stat-label">FOLLOWING</div>
-        <div class="stat-value">{{ following_count or my_following_count }}</div>
-        <div class="muted">Creators &amp; providers you follow</div>
+      <div class="stat">
+        <div class="stat-label">Bookings</div>
+        <div class="stat-value">{{ (booking_count|default(0, true)) }}</div>
+        <div class="muted">Total requests</div>
       </div>
 
-      <div class="stat-card">
-        <div class="stat-label">BOOKINGS</div>
-        <div class="stat-value">{{ bookings_count }}</div>
-        <div class="muted">Total bookings as an artist</div>
+      <div class="stat">
+        <div class="stat-label">Market Orders</div>
+        <div class="stat-value">{{ (order_count|default(0, true)) }}</div>
+        <div class="muted">Purchases made</div>
       </div>
-    </div>
 
-    <div class="action-row">
-      <a class="btn" href="{{ url_for('market_index') }}">BeatFund Marketplace</a>
-      <a class="btn btn-secondary" href="{{ url_for('wallet_home') }}">Wallet &amp; Transactions</a>
-      <a class="btn btn-secondary" href="{{ url_for('market_my_purchases') }}">My Beat Purchases</a>
-      <a class="btn btn-secondary" href="{{ url_for('bookme_search') }}">BookMe Directory</a>
-      <a class="btn btn-secondary" href="{{ url_for('bookme_requests') }}">BookMe Requests</a>
-      <a class="btn btn-secondary" href="{{ url_for('book_artist', username=current_user.username) }}">Public booking page</a>
-    </div>
-
-    <div class="muted" style="margin-top:12px;">
-      Share your public booking link with promoters:
-      <div class="codebox" style="margin-top:8px;">
-        <code>{{ url_for('book_artist', username=current_user.username, _external=True) }}</code>
+      <div class="stat">
+        <div class="stat-label">Profile Status</div>
+        <div class="stat-value">{{ (profile_status|default("New", true)) }}</div>
+        <div class="muted">Complete it for trust</div>
       </div>
     </div>
   </div>
 
-  <div class="card">
-    <div class="section-head">
-      <h3 class="h3">Bookings &amp; Activity</h3>
+  <!-- MAIN GRID -->
+  <div class="dash-grid">
+
+    <!-- LEFT -->
+    <div class="dash-col">
+      <div class="card">
+        <div class="card-head">
+          <h2 class="card-title">Quick Actions</h2>
+        </div>
+
+        <div class="action-grid">
+          <a class="action-card" href="{{ url_for('wallet_home') }}">
+            <div class="action-title">Wallet</div>
+            <div class="muted">Deposit, withdraw, transactions</div>
+          </a>
+
+          <a class="action-card" href="{{ url_for('bookme_search') }}">
+            <div class="action-title">BookMe</div>
+            <div class="muted">Find & book creators</div>
+          </a>
+
+          <a class="action-card" href="{{ url_for('market_index') }}">
+            <div class="action-title">Market</div>
+            <div class="muted">Buy beats & services</div>
+          </a>
+
+          <a class="action-card" href="{{ url_for('opportunities') }}">
+            <div class="action-title">Opportunities</div>
+            <div class="muted">Grants, gigs, listings</div>
+          </a>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h2 class="card-title">Getting Started</h2>
+        </div>
+
+        <div class="muted">Use this checklist so your account looks legit + converts better.</div>
+
+        <ul class="steps">
+          <li>Upload a profile photo + display name</li>
+          <li>Add a short bio and your location</li>
+          <li>Fund your wallet (even a small amount)</li>
+          <li>Explore BookMe + Market</li>
+        </ul>
+      </div>
     </div>
 
-    <div class="mini-grid">
-      <div class="mini-card">
-        <div class="stat-label">CONFIRMED</div>
-        <div class="mini-value">{{ confirmed_bookings }}</div>
-      </div>
-      <div class="mini-card">
-        <div class="stat-label">PENDING</div>
-        <div class="mini-value">{{ pending_bookings }}</div>
-      </div>
-      <div class="mini-card">
-        <div class="stat-label">TOTAL</div>
-        <div class="mini-value">{{ bookings_count }}</div>
-      </div>
-    </div>
+    <!-- RIGHT -->
+    <div class="dash-col">
+      <div class="card">
+        <div class="card-head">
+          <h2 class="card-title">Suggested</h2>
+        </div>
 
-    {% if recent_bookings and recent_bookings|length > 0 %}
-      <div class="muted" style="margin:12px 0 10px;">Recent bookings</div>
-
-      <div class="list">
-        {% for b in recent_bookings %}
-          <div class="list-item">
-            <div class="list-left">
-              <div class="list-title">{{ b.event_title }}</div>
-              <div class="muted">
-                {% if b.event_datetime %}{{ b.event_datetime }}{% else %}No date set{% endif %}
-                · status: {{ b.status }}
+        <div class="suggested-list">
+          <div class="suggested-row">
+            <a class="suggested-left" href="{{ url_for('producer_catalog_index') }}">
+              <div class="suggested-meta">
+                <div class="suggested-name">Browse top producers</div>
+                <div class="muted">Find beats by genre & vibe</div>
               </div>
-            </div>
-            <div class="list-right">
-              <a class="btn btn-secondary" href="{{ url_for('booking_detail', booking_id=b.id) }}">View</a>
+            </a>
+            <div class="suggested-actions">
+              <a class="btn btn-ghost" href="{{ url_for('producer_catalog_index') }}">Open</a>
             </div>
           </div>
-        {% endfor %}
-      </div>
-    {% else %}
-      <div class="muted">No bookings yet. Share your booking link to get your first request.</div>
-    {% endif %}
-  </div>
 
-  {% include "_community_card.html" %}
+          <div class="suggested-row">
+            <a class="suggested-left" href="{{ url_for('opportunities') }}">
+              <div class="suggested-meta">
+                <div class="suggested-name">Opportunities</div>
+                <div class="muted">Gigs, grants, collabs</div>
+              </div>
+            </a>
+            <div class="suggested-actions">
+              <a class="btn btn-ghost" href="{{ url_for('opportunities') }}">View</a>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h2 class="card-title">Account</h2>
+        </div>
+        <div class="muted">More account settings can go here later (KYC, payouts, etc.).</div>
+      </div>
+    </div>
+
+  </div>
 </div>
 {% endblock %}
