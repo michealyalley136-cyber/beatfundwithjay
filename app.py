@@ -1109,9 +1109,6 @@ def _user_has_paid_for_beat(user_id: int, beat_id: int) -> bool:
     )
 
 
-def is_service_provider(u: User) -> bool:
-    return u.role in BOOKME_PROVIDER_ROLES
-
 
 def _ensure_bookme_provider():
     if current_user.role not in BOOKME_PROVIDER_ROLES:
@@ -1996,51 +1993,60 @@ def _set_first_attr(obj, attr_names, value) -> bool:
 @app.route("/profile", methods=["GET", "POST"])
 @login_required
 def profile_edit():
+    """
+    Universal profile editor.
+    - If the user has a BookMeProfile, we update it too (bio/phone/city/state/display_name).
+    - Avatar uses uploads/ + User.avatar_path (so current_user.avatar_url works everywhere).
+    """
+    prof = BookMeProfile.query.filter_by(user_id=current_user.id).first()
+
     if request.method == "POST":
-        # Basic fields
         display_name = (request.form.get("display_name") or "").strip()
         phone = (request.form.get("phone") or "").strip()
         bio = (request.form.get("bio") or "").strip()
         city = (request.form.get("city") or "").strip()
         state = (request.form.get("state") or "").strip()
 
-        # Update whatever columns exist on your User model (safe + flexible)
+        # ---- Update User basics ----
         if display_name:
-            _set_first_attr(current_user, ["display_name", "full_name", "name"], display_name)
+            current_user.full_name = display_name  # safe: column exists
 
-        if phone:
-            _set_first_attr(current_user, ["phone", "phone_number", "contact_phone"], phone)
+        # ---- If they have BookMeProfile, also update it (this is what dashboards use) ----
+        if prof:
+            if display_name:
+                prof.display_name = display_name
+            if phone:
+                prof.contact_phone = phone
+            if bio:
+                prof.bio = bio
+            if city:
+                prof.city = city
+            if state:
+                prof.state = state
 
-        _set_first_attr(current_user, ["bio", "about", "description"], bio)
-
-        if city:
-            _set_first_attr(current_user, ["city"], city)
-        if state:
-            _set_first_attr(current_user, ["state"], state)
-
-        # Avatar upload (stored in /static/uploads/avatars)
+        # ---- Avatar upload: store in uploads/ and set avatar_path ----
         avatar = request.files.get("avatar")
         if avatar and avatar.filename:
-            if not _allowed_image(avatar.filename):
-                flash("Avatar must be an image (png/jpg/webp/gif).", "error")
+            if not _ext_ok(avatar.filename, ALLOWED_IMAGE):
+                flash("Avatar must be an image (png/jpg/jpeg).", "error")
                 return redirect(url_for("profile_edit"))
 
-            upload_dir = os.path.join(app.root_path, "static", "uploads", "avatars")
-            os.makedirs(upload_dir, exist_ok=True)
+            new_fname = _save_file(avatar, ALLOWED_IMAGE)
+            if not new_fname:
+                flash("Problem saving avatar. Please try again.", "error")
+                return redirect(url_for("profile_edit"))
 
-            ext = avatar.filename.rsplit(".", 1)[1].lower()
-            fname = f"{uuid.uuid4().hex}.{ext}"
-            path = os.path.join(upload_dir, secure_filename(fname))
-            avatar.save(path)
+            # Remove old uploaded avatar file (if any)
+            if getattr(current_user, "avatar_path", None):
+                _safe_remove(current_user.avatar_path)
 
-            # Your templates already use current_user.avatar_url, so keep that consistent:
-            current_user.avatar_url = url_for("static", filename=f"uploads/avatars/{fname}")
+            current_user.avatar_path = new_fname
 
         db.session.commit()
         flash("Profile updated successfully.", "success")
         return redirect(url_for("profile_edit"))
 
-    return render_template("profile_edit.html")
+    return render_template("profile_edit.html", prof=prof)
 
 # =========================================================
 # Core / Auth
@@ -2579,11 +2585,6 @@ def wallet_action():
 @login_required
 def wallet_ledger_redirect():
     # Backwards compatible URL (old links won't 404)
-    return redirect(url_for("wallet_home", tab="transactions"))
-
-@app.route("/transactions", endpoint="transactions")
-@login_required
-def transactions_redirect():
     return redirect(url_for("wallet_home", tab="transactions"))
 
 
@@ -4244,7 +4245,126 @@ def videographer_dashboard():
 @app.route("/dashboard/designer", endpoint="designer_dashboard")
 @role_required("designer")
 def designer_dashboard():
-    return render_template("dash_designer.html")
+    # Designers are service providers; use the unified provider dashboard UI.
+    return redirect(url_for("provider_dashboard"))
+
+
+@app.route("/dashboard/engineer", endpoint="engineer_dashboard")
+@role_required("engineer")
+def engineer_dashboard():
+    return redirect(url_for("provider_dashboard"))
+
+
+@app.route("/dashboard/manager", endpoint="manager_dashboard")
+@role_required("manager")
+def manager_dashboard():
+    return redirect(url_for("provider_dashboard"))
+
+
+@app.route("/dashboard/vendor", endpoint="vendor_dashboard")
+@role_required("vendor")
+def vendor_dashboard():
+    return redirect(url_for("provider_dashboard"))
+
+
+@app.route("/dashboard/funder", endpoint="funder_dashboard")
+@role_required("funder")
+def funder_dashboard():
+    # Simple useful funder view (no new models required)
+    w = get_or_create_wallet(current_user.id)
+    balance = wallet_balance_cents(w) / 100.0
+
+    txns = (
+        LedgerEntry.query
+        .filter_by(wallet_id=w.id)
+        .order_by(LedgerEntry.created_at.desc(), LedgerEntry.id.desc())
+        .limit(25)
+        .all()
+    )
+
+    # Marketplace activity (optional, but helpful)
+    purchases_count = Order.query.filter_by(buyer_id=current_user.id, status=OrderStatus.paid).count()
+
+    return render_template(
+        "dash_funder.html",
+        balance=balance,
+        txns=txns,
+        purchases_count=purchases_count,
+    )
+
+
+@app.route("/dashboard/client", endpoint="client_dashboard")
+@role_required("client")
+def client_dashboard():
+    # Client dashboard = booking others + purchases + wallet
+    w = get_or_create_wallet(current_user.id)
+    balance = wallet_balance_cents(w) / 100.0
+
+    outgoing_requests_count = BookingRequest.query.filter_by(client_id=current_user.id).count()
+    outgoing_bookings_count = Booking.query.filter_by(client_id=current_user.id).count()
+
+    recent_requests = (
+        BookingRequest.query
+        .filter_by(client_id=current_user.id)
+        .order_by(BookingRequest.created_at.desc())
+        .limit(6)
+        .all()
+    )
+
+    recent_bookings = (
+        Booking.query
+        .filter_by(client_id=current_user.id)
+        .order_by(Booking.event_datetime.desc().nullslast())
+        .limit(6)
+        .all()
+    )
+
+    purchases_count = Order.query.filter_by(buyer_id=current_user.id, status=OrderStatus.paid).count()
+
+    return render_template(
+        "dash_client.html",
+        balance=balance,
+        outgoing_requests_count=outgoing_requests_count,
+        outgoing_bookings_count=outgoing_bookings_count,
+        recent_requests=recent_requests,
+        recent_bookings=recent_bookings,
+        purchases_count=purchases_count,
+        BookingStatus=BookingStatus,
+    )
+
+
+# ---------------------------------------------------------
+# Opportunities page (you referenced url_for("opportunities"))
+# ---------------------------------------------------------
+@app.route("/opportunities", endpoint="opportunities")
+@login_required
+def opportunities():
+    meta = _load_opp_video_meta()
+    filename = _current_opp_video_filename()
+    video_url = url_for("opportunities_video_media") if filename else None
+    return render_template("opportunities.html", meta=meta, video_url=video_url)
+
+
+# =========================================================
+# Basic errors (optional but nice)
+# =========================================================
+@app.errorhandler(404)
+def not_found(e):
+    return render_template("404.html"), 404
+
+
+@app.errorhandler(500)
+def server_error(e):
+    db.session.rollback()
+    return render_template("500.html"), 500
+
+
+# =========================================================
+# Run
+# =========================================================
+if __name__ == "__main__":
+    port = int(os.getenv("PORT", "5000"))
+    app.run(host="0.0.0.0", port=port, debug=IS_DEV)
 
 
 @app.route("/dashboard/engineer", endpoint="engineer_dashboard")
