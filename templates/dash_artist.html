@@ -1,169 +1,224 @@
 {% extends "base.html" %}
 {% block title %}Artist Dashboard · BeatFund{% endblock %}
 
+{% block extra_head %}
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  .bf-artist { max-width: 1100px; margin: 0 auto; padding: 16px; }
+  .bf-hero { display:flex; gap:14px; align-items:center; justify-content:space-between; flex-wrap:wrap; }
+  .bf-hero-left { display:flex; gap:12px; align-items:center; min-width: 260px; }
+  .bf-avatar { width: 48px; height: 48px; border-radius: 14px; object-fit: cover; border: 1px solid rgba(255,255,255,.12); }
+  .bf-title { margin:0; font-size: 1.25rem; line-height: 1.2; }
+  .bf-sub { margin:4px 0 0; opacity:.8; font-size: .95rem; }
+  .bf-actions { display:flex; gap:10px; flex-wrap:wrap; align-items:center; justify-content:flex-end; }
+
+  .bf-grid { display:grid; grid-template-columns: repeat(12, 1fr); gap: 14px; margin-top: 14px; }
+  .bf-card { border: 1px solid rgba(255,255,255,.12); background: rgba(255,255,255,.06); border-radius: 18px; padding: 14px; }
+  .bf-card h3 { margin:0 0 10px; font-size: 1.05rem; }
+  .bf-kpis { display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+  .bf-kpi { padding: 12px; border-radius: 16px; border: 1px solid rgba(255,255,255,.10); background: rgba(255,255,255,.05); }
+  .bf-kpi .label { opacity:.75; font-size: .9rem; }
+  .bf-kpi .value { margin-top: 6px; font-size: 1.25rem; font-weight: 700; }
+  .bf-kpi .hint { opacity:.7; font-size: .85rem; margin-top: 4px; }
+
+  .bf-btn {
+    display:inline-flex; align-items:center; justify-content:center;
+    padding: 10px 12px; border-radius: 14px;
+    border: 1px solid rgba(255,255,255,.12);
+    background: rgba(255,255,255,.08);
+    text-decoration:none;
+    font-weight: 600;
+    min-height: 40px;
+  }
+  .bf-btn.primary { background: rgba(124,58,237,.25); border-color: rgba(124,58,237,.45); }
+  .bf-btn.block { width: 100%; }
+
+  .bf-list { display:flex; flex-direction:column; gap:10px; }
+  .bf-row { display:flex; gap:10px; align-items:flex-start; justify-content:space-between; flex-wrap:wrap; }
+  .bf-row .left { min-width: 220px; }
+  .bf-row .meta { opacity:.75; font-size:.9rem; }
+  .bf-chip {
+    display:inline-flex; align-items:center;
+    padding: 6px 10px; border-radius: 999px;
+    border: 1px solid rgba(255,255,255,.12);
+    background: rgba(255,255,255,.06);
+    font-size: .85rem; opacity:.9;
+  }
+
+  .span-12 { grid-column: span 12; }
+  .span-7 { grid-column: span 12; }
+  .span-5 { grid-column: span 12; }
+
+  @media (min-width: 900px){
+    .span-7 { grid-column: span 7; }
+    .span-5 { grid-column: span 5; }
+  }
+
+  /* make tables (if any) scroll instead of squeezing */
+  .bf-scroll { overflow-x:auto; -webkit-overflow-scrolling: touch; }
+</style>
+{% endblock %}
+
 {% block content %}
-<div class="dashboard" data-role="artist">
+<div class="bf-artist">
 
-  <!-- HERO -->
-  <div class="dash-hero">
-    <div class="dash-hero-card">
-      <div class="dash-identity">
-        {% set avatar_url = (current_user.avatar_url|default('', true)) %}
-        {% if avatar_url %}
-          <img class="avatar avatar-lg" src="{{ avatar_url }}" alt="Avatar">
-        {% else %}
-          <div class="avatar avatar-lg avatar-fallback">
-            {{ (current_user.username[:1] if current_user.username else 'A')|upper }}
-          </div>
-        {% endif %}
-
-        <div class="dash-identity-text">
-          <div class="dash-kicker">Dashboard</div>
-          <div class="dash-name-row">
-            <h1 class="dash-name">{{ current_user.display_name|default(current_user.username, true) }}</h1>
-            <span class="role-pill">ARTIST</span>
-          </div>
-          <div class="muted dash-handle">@{{ current_user.username }}</div>
-        </div>
-      </div>
-
-      <div class="dash-actions">
-        <a class="btn btn-primary" href="{{ url_for('wallet_home') }}">Wallet</a>
-        <a class="btn btn-secondary" href="{{ url_for('market_index') }}">Market</a>
-        <a class="btn btn-ghost" href="{{ url_for('bookme_search') }}">BookMe</a>
+  <div class="bf-hero">
+    <div class="bf-hero-left">
+      <img class="bf-avatar" src="{{ current_user.avatar_url }}" alt="avatar">
+      <div>
+        <h1 class="bf-title">Welcome, {{ current_user.display_name }}</h1>
+        <p class="bf-sub">{{ role_label }} · @{{ current_user.username }}</p>
       </div>
     </div>
 
-    <!-- STATS -->
-    <div class="stats-grid">
-      <div class="stat">
-        <div class="stat-label">Followers</div>
-        <div class="stat-value">{{ followers_count|default(0, true) }}</div>
-        <div class="muted">People following you</div>
-      </div>
-
-      <div class="stat">
-        <div class="stat-label">Following</div>
-        <div class="stat-value">{{ following_count|default(0, true) }}</div>
-        <div class="muted">People you follow</div>
-      </div>
-
-      <div class="stat">
-        <div class="stat-label">Bookings</div>
-        <div class="stat-value">{{ bookings_count|default(0, true) }}</div>
-        <div class="muted">Total bookings</div>
-      </div>
-
-      <div class="stat">
-        <div class="stat-label">Confirmed</div>
-        <div class="stat-value">{{ confirmed_bookings|default(0, true) }}</div>
-        <div class="muted">Confirmed bookings</div>
-      </div>
+    <div class="bf-actions">
+      <a class="bf-btn primary" href="{{ url_for('wallet_home') }}">Wallet</a>
+      <a class="bf-btn" href="{{ url_for('bookme_search') }}">Find Providers</a>
+      <a class="bf-btn" href="{{ url_for('bookme_requests') }}">Requests</a>
+      <a class="bf-btn" href="{{ url_for('profile_edit') }}">Edit Profile</a>
     </div>
   </div>
 
-  <!-- MAIN GRID -->
-  <div class="dash-grid">
+  <div class="bf-grid">
 
-    <!-- LEFT -->
-    <div class="dash-col">
-      <div class="card">
-        <div class="card-head">
-          <h2 class="card-title">Quick Actions</h2>
+    <div class="bf-card span-12">
+      <div class="bf-kpis">
+        <div class="bf-kpi">
+          <div class="label">Followers</div>
+          <div class="value">{{ followers_count }}</div>
+          <div class="hint">People following you</div>
         </div>
-
-        <div class="action-grid">
-          <a class="action-card" href="{{ url_for('wallet_home') }}">
-            <div class="action-title">Open Wallet</div>
-            <div class="muted">Deposit, withdraw, transactions</div>
-          </a>
-
-          <a class="action-card" href="{{ url_for('producer_catalog_index') }}">
-            <div class="action-title">Producers</div>
-            <div class="muted">Browse producer catalogs</div>
-          </a>
-
-          <a class="action-card" href="{{ url_for('bookme_search') }}">
-            <div class="action-title">BookMe</div>
-            <div class="muted">Find creators & request bookings</div>
-          </a>
-
-          <a class="action-card" href="{{ url_for('opportunities') }}">
-            <div class="action-title">Opportunities</div>
-            <div class="muted">Loans, scholarships, programs</div>
-          </a>
+        <div class="bf-kpi">
+          <div class="label">Following</div>
+          <div class="value">{{ following_count }}</div>
+          <div class="hint">People you follow</div>
         </div>
-      </div>
-
-      <div class="card">
-        <div class="card-head">
-          <h2 class="card-title">Recent Bookings</h2>
+        <div class="bf-kpi">
+          <div class="label">Wallet Balance</div>
+          <div class="value">${{ '%.2f'|format(wallet_balance or 0) }}</div>
+          <div class="hint">Tap Wallet to fund & track</div>
         </div>
-
-        {% if recent_bookings and recent_bookings|length > 0 %}
-          <div class="suggested-list">
-            {% for b in recent_bookings %}
-              <div class="suggested-row">
-                <div class="suggested-left">
-                  <div class="suggested-meta">
-                    <div class="suggested-name">Booking #{{ b.id }}</div>
-                    <div class="muted">
-                      {{ b.status }} · {{ b.event_datetime }}
-                    </div>
-                  </div>
-                </div>
-                <div class="suggested-actions">
-                  <span class="pill pill-neutral">{{ b.status }}</span>
-                </div>
-              </div>
-            {% endfor %}
-          </div>
-        {% else %}
-          <div class="muted">No recent bookings yet.</div>
-        {% endif %}
+        <div class="bf-kpi">
+          <div class="label">BookMe Requests</div>
+          <div class="value">{{ incoming_requests_count }}</div>
+          <div class="hint">Pending requests to you</div>
+        </div>
       </div>
     </div>
 
-    <!-- RIGHT -->
-    <div class="dash-col">
-      <div class="card">
-        <div class="card-head">
-          <h2 class="card-title">Booking Breakdown</h2>
-        </div>
-
-        <div class="suggested-list">
-          <div class="suggested-row">
-            <div class="suggested-left">
-              <div class="suggested-meta">
-                <div class="suggested-name">Pending</div>
-                <div class="muted">Awaiting confirmation</div>
+    <div class="bf-card span-7">
+      <h3>Incoming Booking Requests</h3>
+      {% if incoming_requests and incoming_requests|length %}
+        <div class="bf-list">
+          {% for r in incoming_requests %}
+            <div class="bf-row">
+              <div class="left">
+                <div><strong>@{{ r.client.username }}</strong> <span class="bf-chip">{{ r.status.value }}</span></div>
+                <div class="meta">{{ r.preferred_time }}</div>
+                {% if r.message %}<div class="meta">{{ r.message }}</div>{% endif %}
+              </div>
+              <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                <form method="post" action="{{ url_for('bookme_request_status', req_id=r.id) }}">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <input type="hidden" name="action" value="accept">
+                  <button class="bf-btn primary" type="submit">Accept</button>
+                </form>
+                <form method="post" action="{{ url_for('bookme_request_status', req_id=r.id) }}">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <input type="hidden" name="action" value="decline">
+                  <button class="bf-btn" type="submit">Decline</button>
+                </form>
               </div>
             </div>
-            <div class="suggested-actions">
-              <span class="pill pill-neutral">{{ pending_bookings|default(0, true) }}</span>
-            </div>
-          </div>
+          {% endfor %}
+        </div>
+        <div style="margin-top:12px;">
+          <a class="bf-btn block" href="{{ url_for('bookme_requests') }}">View All Requests</a>
+        </div>
+      {% else %}
+        <p class="meta">No pending requests right now.</p>
+      {% endif %}
+    </div>
 
-          <div class="suggested-row">
-            <div class="suggested-left">
-              <div class="suggested-meta">
-                <div class="suggested-name">Confirmed</div>
-                <div class="muted">Approved bookings</div>
+    <div class="bf-card span-5">
+      <h3>Quick Setup</h3>
+      <div class="bf-list">
+        <a class="bf-btn block" href="{{ url_for('bookme_profile') }}">
+          {% if prof %}Edit BookMe Profile{% else %}Create BookMe Profile{% endif %}
+        </a>
+        <a class="bf-btn block" href="{{ url_for('bookme_portfolio') }}">
+          Portfolio ({{ portfolio_count or 0 }})
+        </a>
+        <a class="bf-btn block" href="{{ url_for('market_index') }}">Marketplace</a>
+        <a class="bf-btn block" href="{{ url_for('producer_catalog_index') }}">Producers</a>
+      </div>
+    </div>
+
+    <div class="bf-card span-7">
+      <h3>Upcoming (You as Provider)</h3>
+      {% if upcoming_as_provider and upcoming_as_provider|length %}
+        <div class="bf-list">
+          {% for b in upcoming_as_provider %}
+            <div class="bf-row">
+              <div class="left">
+                <div><strong>{{ b.event_title }}</strong> <span class="bf-chip">{{ b.status }}</span></div>
+                <div class="meta">{{ b.event_datetime }}</div>
+                <div class="meta">Client: @{{ b.client.username }}</div>
+              </div>
+              <div>
+                <a class="bf-btn" href="{{ url_for('booking_detail', booking_id=b.id) }}">Open</a>
               </div>
             </div>
-            <div class="suggested-actions">
-              <span class="pill pill-neutral">{{ confirmed_bookings|default(0, true) }}</span>
-            </div>
-          </div>
+          {% endfor %}
         </div>
-      </div>
+      {% else %}
+        <p class="meta">No upcoming bookings where you’re the provider.</p>
+      {% endif %}
+    </div>
 
-      <div class="card">
-        <div class="card-head">
-          <h2 class="card-title">Next Step</h2>
+    <div class="bf-card span-5">
+      <h3>Recent Wallet Activity</h3>
+      {% if recent_txns and recent_txns|length %}
+        <div class="bf-list">
+          {% for t in recent_txns %}
+            <div class="bf-row">
+              <div class="left">
+                <div><strong>{{ t.entry_type.value }}</strong></div>
+                <div class="meta">{{ t.created_at }}</div>
+                {% if t.meta %}<div class="meta">{{ t.meta }}</div>{% endif %}
+              </div>
+              <div class="bf-chip">${{ '%.2f'|format((t.amount_cents or 0)/100) }}</div>
+            </div>
+          {% endfor %}
         </div>
-        <div class="muted">Add a profile picture + connect with creators to grow faster.</div>
-      </div>
+        <div style="margin-top:12px;">
+          <a class="bf-btn block" href="{{ url_for('wallet_home', tab='transactions') }}">View Transactions</a>
+        </div>
+      {% else %}
+        <p class="meta">No transactions yet.</p>
+        <a class="bf-btn block primary" href="{{ url_for('wallet_home') }}">Fund Wallet</a>
+      {% endif %}
+    </div>
+
+    <div class="bf-card span-12">
+      <h3>Recent Activity</h3>
+      {% if recent_bookings and recent_bookings|length %}
+        <div class="bf-list">
+          {% for b in recent_bookings %}
+            <div class="bf-row">
+              <div class="left">
+                <div><strong>{{ b.event_title }}</strong> <span class="bf-chip">{{ b.status }}</span></div>
+                <div class="meta">{{ b.created_at }}</div>
+              </div>
+              <div>
+                <a class="bf-btn" href="{{ url_for('booking_detail', booking_id=b.id) }}">Open</a>
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p class="meta">No recent activity yet.</p>
+      {% endif %}
     </div>
 
   </div>

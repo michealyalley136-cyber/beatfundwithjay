@@ -23,7 +23,7 @@ from functools import wraps
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 from time import time
-
+from jinja2 import TemplateNotFound
 from decimal import Decimal, InvalidOperation
 from collections import Counter
 from calendar import monthrange
@@ -67,11 +67,15 @@ app = Flask(
     instance_relative_config=True,
 )
 
-# Required for session/login/flash/CSRF
-app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "dev-secret-change-me")
+# --- Required for session/login/flash/CSRF ---
+# In dev: allow a fallback.
+# In prod: REQUIRE an env var.
+app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "").strip() or "dev-secret-change-me"
 
 if not IS_DEV and app.config["SECRET_KEY"] == "dev-secret-change-me":
-    raise RuntimeError("Set a strong SECRET_KEY environment variable in production.")
+    raise RuntimeError(
+        "Set a strong SECRET_KEY environment variable in production."
+    )
 
 # ---------------------------------------------------------
 # Session / cookie hardening
@@ -412,6 +416,9 @@ app.jinja_env.globals["KYCStatus"] = KYCStatus
 app.jinja_env.globals["MAX_PORTFOLIO_ITEMS"] = MAX_PORTFOLIO_ITEMS
 app.jinja_env.globals["get_role_display"] = get_role_display
 
+# ✅ Needed if your templates use {{ datetime.utcnow().year }}
+app.jinja_env.globals["datetime"] = datetime
+
 
 class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -450,9 +457,11 @@ class User(UserMixin, db.Model):
 
     @property
     def avatar_url(self):
-        if self.avatar_path:
-            return url_for("media_file", filename=self.avatar_path)
-        return url_for("static", filename="img/default-avatar.png")
+        # Always serve avatars through a dedicated endpoint:
+        # - Works even if you don't have static/img/default-avatar.png
+        # - Adds a cache-busting query param so new uploads show immediately
+        v = self.avatar_path or "0"
+        return url_for("user_avatar", user_id=self.id, v=v)
 
     @property
     def display_name(self) -> str:
@@ -1402,6 +1411,44 @@ def media_file(filename):
         return send_from_directory(app.config["UPLOAD_FOLDER"], filename, as_attachment=True)
     return send_from_directory(app.config["UPLOAD_FOLDER"], filename, as_attachment=False)
 
+@app.route("/avatar/<int:user_id>", endpoint="user_avatar")
+def user_avatar(user_id: int):
+    user = User.query.get_or_404(user_id)
+
+    # Serve uploaded avatar if present + exists on disk
+    if user.avatar_path:
+        # Only serve known image extensions (extra safety)
+        ext = user.avatar_path.rsplit(".", 1)[-1].lower() if "." in user.avatar_path else ""
+        if ext in ALLOWED_IMAGE:
+            avatar_path = os.path.join(app.config["UPLOAD_FOLDER"], user.avatar_path)
+            if os.path.exists(avatar_path):
+                resp = send_from_directory(app.config["UPLOAD_FOLDER"], user.avatar_path, as_attachment=False)
+                # In dev, avoid stale caching so new uploads show immediately
+                resp.headers["Cache-Control"] = "no-store"
+                return resp
+
+    # Fallback: generate a simple SVG placeholder with initials
+    name = (user.display_name or user.username or "U").strip()
+    initials = "".join([w[0] for w in name.split() if w])[:2].upper() or "U"
+
+    svg = f"""<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160" viewBox="0 0 160 160">
+  <defs>
+    <linearGradient id="g" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#1f2a44"/>
+      <stop offset="1" stop-color="#0b1024"/>
+    </linearGradient>
+  </defs>
+  <rect width="160" height="160" rx="24" fill="url(#g)"/>
+  <text x="80" y="92" text-anchor="middle" font-family="system-ui, -apple-system, Segoe UI, sans-serif"
+        font-size="44" font-weight="700" fill="rgba(255,255,255,0.88)">{initials}</text>
+</svg>"""
+
+    resp = Response(svg, mimetype="image/svg+xml")
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+
+
 
 # =========================================================
 # Opportunities video admin + serve
@@ -2254,7 +2301,8 @@ def bookme_request_status(req_id):
                 .update({BookingRequest.status: BookingStatus.declined})
             )
             db.session.commit()
-            flash("Booking request declined." if updated else "This request is no longer pending.", "success" if updated else "error")
+            flash("Booking request declined." if updated else "This request is no longer pending.",
+                  "success" if updated else "error")
             return redirect(url_for("bookme_requests"))
 
         # Accept (atomic state change)
@@ -3013,189 +3061,95 @@ def route_to_dashboard():
 
     return redirect(url_for(endpoint))
 
-
 @app.route("/dashboard/artist", endpoint="artist_dashboard")
 @role_required("artist")
 def artist_dashboard():
+    # Social
     followers_count = UserFollow.query.filter_by(followed_id=current_user.id).count()
     following_count = UserFollow.query.filter_by(follower_id=current_user.id).count()
 
+    # Wallet
+    w = get_or_create_wallet(current_user.id)
+    wallet_balance = wallet_balance_cents(w) / 100.0
+    recent_txns = (
+        LedgerEntry.query
+        .filter_by(wallet_id=w.id)
+        .order_by(LedgerEntry.created_at.desc(), LedgerEntry.id.desc())
+        .limit(6)
+        .all()
+    )
+
+    # BookMe profile
     prof = BookMeProfile.query.filter_by(user_id=current_user.id).first()
-    artist_can_take_gigs = bool(prof and getattr(prof, "is_visible", False))
+    portfolio_count = prof.portfolio_items.count() if prof else 0
 
-    client_recent_bookings = (
-        Booking.query.filter_by(client_id=current_user.id)
-        .order_by(Booking.event_datetime.desc()).limit(5).all()
+    # Requests (artist as provider + artist as client)
+    incoming_requests = (
+        BookingRequest.query
+        .filter_by(provider_id=current_user.id, status=BookingStatus.pending)
+        .order_by(BookingRequest.created_at.desc())
+        .limit(6)
+        .all()
     )
-    provider_recent_bookings = (
-        Booking.query.filter_by(provider_id=current_user.id)
-        .order_by(Booking.event_datetime.desc()).limit(5).all()
+    outgoing_requests = (
+        BookingRequest.query
+        .filter_by(client_id=current_user.id)
+        .order_by(BookingRequest.created_at.desc())
+        .limit(6)
+        .all()
     )
 
-    incoming_requests = BookingRequest.query.filter_by(provider_id=current_user.id).count()
-    outgoing_requests = BookingRequest.query.filter_by(client_id=current_user.id).count()
+    # Bookings (upcoming + recent) — artist can be provider and/or client
+    now = datetime.utcnow()
+
+    upcoming_as_provider = (
+        Booking.query
+        .filter(Booking.provider_id == current_user.id, Booking.event_datetime >= now)
+        .order_by(Booking.event_datetime.asc())
+        .limit(6)
+        .all()
+    )
+    upcoming_as_client = (
+        Booking.query
+        .filter(Booking.client_id == current_user.id, Booking.event_datetime >= now)
+        .order_by(Booking.event_datetime.asc())
+        .limit(6)
+        .all()
+    )
+
+    recent_bookings = (
+        Booking.query
+        .filter((Booking.provider_id == current_user.id) | (Booking.client_id == current_user.id))
+        .order_by(Booking.created_at.desc())
+        .limit(6)
+        .all()
+    )
+
+    # Counts for small stat chips
+    incoming_requests_count = BookingRequest.query.filter_by(provider_id=current_user.id, status=BookingStatus.pending).count()
+    outgoing_requests_count = BookingRequest.query.filter_by(client_id=current_user.id).count()
 
     return render_template(
         "dash_artist.html",
         role_label=get_role_display(current_user.role),
         prof=prof,
-        artist_can_take_gigs=artist_can_take_gigs,
+        portfolio_count=portfolio_count,
+
         followers_count=followers_count,
         following_count=following_count,
+
+        wallet_balance=wallet_balance,
+        recent_txns=recent_txns,
+
         incoming_requests=incoming_requests,
         outgoing_requests=outgoing_requests,
-        client_recent_bookings=client_recent_bookings,
-        provider_recent_bookings=provider_recent_bookings,
-        client_bookings_count=Booking.query.filter_by(client_id=current_user.id).count(),
-        provider_bookings_count=Booking.query.filter_by(provider_id=current_user.id).count(),
-        client_pending_bookings=Booking.query.filter_by(client_id=current_user.id, status="pending").count(),
-        client_confirmed_bookings=Booking.query.filter_by(client_id=current_user.id, status="confirmed").count(),
-        provider_pending_bookings=Booking.query.filter_by(provider_id=current_user.id, status="pending").count(),
-        provider_confirmed_bookings=Booking.query.filter_by(provider_id=current_user.id, status="confirmed").count(),
+        incoming_requests_count=incoming_requests_count,
+        outgoing_requests_count=outgoing_requests_count,
+
+        upcoming_as_provider=upcoming_as_provider,
+        upcoming_as_client=upcoming_as_client,
+        recent_bookings=recent_bookings,
     )
-
-
-@app.route("/dashboard/provider", endpoint="provider_dashboard")
-@login_required
-def provider_dashboard():
-    if not is_service_provider(current_user):
-        flash("You don't have access to the provider dashboard.", "error")
-        return redirect(url_for("route_to_dashboard"))
-
-    my_followers_count = UserFollow.query.filter_by(followed_id=current_user.id).count()
-    my_following_count = UserFollow.query.filter_by(follower_id=current_user.id).count()
-
-    incoming_requests = BookingRequest.query.filter_by(provider_id=current_user.id).count()
-    outgoing_requests = BookingRequest.query.filter_by(client_id=current_user.id).count()
-
-    incoming_bookings_count = Booking.query.filter_by(provider_id=current_user.id).count()
-    outgoing_bookings_count = Booking.query.filter_by(client_id=current_user.id).count()
-
-    prof = BookMeProfile.query.filter_by(user_id=current_user.id).first()
-    portfolio_count = prof.portfolio_items.count() if prof else 0
-    requires_portfolio = role_requires_portfolio(current_user.role)
-
-    # completion score
-    completion_points = 0
-    next_steps = []
-
-    if prof:
-        completion_points += 20
-    else:
-        next_steps.append("Create your BookMe profile (shows you on the map).")
-
-    if (prof and prof.display_name) or current_user.display_name:
-        completion_points += 10
-    else:
-        next_steps.append("Add a display name.")
-
-    phone_val = (prof.contact_phone if prof else None)
-    if phone_val:
-        completion_points += 10
-    else:
-        next_steps.append("Add a phone number.")
-
-    bio_val = (prof.bio if prof else None)
-    if bio_val and len(bio_val.strip()) >= 40:
-        completion_points += 20
-    else:
-        next_steps.append("Write a strong bio (40+ chars).")
-
-    has_city_state = bool(prof and (prof.city or prof.state))
-    has_latlng = bool(prof and prof.lat is not None and prof.lng is not None)
-    if has_city_state or has_latlng:
-        completion_points += 20
-    else:
-        next_steps.append("Set your location (so you appear correctly on the map).")
-
-    avatar_val = current_user.avatar_path
-    if avatar_val:
-        completion_points += 10
-    else:
-        next_steps.append("Upload a profile photo/logo.")
-
-    if requires_portfolio:
-        if portfolio_count > 0:
-            completion_points += 10
-        else:
-            next_steps.append("Add at least 1 portfolio item (required for your role).")
-    else:
-        completion_points += 10
-
-    profile_progress = max(0, min(100, int(completion_points)))
-
-    # suggested users
-    fc_sub = (
-        db.session.query(
-            UserFollow.followed_id.label("uid"),
-            func.count(UserFollow.followed_id).label("cnt"),
-        )
-        .group_by(UserFollow.followed_id)
-        .subquery()
-    )
-
-    following_ids = {
-        uid for (uid,) in (
-            db.session.query(UserFollow.followed_id)
-            .filter(UserFollow.follower_id == current_user.id)
-            .all()
-        )
-    }
-
-    rows = (
-        db.session.query(User, func.coalesce(fc_sub.c.cnt, 0).label("followers_cnt"))
-        .outerjoin(fc_sub, fc_sub.c.uid == User.id)
-        .filter(User.id != current_user.id, User.role != RoleEnum.admin)
-        .order_by(func.coalesce(fc_sub.c.cnt, 0).desc(), User.id.desc())
-        .limit(6)
-        .all()
-    )
-
-    suggested = []
-    for u, fcnt in rows:
-        u_prof = BookMeProfile.query.filter_by(user_id=u.id, is_visible=True).first()
-        display_name = (u_prof.display_name if u_prof and u_prof.display_name else u.display_name)
-
-        if is_service_provider(u) and u_prof and u_prof.is_visible:
-            profile_url = url_for("provider_portfolio_public", username=u.username)
-        else:
-            profile_url = url_for("user_profile", username=u.username)
-
-        suggested.append({
-            "user_id": u.id,
-            "username": u.username,
-            "display_name": display_name or u.username,
-            "role_label": get_role_display(u.role),
-            "avatar_url": u.avatar_url,
-            "followers_count": int(fcnt or 0),
-            "is_following": (u.id in following_ids),
-            "profile_url": profile_url,
-        })
-
-    return render_template(
-        "dash_provider.html",
-        prof=prof,
-        my_followers_count=my_followers_count,
-        my_following_count=my_following_count,
-        incoming_requests=incoming_requests,
-        outgoing_requests=outgoing_requests,
-        incoming_bookings_count=incoming_bookings_count,
-        outgoing_bookings_count=outgoing_bookings_count,
-        portfolio_count=portfolio_count,
-        requires_portfolio=requires_portfolio,
-        role_label=get_role_display(current_user.role),
-        suggested=suggested,
-        profile_progress=profile_progress,
-        profile_next_steps=next_steps,
-        MAX_PORTFOLIO_ITEMS=MAX_PORTFOLIO_ITEMS,
-    )
-
-
-# Backward compatibility dashboard routes (redirect to provider dashboard)
-@app.route("/dashboard/producer", endpoint="producer_dashboard")
-@role_required("producer")
-def producer_dashboard():
-    return redirect(url_for("provider_dashboard"))
 
 
 @app.route("/dashboard/studio", endpoint="studio_dashboard")
@@ -3330,7 +3284,6 @@ def opportunities():
         flash("Thanks! Track status under “My tickets”.", "success")
         return redirect(url_for("opportunities"))
 
-    # GET
     meta = _load_opp_video_meta()
     filename = _current_opp_video_filename()
     video_url = url_for("opportunities_video_media") if filename else None
@@ -3349,6 +3302,78 @@ def whoami():
         f"kyc={current_user.kyc_status.value}, "
         f"active={current_user.is_active_col}"
     )
+
+
+# =========================================================
+# Compatibility endpoints (fix template BuildError)
+# =========================================================
+@app.route("/market/producers", endpoint="market_producer_catalog")
+@login_required
+def market_producer_catalog():
+    # template calls url_for('market_producer_catalog')
+    return redirect(url_for("producer_catalog_index"))
+
+
+@app.route("/dashboard/admin/users", endpoint="admin_users")
+@role_required("admin")
+def admin_users():
+    page = request.args.get("page", 1, type=int)
+    q = (request.args.get("q") or "").strip()
+    role = (request.args.get("role") or "").strip()
+    status = (request.args.get("status") or "").strip()
+    active = (request.args.get("active") or "").strip()
+
+    query = User.query
+
+    if q:
+        like = f"%{q}%"
+        query = query.filter(
+            (User.username.ilike(like)) |
+            (User.email.ilike(like)) |
+            (User.full_name.ilike(like)) |
+            (User.artist_name.ilike(like))
+        )
+
+    if role:
+        try:
+            query = query.filter(User.role == RoleEnum(role))
+        except Exception:
+            pass
+
+    if active:
+        val = active.lower() in ("1", "true", "yes", "on")
+        query = query.filter(User.is_active_col.is_(val))
+
+    if status:
+        try:
+            query = query.filter(User.kyc_status == KYCStatus(status))
+        except Exception:
+            pass
+
+    query = query.order_by(User.id.desc())
+
+    # Flask-SQLAlchemy paginate
+    pagination = query.paginate(page=page, per_page=25, error_out=False)
+
+    return render_template(
+        "admin_users.html",
+        users=pagination.items,
+        pagination=pagination,
+        q=q,
+        role=role,
+        status=status,
+        active=active,
+        RoleEnum=RoleEnum,
+        KYCStatus=KYCStatus,
+    )
+
+
+@app.route("/dashboard/admin/users/<int:user_id>", endpoint="admin_user_detail")
+@app.route("/dashboard/admin/user/<int:user_id>", endpoint="admin_user")
+@role_required("admin")
+def admin_user_detail(user_id: int):
+    u = User.query.get_or_404(user_id)
+    return render_template("admin_user_detail.html", user=u, u=u, RoleEnum=RoleEnum, KYCStatus=KYCStatus)
 
 
 # =========================================================
