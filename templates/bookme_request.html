@@ -1,14 +1,16 @@
 {% extends "base.html" %}
-{% block title %}BookMe · Requests & Bookings · BeatFund{% endblock %}
+
+{% block title %}Request Booking · BeatFund{% endblock %}
 
 {% block content %}
 <style>
-  .bf-page {
-    max-width: 1200px;
+  .br-page {
+    max-width: 700px;
     margin: 0 auto;
     padding: 32px 16px 64px;
     color: #f7f9ff;
   }
+
   .bf-page h1 {
     font-size: 1.6rem;
     margin-bottom: 0.25rem;
@@ -415,6 +417,178 @@
         </p>
       {% endif %}
     </section>
+=======
+  .br-card {
+    background: radial-gradient(circle at top left, #182a44, #050712);
+    border-radius: 18px;
+    border: 1px solid rgba(255,255,255,0.08);
+    padding: 24px;
+    box-shadow: 0 16px 40px rgba(0,0,0,0.45);
+  }
+  .br-header {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 24px;
+    padding-bottom: 20px;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+  }
+  .br-avatar {
+    width: 56px;
+    height: 56px;
+    border-radius: 14px;
+    object-fit: cover;
+    border: 1px solid rgba(148,163,184,0.35);
+  }
+  .br-title {
+    margin: 0;
+    font-size: 1.4rem;
+    font-weight: 600;
+  }
+  .br-subtitle {
+    margin: 4px 0 0;
+    font-size: 0.9rem;
+    opacity: 0.75;
+  }
+  .br-form {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+  .br-field {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .br-label {
+    font-size: 0.85rem;
+    font-weight: 600;
+    opacity: 0.9;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .br-label .required {
+    color: #f87171;
+  }
+  .br-input, .br-textarea {
+    width: 100%;
+    padding: 12px 16px;
+    border-radius: 12px;
+    border: 1px solid rgba(148,163,184,0.3);
+    background: rgba(2,6,23,0.6);
+    color: #e5e7eb;
+    font-size: 0.95rem;
+    outline: none;
+    transition: border-color 0.2s, background 0.2s;
+  }
+  .br-input:focus, .br-textarea:focus {
+    border-color: rgba(56,189,248,0.6);
+    background: rgba(2,6,23,0.8);
+  }
+  .br-textarea {
+    min-height: 140px;
+    resize: vertical;
+    font-family: inherit;
+  }
+  .br-hint {
+    font-size: 0.8rem;
+    opacity: 0.7;
+    margin-top: -4px;
+  }
+  .br-actions {
+    display: flex;
+    gap: 12px;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 8px;
+    flex-wrap: wrap;
+  }
+  .br-btn {
+    padding: 12px 24px;
+    border-radius: 12px;
+    border: 1px solid rgba(148,163,184,0.4);
+    background: rgba(15,23,42,0.5);
+    color: #f9fafb;
+    font-size: 0.95rem;
+    font-weight: 600;
+    cursor: pointer;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    transition: all 0.2s;
+  }
+  .br-btn:hover {
+    background: rgba(148,163,184,0.15);
+    border-color: rgba(148,163,184,0.6);
+    transform: translateY(-1px);
+  }
+  .br-btn-primary {
+    background: radial-gradient(circle at top left, rgba(56,189,248,0.3), rgba(15,23,42,0.9));
+    border-color: rgba(56,189,248,0.6);
+  }
+  .br-btn-primary:hover {
+    background: radial-gradient(circle at top left, rgba(56,189,248,0.4), rgba(15,23,42,1));
+    border-color: rgba(56,189,248,0.8);
+  }
+</style>
+
+<div class="br-page">
+  <div class="br-card">
+    <div class="br-header">
+      <img class="br-avatar" src="{{ provider.avatar_url or '/static/default-avatar.png' }}" alt="{{ provider.username }}">
+      <div>
+        <h1 class="br-title">Request Booking</h1>
+        <div class="br-subtitle">
+          @{{ provider.username }}
+          {% if provider.role %} · {{ get_role_display(provider.role) }}{% endif %}
+        </div>
+      </div>
+    </div>
+
+    <form method="POST" class="br-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+      <div class="br-field">
+        <label class="br-label" for="preferred_time">
+          Preferred Date & Time <span class="required">*</span>
+        </label>
+        <input 
+          class="br-input" 
+          id="preferred_time" 
+          name="preferred_time" 
+          type="datetime-local"
+          required
+        >
+        <div class="br-hint">
+          Select when you'd like to book this provider. You can discuss alternative times in your message below.
+        </div>
+      </div>
+
+      <div class="br-field">
+        <label class="br-label" for="message">
+          Message (optional)
+        </label>
+        <textarea 
+          class="br-textarea" 
+          id="message" 
+          name="message" 
+          placeholder="Tell the provider about your project, event, or what you need. Include any specific requirements, budget, location, or other details..."
+        ></textarea>
+        <div class="br-hint">
+          Provide details about your booking request to help the provider respond quickly.
+        </div>
+      </div>
+
+      <div class="br-actions">
+        <a class="br-btn" href="{{ url_for('provider_portfolio_public', username=provider.username) }}">
+          ← Back to Profile
+        </a>
+        <button type="submit" class="br-btn br-btn-primary">
+          Send Booking Request
+        </button>
+      </div>
+    </form>
+>>>>>>> 812c9a7 (Jay's commit)
   </div>
 </div>
 {% endblock %}
