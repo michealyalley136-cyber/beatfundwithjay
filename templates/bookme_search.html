@@ -558,7 +558,7 @@
                     <span class="pill pill-muted">This is you</span>
                   {% else %}
                     <a
-                      href="{{ url_for('bookme_request', provider_id=u.id) }}"
+                      href="{{ url_for('bookme_book_provider', username=u.username) }}"
                       class="btn-ghost"
                     >
                       Request booking

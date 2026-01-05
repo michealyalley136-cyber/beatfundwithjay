@@ -3,32 +3,38 @@
 {% block content %}
 <div class="card">
   <h3>Upload Beat</h3>
-  <form method="post" enctype="multipart/form-data">
+  <form method="post" enctype="multipart/form-data" action="{{ url_for('market_upload') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    
     <div><label>Title</label><br><input name="title" required></div>
     <div style="margin-top:8px;">
-      <label>Price (USD)</label><br><input name="price" placeholder="29.99" required>
+      <label>Price (USD)</label><br><input name="price_usd" type="number" step="0.01" min="0" placeholder="29.99" required>
     </div>
     <div style="margin-top:8px;">
       <label>License</label><br>
       <select name="license">
         <option value="standard">Standard</option>
         <option value="exclusive">Exclusive</option>
-        <option value="custom">Custom</option>
       </select>
     </div>
     <div style="margin-top:8px;">
-      <label>BPM</label><br><input name="bpm" placeholder="140">
+      <label>BPM (optional)</label><br><input name="bpm" type="number" min="0" placeholder="140">
     </div>
     <div style="margin-top:8px;">
-      <label>Genre</label><br><input name="genre" placeholder="Trap, Afrobeats">
+      <label>Genre (optional)</label><br><input name="genre" placeholder="Trap, Afrobeats">
     </div>
     <hr style="border-color: var(--border); margin:12px 0;">
-    <div><label>Cover (png/jpg)</label><br><input type="file" name="cover" accept=".png,.jpg,.jpeg"></div>
-    <div style="margin-top:8px;"><label>Preview (mp3/wav)</label><br><input type="file" name="preview" accept=".mp3,.wav,.m4a,.ogg"></div>
-    <div style="margin-top:8px;"><label>Stems / Full</label><br><input type="file" name="stems" accept=".mp3,.wav,.m4a,.ogg"></div>
+    <div><label>Cover Image (optional)</label><br><input type="file" name="cover_file" accept=".png,.jpg,.jpeg,image/*"></div>
+    <div style="margin-top:8px;">
+      <label>Audio File (required)</label><br>
+      <input type="file" name="audio_file" accept=".mp3,.wav,.m4a,.ogg,audio/*" required>
+      <div style="font-size:0.85rem; color:#9ca3af; margin-top:4px;">
+        This file will be used for preview and as the deliverable after purchase.
+      </div>
+    </div>
     <br>
-    <button class="btn ok" type="submit">List Beat</button>
-    <a class="btn" href="{{ url_for('producer_market_mine') }}">Back</a>
+    <button class="btn ok" type="submit">Upload Beat</button>
+    <a class="btn" href="{{ url_for('market_index') }}">Cancel</a>
   </form>
 </div>
 {% endblock %}

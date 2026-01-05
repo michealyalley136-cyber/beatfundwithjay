@@ -2371,26 +2371,104 @@ def booking_detail(booking_id):
         return redirect(url_for("bookme_requests"))
 
     if request.method == "POST":
-        if not is_provider:
-            flash("Only the provider can update this booking.", "error")
+        action = (request.form.get("action") or "").strip().lower()
+        
+        if action == "edit_booking":
+            # Both provider and client can edit booking details (for pending/confirmed bookings)
+            if booking.status in ["completed", "cancelled", "disputed"]:
+                flash("Cannot edit bookings that are completed, cancelled, or disputed.", "error")
+                return redirect(url_for("booking_detail", booking_id=booking.id))
+            
+            # Update event title
+            event_title = (request.form.get("event_title") or "").strip()
+            if event_title:
+                booking.event_title = event_title
+            
+            # Update date/time
+            event_date = (request.form.get("event_date") or "").strip()
+            event_time = (request.form.get("event_time") or "").strip()
+            if event_date and event_time:
+                try:
+                    booking.event_datetime = datetime.strptime(f"{event_date} {event_time}", "%Y-%m-%d %H:%M")
+                except ValueError:
+                    flash("Invalid date/time format.", "error")
+                    return redirect(url_for("booking_detail", booking_id=booking.id))
+            elif event_date or event_time:
+                flash("Both date and time are required.", "error")
+                return redirect(url_for("booking_detail", booking_id=booking.id))
+            
+            # Update duration
+            duration_minutes_raw = (request.form.get("duration_minutes") or "").strip()
+            if duration_minutes_raw:
+                try:
+                    booking.duration_minutes = int(duration_minutes_raw) if duration_minutes_raw else None
+                except ValueError:
+                    flash("Duration must be a number.", "error")
+                    return redirect(url_for("booking_detail", booking_id=booking.id))
+            
+            # Update location
+            location_text = (request.form.get("location_text") or "").strip()
+            booking.location_text = location_text or None
+            
+            # Update total amount
+            total_dollars_raw = (request.form.get("total_dollars") or "").strip()
+            if total_dollars_raw:
+                try:
+                    total_dollars = float(total_dollars_raw)
+                    booking.total_cents = int(total_dollars * 100) if total_dollars >= 0 else None
+                except ValueError:
+                    flash("Total amount must be a valid number.", "error")
+                    return redirect(url_for("booking_detail", booking_id=booking.id))
+            elif total_dollars_raw == "":
+                booking.total_cents = None
+            
+            # Update notes (provider can update provider notes, client can update client notes)
+            if is_provider:
+                notes_from_provider = (request.form.get("notes_from_provider") or "").strip()
+                booking.notes_from_provider = notes_from_provider or None
+            elif is_client:
+                notes_from_client = (request.form.get("notes_from_client") or "").strip()
+                booking.notes_from_client = notes_from_client or None
+            
+            # Status updates (only provider can change status)
+            if is_provider:
+                new_status = (request.form.get("status") or "").strip().lower()
+                if new_status and new_status in ["pending", "confirmed", "cancelled"]:
+                    booking.status = new_status
+                    if new_status == "cancelled":
+                        flash("Booking has been cancelled.", "success")
+                    elif new_status == "confirmed":
+                        flash("Booking has been confirmed.", "success")
+            
+            db.session.commit()
+            flash("Booking updated successfully.", "success")
             return redirect(url_for("booking_detail", booking_id=booking.id))
-
-        notes_from_provider = (request.form.get("notes_from_provider") or "").strip()
-        status_action = (request.form.get("status_action") or "").strip().lower()
-
-        booking.notes_from_provider = notes_from_provider or None
-
-        if status_action == "mark_completed":
-            if booking.status == "confirmed":
-                booking.status = "completed"
-                flash("Booking marked as completed.", "success")
+        
+        elif action == "update_notes":
+            # Simple note update (existing functionality)
+            if is_provider:
+                notes_from_provider = (request.form.get("notes_from_provider") or "").strip()
+                booking.notes_from_provider = notes_from_provider or None
+            elif is_client:
+                notes_from_client = (request.form.get("notes_from_client") or "").strip()
+                booking.notes_from_client = notes_from_client or None
             else:
-                flash("Only confirmed bookings can be marked completed.", "error")
-        else:
-            flash("Booking notes updated.", "success")
-
-        db.session.commit()
-        return redirect(url_for("booking_detail", booking_id=booking.id))
+                flash("You don't have permission to update notes.", "error")
+                return redirect(url_for("booking_detail", booking_id=booking.id))
+            
+            status_action = (request.form.get("status_action") or "").strip().lower()
+            
+            if status_action == "mark_completed" and is_provider:
+                if booking.status == "confirmed":
+                    booking.status = "completed"
+                    flash("Booking marked as completed.", "success")
+                else:
+                    flash("Only confirmed bookings can be marked completed.", "error")
+            else:
+                flash("Notes updated.", "success")
+            
+            db.session.commit()
+            return redirect(url_for("booking_detail", booking_id=booking.id))
 
     return render_template("booking_detail.html", booking=booking, is_provider=is_provider, is_client=is_client)
 
@@ -2398,7 +2476,246 @@ def booking_detail(booking_id):
 @app.route("/bookme/<username>/book", methods=["GET", "POST"])
 @login_required
 def bookme_book_provider(username):
-    return book_artist(username)
+    provider = User.query.filter_by(username=username).first_or_404()
+    
+    if not is_service_provider(provider):
+        flash("This user is not available for BookMe bookings.", "error")
+        return redirect(url_for("bookme_search"))
+    
+    if provider.id == current_user.id:
+        flash("You can't send a booking request to yourself.", "error")
+        return redirect(url_for("provider_portfolio_public", username=username))
+    
+    # Get follower count and follow status for template
+    follower_count = UserFollow.query.filter_by(followed_id=provider.id).count()
+    is_following = current_user.is_authenticated and UserFollow.query.filter_by(
+        follower_id=current_user.id, followed_id=provider.id
+    ).first() is not None
+    
+    if request.method == "POST":
+        # Collect all form fields
+        event_date = (request.form.get("event_date") or "").strip()
+        event_time = (request.form.get("event_time") or "").strip()
+        preferred_time_fallback = (request.form.get("preferred_time") or "").strip()
+        budget = (request.form.get("budget") or "").strip()
+        message = (request.form.get("message") or "").strip()
+        
+        # Build preferred_time from date/time or use fallback
+        preferred_time = preferred_time_fallback
+        if event_date and event_time:
+            try:
+                dt = datetime.strptime(f"{event_date} {event_time}", "%Y-%m-%d %H:%M")
+                preferred_time = dt.strftime("%Y-%m-%d %H:%M")
+            except ValueError:
+                preferred_time = f"{event_date} {event_time}"
+        
+        if not preferred_time:
+            flash("Please choose a date and time for the booking.", "error")
+            return render_template(
+                "bookme_book_provider.html",
+                provider=provider,
+                form_data=request.form,
+                follower_count=follower_count,
+                is_following=is_following
+            )
+        
+        # Build comprehensive message from role-specific fields
+        role_val = (provider.role.value if provider.role and hasattr(provider.role, 'value') else str(provider.role)).lower()
+        message_parts = []
+        
+        if budget:
+            message_parts.append(f"Budget: {budget}")
+        
+        # Studio-specific fields
+        if role_val in ["studio"]:
+            session_type = request.form.get("session_type", "").strip()
+            hours = request.form.get("hours", "").strip()
+            people = request.form.get("people", "").strip()
+            engineer_needed = request.form.get("engineer_needed", "").strip()
+            
+            if session_type:
+                message_parts.append(f"Session type: {session_type}")
+            if hours:
+                message_parts.append(f"Estimated hours: {hours}")
+            if people:
+                message_parts.append(f"People attending: {people}")
+            if engineer_needed:
+                message_parts.append(f"Engineer needed: {engineer_needed}")
+        
+        # Producer-specific fields
+        elif role_val in ["producer"]:
+            style = request.form.get("style", "").strip()
+            deliverables = request.form.get("deliverables", "").strip()
+            songs = request.form.get("songs", "").strip()
+            deadline = request.form.get("deadline", "").strip()
+            
+            if style:
+                message_parts.append(f"Style/vibe: {style}")
+            if deliverables:
+                message_parts.append(f"Deliverables: {deliverables}")
+            if songs:
+                message_parts.append(f"Number of songs: {songs}")
+            if deadline:
+                message_parts.append(f"Deadline: {deadline}")
+        
+        # Mix/Master Engineer-specific fields
+        elif role_val in ["mix_master_engineer"]:
+            service = request.form.get("service", "").strip()
+            stems = request.form.get("stems", "").strip()
+            format_field = request.form.get("format", "").strip()
+            revisions = request.form.get("revisions", "").strip()
+            
+            if service:
+                message_parts.append(f"Service: {service}")
+            if stems:
+                message_parts.append(f"Estimated stems/tracks: {stems}")
+            if format_field:
+                message_parts.append(f"File format: {format_field}")
+            if revisions:
+                message_parts.append(f"Revisions requested: {revisions}")
+        
+        # Videographer-specific fields
+        elif role_val in ["videographer"]:
+            video_type = request.form.get("video_type", "").strip()
+            duration = request.form.get("duration", "").strip()
+            locations = request.form.get("locations", "").strip()
+            deliverables_video = request.form.get("deliverables_video", "").strip()
+            
+            if video_type:
+                message_parts.append(f"Video type: {video_type}")
+            if duration:
+                message_parts.append(f"Video duration: {duration}")
+            if locations:
+                message_parts.append(f"Shoot locations: {locations}")
+            if deliverables_video:
+                message_parts.append(f"Deliverables: {deliverables_video}")
+        
+        # Photographer-specific fields
+        elif role_val in ["photographer"]:
+            photo_type = request.form.get("photo_type", "").strip()
+            photos_needed = request.form.get("photos_needed", "").strip()
+            locations_photo = request.form.get("locations_photo", "").strip()
+            editing = request.form.get("editing", "").strip()
+            
+            if photo_type:
+                message_parts.append(f"Photo shoot type: {photo_type}")
+            if photos_needed:
+                message_parts.append(f"Number of photos needed: {photos_needed}")
+            if locations_photo:
+                message_parts.append(f"Shoot location: {locations_photo}")
+            if editing:
+                message_parts.append(f"Editing included: {editing}")
+        
+        # DJ-specific fields
+        elif role_val in ["dj"]:
+            event_type_dj = request.form.get("event_type_dj", "").strip()
+            set_duration = request.form.get("set_duration", "").strip()
+            equipment_provided = request.form.get("equipment_provided", "").strip()
+            genre_preference = request.form.get("genre_preference", "").strip()
+            
+            if event_type_dj:
+                message_parts.append(f"Event type: {event_type_dj}")
+            if set_duration:
+                message_parts.append(f"Set duration: {set_duration} hours")
+            if equipment_provided:
+                message_parts.append(f"Equipment: {equipment_provided}")
+            if genre_preference:
+                message_parts.append(f"Genre preference: {genre_preference}")
+        
+        # Artist-specific fields
+        elif role_val in ["artist"]:
+            performance_type = request.form.get("performance_type", "").strip()
+            set_duration_artist = request.form.get("set_duration_artist", "").strip()
+            venue_type = request.form.get("venue_type", "").strip()
+            expected_audience = request.form.get("expected_audience", "").strip()
+            
+            if performance_type:
+                message_parts.append(f"Performance type: {performance_type}")
+            if set_duration_artist:
+                message_parts.append(f"Set duration: {set_duration_artist} minutes")
+            if venue_type:
+                message_parts.append(f"Venue type: {venue_type}")
+            if expected_audience:
+                message_parts.append(f"Expected audience: {expected_audience}")
+        
+        # Event Planner-specific fields
+        elif role_val in ["event_planner"]:
+            event_type_planner = request.form.get("event_type_planner", "").strip()
+            guest_count = request.form.get("guest_count", "").strip()
+            planning_scope = request.form.get("planning_scope", "").strip()
+            venue_location = request.form.get("venue_location", "").strip()
+            
+            if event_type_planner:
+                message_parts.append(f"Event type: {event_type_planner}")
+            if guest_count:
+                message_parts.append(f"Expected guest count: {guest_count}")
+            if planning_scope:
+                message_parts.append(f"Planning scope: {planning_scope}")
+            if venue_location:
+                message_parts.append(f"Venue/location: {venue_location}")
+        
+        # Live Sound Engineer-specific fields
+        elif role_val in ["live_sound_engineer"]:
+            event_type_sound = request.form.get("event_type_sound", "").strip()
+            venue_size = request.form.get("venue_size", "").strip()
+            equipment_needed = request.form.get("equipment_needed", "").strip()
+            band_count = request.form.get("band_count", "").strip()
+            
+            if event_type_sound:
+                message_parts.append(f"Event type: {event_type_sound}")
+            if venue_size:
+                message_parts.append(f"Venue size: {venue_size}")
+            if equipment_needed:
+                message_parts.append(f"Equipment: {equipment_needed}")
+            if band_count:
+                message_parts.append(f"Number of performers/bands: {band_count}")
+        
+        # MC/Host/Hypeman-specific fields
+        elif role_val in ["emcee_host_hypeman"]:
+            event_type_emcee = request.form.get("event_type_emcee", "").strip()
+            hosting_duration = request.form.get("hosting_duration", "").strip()
+            style_emcee = request.form.get("style_emcee", "").strip()
+            announcements = request.form.get("announcements", "").strip()
+            
+            if event_type_emcee:
+                message_parts.append(f"Event type: {event_type_emcee}")
+            if hosting_duration:
+                message_parts.append(f"Hosting duration: {hosting_duration} hours")
+            if style_emcee:
+                message_parts.append(f"Style/preference: {style_emcee}")
+            if announcements:
+                message_parts.append(f"Special announcements needed: {announcements}")
+        
+        # Combine message parts with user's message
+        full_message = ""
+        if message_parts:
+            full_message = "\n".join(message_parts)
+        if message:
+            if full_message:
+                full_message += f"\n\nAdditional details:\n{message}"
+            else:
+                full_message = message
+        
+        # Create booking request
+        req = BookingRequest(
+            provider_id=provider.id,
+            client_id=current_user.id,
+            message=full_message or None,
+            preferred_time=preferred_time,
+        )
+        db.session.add(req)
+        db.session.commit()
+        
+        flash("Booking request sent successfully.", "success")
+        return redirect(url_for("bookme_requests"))
+    
+    return render_template(
+        "bookme_book_provider.html",
+        provider=provider,
+        form_data={},
+        follower_count=follower_count,
+        is_following=is_following
+    )
 
 
 @app.route("/artists/<username>/book", methods=["GET", "POST"])
@@ -2799,7 +3116,7 @@ def producer_beats_delete(beat_id):
     beat = Beat.query.get_or_404(beat_id)
 
     if beat.owner_id != current_user.id:
-        flash("You can’t delete another producer’s beat.", "error")
+        flash("You can't delete another producer's beat.", "error")
         return redirect(url_for("producer_beats"))
 
     if beat.cover_path:
@@ -2813,6 +3130,97 @@ def producer_beats_delete(beat_id):
     db.session.commit()
     flash("Beat deleted.", "success")
     return redirect(url_for("producer_beats"))
+
+
+@app.route("/market/upload", methods=["GET", "POST"], endpoint="market_upload")
+@app.route("/producer/market/upload", methods=["GET", "POST"], endpoint="producer_market_upload")
+@login_required
+def market_upload():
+    # Only producers can upload beats
+    if current_user.role != RoleEnum.producer:
+        flash("Only producers can upload beats to the marketplace.", "error")
+        return redirect(url_for("market_index"))
+    
+    if request.method == "POST":
+        title = (request.form.get("title") or "").strip()
+        price_usd_raw = (request.form.get("price_usd") or "").strip()
+        bpm_raw = (request.form.get("bpm") or "").strip()
+        genre = (request.form.get("genre") or "").strip()
+        license_type = (request.form.get("license") or "standard").strip()
+        cover_file = request.files.get("cover_file")
+        audio_file = request.files.get("audio_file")
+        
+        errors = []
+        
+        if not title:
+            errors.append("Title is required.")
+        
+        price_cents = 0
+        if price_usd_raw:
+            try:
+                price = Decimal(price_usd_raw)
+                if price < 0:
+                    errors.append("Price cannot be negative.")
+                else:
+                    price_cents = int((price * 100).to_integral_value())
+            except InvalidOperation:
+                errors.append("Price must be a valid number (e.g. 29.99).")
+        else:
+            errors.append("Price is required.")
+        
+        if not audio_file or not audio_file.filename:
+            errors.append("Audio file is required.")
+        
+        bpm = None
+        if bpm_raw:
+            try:
+                bpm = int(bpm_raw)
+                if bpm < 0:
+                    errors.append("BPM cannot be negative.")
+            except ValueError:
+                errors.append("BPM must be a whole number.")
+        
+        if errors:
+            for e in errors:
+                flash(e, "error")
+            return render_template("market_upload.html")
+        
+        # Create beat record
+        beat = Beat(
+            owner_id=current_user.id,
+            title=title,
+            price_cents=price_cents,
+            bpm=bpm,
+            genre=genre or None,
+            license=license_type,
+            is_active=True
+        )
+        
+        # Save cover image if provided
+        if cover_file and cover_file.filename:
+            cover_path = _save_file(cover_file, ALLOWED_IMAGE)
+            if cover_path:
+                beat.cover_path = cover_path
+            else:
+                flash("Invalid cover image format. Please use PNG, JPG, or JPEG.", "error")
+        
+        # Save audio file (used for both preview and stems/deliverable)
+        if audio_file and audio_file.filename:
+            audio_path = _save_file(audio_file, ALLOWED_AUDIO)
+            if audio_path:
+                beat.preview_path = audio_path
+                beat.stems_path = audio_path  # Use same file for both preview and delivery
+            else:
+                flash("Invalid audio file format. Please use MP3, WAV, M4A, or OGG.", "error")
+                return render_template("market_upload.html")
+        
+        db.session.add(beat)
+        db.session.commit()
+        
+        flash("Beat uploaded successfully to the marketplace!", "success")
+        return redirect(url_for("market_index"))
+    
+    return render_template("market_upload.html")
 
 
 # =========================================================
@@ -3149,6 +3557,71 @@ def artist_dashboard():
         upcoming_as_provider=upcoming_as_provider,
         upcoming_as_client=upcoming_as_client,
         recent_bookings=recent_bookings,
+    )
+
+
+@app.route("/dashboard/provider", endpoint="provider_dashboard")
+@login_required
+def provider_dashboard():
+    if not is_service_provider(current_user):
+        flash("This dashboard is only available for service providers.", "error")
+        return redirect(url_for("route_to_dashboard"))
+    
+    # Social counts
+    followers_count = UserFollow.query.filter_by(followed_id=current_user.id).count()
+    following_count = UserFollow.query.filter_by(follower_id=current_user.id).count()
+    
+    # BookMe profile
+    prof = BookMeProfile.query.filter_by(user_id=current_user.id).first()
+    artist_can_take_gigs = prof is not None
+    
+    # Booking requests
+    incoming_requests = BookingRequest.query.filter_by(
+        provider_id=current_user.id, status=BookingStatus.pending
+    ).count()
+    outgoing_requests = BookingRequest.query.filter_by(client_id=current_user.id).count()
+    
+    # Bookings as provider
+    provider_bookings_count = Booking.query.filter_by(provider_id=current_user.id).count()
+    provider_pending_bookings = Booking.query.filter_by(
+        provider_id=current_user.id, status="pending"
+    ).count()
+    provider_recent_bookings = (
+        Booking.query
+        .filter_by(provider_id=current_user.id)
+        .order_by(Booking.created_at.desc())
+        .limit(10)
+        .all()
+    )
+    
+    # Bookings as client
+    client_bookings_count = Booking.query.filter_by(client_id=current_user.id).count()
+    client_pending_bookings = Booking.query.filter_by(
+        client_id=current_user.id, status="pending"
+    ).count()
+    client_recent_bookings = (
+        Booking.query
+        .filter_by(client_id=current_user.id)
+        .order_by(Booking.created_at.desc())
+        .limit(10)
+        .all()
+    )
+    
+    return render_template(
+        "dash_provider.html",
+        role_label=get_role_display(current_user.role),
+        prof=prof,
+        followers_count=followers_count,
+        following_count=following_count,
+        artist_can_take_gigs=artist_can_take_gigs,
+        incoming_requests=incoming_requests,
+        outgoing_requests=outgoing_requests,
+        provider_bookings_count=provider_bookings_count,
+        provider_pending_bookings=provider_pending_bookings,
+        client_bookings_count=client_bookings_count,
+        client_pending_bookings=client_pending_bookings,
+        provider_recent_bookings=provider_recent_bookings,
+        client_recent_bookings=client_recent_bookings,
     )
 
 

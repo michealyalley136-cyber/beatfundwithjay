@@ -19,7 +19,7 @@
       </div>
 
       {% if current_user.is_authenticated and current_user.id != provider.id %}
-        <a class="btn" href="{{ url_for('bookme_request', provider_id=provider.id) }}">Request booking</a>
+        <a class="btn" href="{{ url_for('bookme_book_provider', username=provider.username) }}">Request booking</a>
       {% endif %}
     </div>
   </div>

@@ -93,6 +93,13 @@
         {% set is_studio = role_val in ["studio"] %}
         {% set is_producer = role_val in ["producer"] %}
         {% set is_mixmaster = role_val in ["mix_master_engineer"] %}
+        {% set is_videographer = role_val in ["videographer"] %}
+        {% set is_photographer = role_val in ["photographer"] %}
+        {% set is_dj = role_val in ["dj"] %}
+        {% set is_artist = role_val in ["artist"] %}
+        {% set is_event_planner = role_val in ["event_planner"] %}
+        {% set is_live_sound = role_val in ["live_sound_engineer"] %}
+        {% set is_emcee = role_val in ["emcee_host_hypeman"] %}
 
         {% if is_studio %}
           <div class="pb-grid">
@@ -174,6 +181,220 @@
               <input class="pb-input" id="revisions" name="revisions" type="number" min="0" step="1" value="{{ form_data.get('revisions','') }}">
             </div>
           </div>
+
+        {% elif is_videographer %}
+          <div class="pb-grid">
+            <div class="pb-field">
+              <label class="pb-label" for="video_type">Video type</label>
+              <select class="pb-select" id="video_type" name="video_type">
+                <option value="">Choose…</option>
+                <option {% if form_data.get('video_type')=='Music video' %}selected{% endif %}>Music video</option>
+                <option {% if form_data.get('video_type')=='Live performance' %}selected{% endif %}>Live performance</option>
+                <option {% if form_data.get('video_type')=='Promo video' %}selected{% endif %}>Promo video</option>
+                <option {% if form_data.get('video_type')=='Behind the scenes' %}selected{% endif %}>Behind the scenes</option>
+                <option {% if form_data.get('video_type')=='Event coverage' %}selected{% endif %}>Event coverage</option>
+              </select>
+            </div>
+            <div class="pb-field">
+              <label class="pb-label" for="duration">Video duration</label>
+              <input class="pb-input" id="duration" name="duration" type="text" placeholder="e.g. 3-4 minutes" value="{{ form_data.get('duration','') }}">
+            </div>
+            <div class="pb-field">
+              <label class="pb-label" for="locations">Shoot locations</label>
+              <input class="pb-input" id="locations" name="locations" type="text" value="{{ form_data.get('locations','') }}">
+            </div>
+            <div class="pb-field">
+              <label class="pb-label" for="deliverables_video">Deliverables</label>
+              <select class="pb-select" id="deliverables_video" name="deliverables_video">
+                <option value="">Choose…</option>
+                <option {% if form_data.get('deliverables_video')=='Final video only' %}selected{% endif %}>Final video only</option>
+                <option {% if form_data.get('deliverables_video')=='Video + raw footage' %}selected{% endif %}>Video + raw footage</option>
+                <option {% if form_data.get('deliverables_video')=='Video + BTS content' %}selected{% endif %}>Video + BTS content</option>
+              </select>
+            </div>
+          </div>
+
+        {% elif is_photographer %}
+          <div class="pb-grid">
+            <div class="pb-field">
+              <label class="pb-label" for="photo_type">Photo shoot type</label>
+              <select class="pb-select" id="photo_type" name="photo_type">
+                <option value="">Choose…</option>
+                <option {% if form_data.get('photo_type')=='Headshots' %}selected{% endif %}>Headshots</option>
+                <option {% if form_data.get('photo_type')=='Portrait session' %}selected{% endif %}>Portrait session</option>
+                <option {% if form_data.get('photo_type')=='Event photography' %}selected{% endif %}>Event photography</option>
+                <option {% if form_data.get('photo_type')=='Product photos' %}selected{% endif %}>Product photos</option>
+                <option {% if form_data.get('photo_type')=='Concert/performance' %}selected{% endif %}>Concert/performance</option>
+              </select>
+            </div>
+            <div class="pb-field">
+              <label class="pb-label" for="photos_needed">Number of photos needed</label>
+              <input class="pb-input" id="photos_needed" name="photos_needed" type="number" min="1" step="1" value="{{ form_data.get('photos_needed','') }}">
+            </div>
+            <div class="pb-field">
+              <label class="pb-label" for="locations_photo">Shoot location</label>
+              <input class="pb-input" id="locations_photo" name="locations_photo" type="text" value="{{ form_data.get('locations_photo','') }}">
+            </div>
+            <div class="pb-field">
+              <label class="pb-label" for="editing">Editing included?</label>
+              <select class="pb-select" id="editing" name="editing">
+                <option value="">Choose…</option>
+                <option {% if form_data.get('editing')=='Yes' %}selected{% endif %}>Yes</option>
+                <option {% if form_data.get('editing')=='No' %}selected{% endif %}>No</option>
+              </select>
+            </div>
+          </div>
+
+        {% elif is_dj %}
+          <div class="pb-grid">
+            <div class="pb-field">
+              <label class="pb-label" for="event_type_dj">Event type</label>
+              <select class="pb-select" id="event_type_dj" name="event_type_dj">
+                <option value="">Choose…</option>
+                <option {% if form_data.get('event_type_dj')=='Club/venue' %}selected{% endif %}>Club/venue</option>
+                <option {% if form_data.get('event_type_dj')=='Private party' %}selected{% endif %}>Private party</option>
+                <option {% if form_data.get('event_type_dj')=='Wedding' %}selected{% endif %}>Wedding</option>
+                <option {% if form_data.get('event_type_dj')=='Corporate event' %}selected{% endif %}>Corporate event</option>
+                <option {% if form_data.get('event_type_dj')=='Festival' %}selected{% endif %}>Festival</option>
+              </select>
+            </div>
+            <div class="pb-field">
+              <label class="pb-label" for="set_duration">Set duration (hours)</label>
+              <input class="pb-input" id="set_duration" name="set_duration" type="number" min="0.5" step="0.5" value="{{ form_data.get('set_duration','') }}">
+            </div>
+            <div class="pb-field">
+              <label class="pb-label" for="equipment_provided">Equipment provided?</label>
+              <select class="pb-select" id="equipment_provided" name="equipment_provided">
+                <option value="">Choose…</option>
+                <option {% if form_data.get('equipment_provided')=='Yes, venue provides' %}selected{% endif %}>Yes, venue provides</option>
+                <option {% if form_data.get('equipment_provided')=='DJ brings own' %}selected{% endif %}>DJ brings own</option>
+              </select>
+            </div>
+            <div class="pb-field">
+              <label class="pb-label" for="genre_preference">Genre preference</label>
+              <input class="pb-input" id="genre_preference" name="genre_preference" type="text" value="{{ form_data.get('genre_preference','') }}">
+            </div>
+          </div>
+
+        {% elif is_artist %}
+          <div class="pb-grid">
+            <div class="pb-field">
+              <label class="pb-label" for="performance_type">Performance type</label>
+              <select class="pb-select" id="performance_type" name="performance_type">
+                <option value="">Choose…</option>
+                <option {% if form_data.get('performance_type')=='Live concert' %}selected{% endif %}>Live concert</option>
+                <option {% if form_data.get('performance_type')=='Festival' %}selected{% endif %}>Festival</option>
+                <option {% if form_data.get('performance_type')=='Private event' %}selected{% endif %}>Private event</option>
+                <option {% if form_data.get('performance_type')=='Corporate event' %}selected{% endif %}>Corporate event</option>
+                <option {% if form_data.get('performance_type')=='Opening act' %}selected{% endif %}>Opening act</option>
+              </select>
+            </div>
+            <div class="pb-field">
+              <label class="pb-label" for="set_duration_artist">Set duration (minutes)</label>
+              <input class="pb-input" id="set_duration_artist" name="set_duration_artist" type="number" min="15" step="15" value="{{ form_data.get('set_duration_artist','') }}">
+            </div>
+            <div class="pb-field">
+              <label class="pb-label" for="venue_type">Venue type</label>
+              <input class="pb-input" id="venue_type" name="venue_type" type="text" placeholder="e.g. Outdoor, Indoor, Stadium" value="{{ form_data.get('venue_type','') }}">
+            </div>
+            <div class="pb-field">
+              <label class="pb-label" for="expected_audience">Expected audience size</label>
+              <input class="pb-input" id="expected_audience" name="expected_audience" type="text" placeholder="e.g. 100-200 people" value="{{ form_data.get('expected_audience','') }}">
+            </div>
+          </div>
+
+        {% elif is_event_planner %}
+          <div class="pb-grid">
+            <div class="pb-field">
+              <label class="pb-label" for="event_type_planner">Event type</label>
+              <select class="pb-select" id="event_type_planner" name="event_type_planner">
+                <option value="">Choose…</option>
+                <option {% if form_data.get('event_type_planner')=='Wedding' %}selected{% endif %}>Wedding</option>
+                <option {% if form_data.get('event_type_planner')=='Corporate' %}selected{% endif %}>Corporate</option>
+                <option {% if form_data.get('event_type_planner')=='Concert/Show' %}selected{% endif %}>Concert/Show</option>
+                <option {% if form_data.get('event_type_planner')=='Festival' %}selected{% endif %}>Festival</option>
+                <option {% if form_data.get('event_type_planner')=='Birthday/Party' %}selected{% endif %}>Birthday/Party</option>
+              </select>
+            </div>
+            <div class="pb-field">
+              <label class="pb-label" for="guest_count">Expected guest count</label>
+              <input class="pb-input" id="guest_count" name="guest_count" type="number" min="1" step="1" value="{{ form_data.get('guest_count','') }}">
+            </div>
+            <div class="pb-field">
+              <label class="pb-label" for="planning_scope">Planning scope</label>
+              <select class="pb-select" id="planning_scope" name="planning_scope">
+                <option value="">Choose…</option>
+                <option {% if form_data.get('planning_scope')=='Full planning' %}selected{% endif %}>Full planning</option>
+                <option {% if form_data.get('planning_scope')=='Day-of coordination' %}selected{% endif %}>Day-of coordination</option>
+                <option {% if form_data.get('planning_scope')=='Partial planning' %}selected{% endif %}>Partial planning</option>
+              </select>
+            </div>
+            <div class="pb-field">
+              <label class="pb-label" for="venue_location">Venue/location</label>
+              <input class="pb-input" id="venue_location" name="venue_location" type="text" value="{{ form_data.get('venue_location','') }}">
+            </div>
+          </div>
+
+        {% elif is_live_sound %}
+          <div class="pb-grid">
+            <div class="pb-field">
+              <label class="pb-label" for="event_type_sound">Event type</label>
+              <select class="pb-select" id="event_type_sound" name="event_type_sound">
+                <option value="">Choose…</option>
+                <option {% if form_data.get('event_type_sound')=='Concert' %}selected{% endif %}>Concert</option>
+                <option {% if form_data.get('event_type_sound')=='Live performance' %}selected{% endif %}>Live performance</option>
+                <option {% if form_data.get('event_type_sound')=='Corporate event' %}selected{% endif %}>Corporate event</option>
+                <option {% if form_data.get('event_type_sound')=='Festival' %}selected{% endif %}>Festival</option>
+              </select>
+            </div>
+            <div class="pb-field">
+              <label class="pb-label" for="venue_size">Venue size</label>
+              <input class="pb-input" id="venue_size" name="venue_size" type="text" placeholder="e.g. Small club, Large venue" value="{{ form_data.get('venue_size','') }}">
+            </div>
+            <div class="pb-field">
+              <label class="pb-label" for="equipment_needed">Equipment provided?</label>
+              <select class="pb-select" id="equipment_needed" name="equipment_needed">
+                <option value="">Choose…</option>
+                <option {% if form_data.get('equipment_needed')=='Venue has equipment' %}selected{% endif %}>Venue has equipment</option>
+                <option {% if form_data.get('equipment_needed')=='Engineer brings equipment' %}selected{% endif %}>Engineer brings equipment</option>
+              </select>
+            </div>
+            <div class="pb-field">
+              <label class="pb-label" for="band_count">Number of performers/bands</label>
+              <input class="pb-input" id="band_count" name="band_count" type="number" min="1" step="1" value="{{ form_data.get('band_count','') }}">
+            </div>
+          </div>
+
+        {% elif is_emcee %}
+          <div class="pb-grid">
+            <div class="pb-field">
+              <label class="pb-label" for="event_type_emcee">Event type</label>
+              <select class="pb-select" id="event_type_emcee" name="event_type_emcee">
+                <option value="">Choose…</option>
+                <option {% if form_data.get('event_type_emcee')=='Concert' %}selected{% endif %}>Concert</option>
+                <option {% if form_data.get('event_type_emcee')=='Corporate event' %}selected{% endif %}>Corporate event</option>
+                <option {% if form_data.get('event_type_emcee')=='Festival' %}selected{% endif %}>Festival</option>
+                <option {% if form_data.get('event_type_emcee')=='Award show' %}selected{% endif %}>Award show</option>
+              </select>
+            </div>
+            <div class="pb-field">
+              <label class="pb-label" for="hosting_duration">Hosting duration (hours)</label>
+              <input class="pb-input" id="hosting_duration" name="hosting_duration" type="number" min="0.5" step="0.5" value="{{ form_data.get('hosting_duration','') }}">
+            </div>
+            <div class="pb-field">
+              <label class="pb-label" for="style_emcee">Style/preference</label>
+              <input class="pb-input" id="style_emcee" name="style_emcee" type="text" placeholder="e.g. Energetic, Professional, Humorous" value="{{ form_data.get('style_emcee','') }}">
+            </div>
+            <div class="pb-field">
+              <label class="pb-label" for="announcements">Special announcements needed?</label>
+              <select class="pb-select" id="announcements" name="announcements">
+                <option value="">Choose…</option>
+                <option {% if form_data.get('announcements')=='Yes' %}selected{% endif %}>Yes</option>
+                <option {% if form_data.get('announcements')=='No' %}selected{% endif %}>No</option>
+              </select>
+            </div>
+          </div>
+
         {% else %}
           <div class="pb-hint">This provider uses the general request form — add any details below.</div>
         {% endif %}
