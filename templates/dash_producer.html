@@ -1,6 +1,11 @@
 {% extends "base.html" %}
 {% block title %}Producer Dashboard{% endblock %}
 {% block content %}
+<div style="margin-bottom: 24px; text-align: center;">
+  <a class="btn ok" href="{{ url_for('producer_market_upload') }}" style="font-size: 1.1rem; padding: 12px 32px;">
+    Upload New Beat
+  </a>
+</div>
 <div class="grid g-3">
   <div class="card">
     <h3>Your Listings</h3>

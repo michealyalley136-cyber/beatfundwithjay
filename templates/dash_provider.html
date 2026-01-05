@@ -93,6 +93,15 @@
     background: rgba(0,0,0,.22);
     font-size:.85rem;
   }
+  .bf-badge a, a.bf-badge{
+    color: inherit;
+    text-decoration: none;
+    transition: background .15s ease, border-color .15s ease;
+  }
+  .bf-badge a:hover, a.bf-badge:hover{
+    background: rgba(255,255,255,.08);
+    border-color: rgba(255,255,255,.22);
+  }
   .bf-dot{
     width:9px; height:9px; border-radius:999px;
     background: linear-gradient(135deg, var(--p1), var(--p2));
@@ -196,6 +205,7 @@
                 Gigs Profile:
                 <strong>{{ "Live" if artist_can_take_gigs else "Off" }}</strong>
               </span>
+              <a class="bf-badge" href="{{ url_for('producer_market_upload') }}">Upload Beat</a>
             </div>
           </div>
         </div>
