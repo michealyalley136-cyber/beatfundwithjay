@@ -1,40 +1,438 @@
 {% extends "base.html" %}
 {% block title %}My Beats{% endblock %}
+
+{% block extra_head %}
+<style>
+  .beats-page {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 20px 16px;
+  }
+  
+  .beats-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 16px;
+    margin-bottom: 24px;
+    padding: 20px;
+    background: linear-gradient(135deg, rgba(124,58,237,.1), rgba(236,72,153,.1));
+    border: 1px solid rgba(255,255,255,.12);
+    border-radius: 18px;
+  }
+  
+  .beats-header h1 {
+    margin: 0;
+    font-size: 1.8rem;
+    font-weight: 800;
+  }
+  
+  .beats-stats {
+    display: flex;
+    gap: 24px;
+    flex-wrap: wrap;
+  }
+  
+  .stat-item {
+    text-align: center;
+  }
+  
+  .stat-value {
+    font-size: 1.5rem;
+    font-weight: 800;
+    color: rgba(124,58,237,1);
+  }
+  
+  .stat-label {
+    font-size: 0.9rem;
+    opacity: 0.7;
+    margin-top: 4px;
+  }
+  
+  .carousel-container {
+    position: relative;
+    margin: 24px 0;
+  }
+  
+  .carousel-wrapper {
+    overflow: hidden;
+    border-radius: 20px;
+    position: relative;
+  }
+  
+  .carousel-track {
+    display: flex;
+    transition: transform 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+    gap: 20px;
+    padding: 20px;
+    background: rgba(255,255,255,.03);
+    border: 1px solid rgba(255,255,255,.08);
+  }
+  
+  .beat-card {
+    min-width: 320px;
+    max-width: 320px;
+    background: linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,.05));
+    border: 1px solid rgba(255,255,255,.12);
+    border-radius: 18px;
+    padding: 20px;
+    transition: all 0.3s ease;
+    position: relative;
+  }
+  
+  .beat-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 20px 40px rgba(0,0,0,.4);
+    border-color: rgba(124,58,237,.4);
+  }
+  
+  .beat-card.active {
+    border-color: rgba(124,58,237,.6);
+    box-shadow: 0 0 30px rgba(124,58,237,.3);
+  }
+  
+  .beat-cover {
+    width: 100%;
+    height: 200px;
+    object-fit: cover;
+    border-radius: 12px;
+    margin-bottom: 16px;
+    background: linear-gradient(135deg, rgba(124,58,237,.2), rgba(236,72,153,.2));
+  }
+  
+  .beat-cover-placeholder {
+    width: 100%;
+    height: 200px;
+    border-radius: 12px;
+    background: linear-gradient(135deg, rgba(124,58,237,.2), rgba(236,72,153,.2));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 3rem;
+    margin-bottom: 16px;
+  }
+  
+  .beat-title {
+    font-size: 1.2rem;
+    font-weight: 700;
+    margin-bottom: 8px;
+    line-height: 1.3;
+  }
+  
+  .beat-meta {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+    font-size: 0.9rem;
+    opacity: 0.8;
+  }
+  
+  .beat-price {
+    font-size: 1.3rem;
+    font-weight: 800;
+    color: rgba(34,197,94,1);
+    margin-bottom: 16px;
+  }
+  
+  .beat-audio {
+    width: 100%;
+    margin-bottom: 16px;
+    border-radius: 8px;
+  }
+  
+  .beat-actions {
+    display: flex;
+    gap: 8px;
+  }
+  
+  .btn-carousel {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 10;
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    border: 2px solid rgba(255,255,255,.2);
+    background: rgba(0,0,0,.6);
+    backdrop-filter: blur(10px);
+    color: white;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.5rem;
+    transition: all 0.3s ease;
+    border: none;
+  }
+  
+  .btn-carousel:hover {
+    background: rgba(124,58,237,.8);
+    transform: translateY(-50%) scale(1.1);
+  }
+  
+  .btn-carousel:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+  }
+  
+  .btn-carousel.prev {
+    left: 10px;
+  }
+  
+  .btn-carousel.next {
+    right: 10px;
+  }
+  
+  .carousel-indicators {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+    margin-top: 20px;
+    flex-wrap: wrap;
+  }
+  
+  .indicator {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: rgba(255,255,255,.3);
+    cursor: pointer;
+    transition: all 0.3s ease;
+    border: none;
+    padding: 0;
+  }
+  
+  .indicator.active {
+    background: rgba(124,58,237,1);
+    width: 30px;
+    border-radius: 5px;
+  }
+  
+  .empty-state {
+    text-align: center;
+    padding: 60px 20px;
+    background: rgba(255,255,255,.03);
+    border: 1px solid rgba(255,255,255,.08);
+    border-radius: 18px;
+  }
+  
+  .empty-state-icon {
+    font-size: 4rem;
+    margin-bottom: 16px;
+    opacity: 0.5;
+  }
+  
+  .empty-state h3 {
+    font-size: 1.5rem;
+    margin-bottom: 8px;
+  }
+  
+  .empty-state p {
+    opacity: 0.7;
+    margin-bottom: 24px;
+  }
+  
+  @media (max-width: 768px) {
+    .beat-card {
+      min-width: 280px;
+      max-width: 280px;
+    }
+    
+    .btn-carousel {
+      width: 40px;
+      height: 40px;
+      font-size: 1.2rem;
+    }
+    
+    .btn-carousel.prev {
+      left: 5px;
+    }
+    
+    .btn-carousel.next {
+      right: 5px;
+    }
+  }
+</style>
+{% endblock %}
+
 {% block content %}
-<div class="card">
-  <h3>My Beats</h3>
-  <div class="muted">Sales: {{ total_sales }} | Gross: ${{ '%.2f'|format(gross) }}</div>
-  <div class="grid g-3" style="margin-top:12px;">
-    {% for b in items %}
-    <div class="card">
-      <div style="display:flex; gap:12px;">
-        {% if b.cover_path %}
-          <img src="{{ url_for('media_file', filename=b.cover_path) }}" alt="cover" style="width:84px; height:84px; object-fit:cover; border-radius:8px;">
-        {% else %}
-          <div style="width:84px; height:84px; border-radius:8px; background:#0e2238;"></div>
-        {% endif %}
-        <div>
-          <strong>{{ b.title }}</strong><br>
-          <span class="muted">{{ b.genre or '—' }} • {{ b.bpm or '—' }} bpm</span><br>
-          <span class="chip">${{ '%.2f'|format(b.price_cents/100.0) }}</span>
+<div class="beats-page">
+  <div class="beats-header">
+    <div>
+      <h1>My Beats</h1>
+      <p style="opacity: 0.7; margin-top: 8px;">Manage your marketplace listings</p>
+    </div>
+    <div class="beats-stats">
+      <div class="stat-item">
+        <div class="stat-value">{{ items|length }}</div>
+        <div class="stat-label">Total Beats</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-value">{{ total_sales }}</div>
+        <div class="stat-label">Total Sales</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-value">${{ '%.2f'|format(gross) }}</div>
+        <div class="stat-label">Gross Revenue</div>
+      </div>
+    </div>
+  </div>
+
+  {% if items and items|length > 0 %}
+    <div class="carousel-container">
+      <button class="btn-carousel prev" onclick="moveCarousel(-1)" id="prevBtn">‹</button>
+      <button class="btn-carousel next" onclick="moveCarousel(1)" id="nextBtn">›</button>
+      
+      <div class="carousel-wrapper">
+        <div class="carousel-track" id="carouselTrack">
+          {% for b in items %}
+          <div class="beat-card" data-beat-id="{{ b.id }}">
+            {% if b.cover_path %}
+              <img src="{{ url_for('media_file', filename=b.cover_path) }}" alt="{{ b.title }}" class="beat-cover">
+            {% else %}
+              <div class="beat-cover-placeholder">🎵</div>
+            {% endif %}
+            
+            <div class="beat-title">{{ b.title }}</div>
+            
+            <div class="beat-meta">
+              {% if b.genre %}<span>🎵 {{ b.genre }}</span>{% endif %}
+              {% if b.bpm %}<span>⚡ {{ b.bpm }} BPM</span>{% endif %}
+            </div>
+            
+            <div class="beat-price">${{ '%.2f'|format(b.price_cents/100.0) }}</div>
+            
+            {% if b.preview_path %}
+              <audio controls class="beat-audio">
+                <source src="{{ url_for('media_file', filename=b.preview_path) }}" type="audio/mpeg">
+                Your browser does not support the audio element.
+              </audio>
+            {% else %}
+              <div style="padding: 12px; background: rgba(255,255,255,.05); border-radius: 8px; text-align: center; opacity: 0.6; margin-bottom: 16px;">
+                No preview available
+              </div>
+            {% endif %}
+            
+            <div class="beat-actions">
+              <form method="post" action="{{ url_for('producer_market_delete', beat_id=b.id) }}" onsubmit="return confirm('Are you sure you want to delete \"{{ b.title }}\"? This action cannot be undone.');" style="flex: 1;">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button class="btn danger" type="submit" style="width: 100%;">Delete</button>
+              </form>
+            </div>
+          </div>
+          {% endfor %}
         </div>
       </div>
-      <div style="margin-top:10px;">
-        {% if b.preview_path %}
-          <audio controls style="width:100%;">
-            <source src="{{ url_for('media_file', filename=b.preview_path) }}" type="audio/mpeg">
-          </audio>
-        {% else %}
-          <div class="muted">No preview uploaded.</div>
-        {% endif %}
+      
+      <div class="carousel-indicators" id="indicators">
+        {% for b in items %}
+        <button class="indicator {% if loop.index0 == 0 %}active{% endif %}" onclick="goToSlide({{ loop.index0 }})" aria-label="Go to beat {{ loop.index }}"></button>
+        {% endfor %}
       </div>
-      <form method="post" action="{{ url_for('producer_market_delete', beat_id=b.id) }}" onsubmit="return confirm('Delete this beat?');" style="margin-top:10px;">
-        <button class="btn danger" type="submit">Delete</button>
-      </form>
     </div>
-    {% else %}
-      <div class="muted">No items yet. Upload your first beat.</div>
-    {% endfor %}
-  </div>
+  {% else %}
+    <div class="empty-state">
+      <div class="empty-state-icon">🎵</div>
+      <h3>No Beats Yet</h3>
+      <p>Start building your catalog by uploading your first beat to the marketplace.</p>
+      <a href="{{ url_for('producer_market_upload') }}" class="btn primary" style="font-size: 1rem; padding: 12px 24px;">
+        Upload Your First Beat →
+      </a>
+    </div>
+  {% endif %}
 </div>
+
+<script>
+  let currentIndex = 0;
+  const items = {{ items|length }};
+  let cardsPerView = window.innerWidth > 1200 ? 3 : window.innerWidth > 768 ? 2 : 1;
+  
+  function updateCarousel() {
+    const track = document.getElementById('carouselTrack');
+    const cardWidth = 320 + 20; // card width + gap
+    const offset = -(currentIndex * cardWidth);
+    track.style.transform = `translateX(${offset}px)`;
+    
+    // Update indicators
+    const indicators = document.querySelectorAll('.indicator');
+    indicators.forEach((ind, idx) => {
+      ind.classList.toggle('active', idx === currentIndex);
+    });
+    
+    // Update active card
+    const cards = document.querySelectorAll('.beat-card');
+    cards.forEach((card, idx) => {
+      card.classList.toggle('active', idx === currentIndex);
+    });
+    
+    // Update button states
+    const prevBtn = document.getElementById('prevBtn');
+    const nextBtn = document.getElementById('nextBtn');
+    prevBtn.disabled = currentIndex === 0;
+    nextBtn.disabled = currentIndex >= items - cardsPerView;
+  }
+  
+  function moveCarousel(direction) {
+    const maxIndex = Math.max(0, items - cardsPerView);
+    currentIndex += direction;
+    currentIndex = Math.max(0, Math.min(currentIndex, maxIndex));
+    updateCarousel();
+  }
+  
+  function goToSlide(index) {
+    const maxIndex = Math.max(0, items - cardsPerView);
+    currentIndex = Math.min(index, maxIndex);
+    updateCarousel();
+  }
+  
+  // Keyboard navigation
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowLeft') moveCarousel(-1);
+    if (e.key === 'ArrowRight') moveCarousel(1);
+  });
+  
+  // Touch/swipe support
+  let touchStartX = 0;
+  let touchEndX = 0;
+  
+  const carouselWrapper = document.querySelector('.carousel-wrapper');
+  if (carouselWrapper) {
+    carouselWrapper.addEventListener('touchstart', (e) => {
+      touchStartX = e.changedTouches[0].screenX;
+    });
+    
+    carouselWrapper.addEventListener('touchend', (e) => {
+      touchEndX = e.changedTouches[0].screenX;
+      handleSwipe();
+    });
+  }
+  
+  function handleSwipe() {
+    const swipeThreshold = 50;
+    const diff = touchStartX - touchEndX;
+    
+    if (Math.abs(diff) > swipeThreshold) {
+      if (diff > 0) {
+        moveCarousel(1); // Swipe left - next
+      } else {
+        moveCarousel(-1); // Swipe right - previous
+      }
+    }
+  }
+  
+  // Initialize
+  updateCarousel();
+  
+  // Handle window resize
+  window.addEventListener('resize', () => {
+    const newCardsPerView = window.innerWidth > 1200 ? 3 : window.innerWidth > 768 ? 2 : 1;
+    if (newCardsPerView !== cardsPerView) {
+      cardsPerView = newCardsPerView;
+      updateCarousel();
+    }
+  });
+</script>
 {% endblock %}

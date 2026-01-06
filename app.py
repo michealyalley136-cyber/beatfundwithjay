@@ -813,6 +813,25 @@ class PortfolioItem(db.Model):
         return self.external_url
 
 
+# ------- Studio Availability Calendar -------
+class StudioAvailability(db.Model):
+    __tablename__ = "studio_availability"
+    id = db.Column(db.Integer, primary_key=True)
+    studio_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    
+    available_date = db.Column(db.Date, nullable=False, index=True)
+    start_time = db.Column(db.Time, nullable=False)
+    end_time = db.Column(db.Time, nullable=False)
+    
+    is_available = db.Column(db.Boolean, nullable=False, default=True)
+    notes = db.Column(db.String(255), nullable=True)
+    
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    studio = db.relationship("User", foreign_keys=[studio_id], backref=db.backref("availability_slots", lazy="dynamic"))
+
+
 # ------- Audit Log -------
 class AuditLog(db.Model):
     __tablename__ = "audit_log"
@@ -1847,6 +1866,64 @@ def user_profile(username):
     )
 
 
+@app.route("/api/followers/<int:user_id>", endpoint="api_followers")
+@login_required
+def api_followers(user_id):
+    """Get list of users following the specified user"""
+    if user_id != current_user.id:
+        return jsonify({"error": "Unauthorized"}), 403
+    
+    follow_records = (
+        UserFollow.query
+        .filter_by(followed_id=user_id)
+        .order_by(UserFollow.created_at.desc())
+        .all()
+    )
+    
+    result = []
+    for follow in follow_records:
+        user = User.query.get(follow.follower_id)
+        if user:
+            result.append({
+                "id": user.id,
+                "username": user.username,
+                "display_name": user.display_name or user.username,
+                "avatar_url": user.avatar_url,
+                "role": user.role.value if user.role else None,
+            })
+    
+    return jsonify({"followers": result})
+
+
+@app.route("/api/following/<int:user_id>", endpoint="api_following")
+@login_required
+def api_following(user_id):
+    """Get list of users that the specified user is following"""
+    if user_id != current_user.id:
+        return jsonify({"error": "Unauthorized"}), 403
+    
+    follow_records = (
+        UserFollow.query
+        .filter_by(follower_id=user_id)
+        .order_by(UserFollow.created_at.desc())
+        .all()
+    )
+    
+    result = []
+    for follow in follow_records:
+        user = User.query.get(follow.followed_id)
+        if user:
+            result.append({
+                "id": user.id,
+                "username": user.username,
+                "display_name": user.display_name or user.username,
+                "avatar_url": user.avatar_url,
+                "role": user.role.value if user.role else None,
+            })
+    
+    return jsonify({"following": result})
+
+
 @app.route("/u/<username>/follow", methods=["POST"], endpoint="user_follow_toggle")
 @login_required
 def user_follow_toggle(username):
@@ -2223,6 +2300,24 @@ def bookme_request(provider_id):
         if not pref:
             flash("Please choose a date and time slot.", "error")
             return redirect(url_for("bookme_request", provider_id=provider_id))
+        
+        # Check if the requested time is blocked (for studios)
+        if provider.role == RoleEnum.studio:
+            try:
+                # Try to parse the preferred time to extract date
+                if " " in pref:
+                    date_part = pref.split(" ", 1)[0]
+                    check_date = datetime.strptime(date_part, "%Y-%m-%d").date()
+                else:
+                    # If no date in preferred_time, use today as fallback
+                    check_date = datetime.utcnow().date()
+                
+                if is_time_blocked(provider_id, check_date, pref):
+                    flash("This time slot is blocked and not available for booking.", "error")
+                    return redirect(url_for("bookme_request", provider_id=provider_id))
+            except (ValueError, AttributeError):
+                # If we can't parse, continue (let the studio handle it manually)
+                pass
 
         req = BookingRequest(
             provider_id=provider.id,
@@ -2235,7 +2330,7 @@ def bookme_request(provider_id):
         flash("Booking request sent.", "success")
         return redirect(url_for("bookme_requests"))
 
-    return render_template("bookme_request.html", provider=provider)
+    return render_template("bookme_request.html", provider=provider, BookingStatus=BookingStatus)
 
 
 @app.route("/bookme/requests")
@@ -2279,6 +2374,7 @@ def bookme_requests():
         incoming_bookings=incoming_bookings,
         outgoing_bookings=outgoing_bookings,
         HOLD_FEE_CENTS=HOLD_FEE_CENTS,
+        BookingStatus=BookingStatus,
     )
 
 
@@ -3132,6 +3228,41 @@ def producer_beats_delete(beat_id):
     return redirect(url_for("producer_beats"))
 
 
+@app.route("/producer/market/mine", endpoint="producer_market_mine")
+@role_required("producer")
+def producer_market_mine():
+    # Get producer's beats
+    items = Beat.query.filter_by(owner_id=current_user.id).order_by(Beat.id.desc()).all()
+    
+    # Calculate sales stats
+    orders = Order.query.filter_by(seller_id=current_user.id, status=OrderStatus.paid).all()
+    total_sales = len(orders)
+    gross_cents = sum(order.amount_cents or 0 for order in orders)
+    gross = gross_cents / 100.0
+    
+    return render_template(
+        "producer_market_mine.html",
+        items=items,
+        total_sales=total_sales,
+        gross=gross,
+    )
+
+
+@app.route("/producer/market/delete/<int:beat_id>", methods=["POST"], endpoint="producer_market_delete")
+@role_required("producer")
+def producer_market_delete(beat_id):
+    beat = Beat.query.get_or_404(beat_id)
+    
+    if beat.owner_id != current_user.id:
+        flash("You can only delete your own beats.", "error")
+        return redirect(url_for("producer_market_mine"))
+    
+    db.session.delete(beat)
+    db.session.commit()
+    flash("Beat deleted from marketplace.", "success")
+    return redirect(url_for("producer_market_mine"))
+
+
 @app.route("/market/upload", methods=["GET", "POST"], endpoint="market_upload")
 @app.route("/producer/market/upload", methods=["GET", "POST"], endpoint="producer_market_upload")
 @login_required
@@ -3458,6 +3589,10 @@ def route_to_dashboard():
         endpoint = "admin_dashboard"
     elif role == "artist":
         endpoint = "artist_dashboard"
+    elif role == "producer":
+        endpoint = "producer_dashboard"
+    elif role == "studio":
+        endpoint = "studio_dashboard"
     elif role == "funder":
         endpoint = "funder_dashboard"
     elif role == "client":
@@ -3560,6 +3695,37 @@ def artist_dashboard():
     )
 
 
+@app.route("/dashboard/producer", endpoint="producer_dashboard")
+@role_required("producer")
+def producer_dashboard():
+    # Producer-specific stats
+    total_beats = Beat.query.filter_by(owner_id=current_user.id, is_active=True).count()
+    
+    # Sales stats
+    sales = Order.query.filter_by(seller_id=current_user.id, status=OrderStatus.paid).all()
+    sales_count = len(sales)
+    revenue_cents = sum(order.amount_cents or 0 for order in sales)
+    revenue = revenue_cents / 100.0
+    
+    # Wallet balance
+    w = get_or_create_wallet(current_user.id)
+    wallet_balance = wallet_balance_cents(w) / 100.0
+    
+    # Social counts
+    followers_count = UserFollow.query.filter_by(followed_id=current_user.id).count()
+    following_count = UserFollow.query.filter_by(follower_id=current_user.id).count()
+    
+    return render_template(
+        "dash_producer.html",
+        total_beats=total_beats,
+        sales_count=sales_count,
+        revenue=revenue,
+        wallet_balance=wallet_balance,
+        followers_count=followers_count,
+        following_count=following_count,
+    )
+
+
 @app.route("/dashboard/provider", endpoint="provider_dashboard")
 @login_required
 def provider_dashboard():
@@ -3628,7 +3794,256 @@ def provider_dashboard():
 @app.route("/dashboard/studio", endpoint="studio_dashboard")
 @role_required("studio")
 def studio_dashboard():
-    return redirect(url_for("provider_dashboard"))
+    # Social counts
+    followers_count = UserFollow.query.filter_by(followed_id=current_user.id).count()
+    following_count = UserFollow.query.filter_by(follower_id=current_user.id).count()
+    
+    # BookMe profile
+    prof = BookMeProfile.query.filter_by(user_id=current_user.id).first()
+    artist_can_take_gigs = prof is not None
+    
+    # Booking requests
+    incoming_requests = BookingRequest.query.filter_by(
+        provider_id=current_user.id, status=BookingStatus.pending
+    ).count()
+    outgoing_requests = BookingRequest.query.filter_by(client_id=current_user.id).count()
+    
+    # Bookings as provider
+    provider_bookings_count = Booking.query.filter_by(provider_id=current_user.id).count()
+    provider_pending_bookings = Booking.query.filter_by(
+        provider_id=current_user.id, status="pending"
+    ).count()
+    provider_recent_bookings = (
+        Booking.query
+        .filter_by(provider_id=current_user.id)
+        .order_by(Booking.created_at.desc())
+        .limit(10)
+        .all()
+    )
+    
+    # Bookings as client
+    client_bookings_count = Booking.query.filter_by(client_id=current_user.id).count()
+    client_pending_bookings = Booking.query.filter_by(
+        client_id=current_user.id, status="pending"
+    ).count()
+    client_recent_bookings = (
+        Booking.query
+        .filter_by(client_id=current_user.id)
+        .order_by(Booking.created_at.desc())
+        .limit(10)
+        .all()
+    )
+    
+    return render_template(
+        "dash_studio.html",
+        role_label=get_role_display(current_user.role),
+        prof=prof,
+        followers_count=followers_count,
+        following_count=following_count,
+        artist_can_take_gigs=artist_can_take_gigs,
+        incoming_requests=incoming_requests,
+        outgoing_requests=outgoing_requests,
+        provider_bookings_count=provider_bookings_count,
+        provider_pending_bookings=provider_pending_bookings,
+        client_bookings_count=client_bookings_count,
+        client_pending_bookings=client_pending_bookings,
+        provider_recent_bookings=provider_recent_bookings,
+        client_recent_bookings=client_recent_bookings,
+    )
+
+
+@app.route("/studio/crm", endpoint="studio_crm")
+@role_required("studio")
+def studio_crm():
+    """Studio CRM - Manage all bookings"""
+    # Get all bookings as provider
+    all_bookings = (
+        Booking.query
+        .filter_by(provider_id=current_user.id)
+        .order_by(Booking.event_datetime.desc().nullslast())
+        .all()
+    )
+    
+    # Get all booking requests
+    all_requests = (
+        BookingRequest.query
+        .filter_by(provider_id=current_user.id)
+        .order_by(BookingRequest.created_at.desc())
+        .all()
+    )
+    
+    # Statistics
+    pending_requests = sum(1 for r in all_requests if r.status == BookingStatus.pending)
+    confirmed_bookings = sum(1 for b in all_bookings if b.status == "confirmed")
+    upcoming_bookings = [
+        b for b in all_bookings 
+        if b.event_datetime and b.event_datetime > datetime.utcnow() and b.status in ["pending", "confirmed"]
+    ]
+    
+    # Group bookings by status
+    bookings_by_status = {
+        "pending": [b for b in all_bookings if b.status == "pending"],
+        "confirmed": [b for b in all_bookings if b.status == "confirmed"],
+        "completed": [b for b in all_bookings if b.status == "completed"],
+        "cancelled": [b for b in all_bookings if b.status == "cancelled"],
+    }
+    
+    return render_template(
+        "studio_crm.html",
+        all_bookings=all_bookings,
+        all_requests=all_requests,
+        pending_requests=pending_requests,
+        confirmed_bookings=confirmed_bookings,
+        upcoming_bookings=upcoming_bookings,
+        bookings_by_status=bookings_by_status,
+        BookingStatus=BookingStatus,
+    )
+
+
+def is_time_blocked(studio_id: int, date: datetime.date, time_str: str) -> bool:
+    """Check if a specific date/time is blocked for a studio"""
+    try:
+        check_date = date
+        check_time = None
+        
+        # Parse the preferred time string (can be various formats)
+        # Try different formats
+        if " " in time_str:
+            # Format: "YYYY-MM-DD HH:MM" or "YYYY-MM-DD HH:MM AM/PM"
+            parts = time_str.split(" ", 1)
+            try:
+                check_date = datetime.strptime(parts[0], "%Y-%m-%d").date()
+                time_part = parts[1]
+                # Try 24-hour format first
+                try:
+                    check_time = datetime.strptime(time_part, "%H:%M").time()
+                except ValueError:
+                    # Try 12-hour format
+                    try:
+                        check_time = datetime.strptime(time_part, "%I:%M %p").time()
+                    except ValueError:
+                        # Try without seconds
+                        try:
+                            check_time = datetime.strptime(time_part, "%I:%M%p").time()
+                        except ValueError:
+                            pass
+            except ValueError:
+                pass
+        
+        if check_time is None:
+            # Try to parse as just time
+            try:
+                check_time = datetime.strptime(time_str, "%H:%M").time()
+            except ValueError:
+                try:
+                    check_time = datetime.strptime(time_str, "%I:%M %p").time()
+                except ValueError:
+                    # Can't parse, assume not blocked
+                    return False
+        
+        # Check for blocked slots that overlap with this time
+        blocked_slots = StudioAvailability.query.filter_by(
+            studio_id=studio_id,
+            available_date=check_date,
+            is_available=False
+        ).all()
+        
+        for slot in blocked_slots:
+            # Check if the requested time falls within a blocked slot
+            # Use < for end_time so bookings at the exact end time are allowed
+            if slot.start_time <= check_time < slot.end_time:
+                return True
+        
+        return False
+    except (ValueError, AttributeError, Exception):
+        # If we can't parse the time, assume it's not blocked (let other validation handle it)
+        return False
+
+
+@app.route("/studio/availability", methods=["GET", "POST"], endpoint="studio_availability")
+@role_required("studio")
+def studio_availability():
+    """Studio availability calendar management"""
+    if request.method == "POST":
+        action = request.form.get("action")
+        
+        if action == "add_slot":
+            date_str = request.form.get("date")
+            start_time_str = request.form.get("start_time")
+            end_time_str = request.form.get("end_time")
+            notes = request.form.get("notes", "").strip()
+            slot_type = request.form.get("slot_type", "available")  # "available" or "blocked"
+            
+            try:
+                available_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+                start_time = datetime.strptime(start_time_str, "%H:%M").time()
+                end_time = datetime.strptime(end_time_str, "%H:%M").time()
+                
+                if end_time <= start_time:
+                    flash("End time must be after start time.", "error")
+                    return redirect(url_for("studio_availability"))
+                
+                slot = StudioAvailability(
+                    studio_id=current_user.id,
+                    available_date=available_date,
+                    start_time=start_time,
+                    end_time=end_time,
+                    notes=notes,
+                    is_available=(slot_type == "available"),
+                )
+                db.session.add(slot)
+                db.session.commit()
+                flash(f"{'Availability' if slot_type == 'available' else 'Blocked'} slot added.", "success")
+            except ValueError as e:
+                flash("Invalid date or time format.", "error")
+        
+        elif action == "delete_slot":
+            slot_id = request.form.get("slot_id")
+            slot = StudioAvailability.query.filter_by(
+                id=slot_id, studio_id=current_user.id
+            ).first()
+            if slot:
+                db.session.delete(slot)
+                db.session.commit()
+                flash("Availability slot removed.", "success")
+            else:
+                flash("Slot not found.", "error")
+        
+        elif action == "toggle_slot":
+            slot_id = request.form.get("slot_id")
+            slot = StudioAvailability.query.filter_by(
+                id=slot_id, studio_id=current_user.id
+            ).first()
+            if slot:
+                slot.is_available = not slot.is_available
+                db.session.commit()
+                flash("Availability slot updated.", "success")
+            else:
+                flash("Slot not found.", "error")
+        
+        return redirect(url_for("studio_availability"))
+    
+    # Get all availability slots
+    availability_slots = (
+        StudioAvailability.query
+        .filter_by(studio_id=current_user.id)
+        .order_by(StudioAvailability.available_date.asc(), StudioAvailability.start_time.asc())
+        .all()
+    )
+    
+    # Group by date
+    slots_by_date = {}
+    for slot in availability_slots:
+        date_key = slot.available_date.isoformat()
+        if date_key not in slots_by_date:
+            slots_by_date[date_key] = []
+        slots_by_date[date_key].append(slot)
+    
+    return render_template(
+        "studio_availability.html",
+        availability_slots=availability_slots,
+        slots_by_date=slots_by_date,
+    )
 
 
 @app.route("/dashboard/videographer", endpoint="videographer_dashboard")
@@ -3847,6 +4262,313 @@ def admin_users():
 def admin_user_detail(user_id: int):
     u = User.query.get_or_404(user_id)
     return render_template("admin_user_detail.html", user=u, u=u, RoleEnum=RoleEnum, KYCStatus=KYCStatus)
+
+
+@app.route("/dashboard/admin/kyc", endpoint="admin_kyc")
+@role_required("admin")
+def admin_kyc():
+    """Admin KYC review queue"""
+    pending = User.query.filter_by(kyc_status=KYCStatus.pending).order_by(User.id.desc()).all()
+    approved = User.query.filter_by(kyc_status=KYCStatus.approved).order_by(User.id.desc()).limit(50).all()
+    rejected = User.query.filter_by(kyc_status=KYCStatus.rejected).order_by(User.id.desc()).limit(50).all()
+    
+    return render_template(
+        "admin_kyc.html",
+        pending=pending,
+        approved=approved,
+        rejected=rejected,
+        KYCStatus=KYCStatus,
+    )
+
+
+@app.route("/dashboard/admin/kyc/<int:user_id>/<action>", methods=["POST"], endpoint="admin_kyc_update")
+@app.route("/dashboard/admin/kyc/<int:user_id>/<action>", methods=["GET", "POST"], endpoint="admin_kyc_action")
+@role_required("admin")
+def admin_kyc_update(user_id: int, action: str):
+    """Update KYC status for a user (handles both admin_kyc_update and admin_kyc_action endpoints)"""
+    if request.method == "GET":
+        # For GET requests on admin_kyc_action, redirect to KYC page
+        return redirect(url_for("admin_kyc"))
+    
+    user = User.query.get_or_404(user_id)
+    
+    if action == "approve":
+        user.kyc_status = KYCStatus.approved
+        flash(f"KYC approved for @{user.username}", "success")
+    elif action == "reject":
+        user.kyc_status = KYCStatus.rejected
+        flash(f"KYC rejected for @{user.username}", "warning")
+    else:
+        flash("Invalid action", "error")
+        return redirect(url_for("admin_kyc"))
+    
+    db.session.commit()
+    return redirect(url_for("admin_kyc"))
+
+
+@app.route("/dashboard/admin/transactions", endpoint="admin_transactions")
+@role_required("admin")
+def admin_transactions():
+    """Admin transactions and audit view"""
+    from sqlalchemy import func
+    
+    # Get statistics by entry type
+    stats_query = (
+        db.session.query(
+            LedgerEntry.entry_type,
+            func.count(LedgerEntry.id).label('count'),
+            func.coalesce(func.sum(LedgerEntry.amount_cents), 0).label('sum_cents')
+        )
+        .group_by(LedgerEntry.entry_type)
+        .order_by(LedgerEntry.entry_type)
+        .all()
+    )
+    stats = [(row.entry_type, row.count, row.sum_cents) for row in stats_query]
+    
+    # Search functionality
+    q = (request.args.get("q") or "").strip()
+    found_user = None
+    if q:
+        found_user = User.query.filter(
+            func.lower(User.username) == q.lower().lstrip("@")
+        ).first()
+    
+    # Recent audit logs
+    audit_logs = AuditLog.query.order_by(AuditLog.created_at.desc()).limit(10).all()
+    
+    return render_template(
+        "admin_transactions.html",
+        stats=stats,
+        q=q,
+        found_user=found_user,
+        audit_logs=audit_logs,
+        EntryType=EntryType,
+    )
+
+
+@app.route("/dashboard/admin/tickets", endpoint="admin_tickets")
+@role_required("admin")
+def admin_tickets():
+    """Admin support tickets management"""
+    page = request.args.get("page", 1, type=int)
+    q = (request.args.get("q") or "").strip()
+    status = (request.args.get("status") or "").strip()
+    
+    query = SupportTicket.query
+    
+    # Filter by username if provided
+    if q:
+        user = User.query.filter(func.lower(User.username) == q.lower().lstrip("@")).first()
+        if user:
+            query = query.filter(SupportTicket.user_id == user.id)
+        else:
+            # If user not found, return empty results
+            query = query.filter(SupportTicket.id == -1)
+    
+    # Filter by status if provided
+    if status:
+        try:
+            query = query.filter(SupportTicket.status == TicketStatus(status))
+        except ValueError:
+            pass
+    
+    # Order by creation date (newest first)
+    query = query.order_by(SupportTicket.created_at.desc())
+    
+    # Paginate
+    pagination = query.paginate(page=page, per_page=25, error_out=False)
+    
+    return render_template(
+        "admin_tickets.html",
+        tickets=pagination.items,
+        pagination=pagination,
+        q=q,
+        status=status,
+        TicketStatus=TicketStatus,
+        TicketType=TicketType,
+    )
+
+
+@app.route("/dashboard/admin/reports", endpoint="admin_reports")
+@role_required("admin")
+def admin_reports():
+    """Admin financial and activity reports"""
+    from sqlalchemy import func
+    
+    # Calculate total deposits, withdrawals, and sales
+    total_deposits_cents = (
+        db.session.query(func.coalesce(func.sum(LedgerEntry.amount_cents), 0))
+        .filter(LedgerEntry.entry_type == EntryType.deposit)
+        .scalar() or 0
+    )
+    total_withdrawals_cents = (
+        db.session.query(func.coalesce(func.sum(LedgerEntry.amount_cents), 0))
+        .filter(LedgerEntry.entry_type == EntryType.withdrawal)
+        .scalar() or 0
+    )
+    total_sales_cents = (
+        db.session.query(func.coalesce(func.sum(Order.amount_cents), 0))
+        .filter(Order.status == OrderStatus.paid)
+        .scalar() or 0
+    )
+    
+    totals = {
+        'deposits': total_deposits_cents / 100.0,
+        'withdrawals': total_withdrawals_cents / 100.0,
+        'sales': total_sales_cents / 100.0,
+    }
+    
+    # Ticket statistics
+    ticket_total = SupportTicket.query.count()
+    ticket_open = SupportTicket.query.filter_by(status=TicketStatus.open).count()
+    ticket_in_review = SupportTicket.query.filter_by(status=TicketStatus.in_review).count()
+    ticket_resolved = SupportTicket.query.filter(
+        SupportTicket.status.in_([TicketStatus.resolved, TicketStatus.approved, TicketStatus.rejected])
+    ).count()
+    
+    # Wallet activity by entry type
+    wallet_stats_query = (
+        db.session.query(
+            LedgerEntry.entry_type,
+            func.count(LedgerEntry.id).label('count'),
+            func.coalesce(func.sum(LedgerEntry.amount_cents), 0).label('sum_cents')
+        )
+        .group_by(LedgerEntry.entry_type)
+        .order_by(LedgerEntry.entry_type)
+        .all()
+    )
+    wallet_stats = [(row.entry_type, row.count, row.sum_cents) for row in wallet_stats_query]
+    
+    # Users by role (excluding admins)
+    role_stats_query = (
+        db.session.query(
+            User.role,
+            func.count(User.id).label('count')
+        )
+        .filter(User.role != RoleEnum.admin)
+        .group_by(User.role)
+        .order_by(User.role)
+        .all()
+    )
+    role_stats = [(row.role, row.count) for row in role_stats_query]
+    
+    return render_template(
+        "admin_reports.html",
+        totals=totals,
+        ticket_total=ticket_total,
+        ticket_open=ticket_open,
+        ticket_in_review=ticket_in_review,
+        ticket_resolved=ticket_resolved,
+        wallet_stats=wallet_stats,
+        role_stats=role_stats,
+        EntryType=EntryType,
+    )
+
+
+@app.route("/dashboard/admin/team", methods=["GET", "POST"], endpoint="admin_team")
+@superadmin_required
+def admin_team():
+    """Admin team management - create and manage admin accounts"""
+    if request.method == "POST":
+        username = (request.form.get("username") or "").strip()
+        password = (request.form.get("password") or "").strip()
+        
+        if not username:
+            flash("Username is required.", "error")
+            return redirect(url_for("admin_team"))
+        
+        if not password:
+            flash("Password is required.", "error")
+            return redirect(url_for("admin_team"))
+        
+        # Check if username already exists
+        existing = User.query.filter(func.lower(User.username) == username.lower()).first()
+        if existing:
+            flash(f"Username @{username} already exists.", "error")
+            return redirect(url_for("admin_team"))
+        
+        # Validate password
+        pw_errors = []
+        if len(password) < 8:
+            pw_errors.append("Password must be at least 8 characters long.")
+        if not re.search(r"[A-Za-z]", password):
+            pw_errors.append("Password must contain at least one letter.")
+        if not re.search(r"\d", password):
+            pw_errors.append("Password must contain at least one number.")
+        
+        if pw_errors:
+            for e in pw_errors:
+                flash(e, "error")
+            return redirect(url_for("admin_team"))
+        
+        # Create new admin user
+        new_admin = User(
+            username=username,
+            email=f"{username}@beatfund.local",  # Placeholder email
+            role=RoleEnum.admin,
+            full_name=f"Admin {username}",
+            is_superadmin=False  # Regular admin, not superadmin
+        )
+        new_admin.set_password(password)
+        db.session.add(new_admin)
+        db.session.commit()
+        
+        flash(f"Admin account @{username} created successfully.", "success")
+        return redirect(url_for("admin_team"))
+    
+    # GET request - show admin team page
+    admins = User.query.filter_by(role=RoleEnum.admin).order_by(User.id.desc()).all()
+    
+    return render_template(
+        "admin_team.html",
+        admins=admins,
+    )
+
+
+@app.route("/dashboard/admin/users/<int:user_id>/toggle-active", methods=["POST"], endpoint="admin_user_toggle_active")
+@superadmin_required
+def admin_user_toggle_active(user_id: int):
+    """Toggle admin user active/inactive status"""
+    user = User.query.get_or_404(user_id)
+    
+    # Prevent deactivating yourself
+    if user.id == current_user.id:
+        flash("You cannot deactivate your own account.", "error")
+        return redirect(url_for("admin_team"))
+    
+    # Only allow toggling admin accounts
+    if user.role != RoleEnum.admin:
+        flash("This endpoint is only for admin accounts.", "error")
+        return redirect(url_for("admin_team"))
+    
+    # Toggle active status
+    user.is_active_col = not user.is_active_col
+    db.session.commit()
+    
+    status = "activated" if user.is_active_col else "deactivated"
+    flash(f"Admin @{user.username} has been {status}.", "success")
+    return redirect(url_for("admin_team"))
+
+
+@app.route("/dashboard/admin/bookme", endpoint="admin_bookme")
+@role_required("admin")
+def admin_bookme():
+    """Admin BookMe overview - recent booking requests and confirmed bookings"""
+    # Get recent booking requests (last 50)
+    requests = BookingRequest.query.order_by(BookingRequest.created_at.desc()).limit(50).all()
+    
+    # Get recent confirmed bookings (last 50)
+    # Note: Booking model uses provider_id, but template may reference artist
+    bookings = Booking.query.filter(
+        Booking.status.in_(["pending", "confirmed", "completed"])
+    ).order_by(Booking.event_datetime.desc().nullslast()).limit(50).all()
+    
+    return render_template(
+        "admin_bookme.html",
+        requests=requests,
+        bookings=bookings,
+        BookingStatus=BookingStatus,
+    )
 
 
 # =========================================================

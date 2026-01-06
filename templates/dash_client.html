@@ -1,20 +1,217 @@
-{# templates/dash_client.html #}
 {% extends "base.html" %}
 {% block title %}Client Dashboard · BeatFund{% endblock %}
 
-{% block content %}
-<div class="page">
-  <div class="card">
-    <h2 style="margin-top:0;">Client Dashboard</h2>
-    <p class="muted">Discover providers, request bookings, and build your community.</p>
+{% block extra_head %}
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  .bf-client { max-width: 1200px; margin: 0 auto; padding: 16px; }
+  .bf-hero { display:flex; gap:14px; align-items:center; justify-content:space-between; flex-wrap:wrap; margin-bottom: 20px; }
+  .bf-hero-left { display:flex; gap:12px; align-items:center; min-width: 260px; }
+  .bf-avatar { width: 56px; height: 56px; border-radius: 16px; object-fit: cover; border: 1px solid rgba(255,255,255,.12); }
+  .bf-title { margin:0; font-size: 1.35rem; line-height: 1.2; }
+  .bf-sub { margin:4px 0 0; opacity:.8; font-size: .95rem; }
+  .bf-actions { display:flex; gap:10px; flex-wrap:wrap; align-items:center; justify-content:flex-end; }
 
-    <div style="display:flex; gap:10px; flex-wrap:wrap;">
-      <a class="btn" href="{{ url_for('bookme_search') }}">BookMe Directory</a>
-      <a class="btn btn-secondary" href="{{ url_for('bookme_requests') }}">My Requests</a>
-      <a class="btn btn-secondary" href="{{ url_for('wallet_home') }}">Wallet</a>
+  .bf-grid { display:grid; grid-template-columns: repeat(12, 1fr); gap: 14px; margin-top: 14px; }
+  .bf-card { border: 1px solid rgba(255,255,255,.12); background: rgba(255,255,255,.06); border-radius: 18px; padding: 16px; }
+  .bf-card h3 { margin:0 0 12px; font-size: 1.1rem; font-weight: 700; }
+  .bf-kpis { display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+  .bf-kpi { padding: 14px; border-radius: 16px; border: 1px solid rgba(255,255,255,.10); background: rgba(255,255,255,.05); }
+  .bf-kpi .label { opacity:.75; font-size: .9rem; margin-bottom: 6px; }
+  .bf-kpi .value { font-size: 1.5rem; font-weight: 800; line-height: 1.2; }
+  .bf-kpi .hint { opacity:.7; font-size: .85rem; margin-top: 6px; }
+
+  .bf-btn {
+    display:inline-flex; align-items:center; justify-content:center;
+    padding: 12px 16px; border-radius: 14px;
+    border: 1px solid rgba(255,255,255,.12);
+    background: rgba(255,255,255,.08);
+    color: inherit;
+    text-decoration:none;
+    font-weight: 600;
+    min-height: 44px;
+    transition: all 0.2s ease;
+  }
+  .bf-btn:hover { background: rgba(255,255,255,.12); transform: translateY(-1px); }
+  .bf-btn.primary { background: linear-gradient(135deg, rgba(6,182,212,.4), rgba(34,197,94,.3)); border-color: rgba(6,182,212,.5); }
+  .bf-btn.primary:hover { background: linear-gradient(135deg, rgba(6,182,212,.5), rgba(34,197,94,.4)); }
+  .bf-btn.block { width: 100%; }
+
+  .bf-list { display:flex; flex-direction:column; gap:10px; }
+  .bf-row { display:flex; gap:12px; align-items:center; justify-content:space-between; flex-wrap:wrap; padding: 12px; border-radius: 12px; border: 1px solid rgba(255,255,255,.08); background: rgba(0,0,0,.2); }
+  .bf-row .left { min-width: 0; flex: 1; }
+  .bf-row .title { font-weight: 700; font-size: 1rem; }
+  .bf-row .meta { opacity:.75; font-size:.9rem; margin-top: 4px; }
+  .bf-chip {
+    display:inline-flex; align-items:center;
+    padding: 6px 12px; border-radius: 999px;
+    border: 1px solid rgba(255,255,255,.12);
+    background: rgba(255,255,255,.06);
+    font-size: .85rem; opacity:.9;
+  }
+
+  .span-12 { grid-column: span 12; }
+  .span-8 { grid-column: span 12; }
+  .span-4 { grid-column: span 12; }
+  .span-6 { grid-column: span 12; }
+
+  @media (min-width: 900px){
+    .span-8 { grid-column: span 8; }
+    .span-4 { grid-column: span 4; }
+    .span-6 { grid-column: span 6; }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="bf-client">
+
+  <div class="bf-hero">
+    <div class="bf-hero-left">
+      <img class="bf-avatar" src="{{ current_user.avatar_url }}" alt="avatar">
+      <div>
+        <h1 class="bf-title">Client Dashboard</h1>
+        <p class="bf-sub">@{{ current_user.username }} · Book services & manage projects</p>
+      </div>
+    </div>
+
+    <div class="bf-actions">
+      <a class="bf-btn primary" href="{{ url_for('bookme_search') }}">Find Providers</a>
+      <a class="bf-btn" href="{{ url_for('wallet_home') }}">Wallet</a>
+      <a class="bf-btn" href="{{ url_for('market_index') }}">Marketplace</a>
+      <a class="bf-btn" href="{{ url_for('profile_edit') }}">Profile</a>
     </div>
   </div>
 
-  {% include "_community_card.html" %}
+  <div class="bf-grid">
+
+    <!-- Key Metrics -->
+    <div class="bf-card span-12">
+      <h3>Your Activity Overview</h3>
+      <div class="bf-kpis">
+        <div class="bf-kpi">
+          <div class="label">Wallet Balance</div>
+          <div class="value">${{ '%.2f'|format(balance or 0) }}</div>
+          <div class="hint">Available to spend</div>
+        </div>
+        <div class="bf-kpi">
+          <div class="label">Booking Requests</div>
+          <div class="value">{{ outgoing_requests_count }}</div>
+          <div class="hint">Requests you've sent</div>
+        </div>
+        <div class="bf-kpi">
+          <div class="label">Confirmed Bookings</div>
+          <div class="value">{{ outgoing_bookings_count }}</div>
+          <div class="hint">Upcoming & past bookings</div>
+        </div>
+        <div class="bf-kpi">
+          <div class="label">Beat Purchases</div>
+          <div class="value">{{ purchases_count }}</div>
+          <div class="hint">Beats you've bought</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Quick Actions -->
+    <div class="bf-card span-4">
+      <h3>Quick Actions</h3>
+      <div class="bf-list">
+        <a class="bf-btn block primary" href="{{ url_for('bookme_search') }}">
+          Find & Book Providers
+        </a>
+        <a class="bf-btn block" href="{{ url_for('bookme_requests') }}">
+          My Requests
+        </a>
+        <a class="bf-btn block" href="{{ url_for('market_index') }}">
+          Browse Marketplace
+        </a>
+        <a class="bf-btn block" href="{{ url_for('wallet_home') }}">
+          Fund Wallet
+        </a>
+        <a class="bf-btn block" href="{{ url_for('market_my_purchases') }}">
+          My Beat Purchases
+        </a>
+      </div>
+    </div>
+
+    <!-- Recent Booking Requests -->
+    <div class="bf-card span-8">
+      <h3>Recent Booking Requests</h3>
+      {% if recent_requests and recent_requests|length > 0 %}
+        <div class="bf-list">
+          {% for r in recent_requests %}
+            <div class="bf-row">
+              <div class="left">
+                <div class="title">
+                  {% if r.provider %}
+                    {{ r.provider.display_name or r.provider.username }}
+                  {% else %}
+                    Provider
+                  {% endif %}
+                  <span class="bf-chip">{{ r.status.value }}</span>
+                </div>
+                <div class="meta">
+                  {% if r.preferred_time %}{{ r.preferred_time }}{% endif %}
+                  {% if r.message %} · {{ r.message[:50] }}{% if r.message|length > 50 %}...{% endif %}{% endif %}
+                </div>
+              </div>
+              <a class="bf-btn" href="{{ url_for('bookme_requests') }}">View</a>
+            </div>
+          {% endfor %}
+        </div>
+        <div style="margin-top:12px;">
+          <a class="bf-btn block" href="{{ url_for('bookme_requests') }}">View All Requests</a>
+        </div>
+      {% else %}
+        <p style="opacity:.75; margin:12px 0;">No booking requests yet. Start by finding providers to book.</p>
+        <a class="bf-btn block primary" href="{{ url_for('bookme_search') }}">Find Providers</a>
+      {% endif %}
+    </div>
+
+    <!-- Upcoming Bookings -->
+    <div class="bf-card span-6">
+      <h3>Upcoming Bookings</h3>
+      {% if recent_bookings and recent_bookings|length > 0 %}
+        <div class="bf-list">
+          {% for b in recent_bookings[:5] %}
+            <div class="bf-row">
+              <div class="left">
+                <div class="title">{{ b.event_title }} <span class="bf-chip">{{ b.status }}</span></div>
+                <div class="meta">
+                  {% if b.provider %}{{ b.provider.display_name or b.provider.username }}{% endif %}
+                  {% if b.event_datetime %} · {{ b.event_datetime.strftime("%b %d, %Y") }}{% endif %}
+                </div>
+              </div>
+              <a class="bf-btn" href="{{ url_for('booking_detail', booking_id=b.id) }}">View</a>
+            </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p style="opacity:.75; margin:12px 0;">No upcoming bookings. Book a provider to get started.</p>
+        <a class="bf-btn block primary" href="{{ url_for('bookme_search') }}">Book a Provider</a>
+      {% endif %}
+    </div>
+
+    <!-- Marketplace & Beats -->
+    <div class="bf-card span-6">
+      <h3>Marketplace Activity</h3>
+      <div style="padding: 12px 0;">
+        <div style="margin-bottom: 16px;">
+          <div style="font-size: 1.5rem; font-weight: 800; line-height: 1.2; margin-bottom: 4px;">
+            {{ purchases_count }} beats
+          </div>
+          <div style="opacity: .7; font-size: .9rem;">Purchased from marketplace</div>
+        </div>
+        <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px;">
+          <a class="bf-btn" href="{{ url_for('market_index') }}">Browse Beats</a>
+          <a class="bf-btn" href="{{ url_for('market_my_purchases') }}">My Purchases</a>
+        </div>
+        <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid rgba(255,255,255,.1);">
+          <a class="bf-btn block" href="{{ url_for('producer_catalog_index') }}">Browse Producer Catalog</a>
+        </div>
+      </div>
+    </div>
+
+  </div>
 </div>
 {% endblock %}

@@ -1,0 +1,251 @@
+{% extends "base.html" %}
+{% block title %}Studio Availability · BeatFund{% endblock %}
+
+{% block extra_head %}
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  .bf-availability { max-width: 1200px; margin: 0 auto; padding: 16px; }
+  .bf-hero { display:flex; gap:14px; align-items:center; justify-content:space-between; flex-wrap:wrap; margin-bottom: 20px; }
+  .bf-hero-left { display:flex; gap:12px; align-items:center; min-width: 260px; }
+  .bf-avatar { width: 56px; height: 56px; border-radius: 16px; object-fit: cover; border: 1px solid rgba(255,255,255,.12); }
+  .bf-title { margin:0; font-size: 1.35rem; line-height: 1.2; }
+  .bf-sub { margin:4px 0 0; opacity:.8; font-size: .95rem; }
+  .bf-actions { display:flex; gap:10px; flex-wrap:wrap; align-items:center; justify-content:flex-end; }
+
+  .bf-grid { display:grid; grid-template-columns: repeat(12, 1fr); gap: 14px; margin-top: 14px; }
+  .bf-card { border: 1px solid rgba(255,255,255,.12); background: rgba(255,255,255,.06); border-radius: 18px; padding: 16px; }
+  .bf-card h3 { margin:0 0 12px; font-size: 1.1rem; font-weight: 700; }
+
+  .bf-btn {
+    display:inline-flex; align-items:center; justify-content:center;
+    padding: 12px 16px; border-radius: 14px;
+    border: 1px solid rgba(255,255,255,.12);
+    background: rgba(255,255,255,.08);
+    color: inherit;
+    text-decoration:none;
+    font-weight: 600;
+    min-height: 44px;
+    transition: all 0.2s ease;
+    cursor: pointer;
+  }
+  .bf-btn:hover { background: rgba(255,255,255,.12); transform: translateY(-1px); }
+  .bf-btn.primary { background: linear-gradient(135deg, rgba(6,182,212,.4), rgba(34,197,94,.3)); border-color: rgba(6,182,212,.5); }
+  .bf-btn.primary:hover { background: linear-gradient(135deg, rgba(6,182,212,.5), rgba(34,197,94,.4)); }
+  .bf-btn.block { width: 100%; }
+  .bf-btn-sm { padding: 6px 10px; font-size: 0.85rem; min-height: 32px; }
+
+  .bf-form-group { margin-bottom: 16px; }
+  .bf-form-group label { display: block; margin-bottom: 6px; opacity: 0.8; font-size: 0.9rem; font-weight: 600; }
+  .bf-form-group input, .bf-form-group textarea {
+    width: 100%;
+    padding: 10px 12px;
+    border-radius: 12px;
+    border: 1px solid rgba(255,255,255,.12);
+    background: rgba(255,255,255,.05);
+    color: inherit;
+    font-size: 0.95rem;
+    font-family: inherit;
+  }
+  .bf-form-group input:focus, .bf-form-group textarea:focus {
+    outline: none;
+    border-color: rgba(6,182,212,.5);
+    background: rgba(255,255,255,.08);
+  }
+
+  .bf-list { display:flex; flex-direction:column; gap:10px; }
+  .bf-row { display:flex; gap:12px; align-items:center; justify-content:space-between; flex-wrap:wrap; padding: 12px; border-radius: 12px; border: 1px solid rgba(255,255,255,.08); background: rgba(0,0,0,.2); }
+  .bf-row .left { min-width: 0; flex: 1; }
+  .bf-row .title { font-weight: 700; font-size: 1rem; }
+  .bf-row .meta { opacity:.75; font-size:.9rem; margin-top: 4px; }
+  .bf-chip {
+    display:inline-flex; align-items:center;
+    padding: 6px 12px; border-radius: 999px;
+    border: 1px solid rgba(255,255,255,.12);
+    background: rgba(255,255,255,.06);
+    font-size: .85rem; opacity:.9;
+  }
+  .bf-chip.available { background: rgba(34,197,94,.2); border-color: rgba(34,197,94,.4); }
+  .bf-chip.unavailable { background: rgba(239,68,68,.2); border-color: rgba(239,68,68,.4); }
+  .bf-chip.blocked { background: rgba(239,68,68,.3); border-color: rgba(239,68,68,.5); color: rgba(255,255,255,.95); }
+  
+  .slot-blocked {
+    opacity: 0.7;
+    border-left: 4px solid rgba(239,68,68,.6) !important;
+  }
+  
+  .slot-available {
+    border-left: 4px solid rgba(34,197,94,.6) !important;
+  }
+
+  .span-12 { grid-column: span 12; }
+  .span-8 { grid-column: span 12; }
+  .span-4 { grid-column: span 12; }
+  .span-6 { grid-column: span 12; }
+
+  @media (min-width: 900px){
+    .span-8 { grid-column: span 8; }
+    .span-4 { grid-column: span 4; }
+    .span-6 { grid-column: span 6; }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="bf-availability">
+
+  <div class="bf-hero">
+    <div class="bf-hero-left">
+      <img class="bf-avatar" src="{{ current_user.avatar_url }}" alt="avatar">
+      <div>
+        <h1 class="bf-title">📅 Availability Calendar</h1>
+        <p class="bf-sub">@{{ current_user.username }} · Set when you're available for bookings</p>
+      </div>
+    </div>
+
+    <div class="bf-actions">
+      <a class="bf-btn" href="{{ url_for('studio_crm') }}">CRM & Bookings</a>
+      <a class="bf-btn" href="{{ url_for('studio_dashboard') }}">Dashboard</a>
+    </div>
+  </div>
+
+  <div class="bf-grid">
+
+    <!-- Add Availability/Blocked Slot -->
+    <div class="bf-card span-4">
+      <h3>Manage Time Slots</h3>
+      <form method="post" action="{{ url_for('studio_availability') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="action" value="add_slot">
+        
+        <div class="bf-form-group">
+          <label for="slot_type">Slot Type</label>
+          <select id="slot_type" name="slot_type" required style="width: 100%; padding: 10px 12px; border-radius: 12px; border: 1px solid rgba(255,255,255,.12); background: rgba(255,255,255,.05); color: inherit; font-size: 0.95rem; font-family: inherit;">
+            <option value="available">Available (can be booked)</option>
+            <option value="blocked">Blocked (cannot be booked)</option>
+          </select>
+        </div>
+        
+        <div class="bf-form-group">
+          <label for="date">Date</label>
+          <input type="date" id="date" name="date" required>
+        </div>
+        
+        <div class="bf-form-group">
+          <label for="start_time">Start Time</label>
+          <input type="time" id="start_time" name="start_time" required>
+        </div>
+        
+        <div class="bf-form-group">
+          <label for="end_time">End Time</label>
+          <input type="time" id="end_time" name="end_time" required>
+        </div>
+        
+        <div class="bf-form-group">
+          <label for="notes">Notes (optional)</label>
+          <textarea id="notes" name="notes" rows="3" placeholder="e.g., Studio A, Maintenance, Holiday, etc."></textarea>
+        </div>
+        
+        <button type="submit" class="bf-btn primary block" id="submitBtn">Add Slot</button>
+      </form>
+    </div>
+
+    <!-- Current Availability -->
+    <div class="bf-card span-8">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 12px;">
+        <h3 style="margin: 0;">Your Availability Schedule</h3>
+        <div style="display: flex; gap: 16px; font-size: 0.85rem; opacity: 0.8; flex-wrap: wrap;">
+          <span><span style="display: inline-block; width: 12px; height: 12px; background: rgba(34,197,94,.6); border-radius: 3px; margin-right: 6px; vertical-align: middle;"></span> Available</span>
+          <span><span style="display: inline-block; width: 12px; height: 12px; background: rgba(239,68,68,.6); border-radius: 3px; margin-right: 6px; vertical-align: middle;"></span> Blocked</span>
+        </div>
+      </div>
+      {% if availability_slots and availability_slots|length > 0 %}
+        {% if slots_by_date %}
+          <div class="bf-list">
+            {% for date_key, slots in slots_by_date.items() %}
+              <div style="margin-bottom: 20px; padding-bottom: 16px; border-bottom: 1px solid rgba(255,255,255,.1);">
+                <h4 style="margin: 0 0 12px; font-size: 1.1rem; font-weight: 700;">
+                  {{ slots[0].available_date.strftime("%A, %B %d, %Y") }}
+                </h4>
+                {% for slot in slots %}
+                  <div class="bf-row {% if slot.is_available %}slot-available{% else %}slot-blocked{% endif %}" style="margin-bottom: 8px;">
+                    <div class="left">
+                      <div class="title">
+                        {{ slot.start_time.strftime("%I:%M %p") }} - {{ slot.end_time.strftime("%I:%M %p") }}
+                        <span class="bf-chip {% if slot.is_available %}available{% else %}blocked{% endif %}" style="margin-left: 8px;">
+                          {{ "✅ Available" if slot.is_available else "🚫 Blocked" }}
+                        </span>
+                      </div>
+                      {% if slot.notes %}
+                        <div class="meta">{{ slot.notes }}</div>
+                      {% endif %}
+                    </div>
+                    <div style="display: flex; gap: 6px;">
+                      <form method="post" action="{{ url_for('studio_availability') }}" style="display: inline;">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <input type="hidden" name="action" value="toggle_slot">
+                        <input type="hidden" name="slot_id" value="{{ slot.id }}">
+                        <button type="submit" class="bf-btn bf-btn-sm">
+                          {{ "Block Time" if slot.is_available else "Unblock Time" }}
+                        </button>
+                      </form>
+                      <form method="post" action="{{ url_for('studio_availability') }}" style="display: inline;" onsubmit="return confirm('Are you sure you want to delete this slot?');">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <input type="hidden" name="action" value="delete_slot">
+                        <input type="hidden" name="slot_id" value="{{ slot.id }}">
+                        <button type="submit" class="bf-btn bf-btn-sm" style="background: rgba(239,68,68,.2); border-color: rgba(239,68,68,.4);">
+                          Delete
+                        </button>
+                      </form>
+                    </div>
+                  </div>
+                {% endfor %}
+              </div>
+            {% endfor %}
+          </div>
+        {% else %}
+          <p style="opacity:.75; margin:12px 0;">No availability slots found.</p>
+        {% endif %}
+      {% else %}
+        <p style="opacity:.75; margin:12px 0;">No time slots set yet. Add availability or blocked slots above.</p>
+        <div style="margin-top: 16px; padding: 16px; background: rgba(6,182,212,.1); border-radius: 12px; border: 1px solid rgba(6,182,212,.2);">
+          <p style="margin: 0 0 12px; opacity: 0.9; font-weight: 600;">
+            💡 How it works:
+          </p>
+          <ul style="margin: 0; padding-left: 20px; opacity: 0.9;">
+            <li><strong>Available slots:</strong> Clients can book these times</li>
+            <li><strong>Blocked slots:</strong> These times are unavailable - booking requests will be rejected</li>
+            <li>You can toggle between available/blocked or delete slots anytime</li>
+          </ul>
+        </div>
+      {% endif %}
+    </div>
+
+  </div>
+</div>
+
+<script>
+  // Set minimum date to today
+  const dateInput = document.getElementById('date');
+  if (dateInput) {
+    const today = new Date().toISOString().split('T')[0];
+    dateInput.setAttribute('min', today);
+  }
+  
+  // Update submit button text based on slot type
+  const slotTypeSelect = document.getElementById('slot_type');
+  const submitBtn = document.getElementById('submitBtn');
+  if (slotTypeSelect && submitBtn) {
+    slotTypeSelect.addEventListener('change', function() {
+      submitBtn.textContent = this.value === 'available' ? 'Add Available Slot' : 'Block Time Slot';
+      if (this.value === 'blocked') {
+        submitBtn.style.background = 'linear-gradient(135deg, rgba(239,68,68,.4), rgba(220,38,38,.3))';
+        submitBtn.style.borderColor = 'rgba(239,68,68,.5)';
+      } else {
+        submitBtn.style.background = 'linear-gradient(135deg, rgba(6,182,212,.4), rgba(34,197,94,.3))';
+        submitBtn.style.borderColor = 'rgba(6,182,212,.5)';
+      }
+    });
+  }
+</script>
+{% endblock %}
+
