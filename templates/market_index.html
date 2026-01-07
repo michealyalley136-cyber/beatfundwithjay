@@ -820,6 +820,9 @@
                       @{{ s.user.username }}
                     </a>
                   {% endif %}
+                  {% if not s.is_visible %}
+                    <span style="display: inline-block; padding: 2px 8px; background: rgba(239,68,68,.2); border: 1px solid rgba(239,68,68,.4); border-radius: 12px; font-size: 0.75rem; color: rgba(239,68,68,.9); margin-left: 8px;">Inactive</span>
+                  {% endif %}
                 </div>
 
                 <div class="mk-beat-meta">
@@ -834,9 +837,13 @@
                   </div>
 
                   {% if s.user %}
-                    <a href="{{ url_for('bookme_book_provider', username=s.user.username) }}" class="mk-btn-buy-inline">
-                      Book a session
-                    </a>
+                    {% if not s.is_visible %}
+                      <span class="mk-price-sub" style="color: rgba(239,68,68,.8);">Currently inactive</span>
+                    {% else %}
+                      <a href="{{ url_for('bookme_book_provider', username=s.user.username) }}" class="mk-btn-buy-inline">
+                        Book a session
+                      </a>
+                    {% endif %}
                   {% else %}
                     <span class="mk-price-sub">Unavailable</span>
                   {% endif %}
@@ -923,6 +930,9 @@
                       @{{ v.user.username }}
                     </a>
                   {% endif %}
+                  {% if not v.is_visible %}
+                    <span style="display: inline-block; padding: 2px 8px; background: rgba(239,68,68,.2); border: 1px solid rgba(239,68,68,.4); border-radius: 12px; font-size: 0.75rem; color: rgba(239,68,68,.9); margin-left: 8px;">Inactive</span>
+                  {% endif %}
                 </div>
 
                 <div class="mk-beat-meta">
@@ -937,9 +947,13 @@
                   </div>
 
                   {% if v.user %}
-                    <a href="{{ url_for('bookme_book_provider', username=v.user.username) }}" class="mk-btn-buy-inline">
-                      Book a shoot
-                    </a>
+                    {% if not v.is_visible %}
+                      <span class="mk-price-sub" style="color: rgba(239,68,68,.8);">Currently inactive</span>
+                    {% else %}
+                      <a href="{{ url_for('bookme_book_provider', username=v.user.username) }}" class="mk-btn-buy-inline">
+                        Book a shoot
+                      </a>
+                    {% endif %}
                   {% else %}
                     <span class="mk-price-sub">Unavailable</span>
                   {% endif %}
@@ -1027,6 +1041,9 @@
                       @{{ t.user.username }}
                     </a>
                   {% endif %}
+                  {% if not t.is_visible %}
+                    <span style="display: inline-block; padding: 2px 8px; background: rgba(239,68,68,.2); border: 1px solid rgba(239,68,68,.4); border-radius: 12px; font-size: 0.75rem; color: rgba(239,68,68,.9); margin-left: 8px;">Inactive</span>
+                  {% endif %}
                 </div>
 
                 <div class="mk-beat-meta">
@@ -1041,9 +1058,13 @@
                   </div>
 
                   {% if t.user %}
-                    <a href="{{ url_for('bookme_book_provider', username=t.user.username) }}" class="mk-btn-buy-inline">
-                      Book talent
-                    </a>
+                    {% if not t.is_visible %}
+                      <span class="mk-price-sub" style="color: rgba(239,68,68,.8);">Currently inactive</span>
+                    {% else %}
+                      <a href="{{ url_for('bookme_book_provider', username=t.user.username) }}" class="mk-btn-buy-inline">
+                        Book talent
+                      </a>
+                    {% endif %}
                   {% else %}
                     <span class="mk-price-sub">Unavailable</span>
                   {% endif %}
@@ -1131,6 +1152,9 @@
                       @{{ p.user.username }}
                     </a>
                   {% endif %}
+                  {% if not p.is_visible %}
+                    <span style="display: inline-block; padding: 2px 8px; background: rgba(239,68,68,.2); border: 1px solid rgba(239,68,68,.4); border-radius: 12px; font-size: 0.75rem; color: rgba(239,68,68,.9); margin-left: 8px;">Inactive</span>
+                  {% endif %}
                 </div>
 
                 <div class="mk-beat-meta">
@@ -1146,9 +1170,13 @@
                   </div>
 
                   {% if p.user %}
-                    <a href="{{ url_for('bookme_book_provider', username=p.user.username) }}" class="mk-btn-buy-inline">
-                      Book provider
-                    </a>
+                    {% if not p.is_visible %}
+                      <span class="mk-price-sub" style="color: rgba(239,68,68,.8);">Currently inactive</span>
+                    {% else %}
+                      <a href="{{ url_for('bookme_book_provider', username=p.user.username) }}" class="mk-btn-buy-inline">
+                        Book provider
+                      </a>
+                    {% endif %}
                   {% else %}
                     <span class="mk-price-sub">Unavailable</span>
                   {% endif %}

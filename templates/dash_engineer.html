@@ -1,21 +1,535 @@
 {% extends "base.html" %}
-{% block title %}Engineer Dashboard · BeatFund{% endblock %}
+{% block title %}Videographer Dashboard · BeatFund{% endblock %}
+
+{% block extra_head %}
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  .bf-studio { max-width: 1200px; margin: 0 auto; padding: 16px; }
+  .bf-hero { display:flex; gap:14px; align-items:center; justify-content:space-between; flex-wrap:wrap; margin-bottom: 20px; }
+  .bf-hero-left { display:flex; gap:12px; align-items:center; min-width: 260px; }
+  .bf-avatar { width: 56px; height: 56px; border-radius: 16px; object-fit: cover; border: 1px solid rgba(255,255,255,.12); }
+  .bf-title { margin:0; font-size: 1.35rem; line-height: 1.2; }
+  .bf-sub { margin:4px 0 0; opacity:.8; font-size: .95rem; }
+  .bf-actions { display:flex; gap:10px; flex-wrap:wrap; align-items:center; justify-content:flex-end; }
+
+  .bf-grid { display:grid; grid-template-columns: repeat(12, 1fr); gap: 14px; margin-top: 14px; }
+  .bf-card { border: 1px solid rgba(255,255,255,.12); background: rgba(255,255,255,.06); border-radius: 18px; padding: 16px; }
+  .bf-card h3 { margin:0 0 12px; font-size: 1.1rem; font-weight: 700; }
+  .bf-kpis { display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+  .bf-kpi { padding: 14px; border-radius: 16px; border: 1px solid rgba(255,255,255,.10); background: rgba(255,255,255,.05); }
+  .bf-kpi .label { opacity:.75; font-size: .9rem; margin-bottom: 6px; }
+  .bf-kpi .value { font-size: 1.5rem; font-weight: 800; line-height: 1.2; }
+  .bf-kpi .hint { opacity:.7; font-size: .85rem; margin-top: 6px; }
+
+  .bf-btn {
+    display:inline-flex; align-items:center; justify-content:center;
+    padding: 12px 16px; border-radius: 14px;
+    border: 1px solid rgba(255,255,255,.12);
+    background: rgba(255,255,255,.08);
+    color: inherit;
+    text-decoration:none;
+    font-weight: 600;
+    min-height: 44px;
+    transition: all 0.2s ease;
+  }
+  .bf-btn:hover { background: rgba(255,255,255,.12); transform: translateY(-1px); }
+  .bf-btn.primary { background: linear-gradient(135deg, rgba(139,92,246,.4), rgba(59,130,246,.3)); border-color: rgba(139,92,246,.5); }
+  .bf-btn.primary:hover { background: linear-gradient(135deg, rgba(139,92,246,.5), rgba(59,130,246,.4)); }
+  .bf-btn.block { width: 100%; }
+
+  .bf-list { display:flex; flex-direction:column; gap:10px; }
+  .bf-row { display:flex; gap:12px; align-items:center; justify-content:space-between; flex-wrap:wrap; padding: 12px; border-radius: 12px; border: 1px solid rgba(255,255,255,.08); background: rgba(0,0,0,.2); }
+  .bf-row .left { min-width: 0; flex: 1; }
+  .bf-row .title { font-weight: 700; font-size: 1rem; }
+  .bf-row .meta { opacity:.75; font-size:.9rem; margin-top: 4px; }
+  .bf-chip {
+    display:inline-flex; align-items:center;
+    padding: 6px 12px; border-radius: 999px;
+    border: 1px solid rgba(255,255,255,.12);
+    background: rgba(255,255,255,.06);
+    font-size: .85rem; opacity:.9;
+  }
+
+  .bf-profile-cta {
+    text-align: center;
+    padding: 24px;
+    border-radius: 18px;
+    background: linear-gradient(135deg, rgba(139,92,246,.15), rgba(59,130,246,.1));
+    border: 1px solid rgba(139,92,246,.3);
+    margin-bottom: 20px;
+  }
+  .bf-profile-cta h2 { margin: 0 0 8px; font-size: 1.3rem; }
+  .bf-profile-cta p { margin: 0 0 16px; opacity: .8; font-size: .95rem; }
+
+  .span-12 { grid-column: span 12; }
+  .span-8 { grid-column: span 12; }
+  .span-4 { grid-column: span 12; }
+  .span-6 { grid-column: span 12; }
+
+  @media (min-width: 900px){
+    .span-8 { grid-column: span 8; }
+    .span-4 { grid-column: span 4; }
+    .span-6 { grid-column: span 6; }
+  }
+
+  /* Modal styles */
+  .modal-overlay {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0,0,0,.7);
+    backdrop-filter: blur(4px);
+    z-index: 1000;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+  
+  .modal-overlay.active {
+    display: flex;
+  }
+  
+  .modal-content {
+    background: rgba(15,23,42,.95);
+    border: 1px solid rgba(255,255,255,.12);
+    border-radius: 20px;
+    max-width: 600px;
+    width: 100%;
+    max-height: 80vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 20px 60px rgba(0,0,0,.6);
+  }
+  
+  .modal-header {
+    padding: 20px;
+    border-bottom: 1px solid rgba(255,255,255,.1);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  
+  .modal-header h2 {
+    margin: 0;
+    font-size: 1.3rem;
+    font-weight: 700;
+  }
+  
+  .modal-close {
+    background: none;
+    border: none;
+    color: rgba(255,255,255,.7);
+    font-size: 1.5rem;
+    cursor: pointer;
+    padding: 0;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+    transition: all 0.2s ease;
+  }
+  
+  .modal-close:hover {
+    background: rgba(255,255,255,.1);
+    color: rgba(255,255,255,1);
+  }
+  
+  .modal-body {
+    padding: 20px;
+    overflow-y: auto;
+    flex: 1;
+  }
+  
+  .user-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  
+  .user-item {
+    padding: 12px;
+    border-radius: 12px;
+    border: 1px solid rgba(255,255,255,.08);
+    background: rgba(255,255,255,.03);
+    transition: all 0.2s ease;
+  }
+  
+  .user-item:hover {
+    background: rgba(255,255,255,.06);
+    border-color: rgba(255,255,255,.12);
+  }
+  
+  .user-avatar {
+    width: 48px;
+    height: 48px;
+    border-radius: 12px;
+    object-fit: cover;
+    border: 1px solid rgba(255,255,255,.1);
+  }
+  
+  .user-info {
+    flex: 1;
+    min-width: 0;
+  }
+  
+  .user-name {
+    font-weight: 600;
+    font-size: 1rem;
+    margin-bottom: 2px;
+  }
+  
+  .user-username {
+    font-size: 0.9rem;
+    opacity: 0.7;
+    margin-bottom: 4px;
+  }
+  
+  .user-role {
+    font-size: 0.85rem;
+    opacity: 0.6;
+  }
+  
+  .user-link {
+    color: inherit;
+    text-decoration: none;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex: 1;
+    min-width: 0;
+  }
+  
+  .user-link:hover {
+    color: inherit;
+  }
+  
+  .loading-state, .empty-state {
+    text-align: center;
+    padding: 40px 20px;
+    opacity: 0.7;
+  }
+  
+  .loading-spinner {
+    display: inline-block;
+    width: 32px;
+    height: 32px;
+    border: 3px solid rgba(255,255,255,.1);
+    border-top-color: rgba(139,92,246,1);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+</style>
+{% endblock %}
 
 {% block content %}
-<div class="page">
-  <div class="card">
-    <h2 style="margin-top:0;">Engineer Dashboard</h2>
-    <div class="muted">Grow your followers and manage your bookings.</div>
+<div class="bf-studio">
 
-    <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:14px;">
-      <a class="btn" href="{{ url_for('bookme_profile') }}">Edit BookMe profile</a>
-      <a class="btn btn-secondary" href="{{ url_for('bookme_portfolio') }}">Portfolio</a>
-      <a class="btn btn-secondary" href="{{ url_for('bookme_requests') }}">Requests</a>
-      <a class="btn btn-secondary" href="{{ url_for('bookme_search') }}">Directory</a>
-      <a class="btn btn-secondary" href="{{ url_for('wallet_home') }}">Wallet</a>
+  <div class="bf-hero">
+    <div class="bf-hero-left">
+      <img class="bf-avatar" src="{{ current_user.avatar_url }}" alt="avatar">
+      <div>
+        <h1 class="bf-title">🎬 Videographer Dashboard</h1>
+        <p class="bf-sub">@{{ current_user.username }} · Manage shoots & bookings</p>
+        <div style="display: flex; gap: 12px; margin-top: 8px; flex-wrap: wrap;">
+          <button type="button" class="bf-chip" style="background: rgba(139,92,246,.15); border-color: rgba(139,92,246,.3); cursor: pointer; border: 1px solid rgba(139,92,246,.3); transition: all 0.2s ease;" onclick="showFollowers()" onmouseover="this.style.background='rgba(139,92,246,.25)'; this.style.borderColor='rgba(139,92,246,.5)'" onmouseout="this.style.background='rgba(139,92,246,.15)'; this.style.borderColor='rgba(139,92,246,.3)'">
+            <span style="display: inline-block; width: 8px; height: 8px; background: rgba(139,92,246,1); border-radius: 50%; margin-right: 6px;"></span>
+            Followers: <strong>{{ followers_count }}</strong>
+          </button>
+          <button type="button" class="bf-chip" style="background: rgba(59,130,246,.15); border-color: rgba(59,130,246,.3); cursor: pointer; border: 1px solid rgba(59,130,246,.3); transition: all 0.2s ease;" onclick="showFollowing()" onmouseover="this.style.background='rgba(59,130,246,.25)'; this.style.borderColor='rgba(59,130,246,.5)'" onmouseout="this.style.background='rgba(59,130,246,.15)'; this.style.borderColor='rgba(59,130,246,.3)'">
+            Following: <strong>{{ following_count }}</strong>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="bf-actions">
+      <a class="bf-btn primary" href="{{ url_for('bookme_profile') }}">
+        {{ "Edit Profile" if artist_can_take_gigs else "Create Profile" }}
+      </a>
+      <a class="bf-btn" href="{{ url_for('bookme_portfolio') }}">Portfolio</a>
+      <a class="bf-btn" href="{{ url_for('bookme_requests') }}">Requests</a>
+      <a class="bf-btn" href="{{ url_for('wallet_home') }}">Wallet</a>
     </div>
   </div>
 
-  {% include "_community_card.html" %}
+  {% if not artist_can_take_gigs %}
+  <!-- Profile CTA -->
+  <div class="bf-profile-cta">
+    <h2>Activate Your Videographer Profile</h2>
+    <p>Create your BookMe profile to start receiving booking requests for video shoots and projects.</p>
+    <a class="bf-btn primary" href="{{ url_for('bookme_profile') }}" style="font-size: 1rem; padding: 14px 28px;">
+      Create Videographer Profile →
+    </a>
+  </div>
+  {% endif %}
+
+  <div class="bf-grid">
+
+    <!-- Key Metrics -->
+    <div class="bf-card span-12">
+      <h3>Video Production Overview</h3>
+      <div class="bf-kpis">
+        <div class="bf-kpi">
+          <div class="label">Incoming Requests</div>
+          <div class="value">{{ incoming_requests }}</div>
+          <div class="hint">Shoot requests</div>
+        </div>
+        <div class="bf-kpi">
+          <div class="label">Confirmed Shoots</div>
+          <div class="value">{{ provider_bookings_count }}</div>
+          <div class="hint">Total bookings</div>
+        </div>
+        <div class="bf-kpi">
+          <div class="label">Pending Shoots</div>
+          <div class="value">{{ provider_pending_bookings }}</div>
+          <div class="hint">Awaiting confirmation</div>
+        </div>
+        <div class="bf-kpi">
+          <div class="label">Outgoing Requests</div>
+          <div class="value">{{ outgoing_requests }}</div>
+          <div class="hint">Requests you sent</div>
+        </div>
+        <div class="bf-kpi">
+          <div class="label">Bookings Made</div>
+          <div class="value">{{ client_bookings_count }}</div>
+          <div class="hint">You booked others</div>
+        </div>
+        <div class="bf-kpi">
+          <div class="label">Pending Bookings</div>
+          <div class="value">{{ client_pending_bookings }}</div>
+          <div class="hint">Waiting confirmation</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Quick Actions -->
+    <div class="bf-card span-4">
+      <h3>Quick Actions</h3>
+      <div class="bf-list">
+        <a class="bf-btn block primary" href="{{ url_for('bookme_profile') }}">
+          {{ "Edit" if artist_can_take_gigs else "Create" }} Videographer Profile
+        </a>
+        <a class="bf-btn block primary" href="{{ url_for('bookme_portfolio') }}">
+          Update Portfolio
+        </a>
+        <a class="bf-btn block" href="{{ url_for('bookme_requests') }}">
+          View Booking Requests
+        </a>
+        <a class="bf-btn block" href="{{ url_for('bookme_search') }}">
+          Browse Directory
+        </a>
+        <a class="bf-btn block" href="{{ url_for('wallet_home') }}">
+          Wallet & Payments
+        </a>
+        {% if artist_can_take_gigs %}
+          <a class="bf-btn block" href="{{ url_for('provider_portfolio_public', username=current_user.username) }}">
+            Public Profile
+          </a>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- Recent Shoots -->
+    <div class="bf-card span-8">
+      <h3>Recent Video Shoots</h3>
+      {% if provider_recent_bookings and provider_recent_bookings|length > 0 %}
+        <div class="bf-list">
+          {% for b in provider_recent_bookings[:5] %}
+            <div class="bf-row">
+              <div class="left">
+                <div class="title">{{ b.event_title }} · {{ b.status }}</div>
+                <div class="meta">
+                  {% if b.event_datetime %}{{ b.event_datetime.strftime("%b %d, %Y %I:%M %p") }}{% endif %}
+                  {% if b.client %} · Client: @{{ b.client.username }}{% endif %}
+                  {% if b.location_text %} · {{ b.location_text }}{% endif %}
+                </div>
+              </div>
+              <a class="bf-btn" href="{{ url_for('booking_detail', booking_id=b.id) }}">View</a>
+            </div>
+          {% endfor %}
+        </div>
+        <div style="margin-top:12px;">
+          <a class="bf-btn block" href="{{ url_for('bookme_requests') }}">View All Shoots</a>
+        </div>
+      {% else %}
+        <p style="opacity:.75; margin:12px 0;">No video shoots yet. Activate your profile to start receiving bookings.</p>
+        <a class="bf-btn block primary" href="{{ url_for('bookme_profile') }}">Create Videographer Profile</a>
+      {% endif %}
+    </div>
+
+    <!-- Booking Requests -->
+    <div class="bf-card span-6">
+      <h3>Booking Requests</h3>
+      <div style="padding: 12px 0;">
+        <div style="margin-bottom: 16px;">
+          <div style="font-size: 1.5rem; font-weight: 800; line-height: 1.2; margin-bottom: 4px;">
+            {{ incoming_requests }} pending
+          </div>
+          <div style="opacity: .7; font-size: .9rem;">Shoot requests awaiting your response</div>
+        </div>
+        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+          <span class="bf-chip">{{ provider_bookings_count }} confirmed</span>
+          <span class="bf-chip">{{ provider_pending_bookings }} pending</span>
+        </div>
+      </div>
+      <div style="margin-top: 16px;">
+        <a class="bf-btn block primary" href="{{ url_for('bookme_requests') }}">Manage Requests</a>
+      </div>
+    </div>
+
+    <!-- Profile Status -->
+    <div class="bf-card span-6">
+      <h3>Videographer Profile</h3>
+      <div style="padding: 12px 0;">
+        <div style="margin-bottom: 16px;">
+          <div style="font-size: 1.5rem; font-weight: 800; line-height: 1.2; margin-bottom: 4px;">
+            {% if prof and prof.is_visible %}
+              Active
+            {% else %}
+              Inactive
+            {% endif %}
+          </div>
+          <div style="opacity: .7; font-size: .9rem;">
+            {% if prof and prof.is_visible %}
+              Your services are visible to clients
+            {% else %}
+              Your services are hidden from the marketplace. Profile is still visible for following and portfolio viewing.
+            {% endif %}
+          </div>
+        </div>
+        <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; align-items: center;">
+          <span class="bf-chip" style="{% if prof and prof.is_visible %}background: rgba(34,197,94,.2); border-color: rgba(34,197,94,.4);{% else %}background: rgba(239,68,68,.2); border-color: rgba(239,68,68,.4);{% endif %}">
+            {{ "Live" if (prof and prof.is_visible) else "Off" }}
+          </span>
+        </div>
+      </div>
+      <div style="margin-top: 16px;">
+        <a class="bf-btn block" href="{{ url_for('bookme_profile') }}">
+          {{ "Edit" if artist_can_take_gigs else "Create" }} Profile
+        </a>
+        {% if artist_can_take_gigs %}
+          <a class="bf-btn block" href="{{ url_for('provider_portfolio_public', username=current_user.username) }}" style="margin-top: 8px;">
+            View Public Profile
+          </a>
+        {% endif %}
+      </div>
+    </div>
+
+  </div>
 </div>
+
+<!-- Followers/Following Modal -->
+<div class="modal-overlay" id="socialModal" onclick="closeModal(event)">
+  <div class="modal-content" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <h2 id="modalTitle">Followers</h2>
+      <button class="modal-close" onclick="closeModal()" aria-label="Close">×</button>
+    </div>
+    <div class="modal-body" id="modalBody">
+      <div class="loading-state">
+        <div class="loading-spinner"></div>
+        <p style="margin-top: 12px;">Loading...</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  let currentModalType = null;
+
+  function showFollowers() {
+    currentModalType = 'followers';
+    document.getElementById('modalTitle').textContent = 'Followers';
+    document.getElementById('socialModal').classList.add('active');
+    loadSocialList('followers');
+  }
+
+  function showFollowing() {
+    currentModalType = 'following';
+    document.getElementById('modalTitle').textContent = 'Following';
+    document.getElementById('socialModal').classList.add('active');
+    loadSocialList('following');
+  }
+
+  function closeModal(event) {
+    if (event && event.target !== event.currentTarget) return;
+    document.getElementById('socialModal').classList.remove('active');
+    currentModalType = null;
+  }
+
+  async function loadSocialList(type) {
+    const modalBody = document.getElementById('modalBody');
+    modalBody.innerHTML = '<div class="loading-state"><div class="loading-spinner"></div><p style="margin-top: 12px;">Loading...</p></div>';
+
+    try {
+      const followersUrl = '{{ url_for("api_followers", user_id=current_user.id) }}';
+      const followingUrl = '{{ url_for("api_following", user_id=current_user.id) }}';
+      const url = type === 'followers' ? followersUrl : followingUrl;
+      
+      const response = await fetch(url);
+      
+      if (!response.ok) {
+        throw new Error('Failed to load');
+      }
+
+      const data = await response.json();
+      const users = type === 'followers' ? data.followers : data.following;
+
+      if (users.length === 0) {
+        modalBody.innerHTML = '<div class="empty-state"><p>No ' + type + ' yet.</p></div>';
+        return;
+      }
+
+      let html = '<div class="user-list">';
+      for (let i = 0; i < users.length; i++) {
+        const user = users[i];
+        const profileUrl = '/u/' + user.username;
+        let roleText = '';
+        if (user.role) {
+          roleText = user.role.replace(/_/g, ' ').replace(/\b\w/g, function(l) { return l.toUpperCase(); });
+        }
+        html += '<div class="user-item">';
+        html += '<a href="' + profileUrl + '" class="user-link">';
+        html += '<img src="' + user.avatar_url + '" alt="' + escapeHtml(user.username) + '" class="user-avatar">';
+        html += '<div class="user-info">';
+        html += '<div class="user-name">' + escapeHtml(user.display_name) + '</div>';
+        html += '<div class="user-username">@' + escapeHtml(user.username) + '</div>';
+        if (user.role) {
+          html += '<div class="user-role">' + escapeHtml(roleText) + '</div>';
+        }
+        html += '</div>';
+        html += '</a>';
+        html += '</div>';
+      }
+      html += '</div>';
+      modalBody.innerHTML = html;
+
+    } catch (error) {
+      modalBody.innerHTML = '<div class="empty-state"><p>Error loading ' + type + '. Please try again.</p></div>';
+    }
+  }
+
+  function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+  }
+
+  // Close modal on Escape key
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && document.getElementById('socialModal').classList.contains('active')) {
+      closeModal();
+    }
+  });
+</script>
 {% endblock %}

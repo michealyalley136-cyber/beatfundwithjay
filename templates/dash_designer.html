@@ -1,21 +1,805 @@
 {% extends "base.html" %}
 {% block title %}Designer Dashboard · BeatFund{% endblock %}
 
-{% block content %}
-<div class="page">
-  <div class="card">
-    <h2 style="margin-top:0;">Designer Dashboard</h2>
-    <div class="muted">Showcase your work and build your community.</div>
+{% block extra_head %}
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  .bf-studio { max-width: 1200px; margin: 0 auto; padding: 16px; }
+  .bf-hero { display:flex; gap:14px; align-items:center; justify-content:space-between; flex-wrap:wrap; margin-bottom: 20px; }
+  .bf-hero-left { display:flex; gap:12px; align-items:center; min-width: 260px; }
+  .bf-avatar { width: 56px; height: 56px; border-radius: 16px; object-fit: cover; border: 1px solid rgba(255,255,255,.12); }
+  .bf-title { margin:0; font-size: 1.35rem; line-height: 1.2; }
+  .bf-sub { margin:4px 0 0; opacity:.8; font-size: .95rem; }
+  .bf-actions { display:flex; gap:10px; flex-wrap:wrap; align-items:center; justify-content:flex-end; }
 
-    <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:14px;">
-      <a class="btn" href="{{ url_for('bookme_profile') }}">Edit BookMe profile</a>
-      <a class="btn btn-secondary" href="{{ url_for('bookme_portfolio') }}">Portfolio</a>
-      <a class="btn btn-secondary" href="{{ url_for('bookme_requests') }}">Requests</a>
-      <a class="btn btn-secondary" href="{{ url_for('bookme_search') }}">Directory</a>
-      <a class="btn btn-secondary" href="{{ url_for('wallet_home') }}">Wallet</a>
+  .bf-grid { display:grid; grid-template-columns: repeat(12, 1fr); gap: 14px; margin-top: 14px; }
+  .bf-card { border: 1px solid rgba(255,255,255,.12); background: rgba(255,255,255,.06); border-radius: 18px; padding: 16px; }
+  .bf-card h3 { margin:0 0 12px; font-size: 1.1rem; font-weight: 700; }
+  .bf-kpis { display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+  .bf-kpi { padding: 14px; border-radius: 16px; border: 1px solid rgba(255,255,255,.10); background: rgba(255,255,255,.05); }
+  .bf-kpi .label { opacity:.75; font-size: .9rem; margin-bottom: 6px; }
+  .bf-kpi .value { font-size: 1.5rem; font-weight: 800; line-height: 1.2; }
+  .bf-kpi .hint { opacity:.7; font-size: .85rem; margin-top: 6px; }
+
+  .bf-btn {
+    display:inline-flex; align-items:center; justify-content:center;
+    padding: 12px 16px; border-radius: 14px;
+    border: 1px solid rgba(255,255,255,.12);
+    background: rgba(255,255,255,.08);
+    color: inherit;
+    text-decoration:none;
+    font-weight: 600;
+    min-height: 44px;
+    transition: all 0.2s ease;
+  }
+  .bf-btn:hover { background: rgba(255,255,255,.12); transform: translateY(-1px); }
+  .bf-btn.primary { background: linear-gradient(135deg, rgba(236,72,153,.4), rgba(219,39,119,.3)); border-color: rgba(236,72,153,.5); }
+  .bf-btn.primary:hover { background: linear-gradient(135deg, rgba(236,72,153,.5), rgba(219,39,119,.4)); }
+  .bf-btn.block { width: 100%; }
+
+  .bf-list { display:flex; flex-direction:column; gap:10px; }
+  .bf-row { display:flex; gap:12px; align-items:center; justify-content:space-between; flex-wrap:wrap; padding: 12px; border-radius: 12px; border: 1px solid rgba(255,255,255,.08); background: rgba(0,0,0,.2); }
+  .bf-row .left { min-width: 0; flex: 1; }
+  .bf-row .title { font-weight: 700; font-size: 1rem; }
+  .bf-row .meta { opacity:.75; font-size:.9rem; margin-top: 4px; }
+  .bf-chip {
+    display:inline-flex; align-items:center;
+    padding: 6px 12px; border-radius: 999px;
+    border: 1px solid rgba(255,255,255,.12);
+    background: rgba(255,255,255,.06);
+    font-size: .85rem; opacity:.9;
+  }
+
+  .bf-profile-cta {
+    text-align: center;
+    padding: 24px;
+    border-radius: 18px;
+    background: linear-gradient(135deg, rgba(236,72,153,.15), rgba(219,39,119,.1));
+    border: 1px solid rgba(236,72,153,.3);
+    margin-bottom: 20px;
+  }
+  .bf-profile-cta h2 { margin: 0 0 8px; font-size: 1.3rem; }
+  .bf-profile-cta p { margin: 0 0 16px; opacity: .8; font-size: .95rem; }
+
+  .span-12 { grid-column: span 12; }
+  .span-8 { grid-column: span 12; }
+  .span-4 { grid-column: span 12; }
+  .span-6 { grid-column: span 12; }
+
+  @media (min-width: 900px){
+    .span-8 { grid-column: span 8; }
+    .span-4 { grid-column: span 4; }
+    .span-6 { grid-column: span 6; }
+  }
+
+  /* Modal styles */
+  .modal-overlay {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0,0,0,.7);
+    backdrop-filter: blur(4px);
+    z-index: 1000;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+  
+  .modal-overlay.active {
+    display: flex;
+  }
+  
+  .modal-content {
+    background: rgba(15,23,42,.95);
+    border: 1px solid rgba(255,255,255,.12);
+    border-radius: 20px;
+    max-width: 600px;
+    width: 100%;
+    max-height: 80vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 20px 60px rgba(0,0,0,.6);
+  }
+  
+  .modal-header {
+    padding: 20px;
+    border-bottom: 1px solid rgba(255,255,255,.1);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  
+  .modal-header h2 {
+    margin: 0;
+    font-size: 1.3rem;
+    font-weight: 700;
+  }
+  
+  .modal-close {
+    background: none;
+    border: none;
+    color: rgba(255,255,255,.7);
+    font-size: 1.5rem;
+    cursor: pointer;
+    padding: 0;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+    transition: all 0.2s ease;
+  }
+  
+  .modal-close:hover {
+    background: rgba(255,255,255,.1);
+    color: rgba(255,255,255,1);
+  }
+  
+  .modal-body {
+    padding: 20px;
+    overflow-y: auto;
+    flex: 1;
+  }
+  
+  .user-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  
+  .user-item {
+    padding: 12px;
+    border-radius: 12px;
+    border: 1px solid rgba(255,255,255,.08);
+    background: rgba(255,255,255,.03);
+    transition: all 0.2s ease;
+  }
+  
+  .user-item:hover {
+    background: rgba(255,255,255,.06);
+    border-color: rgba(255,255,255,.12);
+  }
+  
+  .user-avatar {
+    width: 48px;
+    height: 48px;
+    border-radius: 12px;
+    object-fit: cover;
+    border: 1px solid rgba(255,255,255,.1);
+  }
+  
+  .user-info {
+    flex: 1;
+    min-width: 0;
+  }
+  
+  .user-name {
+    font-weight: 600;
+    font-size: 1rem;
+    margin-bottom: 2px;
+  }
+  
+  .user-username {
+    font-size: 0.9rem;
+    opacity: 0.7;
+    margin-bottom: 4px;
+  }
+  
+  .user-role {
+    font-size: 0.85rem;
+    opacity: 0.6;
+  }
+  
+  .user-link {
+    color: inherit;
+    text-decoration: none;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex: 1;
+    min-width: 0;
+  }
+  
+  .user-link:hover {
+    color: inherit;
+  }
+  
+  .loading-state, .empty-state {
+    text-align: center;
+    padding: 40px 20px;
+    opacity: 0.7;
+  }
+  
+  .loading-spinner {
+    display: inline-block;
+    width: 32px;
+    height: 32px;
+    border: 3px solid rgba(255,255,255,.1);
+    border-top-color: rgba(236,72,153,1);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="bf-studio">
+
+  <div class="bf-hero">
+    <div class="bf-hero-left">
+      <img class="bf-avatar" src="{{ current_user.avatar_url }}" alt="avatar">
+      <div>
+        <h1 class="bf-title">🎨 Designer Dashboard</h1>
+        <p class="bf-sub">@{{ current_user.username }} · Manage design projects & clients</p>
+        <div style="display: flex; gap: 12px; margin-top: 8px; flex-wrap: wrap;">
+          <button type="button" class="bf-chip" style="background: rgba(236,72,153,.15); border-color: rgba(236,72,153,.3); cursor: pointer; border: 1px solid rgba(236,72,153,.3); transition: all 0.2s ease;" onclick="showFollowers()" onmouseover="this.style.background='rgba(236,72,153,.25)'; this.style.borderColor='rgba(236,72,153,.5)'" onmouseout="this.style.background='rgba(236,72,153,.15)'; this.style.borderColor='rgba(236,72,153,.3)'">
+            <span style="display: inline-block; width: 8px; height: 8px; background: rgba(236,72,153,1); border-radius: 50%; margin-right: 6px;"></span>
+            Followers: <strong>{{ followers_count }}</strong>
+          </button>
+          <button type="button" class="bf-chip" style="background: rgba(219,39,119,.15); border-color: rgba(219,39,119,.3); cursor: pointer; border: 1px solid rgba(219,39,119,.3); transition: all 0.2s ease;" onclick="showFollowing()" onmouseover="this.style.background='rgba(219,39,119,.25)'; this.style.borderColor='rgba(219,39,119,.5)'" onmouseout="this.style.background='rgba(219,39,119,.15)'; this.style.borderColor='rgba(219,39,119,.3)'">
+            Following: <strong>{{ following_count }}</strong>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="bf-actions">
+      <a class="bf-btn primary" href="{{ url_for('bookme_profile') }}">
+        {{ "Edit Profile" if artist_can_take_gigs else "Create Profile" }}
+      </a>
+      <a class="bf-btn" href="{{ url_for('bookme_portfolio') }}">Portfolio</a>
+      <a class="bf-btn" href="{{ url_for('bookme_requests') }}">Requests</a>
+      <a class="bf-btn" href="{{ url_for('wallet_home') }}">Wallet</a>
     </div>
   </div>
 
-  {% include "_community_card.html" %}
+  {% if not artist_can_take_gigs %}
+  <!-- Profile CTA -->
+  <div class="bf-profile-cta">
+    <h2>Activate Your Designer Profile</h2>
+    <p>Create your BookMe profile to start receiving design requests for cover art, branding, flyers, and more.</p>
+    <a class="bf-btn primary" href="{{ url_for('bookme_profile') }}" style="font-size: 1rem; padding: 14px 28px;">
+      Create Designer Profile →
+    </a>
+  </div>
+  {% endif %}
+
+  <div class="bf-grid">
+
+    <!-- 1. Dashboard Overview -->
+    <div class="bf-card span-12">
+      <h3>Design Dashboard Overview</h3>
+      <div class="bf-kpis">
+        <div class="bf-kpi">
+          <div class="label">New Design Requests</div>
+          <div class="value">{{ incoming_requests }}</div>
+          <div class="hint">Awaiting response</div>
+        </div>
+        <div class="bf-kpi">
+          <div class="label">Active Projects</div>
+          <div class="value">{{ active_projects }}</div>
+          <div class="hint">In progress</div>
+        </div>
+        <div class="bf-kpi">
+          <div class="label">Pending Approvals</div>
+          <div class="value">{{ pending_approvals }}</div>
+          <div class="hint">Awaiting client</div>
+        </div>
+        <div class="bf-kpi">
+          <div class="label">Monthly Earnings</div>
+          <div class="value">${{ "%.2f"|format(earnings_this_month) }}</div>
+          <div class="hint">This month</div>
+        </div>
+        <div class="bf-kpi">
+          <div class="label">Average Rating</div>
+          <div class="value">
+            {% if average_rating %}
+              ⭐ {{ "%.1f"|format(average_rating) }}
+            {% else %}
+              New
+            {% endif %}
+          </div>
+          <div class="hint">{{ rating_count }} review{{ rating_count != 1 and 's' or '' }}</div>
+        </div>
+        <div class="bf-kpi">
+          <div class="label">Wallet Balance</div>
+          <div class="value">${{ "%.2f"|format(wallet_balance) }}</div>
+          <div class="hint">Available funds</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 2. Profile & Brand Identity -->
+    <div class="bf-card span-4">
+      <h3>Profile & Brand Identity</h3>
+      <div style="text-align: center; padding: 16px 0;">
+        <img class="bf-avatar" src="{{ current_user.avatar_url }}" alt="avatar" style="width: 80px; height: 80px; margin: 0 auto 12px;">
+        <div style="font-size: 1.2rem; font-weight: 700; margin-bottom: 4px;">
+          {{ prof.display_name if prof else current_user.display_name or current_user.username }}
+        </div>
+        <div class="bf-chip" style="margin: 8px 0;">Designer</div>
+        {% if prof %}
+          {% if specialties %}
+            <div style="margin-top: 12px; display: flex; flex-wrap: wrap; gap: 6px; justify-content: center;">
+              {% for spec in specialties[:4] %}
+                <span class="bf-chip" style="font-size: .8rem; padding: 4px 10px;">{{ spec }}</span>
+              {% endfor %}
+            </div>
+          {% endif %}
+          <div style="opacity: .7; font-size: .9rem; margin-top: 12px;">
+            {% if prof.city or prof.state %}
+              📍 {{ prof.city }}{% if prof.city and prof.state %}, {% endif %}{{ prof.state }}
+            {% else %}
+              🌐 Remote
+            {% endif %}
+          </div>
+          <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,.1);">
+            <div style="opacity: .7; font-size: .85rem; margin-bottom: 8px;">
+              Verification: 
+              <span class="bf-chip" style="{% if current_user.kyc_status.value == 'approved' %}background: rgba(34,197,94,.2); border-color: rgba(34,197,94,.4);{% elif current_user.kyc_status.value == 'pending' %}background: rgba(251,191,36,.2); border-color: rgba(251,191,36,.4);{% else %}background: rgba(239,68,68,.2); border-color: rgba(239,68,68,.4);{% endif %}">
+                {{ current_user.kyc_status.value|title }}
+              </span>
+            </div>
+          </div>
+        {% endif %}
+      </div>
+      <div style="margin-top: 16px;">
+        <a class="bf-btn block primary" href="{{ url_for('bookme_profile') }}">
+          {{ "Edit Profile" if artist_can_take_gigs else "Create Profile" }}
+        </a>
+        {% if artist_can_take_gigs %}
+          <a class="bf-btn block" href="{{ url_for('provider_portfolio_public', username=current_user.username) }}" style="margin-top: 8px;">
+            View Public Profile
+          </a>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- 3. Incoming Design Requests -->
+    <div class="bf-card span-8">
+      <h3>Incoming Design Requests</h3>
+      {% if incoming_requests_list and incoming_requests_list|length > 0 %}
+        <div style="overflow-x: auto;">
+          <table style="width: 100%; border-collapse: collapse;">
+            <thead>
+              <tr style="border-bottom: 1px solid rgba(255,255,255,.1);">
+                <th style="text-align: left; padding: 12px; font-size: .9rem; opacity: .7;">Client</th>
+                <th style="text-align: left; padding: 12px; font-size: .9rem; opacity: .7;">Project Type</th>
+                <th style="text-align: left; padding: 12px; font-size: .9rem; opacity: .7;">Deadline</th>
+                <th style="text-align: left; padding: 12px; font-size: .9rem; opacity: .7;">Budget</th>
+                <th style="text-align: left; padding: 12px; font-size: .9rem; opacity: .7;">Status</th>
+                <th style="text-align: left; padding: 12px; font-size: .9rem; opacity: .7;">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for req in incoming_requests_list[:5] %}
+                <tr style="border-bottom: 1px solid rgba(255,255,255,.05);">
+                  <td style="padding: 12px;">
+                    {% if req.client %}
+                      @{{ req.client.username }}
+                    {% else %}
+                      —
+                    {% endif %}
+                  </td>
+                  <td style="padding: 12px;">
+                    {% if req.message %}
+                      {{ req.message[:30] }}{% if req.message|length > 30 %}...{% endif %}
+                    {% else %}
+                      Design Project
+                    {% endif %}
+                  </td>
+                  <td style="padding: 12px;">
+                    {% if req.preferred_time %}
+                      {{ req.preferred_time }}
+                    {% else %}
+                      TBD
+                    {% endif %}
+                  </td>
+                  <td style="padding: 12px;">—</td>
+                  <td style="padding: 12px;">
+                    <span class="bf-chip" style="background: rgba(251,191,36,.2); border-color: rgba(251,191,36,.4);">
+                      {{ req.status.value|title }}
+                    </span>
+                  </td>
+                  <td style="padding: 12px;">
+                    <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+                      <a class="bf-btn" href="{{ url_for('bookme_requests') }}" style="font-size: .85rem; padding: 6px 10px; background: rgba(34,197,94,.2); border-color: rgba(34,197,94,.4);">
+                        Accept
+                      </a>
+                      <a class="bf-btn" href="{{ url_for('bookme_requests') }}" style="font-size: .85rem; padding: 6px 10px; background: rgba(239,68,68,.2); border-color: rgba(239,68,68,.4);">
+                        Decline
+                      </a>
+                      <a class="bf-btn" href="{{ url_for('booking_detail', booking_id=req.booking_id) if req.booking_id else url_for('bookme_requests') }}" style="font-size: .85rem; padding: 6px 10px;">
+                        View Brief
+                      </a>
+                    </div>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        <div style="margin-top:12px;">
+          <a class="bf-btn block primary" href="{{ url_for('bookme_requests') }}">View All Requests</a>
+        </div>
+      {% else %}
+        <p style="opacity:.75; margin:12px 0;">No new design requests at the moment.</p>
+        <a class="bf-btn block" href="{{ url_for('bookme_search') }}">Browse Directory</a>
+      {% endif %}
+    </div>
+
+    <!-- 4. Active Projects Workflow -->
+    <div class="bf-card span-12">
+      <h3>Active Projects Workflow</h3>
+      {% if accepted_bookings and accepted_bookings|length > 0 %}
+        <div style="overflow-x: auto;">
+          <table style="width: 100%; border-collapse: collapse;">
+            <thead>
+              <tr style="border-bottom: 1px solid rgba(255,255,255,.1);">
+                <th style="text-align: left; padding: 12px; font-size: .9rem; opacity: .7;">Client</th>
+                <th style="text-align: left; padding: 12px; font-size: .9rem; opacity: .7;">Project Title</th>
+                <th style="text-align: left; padding: 12px; font-size: .9rem; opacity: .7;">Deadline</th>
+                <th style="text-align: left; padding: 12px; font-size: .9rem; opacity: .7;">Workflow Stage</th>
+                <th style="text-align: left; padding: 12px; font-size: .9rem; opacity: .7;">Payment Status</th>
+                <th style="text-align: left; padding: 12px; font-size: .9rem; opacity: .7;">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for b in accepted_bookings[:10] %}
+                <tr style="border-bottom: 1px solid rgba(255,255,255,.05);">
+                  <td style="padding: 12px;">
+                    {% if b.client %}
+                      @{{ b.client.username }}
+                    {% else %}
+                      —
+                    {% endif %}
+                  </td>
+                  <td style="padding: 12px;">{{ b.event_title }}</td>
+                  <td style="padding: 12px;">
+                    {% if b.event_datetime %}
+                      {{ b.event_datetime.strftime("%b %d, %Y") }}
+                    {% else %}
+                      TBD
+                    {% endif %}
+                  </td>
+                  <td style="padding: 12px;">
+                    <span class="bf-chip" style="{% if b.status == 'pending' %}background: rgba(251,191,36,.2); border-color: rgba(251,191,36,.4);{% elif b.status == 'accepted' %}background: rgba(59,130,246,.2); border-color: rgba(59,130,246,.4);{% elif b.status == 'confirmed' %}background: rgba(236,72,153,.2); border-color: rgba(236,72,153,.4);{% else %}background: rgba(34,197,94,.2); border-color: rgba(34,197,94,.4);{% endif %}">
+                      {% if b.status == 'pending' %}Brief
+                      {% elif b.status == 'accepted' %}Draft
+                      {% elif b.status == 'confirmed' %}Revision
+                      {% else %}Final{% endif %}
+                    </span>
+                  </td>
+                  <td style="padding: 12px;">
+                    {% if b.total_cents %}
+                      <span class="bf-chip" style="background: rgba(34,197,94,.2); border-color: rgba(34,197,94,.4);">
+                        Paid
+                      </span>
+                    {% else %}
+                      <span class="bf-chip" style="background: rgba(251,191,36,.2); border-color: rgba(251,191,36,.4);">
+                        Pending
+                      </span>
+                    {% endif %}
+                  </td>
+                  <td style="padding: 12px;">
+                    <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+                      <a class="bf-btn" href="{{ url_for('booking_detail', booking_id=b.id) }}" style="font-size: .85rem; padding: 6px 10px;">
+                        Upload Draft
+                      </a>
+                      <a class="bf-btn" href="{{ url_for('booking_detail', booking_id=b.id) }}" style="font-size: .85rem; padding: 6px 10px;">
+                        View
+                      </a>
+                    </div>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        <div style="margin-top:12px;">
+          <a class="bf-btn block" href="{{ url_for('bookme_requests') }}">View All Projects</a>
+        </div>
+      {% else %}
+        <p style="opacity:.75; margin:12px 0;">No active projects. Accept design requests to see them here.</p>
+      {% endif %}
+    </div>
+
+    <!-- 5. File Delivery & Revisions -->
+    <div class="bf-card span-6">
+      <h3>File Delivery & Revisions</h3>
+      <div style="padding: 12px 0;">
+        {% if accepted_bookings and accepted_bookings|length > 0 %}
+          <div class="bf-list">
+            {% for b in accepted_bookings[:5] %}
+              <div class="bf-row">
+                <div class="left">
+                  <div class="title">{{ b.event_title }}</div>
+                  <div class="meta">
+                    Client: {% if b.client %}@{{ b.client.username }}{% else %}—{% endif %}
+                    · Revision: <span style="opacity: .6;">0</span>
+                    · Approval: <span style="opacity: .6;">Pending</span>
+                  </div>
+                </div>
+                <a class="bf-btn" href="{{ url_for('booking_detail', booking_id=b.id) }}" style="font-size: .85rem; padding: 8px 12px;">
+                  Manage Files
+                </a>
+              </div>
+            {% endfor %}
+          </div>
+        {% else %}
+          <p style="opacity:.75; font-size: .9rem;">No active projects for file delivery yet.</p>
+        {% endif %}
+        <div style="margin-top: 12px;">
+          <a class="bf-btn block" href="{{ url_for('bookme_requests') }}">View All Projects</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- 6. Portfolio Management -->
+    <div class="bf-card span-6">
+      <h3>Portfolio Management</h3>
+      {% if portfolio_items and portfolio_items|length > 0 %}
+        <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 12px; margin-bottom: 16px;">
+          {% for item in portfolio_items[:6] %}
+            <div style="position: relative; aspect-ratio: 16/9; border-radius: 12px; overflow: hidden; border: 1px solid rgba(255,255,255,.1); background: rgba(0,0,0,.3);">
+              {% if item.media_type.value == 'video' %}
+                <div style="position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(236,72,153,.2);">
+                  <span style="font-size: 2rem;">🎬</span>
+                </div>
+              {% elif item.media_type.value == 'image' %}
+                {% if item.media_url %}
+                  <img src="{{ item.media_url }}" alt="{{ item.title }}" style="width: 100%; height: 100%; object-fit: cover;">
+                {% else %}
+                  <div style="position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;">
+                    <span style="font-size: 2rem;">🖼️</span>
+                  </div>
+                {% endif %}
+              {% else %}
+                <div style="position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;">
+                  <span style="font-size: 2rem;">📎</span>
+                </div>
+              {% endif %}
+              <div style="position: absolute; bottom: 0; left: 0; right: 0; background: linear-gradient(to top, rgba(0,0,0,.8), transparent); padding: 8px; font-size: .75rem; font-weight: 600;">
+                {{ item.title[:20] }}{% if item.title|length > 20 %}...{% endif %}
+              </div>
+              <div style="position: absolute; top: 8px; right: 8px;">
+                <span class="bf-chip" style="background: rgba(34,197,94,.3); border-color: rgba(34,197,94,.5); font-size: .7rem; padding: 2px 6px;">Public</span>
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+          <a class="bf-btn block primary" href="{{ url_for('bookme_portfolio') }}">Upload New</a>
+          <a class="bf-btn block" href="{{ url_for('bookme_portfolio') }}">Edit</a>
+          <a class="bf-btn block" href="{{ url_for('provider_portfolio_public', username=current_user.username) }}">View Public</a>
+        </div>
+      {% else %}
+        <p style="opacity:.75; margin:12px 0;">No portfolio items yet. Showcase your work to attract clients.</p>
+        <a class="bf-btn block primary" href="{{ url_for('bookme_portfolio') }}">Upload Portfolio Item</a>
+      {% endif %}
+    </div>
+
+    <!-- 7. Style & Creative Preferences -->
+    <div class="bf-card span-6">
+      <h3>Style & Creative Preferences</h3>
+      <div style="padding: 12px 0;">
+        {% if specialties %}
+          <div style="margin-bottom: 16px;">
+            <div style="font-size: .9rem; opacity: .7; margin-bottom: 8px;">Specialties</div>
+            <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+              {% for spec in specialties %}
+                <span class="bf-chip">{{ spec }}</span>
+              {% endfor %}
+            </div>
+          </div>
+        {% else %}
+          <p style="opacity:.7; font-size: .9rem; margin-bottom: 12px;">No specialties set yet.</p>
+        {% endif %}
+        <div style="opacity: .7; font-size: .85rem; margin-bottom: 12px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,.1);">
+          Update your creative preferences, visual styles, color preferences, and typography preferences in your profile settings.
+        </div>
+        <a class="bf-btn block" href="{{ url_for('bookme_profile') }}">Edit Preferences</a>
+      </div>
+    </div>
+
+    <!-- 8. Availability & Turnaround -->
+    <div class="bf-card span-6">
+      <h3>Availability & Turnaround</h3>
+      <div style="padding: 12px 0;">
+        <div style="margin-bottom: 16px;">
+          <div style="font-size: 1.2rem; font-weight: 700; margin-bottom: 8px;">
+            {% if prof and prof.is_visible %}
+              Accepting New Projects
+            {% else %}
+              Not Accepting Projects
+            {% endif %}
+          </div>
+          <div style="opacity: .7; font-size: .9rem; margin-bottom: 12px;">
+            {% if prof and prof.is_visible %}
+              Your profile is live and visible to clients
+            {% else %}
+              Your services are hidden from the marketplace
+            {% endif %}
+          </div>
+          {% if prof %}
+            <form method="POST" action="{{ url_for('provider_toggle_live') }}" style="margin: 0; display: inline;">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button type="submit" class="bf-chip" style="cursor: pointer; {% if prof and prof.is_visible %}background: rgba(251,191,36,.2); border-color: rgba(251,191,36,.4);{% else %}background: rgba(34,197,94,.2); border-color: rgba(34,197,94,.4);{% endif %} transition: all 0.2s ease;" onmouseover="this.style.opacity='0.8'" onmouseout="this.style.opacity='1'">
+                {{ "Pause Projects" if (prof and prof.is_visible) else "Accept Projects" }}
+              </button>
+            </form>
+          {% endif %}
+        </div>
+        <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid rgba(255,255,255,.1);">
+          <div style="display: grid; gap: 12px;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <span style="opacity: .7; font-size: .9rem;">Max Active Projects:</span>
+              <span class="bf-chip">{{ active_projects }}/{{ active_projects + 5 }}</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <span style="opacity: .7; font-size: .9rem;">Standard Turnaround:</span>
+              <span class="bf-chip">3-5 days</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <span style="opacity: .7; font-size: .9rem;">Rush Available:</span>
+              <span class="bf-chip" style="background: rgba(34,197,94,.2); border-color: rgba(34,197,94,.4);">Yes</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 9. Earnings & Payments -->
+    <div class="bf-card span-6">
+      <h3>Earnings & Payments</h3>
+      <div style="padding: 12px 0;">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px;">
+          <div style="padding: 12px; border-radius: 12px; background: rgba(34,197,94,.1); border: 1px solid rgba(34,197,94,.2);">
+            <div style="font-size: .85rem; opacity: .7; margin-bottom: 4px;">This Month</div>
+            <div style="font-size: 1.5rem; font-weight: 700;">${{ "%.2f"|format(earnings_this_month) }}</div>
+          </div>
+          <div style="padding: 12px; border-radius: 12px; background: rgba(236,72,153,.1); border: 1px solid rgba(236,72,153,.2);">
+            <div style="font-size: .85rem; opacity: .7; margin-bottom: 4px;">Total</div>
+            <div style="font-size: 1.5rem; font-weight: 700;">${{ "%.2f"|format(total_earnings) }}</div>
+          </div>
+        </div>
+        <div style="margin-top: 16px;">
+          <a class="bf-btn block primary" href="{{ url_for('wallet_home') }}">View Transaction History</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- 10. Settings -->
+    <div class="bf-card span-6">
+      <h3>Settings</h3>
+      <div class="bf-list">
+        <a class="bf-btn block" href="{{ url_for('profile_edit') }}">Account Information</a>
+        <a class="bf-btn block" href="{{ url_for('profile_edit') }}">Password & Security</a>
+        <a class="bf-btn block" href="{{ url_for('bookme_profile') }}">Notification Preferences</a>
+        <a class="bf-btn block" href="{{ url_for('provider_portfolio_public', username=current_user.username) }}">Role Visibility</a>
+        <a class="bf-btn block" href="{{ url_for('wallet_home') }}">Payment Methods</a>
+        <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,.1);">
+          <a class="bf-btn block" href="{{ url_for('profile_edit') }}" style="background: rgba(239,68,68,.15); border-color: rgba(239,68,68,.3);">
+            Deactivate Account
+          </a>
+        </div>
+      </div>
+    </div>
+
+  </div>
 </div>
+
+<!-- Followers/Following Modal -->
+<div class="modal-overlay" id="socialModal" onclick="closeModal(event)">
+  <div class="modal-content" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <h2 id="modalTitle">Followers</h2>
+      <button class="modal-close" onclick="closeModal()" aria-label="Close">×</button>
+    </div>
+    <div class="modal-body" id="modalBody">
+      <div class="loading-state">
+        <div class="loading-spinner"></div>
+        <p style="margin-top: 12px;">Loading...</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  let currentModalType = null;
+
+  function showFollowers() {
+    currentModalType = 'followers';
+    document.getElementById('modalTitle').textContent = 'Followers';
+    document.getElementById('socialModal').classList.add('active');
+    loadSocialList('followers');
+  }
+
+  function showFollowing() {
+    currentModalType = 'following';
+    document.getElementById('modalTitle').textContent = 'Following';
+    document.getElementById('socialModal').classList.add('active');
+    loadSocialList('following');
+  }
+
+  function closeModal(event) {
+    if (event && event.target !== event.currentTarget) return;
+    document.getElementById('socialModal').classList.remove('active');
+    currentModalType = null;
+  }
+
+  async function loadSocialList(type) {
+    const modalBody = document.getElementById('modalBody');
+    modalBody.innerHTML = '<div class="loading-state"><div class="loading-spinner"></div><p style="margin-top: 12px;">Loading...</p></div>';
+
+    try {
+      const followersUrl = '{{ url_for("api_followers", user_id=current_user.id) }}';
+      const followingUrl = '{{ url_for("api_following", user_id=current_user.id) }}';
+      const url = type === 'followers' ? followersUrl : followingUrl;
+      
+      const response = await fetch(url);
+      
+      if (!response.ok) {
+        throw new Error('Failed to load');
+      }
+
+      const data = await response.json();
+      const users = type === 'followers' ? data.followers : data.following;
+
+      if (users.length === 0) {
+        modalBody.innerHTML = '<div class="empty-state"><p>No ' + type + ' yet.</p></div>';
+        return;
+      }
+
+      let html = '<div class="user-list">';
+      for (let i = 0; i < users.length; i++) {
+        const user = users[i];
+        const profileUrl = '/u/' + user.username;
+        let roleText = '';
+        if (user.role) {
+          roleText = user.role.replace(/_/g, ' ').replace(/\b\w/g, function(l) { return l.toUpperCase(); });
+        }
+        html += '<div class="user-item">';
+        html += '<a href="' + profileUrl + '" class="user-link">';
+        html += '<img src="' + user.avatar_url + '" alt="' + escapeHtml(user.username) + '" class="user-avatar">';
+        html += '<div class="user-info">';
+        html += '<div class="user-name">' + escapeHtml(user.display_name) + '</div>';
+        html += '<div class="user-username">@' + escapeHtml(user.username) + '</div>';
+        if (user.role) {
+          html += '<div class="user-role">' + escapeHtml(roleText) + '</div>';
+        }
+        html += '</div>';
+        html += '</a>';
+        html += '</div>';
+      }
+      html += '</div>';
+      modalBody.innerHTML = html;
+
+    } catch (error) {
+      modalBody.innerHTML = '<div class="empty-state"><p>Error loading ' + type + '. Please try again.</p></div>';
+    }
+  }
+
+  function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+  }
+
+  // Close modal on Escape key
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && document.getElementById('socialModal').classList.contains('active')) {
+      closeModal();
+    }
+  });
+</script>
 {% endblock %}

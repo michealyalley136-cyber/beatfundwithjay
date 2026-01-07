@@ -399,16 +399,32 @@
       <div style="padding: 12px 0;">
         <div style="margin-bottom: 16px;">
           <div style="font-size: 1.5rem; font-weight: 800; line-height: 1.2; margin-bottom: 4px;">
-            {{ "Active" if artist_can_take_gigs else "Inactive" }}
+            {% if prof and prof.is_visible %}
+              Active
+            {% else %}
+              Inactive
+            {% endif %}
           </div>
           <div style="opacity: .7; font-size: .9rem;">
-            {{ "Your studio is visible to clients" if artist_can_take_gigs else "Activate to receive bookings" }}
+            {% if prof and prof.is_visible %}
+              Your studio is visible to clients
+            {% else %}
+              Your services are hidden from the marketplace. Profile is still visible for following and portfolio viewing.
+            {% endif %}
           </div>
         </div>
-        <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px;">
-          <span class="bf-chip" style="{% if artist_can_take_gigs %}background: rgba(34,197,94,.2); border-color: rgba(34,197,94,.4);{% else %}background: rgba(239,68,68,.2); border-color: rgba(239,68,68,.4);{% endif %}">
-            {{ "Live" if artist_can_take_gigs else "Off" }}
+        <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; align-items: center;">
+          <span class="bf-chip" style="{% if prof and prof.is_visible %}background: rgba(34,197,94,.2); border-color: rgba(34,197,94,.4);{% else %}background: rgba(239,68,68,.2); border-color: rgba(239,68,68,.4);{% endif %}">
+            {{ "Live" if (prof and prof.is_visible) else "Off" }}
           </span>
+          {% if artist_can_take_gigs %}
+            <form method="POST" action="{{ url_for('studio_toggle_live') }}" style="margin: 0; display: inline;">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button type="submit" class="bf-chip" style="cursor: pointer; {% if prof and prof.is_visible %}background: rgba(251,191,36,.2); border-color: rgba(251,191,36,.4);{% else %}background: rgba(34,197,94,.2); border-color: rgba(34,197,94,.4);{% endif %} transition: all 0.2s ease;" onmouseover="this.style.opacity='0.8'" onmouseout="this.style.opacity='1'">
+                {{ "Go Inactive" if (prof and prof.is_visible) else "Go Live" }}
+              </button>
+            </form>
+          {% endif %}
         </div>
       </div>
       <div style="margin-top: 16px;">

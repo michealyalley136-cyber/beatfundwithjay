@@ -19,7 +19,11 @@
       </div>
 
       {% if current_user.is_authenticated and current_user.id != provider.id %}
-        <a class="btn" href="{{ url_for('bookme_book_provider', username=provider.username) }}">Request booking</a>
+        {% if prof and not prof.is_visible %}
+          <span class="btn" style="opacity: 0.6; cursor: not-allowed; background: rgba(239,68,68,.2); border-color: rgba(239,68,68,.4);">Not accepting bookings</span>
+        {% else %}
+          <a class="btn" href="{{ url_for('bookme_book_provider', username=provider.username) }}">Request booking</a>
+        {% endif %}
       {% endif %}
     </div>
   </div>

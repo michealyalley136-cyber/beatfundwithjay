@@ -539,6 +539,9 @@
                       {% else %}
                         Service provider
                       {% endif %}
+                      {% if not prof.is_visible %}
+                        <span class="pill" style="background: rgba(239,68,68,.2); border-color: rgba(239,68,68,.4); margin-left: 8px; font-size: 0.85rem;">Inactive</span>
+                      {% endif %}
                     </div>
                     <div class="provider-meta">
                       {% if prof.service_types %}
@@ -556,6 +559,8 @@
                 <div class="provider-actions">
                   {% if u and u.id == current_user.id %}
                     <span class="pill pill-muted">This is you</span>
+                  {% elif not prof.is_visible %}
+                    <span class="pill pill-muted" style="opacity: 0.7;">Not accepting bookings</span>
                   {% else %}
                     <a
                       href="{{ url_for('bookme_book_provider', username=u.username) }}"

@@ -1845,7 +1845,8 @@ def user_profile(username):
         return redirect(url_for("producer_catalog_detail", username=profile_user.username))
 
     if is_service_provider(profile_user):
-        prof = BookMeProfile.query.filter_by(user_id=profile_user.id, is_visible=True).first()
+        # Check if user has a BookMe profile (visible or not) - if so, redirect to portfolio
+        prof = BookMeProfile.query.filter_by(user_id=profile_user.id).first()
         if prof:
             return redirect(url_for("provider_portfolio_public", username=profile_user.username))
 
@@ -1973,7 +1974,6 @@ def bookme_search():
     query = (
         BookMeProfile.query
         .join(User, BookMeProfile.user_id == User.id)
-        .filter(BookMeProfile.is_visible.is_(True))
     )
 
     if role:
@@ -2038,7 +2038,6 @@ def bookme_data():
         BookMeProfile.query
         .join(User, BookMeProfile.user_id == User.id)
         .filter(
-            BookMeProfile.is_visible.is_(True),
             BookMeProfile.lat.isnot(None),
             BookMeProfile.lng.isnot(None),
         )
@@ -2262,7 +2261,8 @@ def bookme_portfolio_delete(item_id):
 def provider_portfolio_public(username):
     user = User.query.filter(func.lower(User.username) == username.lower()).first_or_404()
 
-    prof = BookMeProfile.query.filter_by(user_id=user.id, is_visible=True).first_or_404()
+    # Allow viewing portfolio even when profile is not visible (for portfolio review)
+    prof = BookMeProfile.query.filter_by(user_id=user.id).first_or_404()
     items = prof.portfolio_items.order_by(PortfolioItem.sort_order.asc(), PortfolioItem.created_at.desc()).all()
 
     followers_count = UserFollow.query.filter_by(followed_id=user.id).count()
@@ -2291,6 +2291,12 @@ def bookme_request(provider_id):
 
     if not is_service_provider(provider):
         flash("This user is not available for BookMe bookings.", "error")
+        return redirect(url_for("bookme_search"))
+
+    # Check if profile is active (visible) - inactive profiles can't receive bookings
+    prof = BookMeProfile.query.filter_by(user_id=provider.id).first()
+    if prof and not prof.is_visible:
+        flash("This studio profile is currently inactive and not accepting new bookings. You can still follow and view their portfolio.", "error")
         return redirect(url_for("bookme_search"))
 
     if request.method == "POST":
@@ -2580,6 +2586,12 @@ def bookme_book_provider(username):
     
     if provider.id == current_user.id:
         flash("You can't send a booking request to yourself.", "error")
+        return redirect(url_for("provider_portfolio_public", username=username))
+    
+    # Check if profile is active (visible) - inactive profiles can't receive bookings
+    prof = BookMeProfile.query.filter_by(user_id=provider.id).first()
+    if prof and not prof.is_visible:
+        flash("This studio profile is currently inactive and not accepting new bookings. You can still follow and view their portfolio.", "error")
         return redirect(url_for("provider_portfolio_public", username=username))
     
     # Get follower count and follow status for template
@@ -2901,7 +2913,7 @@ def market_index():
     provider_profiles = (
         BookMeProfile.query
         .join(User, BookMeProfile.user_id == User.id)
-        .filter(BookMeProfile.is_visible.is_(True), User.role.in_(list(BOOKME_PROVIDER_ROLES)))
+        .filter(User.role.in_(list(BOOKME_PROVIDER_ROLES)))
         .order_by(BookMeProfile.city.asc(), BookMeProfile.display_name.asc())
         .all()
     )
@@ -3039,7 +3051,6 @@ def market_providers_json():
         BookMeProfile.query
         .join(User, BookMeProfile.user_id == User.id)
         .filter(
-            BookMeProfile.is_visible.is_(True),
             BookMeProfile.lat.isnot(None),
             BookMeProfile.lng.isnot(None),
             User.role.in_(list(BOOKME_PROVIDER_ROLES)),
@@ -3593,6 +3604,16 @@ def route_to_dashboard():
         endpoint = "producer_dashboard"
     elif role == "studio":
         endpoint = "studio_dashboard"
+    elif role == "videographer":
+        endpoint = "videographer_dashboard"
+    elif role == "designer":
+        endpoint = "designer_dashboard"
+    elif role == "engineer":
+        endpoint = "engineer_dashboard"
+    elif role == "manager":
+        endpoint = "manager_dashboard"
+    elif role == "vendor":
+        endpoint = "vendor_dashboard"
     elif role == "funder":
         endpoint = "funder_dashboard"
     elif role == "client":
@@ -3852,6 +3873,66 @@ def studio_dashboard():
     )
 
 
+@app.route("/studio/profile/toggle-live", methods=["POST"], endpoint="studio_toggle_live")
+@role_required("studio")
+def studio_toggle_live():
+    """Toggle studio profile live/active status"""
+    prof = BookMeProfile.query.filter_by(user_id=current_user.id).first()
+    
+    if not prof:
+        flash("Please create your BookMe profile first.", "error")
+        return redirect(url_for("bookme_profile"))
+    
+    # Toggle is_visible status
+    prof.is_visible = not prof.is_visible
+    db.session.commit()
+    
+    status = "activated" if prof.is_visible else "deactivated"
+    flash(f"Studio profile {status}. {'Your services are now visible on the marketplace.' if prof.is_visible else 'Your services are hidden from the marketplace, but your profile is still visible for following and portfolio viewing.'}", "success")
+    
+    return redirect(url_for("studio_dashboard"))
+
+
+@app.route("/profile/toggle-live", methods=["POST"], endpoint="provider_toggle_live")
+@login_required
+def provider_toggle_live():
+    """Toggle service provider profile live/active status (generic for all providers)"""
+    if not is_service_provider(current_user):
+        flash("This feature is only available for service providers.", "error")
+        return redirect(url_for("route_to_dashboard"))
+    
+    prof = BookMeProfile.query.filter_by(user_id=current_user.id).first()
+    
+    if not prof:
+        flash("Please create your BookMe profile first.", "error")
+        return redirect(url_for("bookme_profile"))
+    
+    # Toggle is_visible status
+    prof.is_visible = not prof.is_visible
+    db.session.commit()
+    
+    status = "activated" if prof.is_visible else "deactivated"
+    role_name = get_role_display(current_user.role)
+    flash(f"Profile {status}. {'Your services are now visible on the marketplace.' if prof.is_visible else 'Your services are hidden from the marketplace, but your profile is still visible for following and portfolio viewing.'}", "success")
+    
+    # Redirect to appropriate dashboard based on role
+    role = current_user.role.value
+    if role == "videographer":
+        return redirect(url_for("videographer_dashboard"))
+    elif role == "designer":
+        return redirect(url_for("designer_dashboard"))
+    elif role == "engineer":
+        return redirect(url_for("engineer_dashboard"))
+    elif role == "manager":
+        return redirect(url_for("manager_dashboard"))
+    elif role == "vendor":
+        return redirect(url_for("vendor_dashboard"))
+    elif role == "studio":
+        return redirect(url_for("studio_dashboard"))
+    else:
+        return redirect(url_for("provider_dashboard"))
+
+
 @app.route("/studio/crm", endpoint="studio_crm")
 @role_required("studio")
 def studio_crm():
@@ -4049,31 +4130,508 @@ def studio_availability():
 @app.route("/dashboard/videographer", endpoint="videographer_dashboard")
 @role_required("videographer")
 def videographer_dashboard():
-    return redirect(url_for("provider_dashboard"))
+    from datetime import datetime, timedelta
+    from sqlalchemy import func, and_, or_
+    
+    # Social counts
+    followers_count = UserFollow.query.filter_by(followed_id=current_user.id).count()
+    following_count = UserFollow.query.filter_by(follower_id=current_user.id).count()
+    
+    # BookMe profile
+    prof = BookMeProfile.query.filter_by(user_id=current_user.id).first()
+    artist_can_take_gigs = prof is not None
+    
+    # Booking requests - detailed list
+    incoming_requests_count = BookingRequest.query.filter_by(
+        provider_id=current_user.id, status=BookingStatus.pending
+    ).count()
+    incoming_requests_list = (
+        BookingRequest.query
+        .filter_by(provider_id=current_user.id, status=BookingStatus.pending)
+        .order_by(BookingRequest.created_at.desc())
+        .limit(10)
+        .all()
+    )
+    outgoing_requests = BookingRequest.query.filter_by(client_id=current_user.id).count()
+    
+    # Upcoming bookings (future dates)
+    now = datetime.utcnow()
+    upcoming_bookings = (
+        Booking.query
+        .filter_by(provider_id=current_user.id)
+        .filter(Booking.event_datetime >= now)
+        .filter(Booking.status.in_(["accepted", "confirmed", "pending"]))
+        .order_by(Booking.event_datetime.asc())
+        .limit(10)
+        .all()
+    )
+    upcoming_bookings_count = len(upcoming_bookings)
+    
+    # Active projects (accepted bookings)
+    active_projects = (
+        Booking.query
+        .filter_by(provider_id=current_user.id)
+        .filter(Booking.status.in_(["accepted", "confirmed"]))
+        .filter(Booking.event_datetime >= now)
+        .count()
+    )
+    
+    # Bookings as provider
+    provider_bookings_count = Booking.query.filter_by(provider_id=current_user.id).count()
+    provider_pending_bookings = Booking.query.filter_by(
+        provider_id=current_user.id, status="pending"
+    ).count()
+    provider_recent_bookings = (
+        Booking.query
+        .filter_by(provider_id=current_user.id)
+        .order_by(Booking.created_at.desc())
+        .limit(10)
+        .all()
+    )
+    
+    # Accepted bookings (active & upcoming jobs)
+    accepted_bookings = (
+        Booking.query
+        .filter_by(provider_id=current_user.id)
+        .filter(Booking.status.in_(["accepted", "confirmed"]))
+        .order_by(Booking.event_datetime.asc())
+        .limit(20)
+        .all()
+    )
+    
+    # Earnings this month
+    start_of_month = datetime(now.year, now.month, 1)
+    earnings_this_month_cents = (
+        db.session.query(func.coalesce(func.sum(Booking.total_cents), 0))
+        .filter(Booking.provider_id == current_user.id)
+        .filter(Booking.status.in_(["accepted", "confirmed", "completed"]))
+        .filter(Booking.created_at >= start_of_month)
+        .scalar() or 0
+    )
+    earnings_this_month = earnings_this_month_cents / 100.0
+    
+    # Total earnings
+    total_earnings_cents = (
+        db.session.query(func.coalesce(func.sum(Booking.total_cents), 0))
+        .filter(Booking.provider_id == current_user.id)
+        .filter(Booking.status.in_(["accepted", "confirmed", "completed"]))
+        .scalar() or 0
+    )
+    total_earnings = total_earnings_cents / 100.0
+    
+    # Wallet balance
+    w = get_or_create_wallet(current_user.id)
+    wallet_balance = wallet_balance_cents(w) / 100.0
+    
+    # Transaction history (from wallet)
+    recent_transactions = (
+        LedgerEntry.query
+        .filter_by(wallet_id=w.id)
+        .order_by(LedgerEntry.created_at.desc())
+        .limit(20)
+        .all()
+    )
+    
+    # Portfolio items
+    portfolio_items = []
+    if prof:
+        portfolio_items = (
+            prof.portfolio_items
+            .order_by(PortfolioItem.sort_order.asc(), PortfolioItem.created_at.desc())
+            .limit(12)
+            .all()
+        )
+    
+    # Average rating (placeholder - no review system yet)
+    average_rating = None
+    rating_count = 0
+    
+    # Bookings as client
+    client_bookings_count = Booking.query.filter_by(client_id=current_user.id).count()
+    client_pending_bookings = Booking.query.filter_by(
+        client_id=current_user.id, status="pending"
+    ).count()
+    client_recent_bookings = (
+        Booking.query
+        .filter_by(client_id=current_user.id)
+        .order_by(Booking.created_at.desc())
+        .limit(10)
+        .all()
+    )
+    
+    return render_template(
+        "dash_videographer.html",
+        role_label=get_role_display(current_user.role),
+        prof=prof,
+        followers_count=followers_count,
+        following_count=following_count,
+        artist_can_take_gigs=artist_can_take_gigs,
+        incoming_requests=incoming_requests_count,
+        incoming_requests_list=incoming_requests_list,
+        outgoing_requests=outgoing_requests,
+        provider_bookings_count=provider_bookings_count,
+        provider_pending_bookings=provider_pending_bookings,
+        client_bookings_count=client_bookings_count,
+        client_pending_bookings=client_pending_bookings,
+        provider_recent_bookings=provider_recent_bookings,
+        client_recent_bookings=client_recent_bookings,
+        upcoming_bookings=upcoming_bookings,
+        upcoming_bookings_count=upcoming_bookings_count,
+        active_projects=active_projects,
+        accepted_bookings=accepted_bookings,
+        earnings_this_month=earnings_this_month,
+        total_earnings=total_earnings,
+        wallet_balance=wallet_balance,
+        recent_transactions=recent_transactions,
+        portfolio_items=portfolio_items,
+        average_rating=average_rating,
+        rating_count=rating_count,
+        BookingStatus=BookingStatus,
+    )
 
 
 @app.route("/dashboard/designer", endpoint="designer_dashboard")
 @role_required("designer")
 def designer_dashboard():
-    return redirect(url_for("provider_dashboard"))
+    from datetime import datetime, timedelta
+    from sqlalchemy import func, and_, or_
+    
+    # Social counts
+    followers_count = UserFollow.query.filter_by(followed_id=current_user.id).count()
+    following_count = UserFollow.query.filter_by(follower_id=current_user.id).count()
+    
+    # BookMe profile
+    prof = BookMeProfile.query.filter_by(user_id=current_user.id).first()
+    artist_can_take_gigs = prof is not None
+    
+    # Booking requests - detailed list
+    incoming_requests_count = BookingRequest.query.filter_by(
+        provider_id=current_user.id, status=BookingStatus.pending
+    ).count()
+    incoming_requests_list = (
+        BookingRequest.query
+        .filter_by(provider_id=current_user.id, status=BookingStatus.pending)
+        .order_by(BookingRequest.created_at.desc())
+        .limit(10)
+        .all()
+    )
+    outgoing_requests = BookingRequest.query.filter_by(client_id=current_user.id).count()
+    
+    # Pending approvals (bookings waiting for client approval)
+    pending_approvals = Booking.query.filter_by(
+        provider_id=current_user.id,
+        status="pending"
+    ).count()
+    
+    # Active projects (accepted bookings)
+    now = datetime.utcnow()
+    active_projects = (
+        Booking.query
+        .filter_by(provider_id=current_user.id)
+        .filter(Booking.status.in_(["accepted", "confirmed"]))
+        .count()
+    )
+    
+    # Bookings as provider
+    provider_bookings_count = Booking.query.filter_by(provider_id=current_user.id).count()
+    provider_pending_bookings = Booking.query.filter_by(
+        provider_id=current_user.id, status="pending"
+    ).count()
+    provider_recent_bookings = (
+        Booking.query
+        .filter_by(provider_id=current_user.id)
+        .order_by(Booking.created_at.desc())
+        .limit(10)
+        .all()
+    )
+    
+    # Accepted bookings (active projects with workflow stages)
+    accepted_bookings = (
+        Booking.query
+        .filter_by(provider_id=current_user.id)
+        .filter(Booking.status.in_(["accepted", "confirmed"]))
+        .order_by(Booking.created_at.desc())
+        .limit(20)
+        .all()
+    )
+    
+    # Earnings this month
+    start_of_month = datetime(now.year, now.month, 1)
+    earnings_this_month_cents = (
+        db.session.query(func.coalesce(func.sum(Booking.total_cents), 0))
+        .filter(Booking.provider_id == current_user.id)
+        .filter(Booking.status.in_(["accepted", "confirmed", "completed"]))
+        .filter(Booking.created_at >= start_of_month)
+        .scalar() or 0
+    )
+    earnings_this_month = earnings_this_month_cents / 100.0
+    
+    # Total earnings
+    total_earnings_cents = (
+        db.session.query(func.coalesce(func.sum(Booking.total_cents), 0))
+        .filter(Booking.provider_id == current_user.id)
+        .filter(Booking.status.in_(["accepted", "confirmed", "completed"]))
+        .scalar() or 0
+    )
+    total_earnings = total_earnings_cents / 100.0
+    
+    # Wallet balance
+    w = get_or_create_wallet(current_user.id)
+    wallet_balance = wallet_balance_cents(w) / 100.0
+    
+    # Transaction history
+    recent_transactions = (
+        LedgerEntry.query
+        .filter_by(wallet_id=w.id)
+        .order_by(LedgerEntry.created_at.desc())
+        .limit(20)
+        .all()
+    )
+    
+    # Portfolio items
+    portfolio_items = []
+    if prof:
+        portfolio_items = (
+            prof.portfolio_items
+            .order_by(PortfolioItem.sort_order.asc(), PortfolioItem.created_at.desc())
+            .limit(12)
+            .all()
+        )
+    
+    # Average rating (placeholder)
+    average_rating = None
+    rating_count = 0
+    
+    # Specialties (from service_types)
+    specialties = []
+    if prof and prof.service_types:
+        specialties = [s.strip() for s in prof.service_types.split(",") if s.strip()]
+    
+    # Bookings as client
+    client_bookings_count = Booking.query.filter_by(client_id=current_user.id).count()
+    client_pending_bookings = Booking.query.filter_by(
+        client_id=current_user.id, status="pending"
+    ).count()
+    client_recent_bookings = (
+        Booking.query
+        .filter_by(client_id=current_user.id)
+        .order_by(Booking.created_at.desc())
+        .limit(10)
+        .all()
+    )
+    
+    return render_template(
+        "dash_designer.html",
+        role_label=get_role_display(current_user.role),
+        prof=prof,
+        followers_count=followers_count,
+        following_count=following_count,
+        artist_can_take_gigs=artist_can_take_gigs,
+        incoming_requests=incoming_requests_count,
+        incoming_requests_list=incoming_requests_list,
+        outgoing_requests=outgoing_requests,
+        provider_bookings_count=provider_bookings_count,
+        provider_pending_bookings=provider_pending_bookings,
+        pending_approvals=pending_approvals,
+        active_projects=active_projects,
+        client_bookings_count=client_bookings_count,
+        client_pending_bookings=client_pending_bookings,
+        provider_recent_bookings=provider_recent_bookings,
+        client_recent_bookings=client_recent_bookings,
+        accepted_bookings=accepted_bookings,
+        earnings_this_month=earnings_this_month,
+        total_earnings=total_earnings,
+        wallet_balance=wallet_balance,
+        recent_transactions=recent_transactions,
+        portfolio_items=portfolio_items,
+        average_rating=average_rating,
+        rating_count=rating_count,
+        specialties=specialties,
+        BookingStatus=BookingStatus,
+    )
 
 
 @app.route("/dashboard/engineer", endpoint="engineer_dashboard")
 @role_required("engineer")
 def engineer_dashboard():
-    return redirect(url_for("provider_dashboard"))
+    # Social counts
+    followers_count = UserFollow.query.filter_by(followed_id=current_user.id).count()
+    following_count = UserFollow.query.filter_by(follower_id=current_user.id).count()
+    
+    # BookMe profile
+    prof = BookMeProfile.query.filter_by(user_id=current_user.id).first()
+    artist_can_take_gigs = prof is not None
+    
+    # Booking requests
+    incoming_requests = BookingRequest.query.filter_by(
+        provider_id=current_user.id, status=BookingStatus.pending
+    ).count()
+    outgoing_requests = BookingRequest.query.filter_by(client_id=current_user.id).count()
+    
+    # Bookings as provider
+    provider_bookings_count = Booking.query.filter_by(provider_id=current_user.id).count()
+    provider_pending_bookings = Booking.query.filter_by(
+        provider_id=current_user.id, status="pending"
+    ).count()
+    provider_recent_bookings = (
+        Booking.query
+        .filter_by(provider_id=current_user.id)
+        .order_by(Booking.created_at.desc())
+        .limit(10)
+        .all()
+    )
+    
+    # Bookings as client
+    client_bookings_count = Booking.query.filter_by(client_id=current_user.id).count()
+    client_pending_bookings = Booking.query.filter_by(
+        client_id=current_user.id, status="pending"
+    ).count()
+    client_recent_bookings = (
+        Booking.query
+        .filter_by(client_id=current_user.id)
+        .order_by(Booking.created_at.desc())
+        .limit(10)
+        .all()
+    )
+    
+    return render_template(
+        "dash_engineer.html",
+        role_label=get_role_display(current_user.role),
+        prof=prof,
+        followers_count=followers_count,
+        following_count=following_count,
+        artist_can_take_gigs=artist_can_take_gigs,
+        incoming_requests=incoming_requests,
+        outgoing_requests=outgoing_requests,
+        provider_bookings_count=provider_bookings_count,
+        provider_pending_bookings=provider_pending_bookings,
+        client_bookings_count=client_bookings_count,
+        client_pending_bookings=client_pending_bookings,
+        provider_recent_bookings=provider_recent_bookings,
+        client_recent_bookings=client_recent_bookings,
+    )
 
 
 @app.route("/dashboard/manager", endpoint="manager_dashboard")
 @role_required("manager")
 def manager_dashboard():
-    return redirect(url_for("provider_dashboard"))
+    # Social counts
+    followers_count = UserFollow.query.filter_by(followed_id=current_user.id).count()
+    following_count = UserFollow.query.filter_by(follower_id=current_user.id).count()
+    
+    # BookMe profile
+    prof = BookMeProfile.query.filter_by(user_id=current_user.id).first()
+    artist_can_take_gigs = prof is not None
+    
+    # Booking requests
+    incoming_requests = BookingRequest.query.filter_by(
+        provider_id=current_user.id, status=BookingStatus.pending
+    ).count()
+    outgoing_requests = BookingRequest.query.filter_by(client_id=current_user.id).count()
+    
+    # Bookings as provider
+    provider_bookings_count = Booking.query.filter_by(provider_id=current_user.id).count()
+    provider_pending_bookings = Booking.query.filter_by(
+        provider_id=current_user.id, status="pending"
+    ).count()
+    provider_recent_bookings = (
+        Booking.query
+        .filter_by(provider_id=current_user.id)
+        .order_by(Booking.created_at.desc())
+        .limit(10)
+        .all()
+    )
+    
+    # Bookings as client
+    client_bookings_count = Booking.query.filter_by(client_id=current_user.id).count()
+    client_pending_bookings = Booking.query.filter_by(
+        client_id=current_user.id, status="pending"
+    ).count()
+    client_recent_bookings = (
+        Booking.query
+        .filter_by(client_id=current_user.id)
+        .order_by(Booking.created_at.desc())
+        .limit(10)
+        .all()
+    )
+    
+    return render_template(
+        "dash_manager.html",
+        role_label=get_role_display(current_user.role),
+        prof=prof,
+        followers_count=followers_count,
+        following_count=following_count,
+        artist_can_take_gigs=artist_can_take_gigs,
+        incoming_requests=incoming_requests,
+        outgoing_requests=outgoing_requests,
+        provider_bookings_count=provider_bookings_count,
+        provider_pending_bookings=provider_pending_bookings,
+        client_bookings_count=client_bookings_count,
+        client_pending_bookings=client_pending_bookings,
+        provider_recent_bookings=provider_recent_bookings,
+        client_recent_bookings=client_recent_bookings,
+    )
 
 
 @app.route("/dashboard/vendor", endpoint="vendor_dashboard")
 @role_required("vendor")
 def vendor_dashboard():
-    return redirect(url_for("provider_dashboard"))
+    # Social counts
+    followers_count = UserFollow.query.filter_by(followed_id=current_user.id).count()
+    following_count = UserFollow.query.filter_by(follower_id=current_user.id).count()
+    
+    # BookMe profile
+    prof = BookMeProfile.query.filter_by(user_id=current_user.id).first()
+    artist_can_take_gigs = prof is not None
+    
+    # Booking requests
+    incoming_requests = BookingRequest.query.filter_by(
+        provider_id=current_user.id, status=BookingStatus.pending
+    ).count()
+    outgoing_requests = BookingRequest.query.filter_by(client_id=current_user.id).count()
+    
+    # Bookings as provider
+    provider_bookings_count = Booking.query.filter_by(provider_id=current_user.id).count()
+    provider_pending_bookings = Booking.query.filter_by(
+        provider_id=current_user.id, status="pending"
+    ).count()
+    provider_recent_bookings = (
+        Booking.query
+        .filter_by(provider_id=current_user.id)
+        .order_by(Booking.created_at.desc())
+        .limit(10)
+        .all()
+    )
+    
+    # Bookings as client
+    client_bookings_count = Booking.query.filter_by(client_id=current_user.id).count()
+    client_pending_bookings = Booking.query.filter_by(
+        client_id=current_user.id, status="pending"
+    ).count()
+    client_recent_bookings = (
+        Booking.query
+        .filter_by(client_id=current_user.id)
+        .order_by(Booking.created_at.desc())
+        .limit(10)
+        .all()
+    )
+    
+    return render_template(
+        "dash_vendor.html",
+        role_label=get_role_display(current_user.role),
+        prof=prof,
+        followers_count=followers_count,
+        following_count=following_count,
+        artist_can_take_gigs=artist_can_take_gigs,
+        incoming_requests=incoming_requests,
+        outgoing_requests=outgoing_requests,
+        provider_bookings_count=provider_bookings_count,
+        provider_pending_bookings=provider_pending_bookings,
+        client_bookings_count=client_bookings_count,
+        client_pending_bookings=client_pending_bookings,
+        provider_recent_bookings=provider_recent_bookings,
+        client_recent_bookings=client_recent_bookings,
+    )
 
 
 @app.route("/dashboard/funder", endpoint="funder_dashboard")
