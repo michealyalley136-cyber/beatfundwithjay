@@ -1,0 +1,803 @@
+{% extends "base.html" %}
+{% block title %}Wardrobe Stylist Dashboard · BeatFund{% endblock %}
+
+{% block extra_head %}
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  .bf-wardrobe {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 24px;
+  }
+
+  .bf-hero {
+    display: flex;
+    gap: 14px;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    margin-bottom: 24px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid rgba(255,255,255,.1);
+  }
+
+  .bf-hero-left h1 {
+    margin: 0;
+    font-size: 1.8rem;
+    font-weight: 700;
+  }
+
+  .bf-hero-left p {
+    margin: 4px 0 0;
+    opacity: .7;
+    font-size: .95rem;
+  }
+
+  .bf-grid {
+    display: grid;
+    grid-template-columns: repeat(12, 1fr);
+    gap: 16px;
+    margin-top: 16px;
+  }
+
+  .bf-card {
+    border: 1px solid rgba(255,255,255,.12);
+    background: rgba(255,255,255,.06);
+    border-radius: 18px;
+    padding: 20px;
+  }
+
+  .bf-card h3 {
+    margin: 0 0 16px;
+    font-size: 1.1rem;
+    font-weight: 700;
+  }
+
+  .bf-kpis {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
+  }
+
+  .bf-kpi {
+    padding: 16px;
+    border-radius: 16px;
+    border: 1px solid rgba(255,255,255,.10);
+    background: rgba(255,255,255,.05);
+    transition: all 0.2s ease;
+  }
+
+  .bf-kpi:hover {
+    background: rgba(255,255,255,.08);
+    transform: translateY(-2px);
+  }
+
+  .bf-kpi .label {
+    opacity: .75;
+    font-size: .85rem;
+    margin-bottom: 6px;
+  }
+
+  .bf-kpi .value {
+    font-size: 1.8rem;
+    font-weight: 800;
+    line-height: 1.2;
+  }
+
+  .bf-kpi .hint {
+    opacity: .7;
+    font-size: .8rem;
+    margin-top: 6px;
+  }
+
+  .bf-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 10px 16px;
+    border-radius: 12px;
+    border: 1px solid rgba(255,255,255,.12);
+    background: rgba(255,255,255,.08);
+    color: inherit;
+    text-decoration: none;
+    font-weight: 600;
+    font-size: .9rem;
+    transition: all 0.2s ease;
+    cursor: pointer;
+  }
+
+  .bf-btn:hover {
+    background: rgba(255,255,255,.12);
+    transform: translateY(-1px);
+  }
+
+  .bf-btn.primary {
+    background: linear-gradient(135deg, rgba(245,158,11,.4), rgba(245,158,11,.3));
+    border-color: rgba(245,158,11,.5);
+  }
+
+  .bf-btn.primary:hover {
+    background: linear-gradient(135deg, rgba(245,158,11,.5), rgba(245,158,11,.4));
+  }
+
+  .bf-btn.block {
+    width: 100%;
+  }
+
+  .bf-btn.small {
+    font-size: .85rem;
+    padding: 6px 12px;
+    min-height: 32px;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  th {
+    text-align: left;
+    padding: 12px;
+    font-size: .9rem;
+    opacity: .7;
+    border-bottom: 1px solid rgba(255,255,255,.1);
+    font-weight: 600;
+  }
+
+  td {
+    padding: 12px;
+    border-bottom: 1px solid rgba(255,255,255,.05);
+  }
+
+  tr:hover {
+    background: rgba(255,255,255,.03);
+  }
+
+  .bf-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 10px;
+    border-radius: 999px;
+    border: 1px solid rgba(255,255,255,.12);
+    background: rgba(255,255,255,.06);
+    font-size: .8rem;
+    opacity: .9;
+  }
+
+  .bf-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .bf-row {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    padding: 12px;
+    border-radius: 12px;
+    border: 1px solid rgba(255,255,255,.08);
+    background: rgba(0,0,0,.2);
+  }
+
+  .bf-row .left {
+    min-width: 0;
+    flex: 1;
+  }
+
+  .bf-row .title {
+    font-weight: 600;
+    font-size: .95rem;
+    margin-bottom: 4px;
+  }
+
+  .bf-row .meta {
+    opacity: .75;
+    font-size: .85rem;
+  }
+
+  .span-12 { grid-column: span 12; }
+  .span-8 { grid-column: span 12; }
+  .span-6 { grid-column: span 12; }
+  .span-4 { grid-column: span 12; }
+
+  @media (min-width: 900px) {
+    .span-8 { grid-column: span 8; }
+    .span-4 { grid-column: span 4; }
+    .span-6 { grid-column: span 6; }
+  }
+
+  .section {
+    display: none;
+  }
+
+  .section.active {
+    display: block;
+  }
+
+  .nav-tabs {
+    display: flex;
+    gap: 8px;
+    border-bottom: 1px solid rgba(255,255,255,.1);
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+  }
+
+  .nav-tab {
+    padding: 12px 20px;
+    border: none;
+    background: transparent;
+    color: rgba(255,255,255,.7);
+    cursor: pointer;
+    font-weight: 600;
+    font-size: .9rem;
+    border-bottom: 2px solid transparent;
+    transition: all 0.2s ease;
+  }
+
+  .nav-tab:hover {
+    color: rgba(255,255,255,1);
+    background: rgba(255,255,255,.05);
+  }
+
+  .nav-tab.active {
+    color: rgba(245,158,11,1);
+    border-bottom-color: rgba(245,158,11,1);
+  }
+
+  .profile-panel {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 16px;
+    padding: 20px;
+    border-radius: 16px;
+    background: rgba(0,0,0,.2);
+    border: 1px solid rgba(255,255,255,.08);
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="bf-wardrobe">
+  <div class="bf-hero">
+    <div class="bf-hero-left">
+      <h1>👔 Wardrobe Stylist Dashboard</h1>
+      <p>Manage your styling projects, lookboards, and fittings</p>
+    </div>
+  </div>
+
+  <!-- Navigation Tabs -->
+  <div class="nav-tabs">
+    <button class="nav-tab active" onclick="showSection('dashboard'); setActiveTab(this); return false;">Dashboard</button>
+    <button class="nav-tab" onclick="showSection('requests'); setActiveTab(this); return false;">Requests</button>
+    <button class="nav-tab" onclick="showSection('projects'); setActiveTab(this); return false;">Projects</button>
+    <button class="nav-tab" onclick="showSection('lookboards'); setActiveTab(this); return false;">Lookboards</button>
+    <button class="nav-tab" onclick="showSection('fittings'); setActiveTab(this); return false;">Fittings</button>
+    <button class="nav-tab" onclick="showSection('pull-list'); setActiveTab(this); return false;">Closet & Pull List</button>
+    <button class="nav-tab" onclick="showSection('availability'); setActiveTab(this); return false;">Availability</button>
+    <button class="nav-tab" onclick="showSection('earnings'); setActiveTab(this); return false;">Earnings</button>
+    <button class="nav-tab" onclick="showSection('reviews'); setActiveTab(this); return false;">Reviews</button>
+    <button class="nav-tab" onclick="showSection('settings'); setActiveTab(this); return false;">Settings</button>
+  </div>
+
+  <!-- 1. Dashboard Overview -->
+  <div id="section-dashboard" class="section active">
+    <div class="bf-grid">
+      <div class="bf-card span-12">
+        <h3>Overview Statistics</h3>
+        <div class="bf-kpis">
+          <div class="bf-kpi">
+            <div class="label">New Requests</div>
+            <div class="value">{{ stats.new_requests }}</div>
+            <div class="hint">Pending requests</div>
+          </div>
+          <div class="bf-kpi">
+            <div class="label">Active Projects</div>
+            <div class="value">{{ stats.active_projects }}</div>
+            <div class="hint">In progress</div>
+          </div>
+          <div class="bf-kpi">
+            <div class="label">Upcoming Fittings</div>
+            <div class="value">{{ stats.upcoming_fittings }}</div>
+            <div class="hint">Scheduled</div>
+          </div>
+          <div class="bf-kpi">
+            <div class="label">Pending Approvals</div>
+            <div class="value">{{ stats.pending_approvals }}</div>
+            <div class="hint">Awaiting approval</div>
+          </div>
+          <div class="bf-kpi">
+            <div class="label">Earnings This Month</div>
+            <div class="value">${{ "%.2f"|format(stats.earnings_this_month) }}</div>
+            <div class="hint">Current month</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Profile -->
+      <div class="bf-card span-6">
+        <h3>Profile & Specialties</h3>
+        <div class="profile-panel">
+          <div>
+            <img src="{{ stylist.avatar_url }}" alt="{{ stylist.display_name }}" style="width: 80px; height: 80px; border-radius: 12px; object-fit: cover; border: 1px solid rgba(255,255,255,.12);">
+          </div>
+          <div>
+            <div style="font-weight: 700; font-size: 1.1rem; margin-bottom: 8px;">{{ stylist.display_name }}</div>
+            {% if stylist.specialties %}
+              <div style="opacity: .8; margin-bottom: 4px;"><strong>Specialties:</strong> {{ stylist.specialties }}</div>
+            {% endif %}
+            {% if stylist.genres %}
+              <div style="opacity: .8; margin-bottom: 4px;"><strong>Genres:</strong> {{ stylist.genres }}</div>
+            {% endif %}
+            {% if stylist.sizes_served %}
+              <div style="opacity: .8; margin-bottom: 4px;"><strong>Sizes Served:</strong> {{ stylist.sizes_served }}</div>
+            {% endif %}
+            {% if stylist.travel %}
+              <div style="opacity: .8; margin-bottom: 4px;"><strong>Location:</strong> {{ stylist.travel }}</div>
+            {% endif %}
+            {% if stylist.packages %}
+              <div style="opacity: .8; margin-bottom: 8px;"><strong>Packages:</strong> {{ stylist.packages }}</div>
+            {% endif %}
+            <div style="margin-top: 12px;">
+              <span class="bf-chip" style="background: rgba(34,197,94,.2); border-color: rgba(34,197,94,.4);">KYC Verified</span>
+            </div>
+          </div>
+        </div>
+        <div style="margin-top: 12px;">
+          <a class="bf-btn block" href="{{ url_for('bookme_profile') }}">Edit Profile</a>
+        </div>
+      </div>
+
+      <div class="bf-card span-6">
+        <h3>Active Projects</h3>
+        {% if projects and projects|length > 0 %}
+          <div class="bf-list">
+            {% for project in projects[:5] %}
+              <div class="bf-row">
+                <div class="left">
+                  <div class="title">{{ project.project_title }}</div>
+                  <div class="meta">
+                    {{ project.client_name }} · {{ project.timeline }}
+                  </div>
+                </div>
+              </div>
+            {% endfor %}
+          </div>
+        {% else %}
+          <p style="opacity: .75; padding: 20px 0; text-align: center;">No active projects.</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- 2. Requests -->
+  <div id="section-requests" class="section">
+    <div class="bf-grid">
+      <div class="bf-card span-12">
+        <h3>Booking Requests</h3>
+        {% if requests and requests|length > 0 %}
+          <div style="overflow-x: auto;">
+            <table>
+              <thead>
+                <tr>
+                  <th>Client</th>
+                  <th>Project Type</th>
+                  <th>Date Range</th>
+                  <th>Location</th>
+                  <th>Budget</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for req in requests %}
+                  <tr>
+                    <td>{{ req.client_name }}</td>
+                    <td>
+                      <span class="bf-chip" style="text-transform: capitalize;">{{ req.project_type }}</span>
+                    </td>
+                    <td>{{ req.date_range or "TBA" }}</td>
+                    <td>{{ req.location or "TBA" }}</td>
+                    <td>{{ req.budget or "—" }}</td>
+                    <td>
+                      <span class="bf-chip" style="{% if req.status == 'accepted' %}background: rgba(34,197,94,.2); border-color: rgba(34,197,94,.4);{% elif req.status in ['declined', 'cancelled'] %}background: rgba(239,68,68,.2); border-color: rgba(239,68,68,.4);{% else %}background: rgba(251,191,36,.2); border-color: rgba(251,191,36,.4);{% endif %}">
+                        {{ req.status|title }}
+                      </span>
+                    </td>
+                    <td>
+                      <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+                        <a class="bf-btn small" href="#">View</a>
+                        {% if req.status == 'pending' %}
+                          <a class="bf-btn small primary" href="#">Accept</a>
+                          <a class="bf-btn small" href="#" style="background: rgba(239,68,68,.15); border-color: rgba(239,68,68,.3);">Decline</a>
+                        {% endif %}
+                      </div>
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}
+          <p style="opacity: .75; padding: 40px 0; text-align: center;">No booking requests yet.</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- 3. Projects -->
+  <div id="section-projects" class="section">
+    <div class="bf-grid">
+      <div class="bf-card span-12">
+        <h3>Projects</h3>
+        {% if projects and projects|length > 0 %}
+          <div style="overflow-x: auto;">
+            <table>
+              <thead>
+                <tr>
+                  <th>Client</th>
+                  <th>Project Title</th>
+                  <th>Timeline</th>
+                  <th>Deliverables</th>
+                  <th>Status</th>
+                  <th>Payment</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for project in projects %}
+                  <tr>
+                    <td>{{ project.client_name }}</td>
+                    <td>{{ project.project_title }}</td>
+                    <td>{{ project.timeline }}</td>
+                    <td>{{ project.deliverables }}</td>
+                    <td>
+                      <span class="bf-chip" style="{% if project.status == 'completed' %}background: rgba(34,197,94,.2); border-color: rgba(34,197,94,.4);{% elif project.status in ['accepted', 'confirmed'] %}background: rgba(59,130,246,.2); border-color: rgba(59,130,246,.4);{% else %}background: rgba(251,191,36,.2); border-color: rgba(251,191,36,.4);{% endif %}">
+                        {{ project.status|title }}
+                      </span>
+                    </td>
+                    <td>
+                      <span class="bf-chip" style="{% if project.payment_status == 'paid' %}background: rgba(34,197,94,.2); border-color: rgba(34,197,94,.4);{% else %}background: rgba(251,191,36,.2); border-color: rgba(251,191,36,.4);{% endif %}">
+                        {{ project.payment_status|title }}
+                      </span>
+                    </td>
+                    <td>
+                      <div style="display: flex; gap: 6px;">
+                        <a class="bf-btn small" href="#">View</a>
+                      </div>
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}
+          <p style="opacity: .75; padding: 40px 0; text-align: center;">No projects yet.</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- 4. Lookboards -->
+  <div id="section-lookboards" class="section">
+    <div class="bf-grid">
+      <div class="bf-card span-12">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+          <h3 style="margin: 0;">Lookboards</h3>
+          <a class="bf-btn primary" href="#">Upload Lookboard</a>
+        </div>
+        {% if lookboards and lookboards|length > 0 %}
+          <div class="bf-list">
+            {% for board in lookboards %}
+              <div class="bf-row">
+                <div class="left">
+                  <div class="title">{{ board.title or "Lookboard" }}</div>
+                  <div class="meta">
+                    Version: {{ board.version }} · Tags: {{ board.tags or "None" }} · Approval: {{ board.approval_status|title }}
+                  </div>
+                </div>
+                <div style="display: flex; gap: 6px;">
+                  <a class="bf-btn small" href="#">View</a>
+                  <a class="bf-btn small" href="#">Edit</a>
+                </div>
+              </div>
+            {% endfor %}
+          </div>
+        {% else %}
+          <p style="opacity: .75; padding: 40px 0; text-align: center;">No lookboards created yet. Upload moodboards for your projects.</p>
+          <div style="text-align: center; margin-top: 20px;">
+            <a class="bf-btn primary" href="#">Upload First Lookboard</a>
+          </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- 5. Fittings -->
+  <div id="section-fittings" class="section">
+    <div class="bf-grid">
+      <div class="bf-card span-12">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+          <h3 style="margin: 0;">Scheduled Fittings</h3>
+          <a class="bf-btn primary" href="#">Schedule Fitting</a>
+        </div>
+        {% if fittings and fittings|length > 0 %}
+          <div style="overflow-x: auto;">
+            <table>
+              <thead>
+                <tr>
+                  <th>Client/Project</th>
+                  <th>Date/Time</th>
+                  <th>Location</th>
+                  <th>Measurements</th>
+                  <th>Notes</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for fitting in fittings %}
+                  <tr>
+                    <td>{{ fitting.client_name or fitting.project }}</td>
+                    <td>{{ fitting.date_time.strftime("%b %d, %Y %I:%M %p") if fitting.date_time else "TBA" }}</td>
+                    <td>{{ fitting.location or "TBA" }}</td>
+                    <td>{{ fitting.measurements or "—" }}</td>
+                    <td>{{ fitting.notes or "None" }}</td>
+                    <td>
+                      <span class="bf-chip" style="{% if fitting.status == 'completed' %}background: rgba(34,197,94,.2); border-color: rgba(34,197,94,.4);{% else %}background: rgba(251,191,36,.2); border-color: rgba(251,191,36,.4);{% endif %}">
+                        {{ fitting.status|title if fitting.status else "Scheduled" }}
+                      </span>
+                    </td>
+                    <td>
+                      <div style="display: flex; gap: 6px;">
+                        <a class="bf-btn small" href="#">View</a>
+                        <a class="bf-btn small" href="#">Edit</a>
+                      </div>
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}
+          <p style="opacity: .75; padding: 40px 0; text-align: center;">No fittings scheduled yet. Schedule fittings for your projects.</p>
+          <div style="text-align: center; margin-top: 20px;">
+            <a class="bf-btn primary" href="#">Schedule First Fitting</a>
+          </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- 6. Closet & Pull List -->
+  <div id="section-pull-list" class="section">
+    <div class="bf-grid">
+      <div class="bf-card span-12">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+          <h3 style="margin: 0;">Closet & Pull List</h3>
+          <a class="bf-btn primary" href="#">Add Item</a>
+        </div>
+        {% if pull_list_items and pull_list_items|length > 0 %}
+          <div style="overflow-x: auto;">
+            <table>
+              <thead>
+                <tr>
+                  <th>Brand</th>
+                  <th>Item</th>
+                  <th>Size</th>
+                  <th>Source</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for item in pull_list_items %}
+                  <tr>
+                    <td>{{ item.brand or "—" }}</td>
+                    <td>{{ item.item_name or "—" }}</td>
+                    <td>{{ item.size or "—" }}</td>
+                    <td>{{ item.source or "—" }}</td>
+                    <td>
+                      <span class="bf-chip" style="{% if item.status == 'returned' %}background: rgba(34,197,94,.2); border-color: rgba(34,197,94,.4);{% elif item.status == 'pulled' %}background: rgba(59,130,246,.2); border-color: rgba(59,130,246,.4);{% else %}background: rgba(251,191,36,.2); border-color: rgba(251,191,36,.4);{% endif %}">
+                        {{ item.status|title if item.status else "Pending" }}
+                      </span>
+                    </td>
+                    <td>
+                      <div style="display: flex; gap: 6px;">
+                        <a class="bf-btn small" href="#">Edit</a>
+                        <a class="bf-btn small" href="#">Mark Returned</a>
+                      </div>
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}
+          <p style="opacity: .75; padding: 40px 0; text-align: center;">No items in pull list yet. Add items from your closet or external sources.</p>
+          <div style="text-align: center; margin-top: 20px;">
+            <a class="bf-btn primary" href="#">Add First Item</a>
+          </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- 7. Availability -->
+  <div id="section-availability" class="section">
+    <div class="bf-grid">
+      <div class="bf-card span-12">
+        <h3>Availability Calendar</h3>
+        <div style="margin-bottom: 20px; padding: 16px; border-radius: 12px; background: rgba(0,0,0,.2); border: 1px solid rgba(255,255,255,.08);">
+          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+            <div>
+              <div style="font-weight: 600; margin-bottom: 4px;">Accept New Requests</div>
+              <div style="opacity: .7; font-size: .85rem;">Allow clients to send booking requests</div>
+            </div>
+            <label style="position: relative; display: inline-block; width: 44px; height: 24px;">
+              <input type="checkbox" {% if availability.accept_new_requests %}checked{% endif %} style="opacity: 0; width: 0; height: 0;">
+              <span style="position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: {% if availability.accept_new_requests %}rgba(34,197,94,.3){% else %}rgba(107,114,128,.3){% endif %}; border-radius: 24px; transition: .4s;"></span>
+              <span style="position: absolute; content: ''; height: 18px; width: 18px; left: 3px; bottom: 3px; background-color: white; border-radius: 50%; transition: .4s; transform: {% if availability.accept_new_requests %}translateX(20px){% else %}translateX(0){% endif %};"></span>
+            </label>
+          </div>
+        </div>
+        {% if availability.blocks and availability.blocks|length > 0 %}
+          <div class="bf-list">
+            <h4 style="margin: 0 0 12px; font-size: .95rem;">Blocked Dates</h4>
+            {% for block in availability.blocks %}
+              <div class="bf-row">
+                <div class="left">
+                  <div class="title">{{ block.date.strftime("%B %d, %Y") if block.date else "Date" }}</div>
+                  <div class="meta">{{ block.reason or "Blocked" }}</div>
+                </div>
+              </div>
+            {% endfor %}
+          </div>
+        {% else %}
+          <p style="opacity: .75; padding: 20px 0; text-align: center;">No blocked dates. Start by blocking dates when you're unavailable.</p>
+        {% endif %}
+        <div style="margin-top: 16px;">
+          <a class="bf-btn" href="#">Block Date</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 8. Earnings -->
+  <div id="section-earnings" class="section">
+    <div class="bf-grid">
+      <div class="bf-card span-12">
+        <h3>Earnings</h3>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px;">
+          <div style="padding: 20px; border-radius: 16px; background: rgba(34,197,94,.1); border: 1px solid rgba(34,197,94,.2);">
+            <div style="font-size: .85rem; opacity: .7; margin-bottom: 8px;">Total Earned</div>
+            <div style="font-size: 2rem; font-weight: 700;">${{ "%.2f"|format(earnings.total_earned) }}</div>
+          </div>
+          <div style="padding: 20px; border-radius: 16px; background: rgba(251,191,36,.1); border: 1px solid rgba(251,191,36,.2);">
+            <div style="font-size: .85rem; opacity: .7; margin-bottom: 8px;">Pending Payments</div>
+            <div style="font-size: 2rem; font-weight: 700;">${{ "%.2f"|format(earnings.pending) }}</div>
+          </div>
+          <div style="padding: 20px; border-radius: 16px; background: rgba(59,130,246,.1); border: 1px solid rgba(59,130,246,.2);">
+            <div style="font-size: .85rem; opacity: .7; margin-bottom: 8px;">This Month</div>
+            <div style="font-size: 2rem; font-weight: 700;">${{ "%.2f"|format(earnings.this_month) }}</div>
+          </div>
+        </div>
+        {% if transactions and transactions|length > 0 %}
+          <div style="overflow-x: auto;">
+            <table>
+              <thead>
+                <tr>
+                  <th>Project</th>
+                  <th>Amount</th>
+                  <th>Date</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for trans in transactions %}
+                  <tr>
+                    <td>{{ trans.project }}</td>
+                    <td>${{ "%.2f"|format(trans.amount) }}</td>
+                    <td>{{ trans.date.strftime("%b %d, %Y") if trans.date else "—" }}</td>
+                    <td>
+                      <span class="bf-chip" style="{% if trans.status == 'completed' %}background: rgba(34,197,94,.2); border-color: rgba(34,197,94,.4);{% elif trans.status in ['accepted', 'confirmed'] %}background: rgba(59,130,246,.2); border-color: rgba(59,130,246,.4);{% else %}background: rgba(251,191,36,.2); border-color: rgba(251,191,36,.4);{% endif %}">
+                        {{ trans.status|title }}
+                      </span>
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}
+          <p style="opacity: .75; padding: 20px 0; text-align: center;">No transactions yet.</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- 9. Reviews -->
+  <div id="section-reviews" class="section">
+    <div class="bf-grid">
+      <div class="bf-card span-12">
+        <h3>Client Reviews</h3>
+        {% if reviews and reviews|length > 0 %}
+          <div class="bf-list">
+            {% for review in reviews %}
+              <div class="bf-row">
+                <div class="left">
+                  <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
+                    <div class="title">{{ review.rating }} ⭐</div>
+                    {% if review.project %}
+                      <span class="bf-chip" style="font-size: .75rem;">{{ review.project }}</span>
+                    {% endif %}
+                  </div>
+                  <div class="meta">{{ review.comment }}</div>
+                  {% if review.created_at %}
+                    <div style="opacity: .6; font-size: .8rem; margin-top: 4px;">
+                      {{ review.created_at.strftime("%b %d, %Y") }}
+                    </div>
+                  {% endif %}
+                </div>
+              </div>
+            {% endfor %}
+          </div>
+        {% else %}
+          <p style="opacity: .75; padding: 40px 0; text-align: center;">No reviews yet. Reviews will appear here once clients leave feedback.</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- 10. Settings -->
+  <div id="section-settings" class="section">
+    <div class="bf-grid">
+      <div class="bf-card span-12">
+        <h3>Settings</h3>
+        <div class="bf-list">
+          <h4 style="margin: 0 0 12px; font-size: .95rem; opacity: .8;">Profile Settings</h4>
+          <a class="bf-btn block" href="{{ url_for('bookme_profile') }}">Stylist Name & Profile</a>
+          <a class="bf-btn block" href="{{ url_for('bookme_profile') }}">Specialties & Genres</a>
+          <a class="bf-btn block" href="{{ url_for('bookme_profile') }}">Sizes Served & Travel</a>
+          <a class="bf-btn block" href="{{ url_for('bookme_profile') }}">Packages & Rates</a>
+          
+          <h4 style="margin: 20px 0 12px; font-size: .95rem; opacity: .8;">Account</h4>
+          <a class="bf-btn block" href="{{ url_for('profile_edit') }}">Change Password</a>
+          <a class="bf-btn block" href="{{ url_for('bookme_profile') }}">Notification Preferences</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  function showSection(sectionId) {
+    // Hide all sections
+    document.querySelectorAll('.section').forEach(section => {
+      section.classList.remove('active');
+    });
+
+    // Show selected section
+    const section = document.getElementById('section-' + sectionId);
+    if (section) {
+      section.classList.add('active');
+    }
+    
+    // Scroll to top
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function setActiveTab(clickedTab) {
+    // Remove active class from all tabs
+    document.querySelectorAll('.nav-tab').forEach(tab => {
+      tab.classList.remove('active');
+    });
+    
+    // Add active class to clicked tab
+    clickedTab.classList.add('active');
+  }
+</script>
+{% endblock %}
+

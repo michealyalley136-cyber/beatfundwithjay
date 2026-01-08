@@ -1,0 +1,991 @@
+{% extends "base.html" %}
+{% block title %}Photographer Dashboard · BeatFund{% endblock %}
+
+{% block extra_head %}
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  .bf-studio { max-width: 1200px; margin: 0 auto; padding: 16px; }
+  .bf-hero { display:flex; gap:14px; align-items:center; justify-content:space-between; flex-wrap:wrap; margin-bottom: 20px; }
+  .bf-hero-left { display:flex; gap:12px; align-items:center; min-width: 260px; }
+  .bf-avatar { width: 56px; height: 56px; border-radius: 16px; object-fit: cover; border: 1px solid rgba(255,255,255,.12); }
+  .bf-title { margin:0; font-size: 1.35rem; line-height: 1.2; }
+  .bf-sub { margin:4px 0 0; opacity:.8; font-size: .95rem; }
+  .bf-actions { display:flex; gap:10px; flex-wrap:wrap; align-items:center; justify-content:flex-end; }
+
+  .bf-grid { display:grid; grid-template-columns: repeat(12, 1fr); gap: 14px; margin-top: 14px; }
+  .bf-card { border: 1px solid rgba(255,255,255,.12); background: rgba(255,255,255,.06); border-radius: 18px; padding: 16px; }
+  .bf-card h3 { margin:0 0 12px; font-size: 1.1rem; font-weight: 700; }
+  .bf-kpis { display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+  .bf-kpi { padding: 14px; border-radius: 16px; border: 1px solid rgba(255,255,255,.10); background: rgba(255,255,255,.05); cursor: pointer; transition: all 0.2s ease; }
+  .bf-kpi:hover { background: rgba(255,255,255,.08); transform: translateY(-2px); }
+  .bf-kpi .label { opacity:.75; font-size: .9rem; margin-bottom: 6px; }
+  .bf-kpi .value { font-size: 1.5rem; font-weight: 800; line-height: 1.2; }
+  .bf-kpi .hint { opacity:.7; font-size: .85rem; margin-top: 6px; }
+
+  .bf-btn {
+    display:inline-flex; align-items:center; justify-content:center;
+    padding: 12px 16px; border-radius: 14px;
+    border: 1px solid rgba(255,255,255,.12);
+    background: rgba(255,255,255,.08);
+    color: inherit;
+    text-decoration:none;
+    font-weight: 600;
+    min-height: 44px;
+    transition: all 0.2s ease;
+  }
+  .bf-btn:hover { background: rgba(255,255,255,.12); transform: translateY(-1px); }
+  .bf-btn.primary { background: linear-gradient(135deg, rgba(168,85,247,.4), rgba(192,38,211,.3)); border-color: rgba(168,85,247,.5); }
+  .bf-btn.primary:hover { background: linear-gradient(135deg, rgba(168,85,247,.5), rgba(192,38,211,.4)); }
+  .bf-btn.block { width: 100%; }
+  .bf-btn.small { font-size: .85rem; padding: 8px 12px; min-height: 36px; }
+
+  .bf-list { display:flex; flex-direction:column; gap:10px; }
+  .bf-row { display:flex; gap:12px; align-items:center; justify-content:space-between; flex-wrap:wrap; padding: 12px; border-radius: 12px; border: 1px solid rgba(255,255,255,.08); background: rgba(0,0,0,.2); }
+  .bf-row .left { min-width: 0; flex: 1; }
+  .bf-row .title { font-weight: 700; font-size: 1rem; }
+  .bf-row .meta { opacity:.75; font-size:.9rem; margin-top: 4px; }
+  .bf-chip {
+    display:inline-flex; align-items:center;
+    padding: 6px 12px; border-radius: 999px;
+    border: 1px solid rgba(255,255,255,.12);
+    background: rgba(255,255,255,.06);
+    font-size: .85rem; opacity:.9;
+  }
+
+  .bf-profile-cta {
+    text-align: center;
+    padding: 24px;
+    border-radius: 18px;
+    background: linear-gradient(135deg, rgba(168,85,247,.15), rgba(192,38,211,.1));
+    border: 1px solid rgba(168,85,247,.3);
+    margin-bottom: 20px;
+  }
+  .bf-profile-cta h2 { margin: 0 0 8px; font-size: 1.3rem; }
+  .bf-profile-cta p { margin: 0 0 16px; opacity: .8; font-size: .95rem; }
+
+  .span-12 { grid-column: span 12; }
+  .span-8 { grid-column: span 12; }
+  .span-4 { grid-column: span 12; }
+  .span-6 { grid-column: span 12; }
+
+  @media (min-width: 900px){
+    .span-8 { grid-column: span 8; }
+    .span-4 { grid-column: span 4; }
+    .span-6 { grid-column: span 6; }
+  }
+
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; padding: 12px; font-size: .9rem; opacity: .7; border-bottom: 1px solid rgba(255,255,255,.1); }
+  td { padding: 12px; border-bottom: 1px solid rgba(255,255,255,.05); }
+  tr:hover { background: rgba(255,255,255,.03); }
+
+  .checklist-item { display: flex; align-items: center; gap: 6px; }
+  .check-icon { width: 16px; height: 16px; border-radius: 4px; border: 2px solid rgba(255,255,255,.3); display: flex; align-items: center; justify-content: center; }
+  .check-icon.checked { background: rgba(34,197,94,.3); border-color: rgba(34,197,94,.5); }
+  .check-icon.checked::after { content: "✓"; color: rgba(34,197,94,1); font-size: .7rem; }
+
+  .gallery-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
+  .gallery-card { position: relative; aspect-ratio: 4/3; border-radius: 12px; overflow: hidden; border: 1px solid rgba(255,255,255,.1); background: rgba(0,0,0,.3); }
+  .gallery-thumb { width: 100%; height: 100%; object-fit: cover; }
+  .gallery-overlay { position: absolute; bottom: 0; left: 0; right: 0; background: linear-gradient(to top, rgba(0,0,0,.9), transparent); padding: 12px; }
+  .gallery-title { font-weight: 600; font-size: .9rem; margin-bottom: 4px; }
+  .gallery-meta { font-size: .75rem; opacity: .8; }
+
+  .portfolio-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+  .portfolio-item { position: relative; aspect-ratio: 1; border-radius: 12px; overflow: hidden; border: 1px solid rgba(255,255,255,.1); background: rgba(0,0,0,.3); }
+  .portfolio-img { width: 100%; height: 100%; object-fit: cover; }
+  .portfolio-badge { position: absolute; top: 8px; right: 8px; }
+
+  /* Modal styles */
+  .modal-overlay {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0,0,0,.7);
+    backdrop-filter: blur(4px);
+    z-index: 1000;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+  
+  .modal-overlay.active {
+    display: flex;
+  }
+  
+  .modal-content {
+    background: rgba(15,23,42,.95);
+    border: 1px solid rgba(255,255,255,.12);
+    border-radius: 20px;
+    max-width: 600px;
+    width: 100%;
+    max-height: 80vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 20px 60px rgba(0,0,0,.6);
+  }
+  
+  .modal-header {
+    padding: 20px;
+    border-bottom: 1px solid rgba(255,255,255,.1);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  
+  .modal-header h2 {
+    margin: 0;
+    font-size: 1.3rem;
+    font-weight: 700;
+  }
+  
+  .modal-close {
+    background: none;
+    border: none;
+    color: rgba(255,255,255,.7);
+    font-size: 1.5rem;
+    cursor: pointer;
+    padding: 0;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+    transition: all 0.2s ease;
+  }
+  
+  .modal-close:hover {
+    background: rgba(255,255,255,.1);
+    color: rgba(255,255,255,1);
+  }
+  
+  .modal-body {
+    padding: 20px;
+    overflow-y: auto;
+    flex: 1;
+  }
+  
+  .user-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  
+  .user-item {
+    padding: 12px;
+    border-radius: 12px;
+    border: 1px solid rgba(255,255,255,.08);
+    background: rgba(255,255,255,.03);
+    transition: all 0.2s ease;
+  }
+  
+  .user-item:hover {
+    background: rgba(255,255,255,.06);
+    border-color: rgba(255,255,255,.12);
+  }
+  
+  .user-avatar {
+    width: 48px;
+    height: 48px;
+    border-radius: 12px;
+    object-fit: cover;
+    border: 1px solid rgba(255,255,255,.1);
+  }
+  
+  .user-info {
+    flex: 1;
+    min-width: 0;
+  }
+  
+  .user-name {
+    font-weight: 600;
+    font-size: 1rem;
+    margin-bottom: 2px;
+  }
+  
+  .user-username {
+    font-size: 0.9rem;
+    opacity: 0.7;
+    margin-bottom: 4px;
+  }
+  
+  .user-role {
+    font-size: 0.85rem;
+    opacity: 0.6;
+  }
+  
+  .user-link {
+    color: inherit;
+    text-decoration: none;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex: 1;
+    min-width: 0;
+  }
+  
+  .user-link:hover {
+    color: inherit;
+  }
+  
+  .loading-state, .empty-state {
+    text-align: center;
+    padding: 40px 20px;
+    opacity: 0.7;
+  }
+  
+  .loading-spinner {
+    display: inline-block;
+    width: 32px;
+    height: 32px;
+    border: 3px solid rgba(255,255,255,.1);
+    border-top-color: rgba(168,85,247,1);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="bf-studio">
+
+  <div class="bf-hero">
+    <div class="bf-hero-left">
+      <img class="bf-avatar" src="{{ photographer.profile_image_url }}" alt="avatar">
+      <div>
+        <h1 class="bf-title">📸 Photographer Dashboard</h1>
+        <p class="bf-sub">@{{ current_user.username }} · Manage shoots & galleries</p>
+        <div style="display: flex; gap: 12px; margin-top: 8px; flex-wrap: wrap;">
+          <button type="button" class="bf-chip" style="background: rgba(168,85,247,.15); border-color: rgba(168,85,247,.3); cursor: pointer; border: 1px solid rgba(168,85,247,.3); transition: all 0.2s ease;" onclick="showFollowers()" onmouseover="this.style.background='rgba(168,85,247,.25)'; this.style.borderColor='rgba(168,85,247,.5)'" onmouseout="this.style.background='rgba(168,85,247,.15)'; this.style.borderColor='rgba(168,85,247,.3)'">
+            <span style="display: inline-block; width: 8px; height: 8px; background: rgba(168,85,247,1); border-radius: 50%; margin-right: 6px;"></span>
+            Followers: <strong>{{ followers_count }}</strong>
+          </button>
+          <button type="button" class="bf-chip" style="background: rgba(192,38,211,.15); border-color: rgba(192,38,211,.3); cursor: pointer; border: 1px solid rgba(192,38,211,.3); transition: all 0.2s ease;" onclick="showFollowing()" onmouseover="this.style.background='rgba(192,38,211,.25)'; this.style.borderColor='rgba(192,38,211,.5)'" onmouseout="this.style.background='rgba(192,38,211,.15)'; this.style.borderColor='rgba(192,38,211,.3)'">
+            Following: <strong>{{ following_count }}</strong>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="bf-actions">
+      <a class="bf-btn primary" href="{{ url_for('bookme_profile') }}">
+        {{ "Edit Profile" if artist_can_take_gigs else "Create Profile" }}
+      </a>
+      <a class="bf-btn" href="{{ url_for('bookme_portfolio') }}">Portfolio</a>
+      <a class="bf-btn" href="{{ url_for('bookme_requests') }}">Requests</a>
+      <a class="bf-btn" href="{{ url_for('wallet_home') }}">Wallet</a>
+    </div>
+  </div>
+
+  {% if not artist_can_take_gigs %}
+  <!-- Profile CTA -->
+  <div class="bf-profile-cta">
+    <h2>Activate Your Photographer Profile</h2>
+    <p>Create your BookMe profile to start receiving booking requests for photo shoots and projects.</p>
+    <a class="bf-btn primary" href="{{ url_for('bookme_profile') }}" style="font-size: 1rem; padding: 14px 28px;">
+      Create Photographer Profile →
+    </a>
+  </div>
+  {% endif %}
+
+  <div class="bf-grid">
+
+    <!-- 1. Dashboard Overview -->
+    <div class="bf-card span-12">
+      <h3>Dashboard Overview</h3>
+      <div class="bf-kpis">
+        <a href="{{ url_for('bookme_requests') }}" style="text-decoration: none; color: inherit;">
+          <div class="bf-kpi">
+            <div class="label">New Requests</div>
+            <div class="value">{{ stats.new_requests_count }}</div>
+            <div class="hint">Awaiting response</div>
+          </div>
+        </a>
+        <a href="{{ url_for('photographer_dashboard') }}#shoots" style="text-decoration: none; color: inherit;">
+          <div class="bf-kpi">
+            <div class="label">Upcoming Shoots</div>
+            <div class="value">{{ stats.upcoming_shoots_count }}</div>
+            <div class="hint">Scheduled</div>
+          </div>
+        </a>
+        <a href="{{ url_for('photographer_dashboard') }}#shoots" style="text-decoration: none; color: inherit;">
+          <div class="bf-kpi">
+            <div class="label">Active Projects</div>
+            <div class="value">{{ stats.active_projects_count }}</div>
+            <div class="hint">In progress</div>
+          </div>
+        </a>
+        <a href="{{ url_for('wallet_home') }}" style="text-decoration: none; color: inherit;">
+          <div class="bf-kpi">
+            <div class="label">Monthly Earnings</div>
+            <div class="value">${{ "%.2f"|format(stats.monthly_earnings_total) }}</div>
+            <div class="hint">This month</div>
+          </div>
+        </a>
+        <a href="{{ url_for('photographer_dashboard') }}#reviews" style="text-decoration: none; color: inherit;">
+          <div class="bf-kpi">
+            <div class="label">Average Rating</div>
+            <div class="value">
+              {% if stats.average_rating %}
+                ⭐ {{ "%.1f"|format(stats.average_rating) }}
+              {% else %}
+                New
+              {% endif %}
+            </div>
+            <div class="hint">{{ rating_count }} review{{ rating_count != 1 and 's' or '' }}</div>
+          </div>
+        </a>
+      </div>
+    </div>
+
+    <!-- 2. Profile & Brand Identity Panel -->
+    <div class="bf-card span-4">
+      <h3>Profile & Brand Identity</h3>
+      <div style="text-align: center; padding: 16px 0;">
+        <img class="bf-avatar" src="{{ photographer.profile_image_url }}" alt="avatar" style="width: 80px; height: 80px; margin: 0 auto 12px;">
+        <div style="font-size: 1.2rem; font-weight: 700; margin-bottom: 4px;">
+          {{ photographer.display_name }}
+        </div>
+        {% if photographer.studio_name %}
+          <div style="opacity: .7; font-size: .9rem; margin-bottom: 8px;">{{ photographer.studio_name }}</div>
+        {% endif %}
+        {% if photographer.specialties %}
+          <div style="margin-top: 12px; display: flex; flex-wrap: wrap; gap: 6px; justify-content: center;">
+            {% for spec in photographer.specialties[:4] %}
+              <span class="bf-chip" style="font-size: .8rem; padding: 4px 10px;">{{ spec }}</span>
+            {% endfor %}
+          </div>
+        {% endif %}
+        <div style="opacity: .7; font-size: .9rem; margin-top: 12px;">
+          📍 {{ photographer.location }}
+        </div>
+        <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,.1);">
+          <div style="opacity: .7; font-size: .85rem; margin-bottom: 8px;">
+            Verification: 
+            <span class="bf-chip" style="{% if photographer.kyc_status == 'approved' %}background: rgba(34,197,94,.2); border-color: rgba(34,197,94,.4);{% elif photographer.kyc_status == 'pending' %}background: rgba(251,191,36,.2); border-color: rgba(251,191,36,.4);{% else %}background: rgba(239,68,68,.2); border-color: rgba(239,68,68,.4);{% endif %}">
+              {{ photographer.kyc_status|title }}
+            </span>
+          </div>
+        </div>
+      </div>
+      <div style="margin-top: 16px;">
+        <a class="bf-btn block primary" href="{{ url_for('bookme_profile') }}">Edit Profile</a>
+        <a class="bf-btn block" href="{{ url_for('provider_portfolio_public', username=current_user.username) }}" style="margin-top: 8px;">View Public Profile</a>
+        <a class="bf-btn block" href="{{ url_for('bookme_portfolio') }}" style="margin-top: 8px;">Manage Portfolio</a>
+      </div>
+    </div>
+
+    <!-- 3. Incoming Booking Requests -->
+    <div class="bf-card span-8">
+      <h3>Incoming Booking Requests</h3>
+      {% if requests and requests|length > 0 %}
+        <div style="overflow-x: auto;">
+          <table>
+            <thead>
+              <tr>
+                <th>Client</th>
+                <th>Shoot Type</th>
+                <th>Date + Duration</th>
+                <th>Location</th>
+                <th>Budget</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for req in requests[:10] %}
+                <tr>
+                  <td>
+                    {% if req.client %}
+                      @{{ req.client.username }}
+                    {% else %}
+                      —
+                    {% endif %}
+                  </td>
+                  <td>
+                    {% if req.message %}
+                      {{ req.message[:30] }}{% if req.message|length > 30 %}...{% endif %}
+                    {% else %}
+                      Photo Shoot
+                    {% endif %}
+                  </td>
+                  <td>
+                    {% if req.preferred_time %}
+                      {{ req.preferred_time }}
+                    {% else %}
+                      TBD
+                    {% endif %}
+                  </td>
+                  <td>
+                    {% if req.location_text %}
+                      {{ req.location_text[:20] }}{% if req.location_text|length > 20 %}...{% endif %}
+                    {% else %}
+                      —
+                    {% endif %}
+                  </td>
+                  <td>—</td>
+                  <td>
+                    <span class="bf-chip" style="background: rgba(251,191,36,.2); border-color: rgba(251,191,36,.4);">
+                      {{ req.status.value|title }}
+                    </span>
+                  </td>
+                  <td>
+                    <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+                      <form method="POST" action="{{ url_for('bookme_request_status', req_id=req.id) }}" style="margin: 0; display: inline;">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <input type="hidden" name="action" value="accept">
+                        <button type="submit" class="bf-btn small" style="background: rgba(34,197,94,.2); border-color: rgba(34,197,94,.4);">Accept</button>
+                      </form>
+                      <form method="POST" action="{{ url_for('bookme_request_status', req_id=req.id) }}" style="margin: 0; display: inline;">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <input type="hidden" name="action" value="decline">
+                        <button type="submit" class="bf-btn small" style="background: rgba(239,68,68,.2); border-color: rgba(239,68,68,.4);">Decline</button>
+                      </form>
+                      <a class="bf-btn small" href="{{ url_for('booking_detail', booking_id=req.booking_id) if req.booking_id else url_for('bookme_requests') }}">Details</a>
+                    </div>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        <div style="margin-top:12px;">
+          <a class="bf-btn block primary" href="{{ url_for('bookme_requests') }}">View All Requests</a>
+        </div>
+      {% else %}
+        <p style="opacity:.75; margin:12px 0;">No new booking requests at the moment.</p>
+        <a class="bf-btn block" href="{{ url_for('bookme_search') }}">Browse Directory</a>
+      {% endif %}
+    </div>
+
+    <!-- 4. Active & Upcoming Shoots -->
+    <div class="bf-card span-12" id="shoots">
+      <h3>Active & Upcoming Shoots</h3>
+      {% if shoots and shoots|length > 0 %}
+        <div style="overflow-x: auto;">
+          <table>
+            <thead>
+              <tr>
+                <th>Project Title</th>
+                <th>Shoot Date & Time</th>
+                <th>Location</th>
+                <th>Package</th>
+                <th>Payment Status</th>
+                <th>Checklist</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for shoot in shoots[:10] %}
+                <tr>
+                  <td style="font-weight: 600;">{{ shoot.event_title }}</td>
+                  <td>
+                    {% if shoot.event_datetime %}
+                      {{ shoot.event_datetime.strftime("%b %d, %Y %I:%M %p") }}
+                    {% else %}
+                      TBD
+                    {% endif %}
+                  </td>
+                  <td>{{ shoot.location_text or "—" }}</td>
+                  <td>—</td>
+                  <td>
+                    {% if shoot.total_cents %}
+                      <span class="bf-chip" style="background: rgba(34,197,94,.2); border-color: rgba(34,197,94,.4);">Paid</span>
+                    {% else %}
+                      <span class="bf-chip" style="background: rgba(251,191,36,.2); border-color: rgba(251,191,36,.4);">Pending</span>
+                    {% endif %}
+                  </td>
+                  <td>
+                    <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+                      <div class="checklist-item">
+                        <div class="check-icon"></div>
+                        <span style="font-size: .85rem;">Contract</span>
+                      </div>
+                      <div class="checklist-item">
+                        <div class="check-icon"></div>
+                        <span style="font-size: .85rem;">Deposit</span>
+                      </div>
+                      <div class="checklist-item">
+                        <div class="check-icon"></div>
+                        <span style="font-size: .85rem;">Gallery</span>
+                      </div>
+                    </div>
+                  </td>
+                  <td>
+                    <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+                      <a class="bf-btn small" href="{{ url_for('booking_detail', booking_id=shoot.id) }}">View Details</a>
+                      <a class="bf-btn small" href="{{ url_for('photographer_dashboard') }}#galleries">Upload Photos</a>
+                      <a class="bf-btn small" href="{{ url_for('booking_detail', booking_id=shoot.id) }}">Mark Completed</a>
+                    </div>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        <div style="margin-top:12px;">
+          <a class="bf-btn block" href="{{ url_for('bookme_requests') }}">View All Shoots</a>
+        </div>
+      {% else %}
+        <p style="opacity:.75; margin:12px 0;">No active or upcoming shoots. Accept booking requests to see them here.</p>
+      {% endif %}
+    </div>
+
+    <!-- 5. Photo Galleries & Delivery -->
+    <div class="bf-card span-12" id="galleries">
+      <h3>Photo Galleries & Delivery</h3>
+      {% if galleries and galleries|length > 0 %}
+        <div class="gallery-grid">
+          {% for gallery in galleries[:8] %}
+            <div class="gallery-card">
+              {% if gallery.thumbnails and gallery.thumbnails|length > 0 %}
+                <img src="{{ gallery.thumbnails[0] }}" alt="{{ gallery.gallery_title }}" class="gallery-thumb">
+              {% else %}
+                <div style="position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(168,85,247,.2);">
+                  <span style="font-size: 3rem;">📷</span>
+                </div>
+              {% endif %}
+              <div class="gallery-overlay">
+                <div class="gallery-title">{{ gallery.gallery_title }}</div>
+                <div class="gallery-meta">
+                  {{ gallery.project_title }} · {{ gallery.client_name }}
+                  <br>
+                  Status: {{ gallery.status|title }}
+                  {% if gallery.watermark_enabled %} · Watermarked{% endif %}
+                  {% if gallery.download_enabled %} · Downloads: {{ gallery.download_count }}{% endif %}
+                  {% if gallery.expiry_date %} · Expires: {{ gallery.expiry_date }}{% endif %}
+                </div>
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+        <div style="margin-top: 16px; display: flex; gap: 8px; flex-wrap: wrap;">
+          <a class="bf-btn primary" href="{{ url_for('photographer_dashboard') }}">Upload Photos</a>
+          <a class="bf-btn" href="{{ url_for('photographer_dashboard') }}">Publish Gallery</a>
+          <a class="bf-btn" href="{{ url_for('photographer_dashboard') }}">Manage Downloads</a>
+        </div>
+      {% else %}
+        <p style="opacity:.75; margin:12px 0;">No galleries yet. Upload photos from completed shoots to create galleries.</p>
+        <a class="bf-btn block primary" href="{{ url_for('photographer_dashboard') }}">Create First Gallery</a>
+      {% endif %}
+    </div>
+
+    <!-- 6. Portfolio Copyright Protection -->
+    <div class="bf-card span-6">
+      <h3>Portfolio Copyright Protection</h3>
+      <div style="padding: 12px 0;">
+        <div style="margin-bottom: 16px;">
+          <div style="opacity: .7; font-size: .9rem; margin-bottom: 12px;">
+            Protect your portfolio images from unauthorized use. These settings apply to all portfolio items displayed publicly.
+          </div>
+          <div style="display: grid; gap: 12px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px; border-radius: 12px; background: rgba(0,0,0,.2); border: 1px solid rgba(255,255,255,.08);">
+              <div>
+                <div style="font-weight: 600; font-size: .9rem; margin-bottom: 4px;">Watermark Protection</div>
+                <div style="opacity: .7; font-size: .85rem;">Add your watermark to all portfolio images</div>
+              </div>
+              <label style="position: relative; display: inline-block; width: 44px; height: 24px;">
+                <input type="checkbox" checked style="opacity: 0; width: 0; height: 0;">
+                <span style="position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(168,85,247,.3); border-radius: 24px; transition: .4s;"></span>
+                <span style="position: absolute; content: ''; height: 18px; width: 18px; left: 3px; bottom: 3px; background-color: white; border-radius: 50%; transition: .4s; transform: translateX(20px);"></span>
+              </label>
+            </div>
+            <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px; border-radius: 12px; background: rgba(0,0,0,.2); border: 1px solid rgba(255,255,255,.08);">
+              <div>
+                <div style="font-weight: 600; font-size: .9rem; margin-bottom: 4px;">Disable Right-Click Download</div>
+                <div style="opacity: .7; font-size: .85rem;">Prevent users from saving images via right-click</div>
+              </div>
+              <label style="position: relative; display: inline-block; width: 44px; height: 24px;">
+                <input type="checkbox" checked style="opacity: 0; width: 0; height: 0;">
+                <span style="position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(168,85,247,.3); border-radius: 24px; transition: .4s;"></span>
+                <span style="position: absolute; content: ''; height: 18px; width: 18px; left: 3px; bottom: 3px; background-color: white; border-radius: 50%; transition: .4s; transform: translateX(20px);"></span>
+              </label>
+            </div>
+            <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px; border-radius: 12px; background: rgba(0,0,0,.2); border: 1px solid rgba(255,255,255,.08);">
+              <div>
+                <div style="font-weight: 600; font-size: .9rem; margin-bottom: 4px;">Copyright Notice</div>
+                <div style="opacity: .7; font-size: .85rem;">Display copyright notice on portfolio images</div>
+              </div>
+              <label style="position: relative; display: inline-block; width: 44px; height: 24px;">
+                <input type="checkbox" checked style="opacity: 0; width: 0; height: 0;">
+                <span style="position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(168,85,247,.3); border-radius: 24px; transition: .4s;"></span>
+                <span style="position: absolute; content: ''; height: 18px; width: 18px; left: 3px; bottom: 3px; background-color: white; border-radius: 50%; transition: .4s; transform: translateX(20px);"></span>
+              </label>
+            </div>
+            <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px; border-radius: 12px; background: rgba(0,0,0,.2); border: 1px solid rgba(255,255,255,.08);">
+              <div>
+                <div style="font-weight: 600; font-size: .9rem; margin-bottom: 4px;">Image Compression</div>
+                <div style="opacity: .7; font-size: .85rem;">Serve compressed/low-res versions for web display</div>
+              </div>
+              <label style="position: relative; display: inline-block; width: 44px; height: 24px;">
+                <input type="checkbox" checked style="opacity: 0; width: 0; height: 0;">
+                <span style="position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(168,85,247,.3); border-radius: 24px; transition: .4s;"></span>
+                <span style="position: absolute; content: ''; height: 18px; width: 18px; left: 3px; bottom: 3px; background-color: white; border-radius: 50%; transition: .4s; transform: translateX(20px);"></span>
+              </label>
+            </div>
+          </div>
+        </div>
+        <div style="padding: 12px; border-radius: 12px; background: rgba(251,191,36,.1); border: 1px solid rgba(251,191,36,.2); margin-top: 16px;">
+          <div style="font-size: .85rem; opacity: .9;">
+            <strong>Copyright Notice Text:</strong>
+            <div style="margin-top: 8px; opacity: .8; font-size: .9rem;">
+              © <span id="copyright-year">2024</span> {{ photographer.display_name }}. All rights reserved. Unauthorized use prohibited.
+            </div>
+          </div>
+        </div>
+        <div style="margin-top: 16px;">
+          <a class="bf-btn block primary" href="{{ url_for('bookme_portfolio') }}">Manage Portfolio Protection</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- 7. Portfolio Management -->
+    <div class="bf-card span-6">
+      <h3>Portfolio Management</h3>
+      {% if portfolio_items and portfolio_items|length > 0 %}
+        <div class="portfolio-grid">
+          {% for item in portfolio_items[:6] %}
+            <div class="portfolio-item">
+              {% if item.media_type.value == 'image' and item.media_url %}
+                <img src="{{ item.media_url }}" alt="{{ item.title }}" class="portfolio-img">
+              {% else %}
+                <div style="position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(168,85,247,.2);">
+                  <span style="font-size: 2rem;">📷</span>
+                </div>
+              {% endif %}
+              <div style="position: absolute; bottom: 0; left: 0; right: 0; background: linear-gradient(to top, rgba(0,0,0,.8), transparent); padding: 8px; font-size: .75rem; font-weight: 600;">
+                {{ item.title[:20] }}{% if item.title|length > 20 %}...{% endif %}
+              </div>
+              <div class="portfolio-badge">
+                {% if item.is_featured %}
+                  <span class="bf-chip" style="background: rgba(251,191,36,.3); border-color: rgba(251,191,36,.5); font-size: .7rem; padding: 2px 6px;">Featured</span>
+                {% endif %}
+                <span class="bf-chip" style="background: rgba(168,85,247,.3); border-color: rgba(168,85,247,.5); font-size: .7rem; padding: 2px 6px; margin-top: 4px; display: block;">Protected</span>
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+        <div style="margin-top: 16px; display: flex; gap: 8px; flex-wrap: wrap;">
+          <a class="bf-btn block primary" href="{{ url_for('bookme_portfolio') }}">Add New Item</a>
+          <a class="bf-btn block" href="{{ url_for('bookme_portfolio') }}">Edit Portfolio</a>
+        </div>
+      {% else %}
+        <p style="opacity:.75; margin:12px 0;">No portfolio items yet. Showcase your work to attract clients.</p>
+        <a class="bf-btn block primary" href="{{ url_for('bookme_portfolio') }}">Upload Portfolio Item</a>
+      {% endif %}
+    </div>
+
+    <!-- 8. Availability & Scheduling -->
+    <div class="bf-card span-6">
+      <h3>Availability & Scheduling</h3>
+      <div style="padding: 12px 0;">
+        <div style="margin-bottom: 16px;">
+          <div style="font-size: 1.2rem; font-weight: 700; margin-bottom: 8px;">
+            {% if availability.accept_new_bookings %}
+              Accepting New Bookings
+            {% else %}
+              Not Accepting Bookings
+            {% endif %}
+          </div>
+          <div style="opacity: .7; font-size: .9rem; margin-bottom: 12px;">
+            {% if availability.accept_new_bookings %}
+              Your profile is live and visible to clients
+            {% else %}
+              Your services are hidden from the marketplace
+            {% endif %}
+          </div>
+          {% if prof %}
+            <form method="POST" action="{{ url_for('provider_toggle_live') }}" style="margin: 0; display: inline;">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button type="submit" class="bf-chip" style="cursor: pointer; {% if availability.accept_new_bookings %}background: rgba(251,191,36,.2); border-color: rgba(251,191,36,.4);{% else %}background: rgba(34,197,94,.2); border-color: rgba(34,197,94,.4);{% endif %} transition: all 0.2s ease;" onmouseover="this.style.opacity='0.8'" onmouseout="this.style.opacity='1'">
+                {{ "Pause Bookings" if availability.accept_new_bookings else "Accept Bookings" }}
+              </button>
+            </form>
+          {% endif %}
+        </div>
+        <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid rgba(255,255,255,.1);">
+          <div style="display: grid; gap: 12px;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <span style="opacity: .7; font-size: .9rem;">Max Shoots Per Day:</span>
+              <span class="bf-chip">{{ availability.max_shoots_per_day }}</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <span style="opacity: .7; font-size: .9rem;">Weekly Hours:</span>
+              <span class="bf-chip">{{ availability.weekly_hours }}</span>
+            </div>
+            {% if availability.blocked_dates and availability.blocked_dates|length > 0 %}
+              <div style="margin-top: 8px;">
+                <div style="opacity: .7; font-size: .85rem; margin-bottom: 6px;">Blocked Dates:</div>
+                <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+                  {% for date in availability.blocked_dates[:5] %}
+                    <span class="bf-chip" style="font-size: .8rem;">{{ date }}</span>
+                  {% endfor %}
+                </div>
+              </div>
+            {% endif %}
+          </div>
+        </div>
+        <div style="margin-top: 16px;">
+          <a class="bf-btn block" href="{{ url_for('photographer_dashboard') }}">Manage Availability</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- 9. Earnings & Payments -->
+    <div class="bf-card span-6">
+      <h3>Earnings & Payments</h3>
+      <div style="padding: 12px 0;">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px;">
+          <div style="padding: 12px; border-radius: 12px; background: rgba(34,197,94,.1); border: 1px solid rgba(34,197,94,.2);">
+            <div style="font-size: .85rem; opacity: .7; margin-bottom: 4px;">Total Earnings</div>
+            <div style="font-size: 1.5rem; font-weight: 700;">${{ "%.2f"|format(earnings.total_earnings) }}</div>
+          </div>
+          <div style="padding: 12px; border-radius: 12px; background: rgba(168,85,247,.1); border: 1px solid rgba(168,85,247,.2);">
+            <div style="font-size: .85rem; opacity: .7; margin-bottom: 4px;">This Month</div>
+            <div style="font-size: 1.5rem; font-weight: 700;">${{ "%.2f"|format(earnings.this_month_earnings) }}</div>
+          </div>
+          <div style="padding: 12px; border-radius: 12px; background: rgba(251,191,36,.1); border: 1px solid rgba(251,191,36,.2);">
+            <div style="font-size: .85rem; opacity: .7; margin-bottom: 4px;">Pending Payouts</div>
+            <div style="font-size: 1.5rem; font-weight: 700;">${{ "%.2f"|format(earnings.pending_payouts) }}</div>
+          </div>
+          <div style="padding: 12px; border-radius: 12px; background: rgba(34,197,94,.1); border: 1px solid rgba(34,197,94,.2);">
+            <div style="font-size: .85rem; opacity: .7; margin-bottom: 4px;">Completed</div>
+            <div style="font-size: 1.5rem; font-weight: 700;">${{ "%.2f"|format(earnings.completed_payouts) }}</div>
+          </div>
+        </div>
+        {% if transactions and transactions|length > 0 %}
+          <div style="overflow-x: auto; margin-bottom: 16px;">
+            <table>
+              <thead>
+                <tr>
+                  <th>Client</th>
+                  <th>Project</th>
+                  <th>Amount</th>
+                  <th>Date</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for trans in transactions[:5] %}
+                  <tr>
+                    <td>—</td>
+                    <td>—</td>
+                    <td>
+                      {% if trans.amount_cents %}
+                        ${{ "%.2f"|format(trans.amount_cents / 100.0) }}
+                      {% else %}
+                        —
+                      {% endif %}
+                    </td>
+                    <td>
+                      {% if trans.created_at %}
+                        {{ trans.created_at.strftime("%b %d, %Y") }}
+                      {% else %}
+                        —
+                      {% endif %}
+                    </td>
+                    <td>
+                      <span class="bf-chip" style="background: rgba(34,197,94,.2); border-color: rgba(34,197,94,.4);">
+                        {{ trans.entry_type.value|title if trans.entry_type else "Completed" }}
+                      </span>
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% endif %}
+        <div style="margin-top: 16px;">
+          <a class="bf-btn block primary" href="{{ url_for('wallet_home') }}">View All Transactions</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- 10. Reviews & Reputation -->
+    <div class="bf-card span-6" id="reviews">
+      <h3>Reviews & Reputation</h3>
+      <div style="padding: 12px 0;">
+        {% if stats.average_rating %}
+          <div style="text-align: center; padding: 20px 0; margin-bottom: 20px;">
+            <div style="font-size: 3rem; margin-bottom: 8px;">⭐</div>
+            <div style="font-size: 2rem; font-weight: 700; margin-bottom: 4px;">{{ "%.1f"|format(stats.average_rating) }}</div>
+            <div style="opacity: .7; font-size: .9rem;">{{ rating_count }} review{{ rating_count != 1 and 's' or '' }}</div>
+          </div>
+        {% else %}
+          <div style="text-align: center; padding: 20px 0; margin-bottom: 20px;">
+            <div style="font-size: 2rem; margin-bottom: 8px;">⭐</div>
+            <div style="opacity: .7; font-size: .9rem;">No reviews yet</div>
+            <div style="opacity: .6; font-size: .85rem; margin-top: 4px;">Complete shoots to receive reviews</div>
+          </div>
+        {% endif %}
+        {% if reviews and reviews|length > 0 %}
+          <div class="bf-list">
+            {% for review in reviews[:5] %}
+              <div class="bf-row">
+                <div class="left">
+                  <div class="title">
+                    {{ review.client_name }}
+                    <span style="opacity: .7; font-size: .9rem; margin-left: 8px;">
+                      {% for i in range(review.stars) %}⭐{% endfor %}
+                    </span>
+                  </div>
+                  <div class="meta">
+                    {{ review.comment[:100] }}{% if review.comment|length > 100 %}...{% endif %}
+                    <br>
+                    <span style="opacity: .6; font-size: .85rem;">{{ review.project_title }} · {{ review.date.strftime("%b %d, %Y") if review.date else "" }}</span>
+                  </div>
+                </div>
+              </div>
+            {% endfor %}
+          </div>
+          <div style="margin-top: 12px;">
+            <a class="bf-btn block" href="{{ url_for('photographer_dashboard') }}">View All Reviews</a>
+          </div>
+        {% else %}
+          <p style="opacity:.75; font-size: .9rem; text-align: center;">No reviews yet. Complete shoots to receive client feedback.</p>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- 11. Settings -->
+    <div class="bf-card span-6">
+      <h3>Settings</h3>
+      <div class="bf-list">
+        <a class="bf-btn block" href="{{ url_for('profile_edit') }}">Account Information</a>
+        <a class="bf-btn block" href="{{ url_for('profile_edit') }}">Password & Security</a>
+        <a class="bf-btn block" href="{{ url_for('bookme_profile') }}">Notification Preferences</a>
+        <a class="bf-btn block" href="{{ url_for('provider_portfolio_public', username=current_user.username) }}">Role Visibility</a>
+        <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,.1);">
+          <a class="bf-btn block" href="{{ url_for('profile_edit') }}" style="background: rgba(239,68,68,.15); border-color: rgba(239,68,68,.3);">
+            Deactivate Account
+          </a>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Followers/Following Modal -->
+<div class="modal-overlay" id="socialModal" onclick="closeModal(event)">
+  <div class="modal-content" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <h2 id="modalTitle">Followers</h2>
+      <button class="modal-close" onclick="closeModal()" aria-label="Close">×</button>
+    </div>
+    <div class="modal-body" id="modalBody">
+      <div class="loading-state">
+        <div class="loading-spinner"></div>
+        <p style="margin-top: 12px;">Loading...</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  let currentModalType = null;
+
+  function showFollowers() {
+    currentModalType = 'followers';
+    document.getElementById('modalTitle').textContent = 'Followers';
+    document.getElementById('socialModal').classList.add('active');
+    loadSocialList('followers');
+  }
+
+  function showFollowing() {
+    currentModalType = 'following';
+    document.getElementById('modalTitle').textContent = 'Following';
+    document.getElementById('socialModal').classList.add('active');
+    loadSocialList('following');
+  }
+
+  function closeModal(event) {
+    if (event && event.target !== event.currentTarget) return;
+    document.getElementById('socialModal').classList.remove('active');
+    currentModalType = null;
+  }
+
+  async function loadSocialList(type) {
+    const modalBody = document.getElementById('modalBody');
+    modalBody.innerHTML = '<div class="loading-state"><div class="loading-spinner"></div><p style="margin-top: 12px;">Loading...</p></div>';
+
+    try {
+      const followersUrl = '{{ url_for("api_followers", user_id=current_user.id) }}';
+      const followingUrl = '{{ url_for("api_following", user_id=current_user.id) }}';
+      const url = type === 'followers' ? followersUrl : followingUrl;
+      
+      const response = await fetch(url);
+      
+      if (!response.ok) {
+        throw new Error('Failed to load');
+      }
+
+      const data = await response.json();
+      const users = type === 'followers' ? data.followers : data.following;
+
+      if (users.length === 0) {
+        modalBody.innerHTML = '<div class="empty-state"><p>No ' + type + ' yet.</p></div>';
+        return;
+      }
+
+      let html = '<div class="user-list">';
+      for (let i = 0; i < users.length; i++) {
+        const user = users[i];
+        const profileUrl = '/u/' + user.username;
+        let roleText = '';
+        if (user.role) {
+          roleText = user.role.replace(/_/g, ' ').replace(/\b\w/g, function(l) { return l.toUpperCase(); });
+        }
+        html += '<div class="user-item">';
+        html += '<a href="' + profileUrl + '" class="user-link">';
+        html += '<img src="' + user.avatar_url + '" alt="' + escapeHtml(user.username) + '" class="user-avatar">';
+        html += '<div class="user-info">';
+        html += '<div class="user-name">' + escapeHtml(user.display_name) + '</div>';
+        html += '<div class="user-username">@' + escapeHtml(user.username) + '</div>';
+        if (user.role) {
+          html += '<div class="user-role">' + escapeHtml(roleText) + '</div>';
+        }
+        html += '</div>';
+        html += '</a>';
+        html += '</div>';
+      }
+      html += '</div>';
+      modalBody.innerHTML = html;
+
+    } catch (error) {
+      modalBody.innerHTML = '<div class="empty-state"><p>Error loading ' + type + '. Please try again.</p></div>';
+    }
+  }
+
+  function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+  }
+
+  // Close modal on Escape key
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && document.getElementById('socialModal').classList.contains('active')) {
+      closeModal();
+    }
+  });
+
+  // Update copyright year
+  document.addEventListener('DOMContentLoaded', () => {
+    const yearEl = document.getElementById('copyright-year');
+    if (yearEl) {
+      yearEl.textContent = new Date().getFullYear();
+    }
+  });
+</script>
+{% endblock %}
+

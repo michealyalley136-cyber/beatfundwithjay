@@ -3614,6 +3614,18 @@ def route_to_dashboard():
         endpoint = "manager_dashboard"
     elif role == "vendor":
         endpoint = "vendor_dashboard"
+    elif role == "photographer":
+        endpoint = "photographer_dashboard"
+    elif role == "dj":
+        endpoint = "dj_dashboard"
+    elif role == "emcee_host_hypeman":
+        endpoint = "host_dashboard"
+    elif role == "hair_stylist_barber":
+        endpoint = "hair_dashboard"
+    elif role == "wardrobe_stylist":
+        endpoint = "wardrobe_dashboard"
+    elif role == "makeup_artist":
+        endpoint = "makeup_dashboard"
     elif role == "funder":
         endpoint = "funder_dashboard"
     elif role == "client":
@@ -4451,6 +4463,189 @@ def designer_dashboard():
     )
 
 
+@app.route("/dashboard/photographer", endpoint="photographer_dashboard")
+@role_required("photographer")
+def photographer_dashboard():
+    from datetime import datetime, timedelta
+    from sqlalchemy import func, and_, or_
+    
+    # Social counts
+    followers_count = UserFollow.query.filter_by(followed_id=current_user.id).count()
+    following_count = UserFollow.query.filter_by(follower_id=current_user.id).count()
+    
+    # BookMe profile
+    prof = BookMeProfile.query.filter_by(user_id=current_user.id).first()
+    artist_can_take_gigs = prof is not None
+    
+    # Stats for dashboard overview
+    new_requests_count = BookingRequest.query.filter_by(
+        provider_id=current_user.id, status=BookingStatus.pending
+    ).count()
+    
+    now = datetime.utcnow()
+    upcoming_shoots_count = (
+        Booking.query
+        .filter_by(provider_id=current_user.id)
+        .filter(Booking.status.in_(["accepted", "confirmed"]))
+        .filter(Booking.event_datetime >= now)
+        .count()
+    )
+    
+    active_projects_count = (
+        Booking.query
+        .filter_by(provider_id=current_user.id)
+        .filter(Booking.status.in_(["accepted", "confirmed"]))
+        .count()
+    )
+    
+    # Monthly earnings
+    start_of_month = datetime(now.year, now.month, 1)
+    monthly_earnings_total_cents = (
+        db.session.query(func.coalesce(func.sum(Booking.total_cents), 0))
+        .filter(Booking.provider_id == current_user.id)
+        .filter(Booking.status.in_(["accepted", "confirmed", "completed"]))
+        .filter(Booking.created_at >= start_of_month)
+        .scalar() or 0
+    )
+    monthly_earnings_total = monthly_earnings_total_cents / 100.0
+    
+    # Average rating (placeholder - no review system yet)
+    average_rating = None
+    rating_count = 0
+    
+    # Incoming booking requests
+    incoming_requests_list = (
+        BookingRequest.query
+        .filter_by(provider_id=current_user.id, status=BookingStatus.pending)
+        .order_by(BookingRequest.created_at.desc())
+        .limit(20)
+        .all()
+    )
+    
+    # Active & upcoming shoots
+    active_shoots = (
+        Booking.query
+        .filter_by(provider_id=current_user.id)
+        .filter(Booking.status.in_(["accepted", "confirmed"]))
+        .order_by(Booking.event_datetime.asc())
+        .limit(20)
+        .all()
+    )
+    
+    # Portfolio items
+    portfolio_items = []
+    if prof:
+        portfolio_items = (
+            prof.portfolio_items
+            .order_by(PortfolioItem.sort_order.asc(), PortfolioItem.created_at.desc())
+            .limit(12)
+            .all()
+        )
+    
+    # Specialties (from service_types)
+    specialties = []
+    if prof and prof.service_types:
+        specialties = [s.strip() for s in prof.service_types.split(",") if s.strip()]
+    
+    # Wallet balance
+    w = get_or_create_wallet(current_user.id)
+    wallet_balance = wallet_balance_cents(w) / 100.0
+    
+    # Earnings summary
+    total_earnings_cents = (
+        db.session.query(func.coalesce(func.sum(Booking.total_cents), 0))
+        .filter(Booking.provider_id == current_user.id)
+        .filter(Booking.status.in_(["accepted", "confirmed", "completed"]))
+        .scalar() or 0
+    )
+    total_earnings = total_earnings_cents / 100.0
+    
+    # Pending payouts (bookings with payment but not yet paid out)
+    pending_payouts_cents = (
+        db.session.query(func.coalesce(func.sum(Booking.total_cents), 0))
+        .filter(Booking.provider_id == current_user.id)
+        .filter(Booking.status.in_(["accepted", "confirmed"]))
+        .filter(Booking.total_cents.isnot(None))
+        .scalar() or 0
+    )
+    pending_payouts = pending_payouts_cents / 100.0
+    
+    # Completed payouts (completed bookings)
+    completed_payouts_cents = (
+        db.session.query(func.coalesce(func.sum(Booking.total_cents), 0))
+        .filter(Booking.provider_id == current_user.id)
+        .filter(Booking.status == "completed")
+        .scalar() or 0
+    )
+    completed_payouts = completed_payouts_cents / 100.0
+    
+    # Transaction history
+    recent_transactions = (
+        LedgerEntry.query
+        .filter_by(wallet_id=w.id)
+        .order_by(LedgerEntry.created_at.desc())
+        .limit(20)
+        .all()
+    )
+    
+    # Placeholder data for galleries (to be implemented with actual Gallery model)
+    galleries = []
+    
+    # Note: Licensing section removed - replaced with portfolio copyright protection
+    
+    # Availability data (placeholder - can be expanded with actual availability model)
+    availability = {
+        "accept_new_bookings": prof.is_visible if prof else False,
+        "max_shoots_per_day": 3,  # Placeholder
+        "weekly_hours": "Mon-Fri 9am-6pm",  # Placeholder
+        "blocked_dates": []  # Placeholder
+    }
+    
+    # Reviews (placeholder - no review system yet)
+    reviews = []
+    
+    return render_template(
+        "dash_photographer.html",
+        role_label=get_role_display(current_user.role),
+        photographer={
+            "display_name": prof.display_name if prof else current_user.display_name or current_user.username,
+            "studio_name": prof.display_name if prof else None,
+            "profile_image_url": current_user.avatar_url,
+            "specialties": specialties,
+            "location": f"{prof.city}, {prof.state}" if prof and (prof.city or prof.state) else "Remote",
+            "kyc_status": current_user.kyc_status.value
+        },
+        stats={
+            "new_requests_count": new_requests_count,
+            "upcoming_shoots_count": upcoming_shoots_count,
+            "active_projects_count": active_projects_count,
+            "monthly_earnings_total": monthly_earnings_total,
+            "average_rating": average_rating
+        },
+        requests=incoming_requests_list,
+        shoots=active_shoots,
+        galleries=galleries,
+        portfolio_items=portfolio_items,
+        availability=availability,
+        earnings={
+            "total_earnings": total_earnings,
+            "this_month_earnings": monthly_earnings_total,
+            "pending_payouts": pending_payouts,
+            "completed_payouts": completed_payouts
+        },
+        transactions=recent_transactions,
+        reviews=reviews,
+        prof=prof,
+        artist_can_take_gigs=artist_can_take_gigs,
+        followers_count=followers_count,
+        following_count=following_count,
+        wallet_balance=wallet_balance,
+        rating_count=rating_count,
+        BookingStatus=BookingStatus,
+        EntryType=EntryType,
+    )
+
+
 @app.route("/dashboard/engineer", endpoint="engineer_dashboard")
 @role_required("engineer")
 def engineer_dashboard():
@@ -4515,122 +4710,1557 @@ def engineer_dashboard():
 @app.route("/dashboard/manager", endpoint="manager_dashboard")
 @role_required("manager")
 def manager_dashboard():
-    # Social counts
-    followers_count = UserFollow.query.filter_by(followed_id=current_user.id).count()
-    following_count = UserFollow.query.filter_by(follower_id=current_user.id).count()
+    from datetime import datetime, timedelta
+    from sqlalchemy import func, and_, or_
     
-    # BookMe profile
-    prof = BookMeProfile.query.filter_by(user_id=current_user.id).first()
-    artist_can_take_gigs = prof is not None
+    now = datetime.utcnow()
+    start_of_month = datetime(now.year, now.month, 1)
     
-    # Booking requests
-    incoming_requests = BookingRequest.query.filter_by(
-        provider_id=current_user.id, status=BookingStatus.pending
-    ).count()
-    outgoing_requests = BookingRequest.query.filter_by(client_id=current_user.id).count()
+    # Manager profile info
+    manager_info = {
+        'id': current_user.id,
+        'display_name': current_user.display_name or current_user.username,
+        'avatar_url': current_user.avatar_url
+    }
     
-    # Bookings as provider
-    provider_bookings_count = Booking.query.filter_by(provider_id=current_user.id).count()
-    provider_pending_bookings = Booking.query.filter_by(
-        provider_id=current_user.id, status="pending"
-    ).count()
-    provider_recent_bookings = (
+    # 1. Dashboard Overview Stats
+    # Managed artists (providers with BookMe profiles - using all active providers as potential managed artists)
+    # For now, we'll show all providers as potential artists to manage
+    managed_artists_list = (
+        db.session.query(User, BookMeProfile)
+        .join(BookMeProfile, User.id == BookMeProfile.user_id)
+        .filter(BookMeProfile.is_visible == True)
+        .limit(50)
+        .all()
+    )
+    managed_artists_count = len(managed_artists_list)
+    
+    # New inquiries (pending booking requests)
+    new_inquiries_count = BookingRequest.query.filter_by(status=BookingStatus.pending).count()
+    
+    # Active projects (bookings in progress)
+    active_projects_count = (
         Booking.query
-        .filter_by(provider_id=current_user.id)
-        .order_by(Booking.created_at.desc())
-        .limit(10)
+        .filter(Booking.status.in_(["accepted", "confirmed", "pending"]))
+        .filter(Booking.event_datetime >= now)
+        .count()
+    )
+    
+    # Upcoming bookings
+    upcoming_bookings_count = (
+        Booking.query
+        .filter(Booking.status.in_(["accepted", "confirmed"]))
+        .filter(Booking.event_datetime >= now)
+        .count()
+    )
+    
+    # Total earnings this month (from all bookings)
+    total_earnings_this_month_cents = (
+        db.session.query(func.coalesce(func.sum(Booking.total_cents), 0))
+        .filter(Booking.status.in_(["accepted", "confirmed", "completed"]))
+        .filter(Booking.created_at >= start_of_month)
+        .scalar() or 0
+    )
+    total_earnings_this_month = total_earnings_this_month_cents / 100.0
+    
+    # 2. My Artists - List of managed artists (providers with profiles)
+    artists_list = []
+    for user, prof in managed_artists_list[:20]:
+        # Get upcoming bookings count for this artist
+        upcoming_count = Booking.query.filter(
+            Booking.provider_id == user.id,
+            Booking.status.in_(["accepted", "confirmed"]),
+            Booking.event_datetime >= now
+        ).count()
+        
+        # Get earnings snapshot
+        earnings_cents = (
+            db.session.query(func.coalesce(func.sum(Booking.total_cents), 0))
+            .filter(
+                Booking.provider_id == user.id,
+                Booking.status.in_(["accepted", "confirmed", "completed"])
+            )
+            .scalar() or 0
+        )
+        
+        # Get genre/category from service_types
+        genre = None
+        if prof.service_types:
+            genres = [s.strip() for s in prof.service_types.split(",") if s.strip()]
+            genre = genres[0] if genres else None
+        
+        artists_list.append({
+            'id': user.id,
+            'name': prof.display_name or user.display_name or user.username,
+            'avatar_url': user.avatar_url,
+            'status': 'active' if prof.is_visible else 'inactive',
+            'genre': genre or get_role_display(user.role),
+            'upcoming_count': upcoming_count,
+            'earnings_snapshot': earnings_cents / 100.0
+        })
+    
+    # 3. Requests (BookingRequests - manager can view all requests)
+    requests_list = []
+    all_requests = (
+        BookingRequest.query
+        .order_by(BookingRequest.created_at.desc())
+        .limit(50)
         .all()
     )
     
-    # Bookings as client
-    client_bookings_count = Booking.query.filter_by(client_id=current_user.id).count()
-    client_pending_bookings = Booking.query.filter_by(
-        client_id=current_user.id, status="pending"
-    ).count()
-    client_recent_bookings = (
+    for req in all_requests[:20]:
+        provider = req.provider
+        client = req.client
+        requests_list.append({
+            'id': req.id,
+            'artist_id': req.provider_id,
+            'artist_name': provider.display_name if provider else f"User #{req.provider_id}",
+            'lead_name': client.display_name if client else f"User #{req.client_id}",
+            'service_type': req.message[:50] if req.message else "Service Request",
+            'budget': None,  # Not in BookingRequest model
+            'date_range': req.preferred_time,
+            'status': req.status.value if req.status else 'pending'
+        })
+    
+    # 4. Projects (Bookings)
+    projects_list = []
+    all_projects = (
         Booking.query
-        .filter_by(client_id=current_user.id)
         .order_by(Booking.created_at.desc())
+        .limit(50)
+        .all()
+    )
+    
+    for proj in all_projects[:20]:
+        provider = proj.provider
+        client = proj.client
+        projects_list.append({
+            'id': proj.id,
+            'artist_id': proj.provider_id,
+            'artist_name': provider.display_name if provider else f"User #{proj.provider_id}",
+            'provider_id': proj.provider_id,
+            'provider_name': provider.display_name if provider else f"User #{proj.provider_id}",
+            'event_title': proj.event_title,
+            'status': proj.status,
+            'deliverables_status': 'pending',  # Placeholder
+            'payment_status': 'paid' if proj.total_cents and proj.status in ['accepted', 'confirmed', 'completed'] else 'pending',
+            'updated_at': proj.updated_at
+        })
+    
+    # 5. Schedule items (from bookings)
+    schedule_items = []
+    upcoming_bookings = (
+        Booking.query
+        .filter(Booking.event_datetime >= now)
+        .order_by(Booking.event_datetime.asc())
+        .limit(30)
+        .all()
+    )
+    
+    for booking in upcoming_bookings:
+        provider = booking.provider
+        schedule_items.append({
+            'id': booking.id,
+            'artist_name': provider.display_name if provider else f"User #{booking.provider_id}",
+            'type': 'booking',
+            'start': booking.event_datetime,
+            'end': booking.event_datetime + timedelta(minutes=booking.duration_minutes or 60) if booking.duration_minutes else booking.event_datetime + timedelta(hours=1),
+            'label': booking.event_title
+        })
+    
+    # 6. Payments
+    # Total paid (completed bookings)
+    total_paid_cents = (
+        db.session.query(func.coalesce(func.sum(Booking.total_cents), 0))
+        .filter(Booking.status == "completed")
+        .scalar() or 0
+    )
+    total_paid = total_paid_cents / 100.0
+    
+    # Total pending (accepted/confirmed but not completed)
+    total_pending_cents = (
+        db.session.query(func.coalesce(func.sum(Booking.total_cents), 0))
+        .filter(Booking.status.in_(["accepted", "confirmed"]))
+        .scalar() or 0
+    )
+    total_pending = total_pending_cents / 100.0
+    
+    payments_data = {
+        'total_paid': total_paid,
+        'total_pending': total_pending,
+        'this_month_total': total_earnings_this_month
+    }
+    
+    # Transactions (from bookings)
+    transactions_list = []
+    for booking in all_projects[:20]:
+        provider = booking.provider
+        transactions_list.append({
+            'id': booking.id,
+            'artist_name': provider.display_name if provider else f"User #{booking.provider_id}",
+            'event_title': booking.event_title,
+            'amount': booking.total_cents / 100.0 if booking.total_cents else 0.0,
+            'date': booking.created_at,
+            'status': booking.status
+        })
+    
+    # 7. Reports
+    # Conversion rate (requests -> booked)
+    total_requests = BookingRequest.query.count()
+    booked_requests = BookingRequest.query.filter(BookingRequest.booking_id.isnot(None)).count()
+    conversion_rate = (booked_requests / total_requests * 100) if total_requests > 0 else 0
+    
+    # Revenue by artist
+    revenue_by_artist = []
+    for user, prof in managed_artists_list[:10]:
+        artist_rev = (
+            db.session.query(func.coalesce(func.sum(Booking.total_cents), 0))
+            .filter(
+                Booking.provider_id == user.id,
+                Booking.status.in_(["accepted", "confirmed", "completed"])
+            )
+            .scalar() or 0
+        )
+        if artist_rev > 0:
+            revenue_by_artist.append({
+                'artist_name': prof.display_name or user.display_name or user.username,
+                'revenue': artist_rev / 100.0
+            })
+    revenue_by_artist.sort(key=lambda x: x['revenue'], reverse=True)
+    
+    # Top service categories (from provider roles)
+    top_services = []
+    service_counts = (
+        db.session.query(Booking.provider_role, func.count(Booking.id).label('count'))
+        .filter(Booking.status.in_(["accepted", "confirmed", "completed"]))
+        .group_by(Booking.provider_role)
+        .order_by(func.count(Booking.id).desc())
         .limit(10)
         .all()
     )
+    for role, count in service_counts:
+        top_services.append({
+            'service': get_role_display(role),
+            'count': count
+        })
+    
+    reports_data = {
+        'conversion_rate': conversion_rate,
+        'revenue_by_artist': revenue_by_artist[:10],
+        'top_services': top_services
+    }
+    
+    # 8. Talent Discovery (unmanaged artists - all providers not currently in managed list)
+    # For now, we'll show all providers as potential discovery targets
+    discovery_artists = []
+    all_providers = (
+        db.session.query(User, BookMeProfile)
+        .join(BookMeProfile, User.id == BookMeProfile.user_id)
+        .filter(BookMeProfile.is_visible == True)
+        .order_by(User.id.desc())  # Use id as proxy for creation time (newer users have higher IDs)
+        .limit(50)
+        .all()
+    )
+    
+    managed_ids = {user.id for user, _ in managed_artists_list}
+    for user, prof in all_providers[:20]:
+        if user.id not in managed_ids:
+            # Calculate engagement score (follower count)
+            engagement = UserFollow.query.filter_by(followed_id=user.id).count()
+            genre = None
+            if prof.service_types:
+                genres = [s.strip() for s in prof.service_types.split(",") if s.strip()]
+                genre = genres[0] if genres else None
+            
+            discovery_artists.append({
+                'id': user.id,
+                'name': prof.display_name or user.display_name or user.username,
+                'avatar_url': user.avatar_url,
+                'genre': genre or get_role_display(user.role),
+                'location': f"{prof.city or ''}, {prof.state or ''}".strip() if (prof.city or prof.state) else "Remote",
+                'engagement_score': engagement,
+                'is_managed': False
+            })
+    
+    # 9. Invites (placeholder - no invite system yet)
+    invites = []
+    
+    # Stats summary
+    stats = {
+        'managed_artists_count': managed_artists_count,
+        'new_inquiries_count': new_inquiries_count,
+        'active_projects_count': active_projects_count,
+        'upcoming_bookings_count': upcoming_bookings_count,
+        'total_earnings_this_month': total_earnings_this_month
+    }
     
     return render_template(
         "dash_manager.html",
         role_label=get_role_display(current_user.role),
-        prof=prof,
-        followers_count=followers_count,
-        following_count=following_count,
-        artist_can_take_gigs=artist_can_take_gigs,
-        incoming_requests=incoming_requests,
-        outgoing_requests=outgoing_requests,
-        provider_bookings_count=provider_bookings_count,
-        provider_pending_bookings=provider_pending_bookings,
-        client_bookings_count=client_bookings_count,
-        client_pending_bookings=client_pending_bookings,
-        provider_recent_bookings=provider_recent_bookings,
-        client_recent_bookings=client_recent_bookings,
+        manager=manager_info,
+        stats=stats,
+        artists=artists_list,
+        requests=requests_list,
+        projects=projects_list,
+        schedule_items=schedule_items,
+        payments=payments_data,
+        transactions=transactions_list,
+        reports=reports_data,
+        discovery_artists=discovery_artists,
+        invites=invites,
+        BookingStatus=BookingStatus,
+        EntryType=EntryType,
+        get_role_display=get_role_display,
+    )
+
+
+@app.route("/dashboard/dj", endpoint="dj_dashboard")
+@role_required("dj")
+def dj_dashboard():
+    from datetime import datetime, timedelta
+    from sqlalchemy import func, and_, or_
+    
+    now = datetime.utcnow()
+    start_of_month = datetime(now.year, now.month, 1)
+    
+    # DJ profile info
+    prof = BookMeProfile.query.filter_by(user_id=current_user.id).first()
+    
+    # Management status (placeholder - check if DJ is managed)
+    # For now, we'll check if there are any bookings where the DJ is managed
+    # This is a placeholder that can be updated with actual management relationship
+    is_managed = False  # TODO: Implement actual management relationship check
+    manager_name = None  # TODO: Get actual manager name if managed
+    
+    dj_info = {
+        'id': current_user.id,
+        'display_name': prof.display_name if prof else current_user.display_name or current_user.username,
+        'avatar_url': current_user.avatar_url,
+        'is_managed': is_managed,
+        'manager_name': manager_name
+    }
+    
+    # 1. Dashboard Overview Stats
+    # Upcoming events (confirmed bookings in future)
+    upcoming_events_count = (
+        Booking.query
+        .filter(
+            Booking.provider_id == current_user.id,
+            Booking.status.in_(["accepted", "confirmed"]),
+            Booking.event_datetime >= now
+        )
+        .count()
+    )
+    
+    # Booking requests (pending)
+    booking_requests_count = (
+        BookingRequest.query
+        .filter_by(provider_id=current_user.id, status=BookingStatus.pending)
+        .count()
+    )
+    
+    # Events this month
+    events_this_month = (
+        Booking.query
+        .filter(
+            Booking.provider_id == current_user.id,
+            Booking.status.in_(["accepted", "confirmed", "completed"]),
+            Booking.event_datetime >= start_of_month,
+            Booking.event_datetime < now + timedelta(days=31)
+        )
+        .count()
+    )
+    
+    # Total earnings this month
+    total_earnings_this_month_cents = (
+        db.session.query(func.coalesce(func.sum(Booking.total_cents), 0))
+        .filter(
+            Booking.provider_id == current_user.id,
+            Booking.status.in_(["accepted", "confirmed", "completed"]),
+            Booking.created_at >= start_of_month
+        )
+        .scalar() or 0
+    )
+    total_earnings_this_month = total_earnings_this_month_cents / 100.0
+    
+    # Average rating (placeholder - no review system yet)
+    average_rating = None
+    
+    stats = {
+        'upcoming_events_count': upcoming_events_count,
+        'booking_requests_count': booking_requests_count,
+        'events_this_month': events_this_month,
+        'total_earnings_this_month': total_earnings_this_month,
+        'average_rating': average_rating
+    }
+    
+    # 2. Bookings (Requests)
+    bookings_list = []
+    all_booking_requests = (
+        BookingRequest.query
+        .filter_by(provider_id=current_user.id)
+        .order_by(BookingRequest.created_at.desc())
+        .limit(50)
+        .all()
+    )
+    
+    for req in all_booking_requests[:20]:
+        client = req.client
+        # Extract event type from message or use placeholder
+        event_type = "private"  # Default
+        if req.message:
+            msg_lower = req.message.lower()
+            if any(word in msg_lower for word in ["club", "nightclub"]):
+                event_type = "club"
+            elif any(word in msg_lower for word in ["wedding", "marriage"]):
+                event_type = "wedding"
+            elif any(word in msg_lower for word in ["festival", "concert"]):
+                event_type = "festival"
+            elif any(word in msg_lower for word in ["brand", "corporate", "business"]):
+                event_type = "brand"
+        
+        bookings_list.append({
+            'id': req.id,
+            'client_name': client.display_name if client else f"User #{req.client_id}",
+            'event_type': event_type,
+            'date': req.preferred_time,  # This is a string field
+            'location': None,  # Not in BookingRequest model
+            'budget': None,  # Not in BookingRequest model
+            'status': req.status.value if req.status else 'pending'
+        })
+    
+    # 3. Events (Confirmed bookings)
+    events_list = []
+    confirmed_bookings = (
+        Booking.query
+        .filter(
+            Booking.provider_id == current_user.id,
+            Booking.status.in_(["accepted", "confirmed"])
+        )
+        .order_by(Booking.event_datetime.asc())
+        .limit(50)
+        .all()
+    )
+    
+    for booking in confirmed_bookings[:20]:
+        # Extract event type from title or use provider_role
+        event_type = "private"
+        if booking.event_title:
+            title_lower = booking.event_title.lower()
+            if any(word in title_lower for word in ["club", "nightclub"]):
+                event_type = "club"
+            elif any(word in title_lower for word in ["wedding", "marriage"]):
+                event_type = "wedding"
+            elif any(word in title_lower for word in ["festival", "concert"]):
+                event_type = "festival"
+            elif any(word in title_lower for word in ["brand", "corporate"]):
+                event_type = "brand"
+        
+        events_list.append({
+            'id': booking.id,
+            'title': booking.event_title,
+            'date': booking.event_datetime,
+            'venue': booking.location_text or "TBA",
+            'event_type': event_type,
+            'payment_status': 'paid' if booking.total_cents and booking.status == 'completed' else 'pending'
+        })
+    
+    # 4. Setlists (placeholder - no setlist model yet)
+    setlists = []
+    
+    # 5. Media (Portfolio items)
+    media_list = []
+    if prof:
+        portfolio_items = (
+            PortfolioItem.query
+            .filter_by(profile_id=prof.id)
+            .order_by(PortfolioItem.created_at.desc())
+            .limit(50)
+            .all()
+        )
+        
+        for item in portfolio_items:
+            media_list.append({
+                'id': item.id,
+                'type': item.media_type.value if item.media_type else 'image',
+                'url': item.media_url if hasattr(item, 'media_url') else None,
+                'is_featured': False  # No featured field yet
+            })
+    
+    # 6. Availability (placeholder - can use StudioAvailability logic later)
+    availability = []
+    
+    # 7. Earnings
+    # Total earned (all completed/accepted bookings)
+    total_earned_cents = (
+        db.session.query(func.coalesce(func.sum(Booking.total_cents), 0))
+        .filter(
+            Booking.provider_id == current_user.id,
+            Booking.status.in_(["accepted", "confirmed", "completed"])
+        )
+        .scalar() or 0
+    )
+    total_earned = total_earned_cents / 100.0
+    
+    # Pending payments (accepted/confirmed but not completed)
+    pending_cents = (
+        db.session.query(func.coalesce(func.sum(Booking.total_cents), 0))
+        .filter(
+            Booking.provider_id == current_user.id,
+            Booking.status.in_(["accepted", "confirmed"])
+        )
+        .scalar() or 0
+    )
+    pending = pending_cents / 100.0
+    
+    earnings_data = {
+        'total_earned': total_earned,
+        'pending': pending,
+        'this_month': total_earnings_this_month
+    }
+    
+    # Transactions
+    transactions_list = []
+    for booking in confirmed_bookings[:20]:
+        client = booking.client
+        transactions_list.append({
+            'event_name': booking.event_title,
+            'amount': booking.total_cents / 100.0 if booking.total_cents else 0.0,
+            'date': booking.event_datetime,
+            'status': booking.status
+        })
+    
+    # 8. Reviews (placeholder - no review system yet)
+    reviews = []
+    
+    return render_template(
+        "dash_dj.html",
+        role_label=get_role_display(current_user.role),
+        dj=dj_info,
+        stats=stats,
+        bookings=bookings_list,
+        events=events_list,
+        setlists=setlists,
+        media=media_list,
+        availability=availability,
+        earnings=earnings_data,
+        transactions=transactions_list,
+        reviews=reviews,
+        BookingStatus=BookingStatus,
+        get_role_display=get_role_display,
+    )
+
+
+@app.route("/dashboard/host", endpoint="host_dashboard")
+@role_required("emcee_host_hypeman")
+def host_dashboard():
+    from datetime import datetime, timedelta
+    from sqlalchemy import func, and_, or_
+    
+    now = datetime.utcnow()
+    start_of_month = datetime(now.year, now.month, 1)
+    
+    # Host profile info
+    prof = BookMeProfile.query.filter_by(user_id=current_user.id).first()
+    
+    # Management status (placeholder)
+    is_managed = False  # TODO: Implement actual management relationship check
+    manager_name = None  # TODO: Get actual manager name if managed
+    
+    host_info = {
+        'id': current_user.id,
+        'display_name': prof.display_name if prof else current_user.display_name or current_user.username,
+        'avatar_url': current_user.avatar_url,
+        'is_managed': is_managed,
+        'manager_name': manager_name,
+        'hosting_style': None,  # TODO: Add to BookMeProfile or separate model
+        'genres': prof.service_types if prof else None,
+        'languages': None,  # TODO: Add to profile
+        'travel_radius': None,  # TODO: Add to profile
+        'rates': prof.rate_notes if prof else None,
+    }
+    
+    # 1. Dashboard Overview Stats
+    # New requests (pending booking requests)
+    new_requests = (
+        BookingRequest.query
+        .filter_by(provider_id=current_user.id, status=BookingStatus.pending)
+        .count()
+    )
+    
+    # Upcoming events (confirmed bookings in future)
+    upcoming_events = (
+        Booking.query
+        .filter(
+            Booking.provider_id == current_user.id,
+            Booking.status.in_(["accepted", "confirmed"]),
+            Booking.event_datetime >= now
+        )
+        .count()
+    )
+    
+    # Active bookings (all confirmed/accepted)
+    active_bookings = (
+        Booking.query
+        .filter(
+            Booking.provider_id == current_user.id,
+            Booking.status.in_(["accepted", "confirmed"])
+        )
+        .count()
+    )
+    
+    # Earnings this month
+    earnings_this_month_cents = (
+        db.session.query(func.coalesce(func.sum(Booking.total_cents), 0))
+        .filter(
+            Booking.provider_id == current_user.id,
+            Booking.status.in_(["accepted", "confirmed", "completed"]),
+            Booking.created_at >= start_of_month
+        )
+        .scalar() or 0
+    )
+    earnings_this_month = earnings_this_month_cents / 100.0
+    
+    # Average rating (placeholder)
+    avg_rating = None
+    
+    stats = {
+        'new_requests': new_requests,
+        'upcoming_events': upcoming_events,
+        'active_bookings': active_bookings,
+        'earnings_this_month': earnings_this_month,
+        'avg_rating': avg_rating
+    }
+    
+    # 2. Requests
+    requests_list = []
+    all_booking_requests = (
+        BookingRequest.query
+        .filter_by(provider_id=current_user.id)
+        .order_by(BookingRequest.created_at.desc())
+        .limit(50)
+        .all()
+    )
+    
+    for req in all_booking_requests[:20]:
+        client = req.client
+        # Extract event type from message
+        event_type = "private"
+        if req.message:
+            msg_lower = req.message.lower()
+            if any(word in msg_lower for word in ["wedding", "marriage"]):
+                event_type = "wedding"
+            elif any(word in msg_lower for word in ["corporate", "business", "brand"]):
+                event_type = "corporate"
+            elif any(word in msg_lower for word in ["festival", "concert"]):
+                event_type = "festival"
+            elif any(word in msg_lower for word in ["club", "nightclub"]):
+                event_type = "club"
+        
+        requests_list.append({
+            'id': req.id,
+            'client_name': client.display_name if client else f"User #{req.client_id}",
+            'event_type': event_type,
+            'date_time': req.preferred_time,
+            'location': None,
+            'budget': None,
+            'status': req.status.value if req.status else 'pending'
+        })
+    
+    # 3. Bookings/Events
+    bookings_list = []
+    confirmed_bookings = (
+        Booking.query
+        .filter(
+            Booking.provider_id == current_user.id,
+            Booking.status.in_(["accepted", "confirmed"])
+        )
+        .order_by(Booking.event_datetime.asc())
+        .limit(50)
+        .all()
+    )
+    
+    for booking in confirmed_bookings[:20]:
+        bookings_list.append({
+            'id': booking.id,
+            'event_title': booking.event_title,
+            'date_time': booking.event_datetime,
+            'location': booking.location_text or "TBA",
+            'client_requirements': booking.notes_from_client or "None",
+            'run_of_show': booking.notes_from_provider or "None",
+            'payment_status': 'paid' if booking.total_cents and booking.status == 'completed' else 'pending',
+            'timing': f"{booking.duration_minutes} minutes" if booking.duration_minutes else "TBA"
+        })
+    
+    # 4. Event Briefs (placeholder - no brief model yet)
+    briefs_list = []
+    
+    # 5. Media Kit (Portfolio items)
+    media_list = []
+    if prof:
+        portfolio_items = (
+            PortfolioItem.query
+            .filter_by(profile_id=prof.id)
+            .order_by(PortfolioItem.created_at.desc())
+            .limit(50)
+            .all()
+        )
+        
+        for item in portfolio_items:
+            media_list.append({
+                'id': item.id,
+                'type': item.media_type.value if item.media_type else 'image',
+                'url': item.media_url if hasattr(item, 'media_url') else None,
+                'title': item.title,
+                'is_one_sheet': False  # Placeholder
+            })
+    
+    # 6. Availability (placeholder)
+    availability = {
+        'accept_new_requests': True,  # TODO: Add toggle to profile
+        'blocked_dates': []
+    }
+    
+    # 7. Earnings
+    total_earned_cents = (
+        db.session.query(func.coalesce(func.sum(Booking.total_cents), 0))
+        .filter(
+            Booking.provider_id == current_user.id,
+            Booking.status.in_(["accepted", "confirmed", "completed"])
+        )
+        .scalar() or 0
+    )
+    total_earned = total_earned_cents / 100.0
+    
+    pending_cents = (
+        db.session.query(func.coalesce(func.sum(Booking.total_cents), 0))
+        .filter(
+            Booking.provider_id == current_user.id,
+            Booking.status.in_(["accepted", "confirmed"])
+        )
+        .scalar() or 0
+    )
+    pending = pending_cents / 100.0
+    
+    earnings_data = {
+        'total_earned': total_earned,
+        'pending': pending,
+        'this_month': earnings_this_month
+    }
+    
+    # Transactions
+    transactions_list = []
+    for booking in confirmed_bookings[:20]:
+        transactions_list.append({
+            'event_name': booking.event_title,
+            'amount': booking.total_cents / 100.0 if booking.total_cents else 0.0,
+            'date': booking.event_datetime,
+            'status': booking.status
+        })
+    
+    # 8. Reviews (placeholder)
+    reviews_list = []
+    
+    return render_template(
+        "dash_host.html",
+        role_label=get_role_display(current_user.role),
+        host=host_info,
+        stats=stats,
+        requests=requests_list,
+        bookings=bookings_list,
+        briefs=briefs_list,
+        media=media_list,
+        availability=availability,
+        earnings=earnings_data,
+        transactions=transactions_list,
+        reviews=reviews_list,
+        BookingStatus=BookingStatus,
+        get_role_display=get_role_display,
+    )
+
+
+@app.route("/dashboard/hair", endpoint="hair_dashboard")
+@role_required("hair_stylist_barber")
+def hair_dashboard():
+    from datetime import datetime, timedelta
+    from sqlalchemy import func, and_, or_
+    
+    now = datetime.utcnow()
+    start_of_month = datetime(now.year, now.month, 1)
+    
+    # Stylist profile info
+    prof = BookMeProfile.query.filter_by(user_id=current_user.id).first()
+    
+    stylist_info = {
+        'id': current_user.id,
+        'display_name': prof.display_name if prof else current_user.display_name or current_user.username,
+        'avatar_url': current_user.avatar_url,
+        'specialties': prof.service_types if prof else None,
+        'location': f"{prof.city or ''}, {prof.state or ''}".strip() if (prof and (prof.city or prof.state)) else None,
+        'travel_on_site': None,  # TODO: Add to profile
+        'chair_booth_info': None,  # TODO: Add to profile
+    }
+    
+    # 1. Dashboard Overview Stats
+    # New requests (pending booking requests)
+    new_requests = (
+        BookingRequest.query
+        .filter_by(provider_id=current_user.id, status=BookingStatus.pending)
+        .count()
+    )
+    
+    # Upcoming appointments (confirmed bookings in future)
+    upcoming_appointments = (
+        Booking.query
+        .filter(
+            Booking.provider_id == current_user.id,
+            Booking.status.in_(["accepted", "confirmed"]),
+            Booking.event_datetime >= now
+        )
+        .count()
+    )
+    
+    # Repeat clients (simplified count)
+    all_client_ids = [
+        booking.client_id for booking in 
+        Booking.query.filter_by(provider_id=current_user.id, status="completed").all()
+    ]
+    client_booking_counts = {}
+    for client_id in all_client_ids:
+        client_booking_counts[client_id] = client_booking_counts.get(client_id, 0) + 1
+    repeat_clients = sum(1 for count in client_booking_counts.values() if count > 1)
+    
+    # Earnings this month
+    earnings_this_month_cents = (
+        db.session.query(func.coalesce(func.sum(Booking.total_cents), 0))
+        .filter(
+            Booking.provider_id == current_user.id,
+            Booking.status.in_(["accepted", "confirmed", "completed"]),
+            Booking.created_at >= start_of_month
+        )
+        .scalar() or 0
+    )
+    earnings_this_month = earnings_this_month_cents / 100.0
+    
+    # Average rating (placeholder)
+    avg_rating = None
+    
+    stats = {
+        'new_requests': new_requests,
+        'upcoming_appointments': upcoming_appointments,
+        'repeat_clients': repeat_clients,
+        'earnings_this_month': earnings_this_month,
+        'avg_rating': avg_rating
+    }
+    
+    # 2. Requests
+    requests_list = []
+    all_booking_requests = (
+        BookingRequest.query
+        .filter_by(provider_id=current_user.id)
+        .order_by(BookingRequest.created_at.desc())
+        .limit(50)
+        .all()
+    )
+    
+    for req in all_booking_requests[:20]:
+        client = req.client
+        # Extract service type from message
+        service = "Haircut"  # Default
+        if req.message:
+            msg_lower = req.message.lower()
+            if any(word in msg_lower for word in ["braid", "braiding"]):
+                service = "Braids"
+            elif any(word in msg_lower for word in ["locs", "dread", "dreadlock"]):
+                service = "Locs"
+            elif any(word in msg_lower for word in ["color", "dye", "coloring"]):
+                service = "Color"
+            elif any(word in msg_lower for word in ["style", "styling"]):
+                service = "Styling"
+            elif any(word in msg_lower for word in ["beard", "trim"]):
+                service = "Beard Trim"
+        
+        requests_list.append({
+            'id': req.id,
+            'service': service,
+            'date_time': req.preferred_time,
+            'location': None,
+            'budget': None,
+            'status': req.status.value if req.status else 'pending'
+        })
+    
+    # 3. Appointments (Confirmed bookings)
+    appointments_list = []
+    confirmed_bookings = (
+        Booking.query
+        .filter(
+            Booking.provider_id == current_user.id,
+            Booking.status.in_(["accepted", "confirmed"])
+        )
+        .order_by(Booking.event_datetime.asc())
+        .limit(50)
+        .all()
+    )
+    
+    for booking in confirmed_bookings[:20]:
+        appointments_list.append({
+            'id': booking.id,
+            'client_name': booking.client.display_name if booking.client else f"User #{booking.client_id}",
+            'service': booking.event_title,
+            'date_time': booking.event_datetime,
+            'duration': f"{booking.duration_minutes} minutes" if booking.duration_minutes else "TBA",
+            'notes': booking.notes_from_client or "None",
+            'payment_status': 'paid' if booking.total_cents and booking.status == 'completed' else 'pending',
+            'location': booking.location_text or "TBA"
+        })
+    
+    # 4. Services & Pricing (placeholder - no services model yet)
+    services_list = [
+        {'name': 'Haircut', 'duration': '30 min', 'base_price': 50.00, 'add_ons': ['Beard trim (+$10)', 'Wash (+$5)']},
+        {'name': 'Braids', 'duration': '2-3 hours', 'base_price': 150.00, 'add_ons': ['Design (+$20)']},
+        {'name': 'Color', 'duration': '2 hours', 'base_price': 120.00, 'add_ons': ['Highlight (+$30)']},
+        {'name': 'Styling', 'duration': '45 min', 'base_price': 60.00, 'add_ons': []},
+        {'name': 'Locs', 'duration': '3-4 hours', 'base_price': 200.00, 'add_ons': ['Maintenance (+$40)']},
+    ]
+    
+    # 5. Portfolio (Portfolio items)
+    portfolio_list = []
+    if prof:
+        portfolio_items = (
+            PortfolioItem.query
+            .filter_by(profile_id=prof.id)
+            .order_by(PortfolioItem.created_at.desc())
+            .limit(50)
+            .all()
+        )
+        
+        for item in portfolio_items:
+            portfolio_list.append({
+                'id': item.id,
+                'title': item.title,
+                'url': item.media_url if hasattr(item, 'media_url') else None,
+                'category': "Before/After",  # Placeholder
+                'is_featured': False,  # Placeholder
+                'is_visible': True  # Placeholder
+            })
+    
+    # 6. Availability (placeholder)
+    availability = {
+        'blocks': [],
+        'capacity_per_day': 8  # Placeholder
+    }
+    
+    # 7. Earnings
+    total_earned_cents = (
+        db.session.query(func.coalesce(func.sum(Booking.total_cents), 0))
+        .filter(
+            Booking.provider_id == current_user.id,
+            Booking.status.in_(["accepted", "confirmed", "completed"])
+        )
+        .scalar() or 0
+    )
+    total_earned = total_earned_cents / 100.0
+    
+    pending_cents = (
+        db.session.query(func.coalesce(func.sum(Booking.total_cents), 0))
+        .filter(
+            Booking.provider_id == current_user.id,
+            Booking.status.in_(["accepted", "confirmed"])
+        )
+        .scalar() or 0
+    )
+    pending = pending_cents / 100.0
+    
+    earnings_data = {
+        'total_earned': total_earned,
+        'pending': pending,
+        'this_month': earnings_this_month
+    }
+    
+    # Transactions
+    transactions_list = []
+    for booking in confirmed_bookings[:20]:
+        transactions_list.append({
+            'service': booking.event_title,
+            'amount': booking.total_cents / 100.0 if booking.total_cents else 0.0,
+            'date': booking.event_datetime,
+            'status': booking.status
+        })
+    
+    # 8. Reviews (placeholder)
+    reviews_list = []
+    
+    return render_template(
+        "dash_hair.html",
+        role_label=get_role_display(current_user.role),
+        stylist=stylist_info,
+        stats=stats,
+        requests=requests_list,
+        appointments=appointments_list,
+        services=services_list,
+        portfolio=portfolio_list,
+        availability=availability,
+        earnings=earnings_data,
+        transactions=transactions_list,
+        reviews=reviews_list,
+        BookingStatus=BookingStatus,
+        get_role_display=get_role_display,
+    )
+
+
+@app.route("/dashboard/wardrobe", endpoint="wardrobe_dashboard")
+@role_required("wardrobe_stylist")
+def wardrobe_dashboard():
+    from datetime import datetime, timedelta
+    from sqlalchemy import func, and_, or_
+    
+    now = datetime.utcnow()
+    start_of_month = datetime(now.year, now.month, 1)
+    
+    # Stylist profile info
+    prof = BookMeProfile.query.filter_by(user_id=current_user.id).first()
+    
+    stylist_info = {
+        'id': current_user.id,
+        'display_name': prof.display_name if prof else current_user.display_name or current_user.username,
+        'avatar_url': current_user.avatar_url,
+        'specialties': prof.service_types if prof else None,
+        'genres': None,  # TODO: Add to profile
+        'sizes_served': None,  # TODO: Add to profile
+        'travel': f"{prof.city or ''}, {prof.state or ''}".strip() if (prof and (prof.city or prof.state)) else None,
+        'packages': prof.rate_notes if prof else None,
+    }
+    
+    # 1. Dashboard Overview Stats
+    new_requests = (
+        BookingRequest.query
+        .filter_by(provider_id=current_user.id, status=BookingStatus.pending)
+        .count()
+    )
+    
+    active_projects = (
+        Booking.query
+        .filter(
+            Booking.provider_id == current_user.id,
+            Booking.status.in_(["accepted", "confirmed"])
+        )
+        .count()
+    )
+    
+    upcoming_fittings = 0  # TODO: Implement fittings
+    pending_approvals = 0  # TODO: Implement approval system
+    
+    earnings_this_month_cents = (
+        db.session.query(func.coalesce(func.sum(Booking.total_cents), 0))
+        .filter(
+            Booking.provider_id == current_user.id,
+            Booking.status.in_(["accepted", "confirmed", "completed"]),
+            Booking.created_at >= start_of_month
+        )
+        .scalar() or 0
+    )
+    earnings_this_month = earnings_this_month_cents / 100.0
+    
+    stats = {
+        'new_requests': new_requests,
+        'active_projects': active_projects,
+        'upcoming_fittings': upcoming_fittings,
+        'pending_approvals': pending_approvals,
+        'earnings_this_month': earnings_this_month
+    }
+    
+    # 2. Requests
+    requests_list = []
+    all_booking_requests = (
+        BookingRequest.query
+        .filter_by(provider_id=current_user.id)
+        .order_by(BookingRequest.created_at.desc())
+        .limit(50)
+        .all()
+    )
+    
+    for req in all_booking_requests[:20]:
+        client = req.client
+        project_type = "Photoshoot"
+        if req.message:
+            msg_lower = req.message.lower()
+            if any(word in msg_lower for word in ["video", "music video"]):
+                project_type = "Video"
+            elif any(word in msg_lower for word in ["tour", "concert"]):
+                project_type = "Tour"
+            elif any(word in msg_lower for word in ["red carpet", "event", "awards"]):
+                project_type = "Red Carpet"
+            elif any(word in msg_lower for word in ["brand", "commercial"]):
+                project_type = "Brand Styling"
+            elif any(word in msg_lower for word in ["photo", "shoot"]):
+                project_type = "Photoshoot"
+        
+        requests_list.append({
+            'id': req.id,
+            'client_name': client.display_name if client else f"User #{req.client_id}",
+            'project_type': project_type,
+            'date_range': req.preferred_time,
+            'location': None,
+            'budget': None,
+            'status': req.status.value if req.status else 'pending'
+        })
+    
+    # 3. Projects
+    projects_list = []
+    confirmed_bookings = (
+        Booking.query
+        .filter(
+            Booking.provider_id == current_user.id,
+            Booking.status.in_(["accepted", "confirmed"])
+        )
+        .order_by(Booking.event_datetime.asc())
+        .limit(50)
+        .all()
+    )
+    
+    for booking in confirmed_bookings[:20]:
+        projects_list.append({
+            'id': booking.id,
+            'client_name': booking.client.display_name if booking.client else f"User #{booking.client_id}",
+            'project_title': booking.event_title,
+            'timeline': booking.event_datetime.strftime("%b %d - %b %d, %Y") if booking.event_datetime else "TBA",
+            'status': booking.status,
+            'deliverables': "Looks: TBD",
+            'payment_status': 'paid' if booking.total_cents and booking.status == 'completed' else 'pending'
+        })
+    
+    # 4. Lookboards (placeholder)
+    lookboards_list = []
+    
+    # 5. Fittings (placeholder)
+    fittings_list = []
+    
+    # 6. Closet & Pull List (placeholder)
+    pull_list_items = []
+    
+    # 7. Availability
+    availability = {
+        'blocks': [],
+        'accept_new_requests': True
+    }
+    
+    # 8. Earnings
+    total_earned_cents = (
+        db.session.query(func.coalesce(func.sum(Booking.total_cents), 0))
+        .filter(
+            Booking.provider_id == current_user.id,
+            Booking.status.in_(["accepted", "confirmed", "completed"])
+        )
+        .scalar() or 0
+    )
+    total_earned = total_earned_cents / 100.0
+    
+    pending_cents = (
+        db.session.query(func.coalesce(func.sum(Booking.total_cents), 0))
+        .filter(
+            Booking.provider_id == current_user.id,
+            Booking.status.in_(["accepted", "confirmed"])
+        )
+        .scalar() or 0
+    )
+    pending = pending_cents / 100.0
+    
+    earnings_data = {
+        'total_earned': total_earned,
+        'pending': pending,
+        'this_month': earnings_this_month
+    }
+    
+    # Transactions
+    transactions_list = []
+    for booking in confirmed_bookings[:20]:
+        transactions_list.append({
+            'project': booking.event_title,
+            'amount': booking.total_cents / 100.0 if booking.total_cents else 0.0,
+            'date': booking.event_datetime,
+            'status': booking.status
+        })
+    
+    # 9. Reviews (placeholder)
+    reviews_list = []
+    
+    return render_template(
+        "dash_wardrobe.html",
+        role_label=get_role_display(current_user.role),
+        stylist=stylist_info,
+        stats=stats,
+        requests=requests_list,
+        projects=projects_list,
+        lookboards=lookboards_list,
+        fittings=fittings_list,
+        pull_list_items=pull_list_items,
+        availability=availability,
+        earnings=earnings_data,
+        transactions=transactions_list,
+        reviews=reviews_list,
+        BookingStatus=BookingStatus,
+        get_role_display=get_role_display,
+    )
+
+
+@app.route("/dashboard/makeup", endpoint="makeup_dashboard")
+@role_required("makeup_artist")
+def makeup_dashboard():
+    from datetime import datetime, timedelta
+    from sqlalchemy import func, and_, or_
+    
+    now = datetime.utcnow()
+    start_of_month = datetime(now.year, now.month, 1)
+    
+    # Makeup artist profile info
+    prof = BookMeProfile.query.filter_by(user_id=current_user.id).first()
+    
+    makeup_artist_info = {
+        'id': current_user.id,
+        'display_name': prof.display_name if prof else current_user.display_name or current_user.username,
+        'avatar_url': current_user.avatar_url,
+        'specialties': prof.service_types if prof else None,
+        'skin_tones_styles': None,  # TODO: Add to profile
+        'travel_on_site': f"{prof.city or ''}, {prof.state or ''}".strip() if (prof and (prof.city or prof.state)) else None,
+        'packages': prof.rate_notes if prof else None,
+    }
+    
+    # 1. Dashboard Overview Stats
+    # New requests (pending booking requests)
+    new_requests = (
+        BookingRequest.query
+        .filter_by(provider_id=current_user.id, status=BookingStatus.pending)
+        .count()
+    )
+    
+    # Upcoming appointments (confirmed bookings in future)
+    upcoming_appointments = (
+        Booking.query
+        .filter(
+            Booking.provider_id == current_user.id,
+            Booking.status.in_(["accepted", "confirmed"]),
+            Booking.event_datetime >= now
+        )
+        .count()
+    )
+    
+    # Active clients (clients with active bookings)
+    active_clients = (
+        db.session.query(func.count(func.distinct(Booking.client_id)))
+        .filter(
+            Booking.provider_id == current_user.id,
+            Booking.status.in_(["accepted", "confirmed"])
+        )
+        .scalar() or 0
+    )
+    
+    # Earnings this month
+    earnings_this_month_cents = (
+        db.session.query(func.coalesce(func.sum(Booking.total_cents), 0))
+        .filter(
+            Booking.provider_id == current_user.id,
+            Booking.status.in_(["accepted", "confirmed", "completed"]),
+            Booking.created_at >= start_of_month
+        )
+        .scalar() or 0
+    )
+    earnings_this_month = earnings_this_month_cents / 100.0
+    
+    # Average rating (placeholder)
+    avg_rating = None
+    
+    stats = {
+        'new_requests': new_requests,
+        'upcoming_appointments': upcoming_appointments,
+        'active_clients': active_clients,
+        'earnings_this_month': earnings_this_month,
+        'avg_rating': avg_rating
+    }
+    
+    # 2. Requests
+    requests_list = []
+    all_booking_requests = (
+        BookingRequest.query
+        .filter_by(provider_id=current_user.id)
+        .order_by(BookingRequest.created_at.desc())
+        .limit(50)
+        .all()
+    )
+    
+    for req in all_booking_requests[:20]:
+        client = req.client
+        # Extract service type from message
+        service_type = "Glam"  # Default
+        if req.message:
+            msg_lower = req.message.lower()
+            if any(word in msg_lower for word in ["bridal", "wedding", "bride"]):
+                service_type = "Bridal"
+            elif any(word in msg_lower for word in ["editorial", "fashion", "magazine"]):
+                service_type = "Editorial"
+            elif any(word in msg_lower for word in ["film", "movie", "tv", "production"]):
+                service_type = "Film"
+            elif any(word in msg_lower for word in ["event", "party", "gala"]):
+                service_type = "Event"
+            elif any(word in msg_lower for word in ["sfx", "special effects", "prosthetic"]):
+                service_type = "SFX"
+            elif any(word in msg_lower for word in ["glam", "glamour"]):
+                service_type = "Glam"
+        
+        requests_list.append({
+            'id': req.id,
+            'client_name': client.display_name if client else f"User #{req.client_id}",
+            'service_type': service_type,
+            'date_time': req.preferred_time,
+            'location': None,
+            'party_size': None,  # Not in BookingRequest model
+            'budget': None,
+            'status': req.status.value if req.status else 'pending'
+        })
+    
+    # 3. Appointments (Confirmed bookings)
+    appointments_list = []
+    confirmed_bookings = (
+        Booking.query
+        .filter(
+            Booking.provider_id == current_user.id,
+            Booking.status.in_(["accepted", "confirmed"])
+        )
+        .order_by(Booking.event_datetime.asc())
+        .limit(50)
+        .all()
+    )
+    
+    for booking in confirmed_bookings[:20]:
+        appointments_list.append({
+            'id': booking.id,
+            'client_name': booking.client.display_name if booking.client else f"User #{booking.client_id}",
+            'service': booking.event_title,
+            'date_time': booking.event_datetime,
+            'time_block': f"{booking.duration_minutes} minutes" if booking.duration_minutes else "TBA",
+            'prep_notes': booking.notes_from_client or "None",
+            'payment_status': 'paid' if booking.total_cents and booking.status == 'completed' else 'pending',
+            'location': booking.location_text or "TBA"
+        })
+    
+    # 4. Looks & Portfolio (Portfolio items)
+    portfolio_items = []
+    if prof:
+        portfolio_list = (
+            PortfolioItem.query
+            .filter_by(profile_id=prof.id)
+            .order_by(PortfolioItem.created_at.desc())
+            .limit(50)
+            .all()
+        )
+        
+        for item in portfolio_list:
+            portfolio_items.append({
+                'id': item.id,
+                'title': item.title,
+                'url': item.media_url if hasattr(item, 'media_url') else None,
+                'category': "Look",  # Placeholder
+                'is_featured': False,  # Placeholder
+                'is_visible': True  # Placeholder
+            })
+    
+    # 5. Kit & Supplies (placeholder)
+    kit_items = [
+        {'name': 'Foundation Set', 'status': 'in_stock', 'low_stock': False, 'restock_notes': ''},
+        {'name': 'Eyeshadow Palette', 'status': 'in_stock', 'low_stock': True, 'restock_notes': 'Running low on neutral shades'},
+        {'name': 'Lipstick Collection', 'status': 'in_stock', 'low_stock': False, 'restock_notes': ''},
+        {'name': 'Brushes Set', 'status': 'in_stock', 'low_stock': False, 'restock_notes': ''},
+        {'name': 'Setting Spray', 'status': 'low_stock', 'low_stock': True, 'restock_notes': 'Order more before next event'},
+    ]
+    
+    # 6. Availability (placeholder)
+    availability = {
+        'blocks': [],
+        'accept_new_requests': True
+    }
+    
+    # 7. Earnings
+    total_earned_cents = (
+        db.session.query(func.coalesce(func.sum(Booking.total_cents), 0))
+        .filter(
+            Booking.provider_id == current_user.id,
+            Booking.status.in_(["accepted", "confirmed", "completed"])
+        )
+        .scalar() or 0
+    )
+    total_earned = total_earned_cents / 100.0
+    
+    pending_cents = (
+        db.session.query(func.coalesce(func.sum(Booking.total_cents), 0))
+        .filter(
+            Booking.provider_id == current_user.id,
+            Booking.status.in_(["accepted", "confirmed"])
+        )
+        .scalar() or 0
+    )
+    pending = pending_cents / 100.0
+    
+    earnings_data = {
+        'total_earned': total_earned,
+        'pending': pending,
+        'this_month': earnings_this_month
+    }
+    
+    # Transactions
+    transactions_list = []
+    for booking in confirmed_bookings[:20]:
+        transactions_list.append({
+            'service': booking.event_title,
+            'amount': booking.total_cents / 100.0 if booking.total_cents else 0.0,
+            'date': booking.event_datetime,
+            'status': booking.status
+        })
+    
+    # 8. Reviews (placeholder)
+    reviews_list = []
+    
+    return render_template(
+        "dash_makeup.html",
+        role_label=get_role_display(current_user.role),
+        makeup_artist=makeup_artist_info,
+        stats=stats,
+        requests=requests_list,
+        appointments=appointments_list,
+        portfolio_items=portfolio_items,
+        kit_items=kit_items,
+        availability=availability,
+        earnings=earnings_data,
+        transactions=transactions_list,
+        reviews=reviews_list,
+        BookingStatus=BookingStatus,
+        get_role_display=get_role_display,
     )
 
 
 @app.route("/dashboard/vendor", endpoint="vendor_dashboard")
 @role_required("vendor")
 def vendor_dashboard():
+    from datetime import datetime, timedelta
+    from sqlalchemy import func, and_, or_
+    
+    # Vendor profile
+    prof = BookMeProfile.query.filter_by(user_id=current_user.id).first()
+    artist_can_take_gigs = prof is not None
+    
     # Social counts
     followers_count = UserFollow.query.filter_by(followed_id=current_user.id).count()
     following_count = UserFollow.query.filter_by(follower_id=current_user.id).count()
     
-    # BookMe profile
-    prof = BookMeProfile.query.filter_by(user_id=current_user.id).first()
-    artist_can_take_gigs = prof is not None
-    
-    # Booking requests
-    incoming_requests = BookingRequest.query.filter_by(
-        provider_id=current_user.id, status=BookingStatus.pending
-    ).count()
-    outgoing_requests = BookingRequest.query.filter_by(client_id=current_user.id).count()
-    
-    # Bookings as provider
-    provider_bookings_count = Booking.query.filter_by(provider_id=current_user.id).count()
-    provider_pending_bookings = Booking.query.filter_by(
+    # Overview stats
+    # Orders (bookings as provider)
+    total_orders = Booking.query.filter_by(provider_id=current_user.id).count()
+    pending_orders = Booking.query.filter_by(
         provider_id=current_user.id, status="pending"
     ).count()
-    provider_recent_bookings = (
+    active_orders = Booking.query.filter(
+        Booking.provider_id == current_user.id,
+        Booking.status.in_(["accepted", "confirmed"])
+    ).count()
+    completed_orders = Booking.query.filter_by(
+        provider_id=current_user.id, status="completed"
+    ).count()
+    
+    # Listings (BookMe profile + portfolio items count as listings)
+    listings_count = 0
+    if prof:
+        listings_count = prof.portfolio_items.count() or (1 if prof.is_visible else 0)
+    else:
+        listings_count = 0
+    
+    # Earnings
+    now = datetime.utcnow()
+    start_of_month = datetime(now.year, now.month, 1)
+    monthly_earnings_cents = (
+        db.session.query(func.coalesce(func.sum(Booking.total_cents), 0))
+        .filter(Booking.provider_id == current_user.id)
+        .filter(Booking.status.in_(["accepted", "confirmed", "completed"]))
+        .filter(Booking.created_at >= start_of_month)
+        .scalar() or 0
+    )
+    monthly_earnings = monthly_earnings_cents / 100.0
+    
+    total_earnings_cents = (
+        db.session.query(func.coalesce(func.sum(Booking.total_cents), 0))
+        .filter(Booking.provider_id == current_user.id)
+        .filter(Booking.status.in_(["accepted", "confirmed", "completed"]))
+        .scalar() or 0
+    )
+    total_earnings = total_earnings_cents / 100.0
+    
+    # Product/service listings (portfolio items)
+    listings = []
+    if prof:
+        listings = (
+            prof.portfolio_items
+            .order_by(PortfolioItem.sort_order.asc(), PortfolioItem.created_at.desc())
+            .limit(50)
+            .all()
+        )
+    
+    # Orders & fulfillment status
+    recent_orders = (
         Booking.query
         .filter_by(provider_id=current_user.id)
         .order_by(Booking.created_at.desc())
+        .limit(20)
+        .all()
+    )
+    
+    # Inventory management (placeholder - using portfolio items as inventory)
+    inventory_items = listings[:20] if listings else []
+    
+    # Wallet and transactions
+    wallet = get_or_create_wallet(current_user.id)
+    wallet_balance = wallet_balance_cents(wallet) / 100.0
+    
+    recent_transactions = (
+        LedgerEntry.query
+        .filter_by(wallet_id=wallet.id)
+        .order_by(LedgerEntry.created_at.desc())
         .limit(10)
         .all()
     )
     
-    # Bookings as client
-    client_bookings_count = Booking.query.filter_by(client_id=current_user.id).count()
-    client_pending_bookings = Booking.query.filter_by(
-        client_id=current_user.id, status="pending"
-    ).count()
-    client_recent_bookings = (
-        Booking.query
-        .filter_by(client_id=current_user.id)
-        .order_by(Booking.created_at.desc())
-        .limit(10)
-        .all()
-    )
+    # Reviews (placeholder - no review system yet)
+    reviews = []
+    average_rating = None
+    rating_count = 0
+    
+    # Specialties (from service_types)
+    specialties = []
+    if prof and prof.service_types:
+        specialties = [s.strip() for s in prof.service_types.split(",") if s.strip()]
     
     return render_template(
         "dash_vendor.html",
         role_label=get_role_display(current_user.role),
         prof=prof,
+        artist_can_take_gigs=artist_can_take_gigs,
         followers_count=followers_count,
         following_count=following_count,
-        artist_can_take_gigs=artist_can_take_gigs,
-        incoming_requests=incoming_requests,
-        outgoing_requests=outgoing_requests,
-        provider_bookings_count=provider_bookings_count,
-        provider_pending_bookings=provider_pending_bookings,
-        client_bookings_count=client_bookings_count,
-        client_pending_bookings=client_pending_bookings,
-        provider_recent_bookings=provider_recent_bookings,
-        client_recent_bookings=client_recent_bookings,
+        total_orders=total_orders,
+        pending_orders=pending_orders,
+        active_orders=active_orders,
+        completed_orders=completed_orders,
+        listings_count=listings_count,
+        monthly_earnings=monthly_earnings,
+        total_earnings=total_earnings,
+        listings=listings,
+        recent_orders=recent_orders,
+        inventory_items=inventory_items,
+        wallet_balance=wallet_balance,
+        recent_transactions=recent_transactions,
+        reviews=reviews,
+        average_rating=average_rating,
+        rating_count=rating_count,
+        specialties=specialties,
+        BookingStatus=BookingStatus,
+        EntryType=EntryType,
+        PortfolioMediaType=PortfolioMediaType,
     )
 
 

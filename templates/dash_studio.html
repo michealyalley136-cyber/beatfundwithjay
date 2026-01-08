@@ -49,6 +49,31 @@
     background: rgba(255,255,255,.06);
     font-size: .85rem; opacity:.9;
   }
+  
+  .bf-chip.status-live {
+    background: rgba(34,197,94,.2);
+    border-color: rgba(34,197,94,.4);
+  }
+  
+  .bf-chip.status-off {
+    background: rgba(239,68,68,.2);
+    border-color: rgba(239,68,68,.4);
+  }
+  
+  .bf-chip.toggle-btn {
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+  
+  .bf-chip.toggle-live {
+    background: rgba(34,197,94,.2);
+    border-color: rgba(34,197,94,.4);
+  }
+  
+  .bf-chip.toggle-inactive {
+    background: rgba(251,191,36,.2);
+    border-color: rgba(251,191,36,.4);
+  }
 
   .bf-profile-cta {
     text-align: center;
@@ -414,13 +439,13 @@
           </div>
         </div>
         <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; align-items: center;">
-          <span class="bf-chip" style="{% if prof and prof.is_visible %}background: rgba(34,197,94,.2); border-color: rgba(34,197,94,.4);{% else %}background: rgba(239,68,68,.2); border-color: rgba(239,68,68,.4);{% endif %}">
+          <span class="bf-chip {% if prof and prof.is_visible %}status-live{% else %}status-off{% endif %}">
             {{ "Live" if (prof and prof.is_visible) else "Off" }}
           </span>
           {% if artist_can_take_gigs %}
             <form method="POST" action="{{ url_for('studio_toggle_live') }}" style="margin: 0; display: inline;">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-              <button type="submit" class="bf-chip" style="cursor: pointer; {% if prof and prof.is_visible %}background: rgba(251,191,36,.2); border-color: rgba(251,191,36,.4);{% else %}background: rgba(34,197,94,.2); border-color: rgba(34,197,94,.4);{% endif %} transition: all 0.2s ease;" onmouseover="this.style.opacity='0.8'" onmouseout="this.style.opacity='1'">
+              <button type="submit" class="bf-chip toggle-btn {% if prof and prof.is_visible %}toggle-inactive{% else %}toggle-live{% endif %}" onmouseover="this.style.opacity='0.8'" onmouseout="this.style.opacity='1'">
                 {{ "Go Inactive" if (prof and prof.is_visible) else "Go Live" }}
               </button>
             </form>
@@ -439,8 +464,8 @@
       </div>
     </div>
 
+    </div>
   </div>
-</div>
 
 <!-- Followers/Following Modal -->
 <div class="modal-overlay" id="socialModal" onclick="closeModal(event)">

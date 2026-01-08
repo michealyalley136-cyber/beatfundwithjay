@@ -518,12 +518,12 @@
       <h3>File Delivery & Revisions</h3>
       <div style="padding: 12px 0;">
         {% if accepted_bookings and accepted_bookings|length > 0 %}
-          <div class="bf-list">
+        <div class="bf-list">
             {% for b in accepted_bookings[:5] %}
-              <div class="bf-row">
-                <div class="left">
+            <div class="bf-row">
+              <div class="left">
                   <div class="title">{{ b.event_title }}</div>
-                  <div class="meta">
+                <div class="meta">
                     Client: {% if b.client %}@{{ b.client.username }}{% else %}—{% endif %}
                     · Revision: <span style="opacity: .6;">0</span>
                     · Approval: <span style="opacity: .6;">Pending</span>
@@ -541,8 +541,8 @@
         <div style="margin-top: 12px;">
           <a class="bf-btn block" href="{{ url_for('bookme_requests') }}">View All Projects</a>
         </div>
-      </div>
-    </div>
+                </div>
+              </div>
 
     <!-- 6. Portfolio Management -->
     <div class="bf-card span-6">
@@ -593,14 +593,14 @@
       <h3>Style & Creative Preferences</h3>
       <div style="padding: 12px 0;">
         {% if specialties %}
-          <div style="margin-bottom: 16px;">
+        <div style="margin-bottom: 16px;">
             <div style="font-size: .9rem; opacity: .7; margin-bottom: 8px;">Specialties</div>
             <div style="display: flex; flex-wrap: wrap; gap: 8px;">
               {% for spec in specialties %}
                 <span class="bf-chip">{{ spec }}</span>
               {% endfor %}
-            </div>
-          </div>
+        </div>
+      </div>
         {% else %}
           <p style="opacity:.7; font-size: .9rem; margin-bottom: 12px;">No specialties set yet.</p>
         {% endif %}
@@ -637,8 +637,8 @@
                 {{ "Pause Projects" if (prof and prof.is_visible) else "Accept Projects" }}
               </button>
             </form>
-          {% endif %}
-        </div>
+            {% endif %}
+          </div>
         <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid rgba(255,255,255,.1);">
           <div style="display: grid; gap: 12px;">
             <div style="display: flex; justify-content: space-between; align-items: center;">
@@ -666,13 +666,13 @@
           <div style="padding: 12px; border-radius: 12px; background: rgba(34,197,94,.1); border: 1px solid rgba(34,197,94,.2);">
             <div style="font-size: .85rem; opacity: .7; margin-bottom: 4px;">This Month</div>
             <div style="font-size: 1.5rem; font-weight: 700;">${{ "%.2f"|format(earnings_this_month) }}</div>
-          </div>
+        </div>
           <div style="padding: 12px; border-radius: 12px; background: rgba(236,72,153,.1); border: 1px solid rgba(236,72,153,.2);">
             <div style="font-size: .85rem; opacity: .7; margin-bottom: 4px;">Total</div>
             <div style="font-size: 1.5rem; font-weight: 700;">${{ "%.2f"|format(total_earnings) }}</div>
-          </div>
         </div>
-        <div style="margin-top: 16px;">
+      </div>
+      <div style="margin-top: 16px;">
           <a class="bf-btn block primary" href="{{ url_for('wallet_home') }}">View Transaction History</a>
         </div>
       </div>

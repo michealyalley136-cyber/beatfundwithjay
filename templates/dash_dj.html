@@ -1,0 +1,770 @@
+{% extends "base.html" %}
+{% block title %}DJ Dashboard · BeatFund{% endblock %}
+
+{% block extra_head %}
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  .bf-dj {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 24px;
+  }
+
+  .bf-hero {
+    display: flex;
+    gap: 14px;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    margin-bottom: 24px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid rgba(255,255,255,.1);
+  }
+
+  .bf-hero-left h1 {
+    margin: 0;
+    font-size: 1.8rem;
+    font-weight: 700;
+  }
+
+  .bf-hero-left p {
+    margin: 4px 0 0;
+    opacity: .7;
+    font-size: .95rem;
+  }
+
+  {% if dj.is_managed %}
+  .management-banner {
+    background: rgba(59,130,246,.15);
+    border: 1px solid rgba(59,130,246,.3);
+    border-radius: 12px;
+    padding: 12px 16px;
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .management-banner strong {
+    color: rgba(59,130,246,1);
+  }
+  {% endif %}
+
+  .bf-grid {
+    display: grid;
+    grid-template-columns: repeat(12, 1fr);
+    gap: 16px;
+    margin-top: 16px;
+  }
+
+  .bf-card {
+    border: 1px solid rgba(255,255,255,.12);
+    background: rgba(255,255,255,.06);
+    border-radius: 18px;
+    padding: 20px;
+  }
+
+  .bf-card h3 {
+    margin: 0 0 16px;
+    font-size: 1.1rem;
+    font-weight: 700;
+  }
+
+  .bf-kpis {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
+  }
+
+  .bf-kpi {
+    padding: 16px;
+    border-radius: 16px;
+    border: 1px solid rgba(255,255,255,.10);
+    background: rgba(255,255,255,.05);
+    transition: all 0.2s ease;
+  }
+
+  .bf-kpi:hover {
+    background: rgba(255,255,255,.08);
+    transform: translateY(-2px);
+  }
+
+  .bf-kpi .label {
+    opacity: .75;
+    font-size: .85rem;
+    margin-bottom: 6px;
+  }
+
+  .bf-kpi .value {
+    font-size: 1.8rem;
+    font-weight: 800;
+    line-height: 1.2;
+  }
+
+  .bf-kpi .hint {
+    opacity: .7;
+    font-size: .8rem;
+    margin-top: 6px;
+  }
+
+  .bf-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 10px 16px;
+    border-radius: 12px;
+    border: 1px solid rgba(255,255,255,.12);
+    background: rgba(255,255,255,.08);
+    color: inherit;
+    text-decoration: none;
+    font-weight: 600;
+    font-size: .9rem;
+    transition: all 0.2s ease;
+    cursor: pointer;
+  }
+
+  .bf-btn:hover {
+    background: rgba(255,255,255,.12);
+    transform: translateY(-1px);
+  }
+
+  .bf-btn.primary {
+    background: linear-gradient(135deg, rgba(139,92,246,.4), rgba(139,92,246,.3));
+    border-color: rgba(139,92,246,.5);
+  }
+
+  .bf-btn.primary:hover {
+    background: linear-gradient(135deg, rgba(139,92,246,.5), rgba(139,92,246,.4));
+  }
+
+  .bf-btn.block {
+    width: 100%;
+  }
+
+  .bf-btn.small {
+    font-size: .85rem;
+    padding: 6px 12px;
+    min-height: 32px;
+  }
+
+  .bf-btn:disabled {
+    opacity: .5;
+    cursor: not-allowed;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  th {
+    text-align: left;
+    padding: 12px;
+    font-size: .9rem;
+    opacity: .7;
+    border-bottom: 1px solid rgba(255,255,255,.1);
+    font-weight: 600;
+  }
+
+  td {
+    padding: 12px;
+    border-bottom: 1px solid rgba(255,255,255,.05);
+  }
+
+  tr:hover {
+    background: rgba(255,255,255,.03);
+  }
+
+  .bf-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 10px;
+    border-radius: 999px;
+    border: 1px solid rgba(255,255,255,.12);
+    background: rgba(255,255,255,.06);
+    font-size: .8rem;
+    opacity: .9;
+  }
+
+  .bf-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .bf-row {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    padding: 12px;
+    border-radius: 12px;
+    border: 1px solid rgba(255,255,255,.08);
+    background: rgba(0,0,0,.2);
+  }
+
+  .bf-row .left {
+    min-width: 0;
+    flex: 1;
+  }
+
+  .bf-row .title {
+    font-weight: 600;
+    font-size: .95rem;
+    margin-bottom: 4px;
+  }
+
+  .bf-row .meta {
+    opacity: .75;
+    font-size: .85rem;
+  }
+
+  .span-12 { grid-column: span 12; }
+  .span-8 { grid-column: span 12; }
+  .span-6 { grid-column: span 12; }
+  .span-4 { grid-column: span 12; }
+
+  @media (min-width: 900px) {
+    .span-8 { grid-column: span 8; }
+    .span-4 { grid-column: span 4; }
+    .span-6 { grid-column: span 6; }
+  }
+
+  .section {
+    display: none;
+  }
+
+  .section.active {
+    display: block;
+  }
+
+  .nav-tabs {
+    display: flex;
+    gap: 8px;
+    border-bottom: 1px solid rgba(255,255,255,.1);
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+  }
+
+  .nav-tab {
+    padding: 12px 20px;
+    border: none;
+    background: transparent;
+    color: rgba(255,255,255,.7);
+    cursor: pointer;
+    font-weight: 600;
+    font-size: .9rem;
+    border-bottom: 2px solid transparent;
+    transition: all 0.2s ease;
+  }
+
+  .nav-tab:hover {
+    color: rgba(255,255,255,1);
+    background: rgba(255,255,255,.05);
+  }
+
+  .nav-tab.active {
+    color: rgba(139,92,246,1);
+    border-bottom-color: rgba(139,92,246,1);
+  }
+
+  .quick-actions {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-top: 12px;
+  }
+
+  .read-only-notice {
+    background: rgba(251,191,36,.15);
+    border: 1px solid rgba(251,191,36,.3);
+    border-radius: 12px;
+    padding: 12px 16px;
+    margin-bottom: 16px;
+    text-align: center;
+    opacity: .9;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="bf-dj">
+  <div class="bf-hero">
+    <div class="bf-hero-left">
+      <h1>🎧 DJ Dashboard</h1>
+      <p>Manage your bookings, events, and performances</p>
+    </div>
+    <div class="quick-actions">
+      <a class="bf-btn primary" href="#" onclick="showSection('availability'); return false;">Update Availability</a>
+      <a class="bf-btn" href="#" onclick="showSection('media'); return false;">Upload Media</a>
+      {% if events and events|length > 0 %}
+        <a class="bf-btn" href="#" onclick="showSection('events'); return false;">View Next Event</a>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if dj.is_managed %}
+  <div class="management-banner">
+    <span>📋</span>
+    <div>
+      <strong>Represented by {{ dj.manager_name or 'Management' }}</strong>
+      <div style="font-size: .85rem; opacity: .8; margin-top: 2px;">Bookings handled by management.</div>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Navigation Tabs -->
+  <div class="nav-tabs">
+    <button class="nav-tab active" onclick="showSection('dashboard'); setActiveTab(this); return false;">Dashboard</button>
+    <button class="nav-tab" onclick="showSection('bookings'); setActiveTab(this); return false;">Bookings</button>
+    <button class="nav-tab" onclick="showSection('events'); setActiveTab(this); return false;">Events</button>
+    <button class="nav-tab" onclick="showSection('setlists'); setActiveTab(this); return false;">Setlists</button>
+    <button class="nav-tab" onclick="showSection('media'); setActiveTab(this); return false;">Media</button>
+    <button class="nav-tab" onclick="showSection('availability'); setActiveTab(this); return false;">Availability</button>
+    <button class="nav-tab" onclick="showSection('earnings'); setActiveTab(this); return false;">Earnings</button>
+    <button class="nav-tab" onclick="showSection('reviews'); setActiveTab(this); return false;">Reviews</button>
+    <button class="nav-tab" onclick="showSection('settings'); setActiveTab(this); return false;">Settings</button>
+  </div>
+
+  <!-- 1. Dashboard Overview -->
+  <div id="section-dashboard" class="section active">
+    <div class="bf-grid">
+      <div class="bf-card span-12">
+        <h3>Overview Statistics</h3>
+        <div class="bf-kpis">
+          <div class="bf-kpi">
+            <div class="label">Upcoming Events</div>
+            <div class="value">{{ stats.upcoming_events_count }}</div>
+            <div class="hint">Confirmed gigs</div>
+          </div>
+          <div class="bf-kpi">
+            <div class="label">Booking Requests</div>
+            <div class="value">{{ stats.booking_requests_count }}</div>
+            <div class="hint">Pending requests</div>
+          </div>
+          <div class="bf-kpi">
+            <div class="label">Events This Month</div>
+            <div class="value">{{ stats.events_this_month }}</div>
+            <div class="hint">Scheduled</div>
+          </div>
+          <div class="bf-kpi">
+            <div class="label">Earnings This Month</div>
+            <div class="value">${{ "%.2f"|format(stats.total_earnings_this_month) }}</div>
+            <div class="hint">Current month</div>
+          </div>
+          {% if stats.average_rating %}
+          <div class="bf-kpi">
+            <div class="label">Average Rating</div>
+            <div class="value">{{ "%.1f"|format(stats.average_rating) }}</div>
+            <div class="hint">⭐ Reviews</div>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+
+      <div class="bf-card span-6">
+        <h3>Quick Actions</h3>
+        <div class="bf-list">
+          <a class="bf-btn block primary" href="#" onclick="showSection('availability'); setActiveTab(document.querySelectorAll('.nav-tab')[5]); return false;">Update Availability</a>
+          <a class="bf-btn block" href="#" onclick="showSection('media'); setActiveTab(document.querySelectorAll('.nav-tab')[4]); return false;">Upload Media</a>
+          {% if events and events|length > 0 %}
+            <a class="bf-btn block" href="#" onclick="showSection('events'); setActiveTab(document.querySelectorAll('.nav-tab')[2]); return false;">View Next Event</a>
+          {% endif %}
+        </div>
+      </div>
+
+      <div class="bf-card span-6">
+        <h3>Upcoming Events</h3>
+        {% if events and events|length > 0 %}
+          <div class="bf-list">
+            {% for event in events[:5] %}
+              <div class="bf-row">
+                <div class="left">
+                  <div class="title">{{ event.title }}</div>
+                  <div class="meta">
+                    {{ event.date.strftime("%b %d, %Y %I:%M %p") if event.date else "TBA" }} · {{ event.venue }}
+                  </div>
+                </div>
+              </div>
+            {% endfor %}
+          </div>
+        {% else %}
+          <p style="opacity: .75; padding: 20px 0; text-align: center;">No upcoming events.</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- 2. Bookings -->
+  <div id="section-bookings" class="section">
+    <div class="bf-grid">
+      <div class="bf-card span-12">
+        {% if dj.is_managed %}
+        <div class="read-only-notice">
+          📋 Bookings handled by management.
+        </div>
+        {% endif %}
+        <h3>Booking Requests</h3>
+        {% if bookings and bookings|length > 0 %}
+          <div style="overflow-x: auto;">
+            <table>
+              <thead>
+                <tr>
+                  <th>Client</th>
+                  <th>Event Type</th>
+                  <th>Date & Time</th>
+                  <th>Location</th>
+                  <th>Budget</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for booking in bookings %}
+                  <tr>
+                    <td>{{ booking.client_name }}</td>
+                    <td>
+                      <span class="bf-chip" style="text-transform: capitalize;">{{ booking.event_type }}</span>
+                    </td>
+                    <td>{{ booking.date or "TBA" }}</td>
+                    <td>{{ booking.location or "TBA" }}</td>
+                    <td>{{ booking.budget or "—" }}</td>
+                    <td>
+                      <span class="bf-chip" style="{% if booking.status == 'accepted' %}background: rgba(34,197,94,.2); border-color: rgba(34,197,94,.4);{% elif booking.status in ['declined', 'cancelled'] %}background: rgba(239,68,68,.2); border-color: rgba(239,68,68,.4);{% else %}background: rgba(251,191,36,.2); border-color: rgba(251,191,36,.4);{% endif %}">
+                        {{ booking.status|title }}
+                      </span>
+                    </td>
+                    <td>
+                      <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+                        <a class="bf-btn small" href="#">View</a>
+                        {% if not dj.is_managed and booking.status == 'pending' %}
+                          <a class="bf-btn small primary" href="#">Accept</a>
+                          <a class="bf-btn small" href="#" style="background: rgba(239,68,68,.15); border-color: rgba(239,68,68,.3);">Decline</a>
+                        {% endif %}
+                      </div>
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}
+          <p style="opacity: .75; padding: 40px 0; text-align: center;">No booking requests yet.</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- 3. Events -->
+  <div id="section-events" class="section">
+    <div class="bf-grid">
+      <div class="bf-card span-12">
+        <h3>Confirmed Events</h3>
+        {% if events and events|length > 0 %}
+          <div style="overflow-x: auto;">
+            <table>
+              <thead>
+                <tr>
+                  <th>Event Name</th>
+                  <th>Date/Time</th>
+                  <th>Venue/Location</th>
+                  <th>Event Type</th>
+                  <th>Payment Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for event in events %}
+                  <tr>
+                    <td>{{ event.title }}</td>
+                    <td>{{ event.date.strftime("%b %d, %Y %I:%M %p") if event.date else "TBA" }}</td>
+                    <td>{{ event.venue }}</td>
+                    <td>
+                      <span class="bf-chip" style="text-transform: capitalize;">{{ event.event_type }}</span>
+                    </td>
+                    <td>
+                      <span class="bf-chip" style="{% if event.payment_status == 'paid' %}background: rgba(34,197,94,.2); border-color: rgba(34,197,94,.4);{% else %}background: rgba(251,191,36,.2); border-color: rgba(251,191,36,.4);{% endif %}">
+                        {{ event.payment_status|title }}
+                      </span>
+                    </td>
+                    <td>
+                      <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+                        <a class="bf-btn small" href="#">View Details</a>
+                        <a class="bf-btn small" href="#">Download Brief</a>
+                      </div>
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}
+          <p style="opacity: .75; padding: 40px 0; text-align: center;">No confirmed events yet.</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- 4. Setlists -->
+  <div id="section-setlists" class="section">
+    <div class="bf-grid">
+      <div class="bf-card span-12">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+          <h3 style="margin: 0;">Setlists</h3>
+          <a class="bf-btn primary" href="#">Create Setlist</a>
+        </div>
+        {% if setlists and setlists|length > 0 %}
+          <div class="bf-list">
+            {% for setlist in setlists %}
+              <div class="bf-row">
+                <div class="left">
+                  <div class="title">{{ setlist.name }}</div>
+                  <div class="meta">
+                    Genre: {{ setlist.genre }} · Duration: {{ setlist.duration_minutes }} min
+                  </div>
+                </div>
+                <div style="display: flex; gap: 6px;">
+                  <a class="bf-btn small" href="#">View</a>
+                  <a class="bf-btn small" href="#">Edit</a>
+                </div>
+              </div>
+            {% endfor %}
+          </div>
+        {% else %}
+          <p style="opacity: .75; padding: 40px 0; text-align: center;">No setlists created yet. Create your first setlist to plan your performances.</p>
+          <div style="text-align: center; margin-top: 20px;">
+            <a class="bf-btn primary" href="#">Create First Setlist</a>
+          </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- 5. Media -->
+  <div id="section-media" class="section">
+    <div class="bf-grid">
+      <div class="bf-card span-12">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+          <h3 style="margin: 0;">Media Portfolio</h3>
+          <a class="bf-btn primary" href="{{ url_for('bookme_portfolio') }}">Upload Media</a>
+        </div>
+        {% if media and media|length > 0 %}
+          <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px;">
+            {% for item in media %}
+              <div style="position: relative; border-radius: 12px; overflow: hidden; border: 1px solid rgba(255,255,255,.08); background: rgba(0,0,0,.2);">
+                {% if item.type == 'image' %}
+                  <img src="{{ item.url }}" alt="Media" style="width: 100%; height: 150px; object-fit: cover;">
+                {% elif item.type == 'video' %}
+                  <div style="width: 100%; height: 150px; background: rgba(139,92,246,.2); display: flex; align-items: center; justify-content: center;">
+                    <span style="font-size: 2rem;">▶️</span>
+                  </div>
+                {% else %}
+                  <div style="width: 100%; height: 150px; background: rgba(139,92,246,.2); display: flex; align-items: center; justify-content: center;">
+                    <span style="font-size: 2rem;">📎</span>
+                  </div>
+                {% endif %}
+                <div style="padding: 12px;">
+                  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                    <span class="bf-chip" style="text-transform: capitalize;">{{ item.type }}</span>
+                    {% if item.is_featured %}
+                      <span class="bf-chip" style="background: rgba(251,191,36,.2); border-color: rgba(251,191,36,.4);">⭐ Featured</span>
+                    {% endif %}
+                  </div>
+                  <div style="display: flex; gap: 6px;">
+                    <a class="bf-btn small" href="#" style="flex: 1;">Edit</a>
+                    <button class="bf-btn small" style="flex: 1;">Toggle</button>
+                  </div>
+                </div>
+              </div>
+            {% endfor %}
+          </div>
+        {% else %}
+          <p style="opacity: .75; padding: 40px 0; text-align: center;">No media uploaded yet. Upload promo images and performance clips for your public profile.</p>
+          <div style="text-align: center; margin-top: 20px;">
+            <a class="bf-btn primary" href="{{ url_for('bookme_portfolio') }}">Upload First Media</a>
+          </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- 6. Availability -->
+  <div id="section-availability" class="section">
+    <div class="bf-grid">
+      <div class="bf-card span-12">
+        {% if dj.is_managed %}
+        <div class="read-only-notice">
+          📋 Managed by your representative. Availability edits may be restricted.
+        </div>
+        {% endif %}
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+          <h3 style="margin: 0;">Availability Calendar</h3>
+          {% if not dj.is_managed %}
+          <div style="display: flex; gap: 8px;">
+            <a class="bf-btn" href="#">Block Dates</a>
+            <a class="bf-btn" href="#">Update Hours</a>
+          </div>
+          {% endif %}
+        </div>
+        {% if availability and availability|length > 0 %}
+          <div class="bf-list">
+            {% for avail in availability %}
+              <div class="bf-row">
+                <div class="left">
+                  <div class="title">{{ avail.date.strftime("%B %d, %Y") if avail.date else "Date" }}</div>
+                  <div class="meta">Status: {{ avail.status|title }}</div>
+                </div>
+              </div>
+            {% endfor %}
+          </div>
+        {% else %}
+          <p style="opacity: .75; padding: 40px 0; text-align: center;">No availability data yet.{% if not dj.is_managed %} Start by blocking dates or updating your working hours.{% endif %}</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- 7. Earnings -->
+  <div id="section-earnings" class="section">
+    <div class="bf-grid">
+      <div class="bf-card span-12">
+        <h3>Earnings</h3>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px;">
+          <div style="padding: 20px; border-radius: 16px; background: rgba(34,197,94,.1); border: 1px solid rgba(34,197,94,.2);">
+            <div style="font-size: .85rem; opacity: .7; margin-bottom: 8px;">Total Earned</div>
+            <div style="font-size: 2rem; font-weight: 700;">${{ "%.2f"|format(earnings.total_earned) }}</div>
+          </div>
+          <div style="padding: 20px; border-radius: 16px; background: rgba(251,191,36,.1); border: 1px solid rgba(251,191,36,.2);">
+            <div style="font-size: .85rem; opacity: .7; margin-bottom: 8px;">Pending Payments</div>
+            <div style="font-size: 2rem; font-weight: 700;">${{ "%.2f"|format(earnings.pending) }}</div>
+          </div>
+          <div style="padding: 20px; border-radius: 16px; background: rgba(59,130,246,.1); border: 1px solid rgba(59,130,246,.2);">
+            <div style="font-size: .85rem; opacity: .7; margin-bottom: 8px;">Paid This Month</div>
+            <div style="font-size: 2rem; font-weight: 700;">${{ "%.2f"|format(earnings.this_month) }}</div>
+          </div>
+        </div>
+        {% if transactions and transactions|length > 0 %}
+          <div style="overflow-x: auto;">
+            <table>
+              <thead>
+                <tr>
+                  <th>Event</th>
+                  <th>Amount</th>
+                  <th>Date</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for trans in transactions %}
+                  <tr>
+                    <td>{{ trans.event_name }}</td>
+                    <td>${{ "%.2f"|format(trans.amount) }}</td>
+                    <td>{{ trans.date.strftime("%b %d, %Y") if trans.date else "—" }}</td>
+                    <td>
+                      <span class="bf-chip" style="{% if trans.status == 'completed' %}background: rgba(34,197,94,.2); border-color: rgba(34,197,94,.4);{% elif trans.status in ['accepted', 'confirmed'] %}background: rgba(59,130,246,.2); border-color: rgba(59,130,246,.4);{% else %}background: rgba(251,191,36,.2); border-color: rgba(251,191,36,.4);{% endif %}">
+                        {{ trans.status|title }}
+                      </span>
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}
+          <p style="opacity: .75; padding: 20px 0; text-align: center;">No transactions yet.</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- 8. Reviews -->
+  <div id="section-reviews" class="section">
+    <div class="bf-grid">
+      <div class="bf-card span-12">
+        <h3>Client Reviews</h3>
+        {% if reviews and reviews|length > 0 %}
+          <div class="bf-list">
+            {% for review in reviews %}
+              <div class="bf-row">
+                <div class="left">
+                  <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
+                    <div class="title">{{ review.rating }} ⭐</div>
+                    {% if review.event_name %}
+                      <span class="bf-chip" style="font-size: .75rem;">{{ review.event_name }}</span>
+                    {% endif %}
+                  </div>
+                  <div class="meta">{{ review.comment }}</div>
+                  {% if review.created_at %}
+                    <div style="opacity: .6; font-size: .8rem; margin-top: 4px;">
+                      {{ review.created_at.strftime("%b %d, %Y") }}
+                    </div>
+                  {% endif %}
+                </div>
+              </div>
+            {% endfor %}
+          </div>
+        {% else %}
+          <p style="opacity: .75; padding: 40px 0; text-align: center;">No reviews yet. Reviews will appear here once clients leave feedback.</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- 9. Settings -->
+  <div id="section-settings" class="section">
+    <div class="bf-grid">
+      <div class="bf-card span-12">
+        <h3>Settings</h3>
+        <div class="bf-list">
+          <h4 style="margin: 0 0 12px; font-size: .95rem; opacity: .8;">Profile Settings</h4>
+          <a class="bf-btn block" href="{{ url_for('bookme_profile') }}">DJ Name & Profile</a>
+          <a class="bf-btn block" href="{{ url_for('bookme_profile') }}">Genres & Specialties</a>
+          <a class="bf-btn block" href="{{ url_for('bookme_profile') }}">Location & Service Area</a>
+          <a class="bf-btn block" href="{{ url_for('bookme_profile') }}">Equipment Preferences</a>
+          
+          <h4 style="margin: 20px 0 12px; font-size: .95rem; opacity: .8;">Account</h4>
+          <a class="bf-btn block" href="{{ url_for('profile_edit') }}">Change Password</a>
+          <a class="bf-btn block" href="{{ url_for('bookme_profile') }}">Notification Preferences</a>
+          
+          {% if dj.is_managed %}
+          <h4 style="margin: 20px 0 12px; font-size: .95rem; opacity: .8;">Management Status</h4>
+          <div style="padding: 16px; border-radius: 12px; background: rgba(59,130,246,.1); border: 1px solid rgba(59,130,246,.3);">
+            <div style="font-weight: 600; margin-bottom: 4px;">Represented by: {{ dj.manager_name or 'Management' }}</div>
+            <span class="bf-chip" style="background: rgba(59,130,246,.2); border-color: rgba(59,130,246,.4); margin-top: 8px;">Managed</span>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  function showSection(sectionId) {
+    // Hide all sections
+    document.querySelectorAll('.section').forEach(section => {
+      section.classList.remove('active');
+    });
+
+    // Show selected section
+    const section = document.getElementById('section-' + sectionId);
+    if (section) {
+      section.classList.add('active');
+    }
+    
+    // Scroll to top
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function setActiveTab(clickedTab) {
+    // Remove active class from all tabs
+    document.querySelectorAll('.nav-tab').forEach(tab => {
+      tab.classList.remove('active');
+    });
+    
+    // Add active class to clicked tab
+    clickedTab.classList.add('active');
+  }
+</script>
+{% endblock %}
+
