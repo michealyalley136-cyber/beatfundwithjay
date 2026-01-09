@@ -1,0 +1,180 @@
+{% extends "base.html" %}
+{% block title %}Analytics · Social Media Manager{% endblock %}
+
+{% block extra_head %}
+<style>
+  .smm-page {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 20px 16px;
+  }
+
+  .smm-nav {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 24px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid rgba(255,255,255,.1);
+  }
+
+  .smm-nav a {
+    padding: 10px 16px;
+    border-radius: 10px;
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 14px;
+    color: #cbd5f5;
+    background: rgba(255,255,255,.05);
+    border: 1px solid rgba(255,255,255,.1);
+    transition: all 0.2s ease;
+  }
+
+  .smm-nav a:hover {
+    background: rgba(255,255,255,.1);
+  }
+
+  .smm-nav a.active {
+    background: linear-gradient(135deg, rgba(6,182,212,.3), rgba(34,197,94,.2));
+    border-color: rgba(6,182,212,.5);
+    color: #fff;
+  }
+
+  .smm-header {
+    margin-bottom: 24px;
+  }
+
+  .smm-title {
+    font-size: 1.75rem;
+    font-weight: 800;
+    margin: 0 0 16px;
+  }
+
+  .smm-filters {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 24px;
+  }
+
+  .smm-filter-select {
+    padding: 10px 16px;
+    border-radius: 10px;
+    background: rgba(255,255,255,.08);
+    border: 1px solid rgba(255,255,255,.12);
+    color: #cbd5f5;
+    font-size: .9rem;
+  }
+
+  .smm-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: rgba(255,255,255,.06);
+    border: 1px solid rgba(255,255,255,.12);
+    border-radius: 18px;
+    overflow: hidden;
+  }
+
+  .smm-table th {
+    padding: 16px;
+    text-align: left;
+    font-weight: 700;
+    background: rgba(255,255,255,.08);
+    border-bottom: 1px solid rgba(255,255,255,.1);
+  }
+
+  .smm-table td {
+    padding: 16px;
+    border-bottom: 1px solid rgba(255,255,255,.08);
+  }
+
+  .smm-table tr:last-child td {
+    border-bottom: none;
+  }
+
+  .smm-table tr:hover {
+    background: rgba(255,255,255,.03);
+  }
+
+  .smm-metric {
+    font-weight: 700;
+    color: #4de3ff;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="smm-page">
+  <nav class="smm-nav">
+    <a href="{{ url_for('social_dashboard') }}">Dashboard</a>
+    <a href="{{ url_for('social_clients') }}">Clients</a>
+    <a href="{{ url_for('social_calendar') }}">Content Calendar</a>
+    <a href="{{ url_for('social_posts') }}">Posts & Assets</a>
+    <a href="{{ url_for('social_approvals') }}">Approvals</a>
+    <a href="{{ url_for('social_analytics') }}" class="active">Analytics</a>
+    <a href="{{ url_for('social_availability') }}">Availability</a>
+    <a href="{{ url_for('social_earnings') }}">Earnings</a>
+    <a href="{{ url_for('social_reviews') }}">Reviews</a>
+    <a href="{{ url_for('social_settings') }}">Settings</a>
+  </nav>
+
+  <div class="smm-header">
+    <h1 class="smm-title">Analytics</h1>
+    <div class="smm-filters">
+      <select class="smm-filter-select" onchange="window.location.href='{{ url_for('social_analytics') }}?client_id=' + (this.value || '') + '&platform={{ platform_filter }}'">
+        <option value="">All Clients</option>
+        {% for client in clients %}
+          <option value="{{ client.id }}" {% if client_id == client.id %}selected{% endif %}>{{ client.client_name }}</option>
+        {% endfor %}
+      </select>
+      <select class="smm-filter-select" onchange="window.location.href='{{ url_for('social_analytics') }}?client_id={{ client_id }}&platform=' + (this.value || 'all')">
+        <option value="all" {% if platform_filter == 'all' %}selected{% endif %}>All Platforms</option>
+        <option value="instagram" {% if platform_filter == 'instagram' %}selected{% endif %}>Instagram</option>
+        <option value="twitter" {% if platform_filter == 'twitter' %}selected{% endif %}>Twitter</option>
+        <option value="tiktok" {% if platform_filter == 'tiktok' %}selected{% endif %}>TikTok</option>
+        <option value="facebook" {% if platform_filter == 'facebook' %}selected{% endif %}>Facebook</option>
+      </select>
+    </div>
+  </div>
+
+  {% if analytics_rows %}
+    <table class="smm-table">
+      <thead>
+        <tr>
+          <th>Client</th>
+          <th>Platform</th>
+          <th>Period</th>
+          <th>Followers</th>
+          <th>Reach</th>
+          <th>Engagement</th>
+          <th>Impressions</th>
+          <th>Likes</th>
+          <th>Comments</th>
+          <th>Shares</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in analytics_rows %}
+          <tr>
+            <td>{{ row.client.client_name }}</td>
+            <td><span style="text-transform: capitalize;">{{ row.platform }}</span></td>
+            <td>{{ row.period_start.strftime('%b %d') }} - {{ row.period_end.strftime('%b %d, %Y') }}</td>
+            <td class="smm-metric">{{ "{:,}".format(row.followers or 0) }}</td>
+            <td class="smm-metric">{{ "{:,}".format(row.reach or 0) }}</td>
+            <td class="smm-metric">{{ "{:,}".format(row.engagement or 0) }}</td>
+            <td class="smm-metric">{{ "{:,}".format(row.impressions or 0) }}</td>
+            <td class="smm-metric">{{ "{:,}".format(row.likes or 0) }}</td>
+            <td class="smm-metric">{{ "{:,}".format(row.comments or 0) }}</td>
+            <td class="smm-metric">{{ "{:,}".format(row.shares or 0) }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <div style="border: 1px solid rgba(255,255,255,.12); background: rgba(255,255,255,.06); border-radius: 18px; padding: 40px; text-align: center;">
+      <p style="opacity: .8;">No analytics data available. Analytics will appear here once data is recorded.</p>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}
+

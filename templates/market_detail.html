@@ -28,12 +28,10 @@
     {% elif current_user.id == item.seller_id %}
       <p style="margin-top:14px;opacity:.7">You are the seller.</p>
     {% else %}
-      <form method="post" action="{{ url_for('market_buy', item_id=item.id) }}" style="margin-top:14px">
-        <button style="padding:10px 16px; background:#111; color:#fff; border:none; border-radius:8px; cursor:pointer">
-          Buy Now
-        </button>
-        <a href="{{ url_for('wallet_home') }}" style="margin-left:10px">Add funds</a>
-      </form>
+      <a href="{{ url_for('market_confirm', beat_id=item.id) }}" style="display:inline-block; margin-top:14px; padding:10px 16px; background:#111; color:#fff; border:none; border-radius:8px; cursor:pointer; text-decoration:none">
+        Buy Now
+      </a>
+      <a href="{{ url_for('wallet_home') }}" style="margin-left:10px">Add funds</a>
     {% endif %}
   </div>
 </div>

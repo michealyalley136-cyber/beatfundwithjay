@@ -368,15 +368,13 @@
                     </div>
                   </div>
 
-                  <form
-                    method="POST"
-                    action="{{ url_for('market_buy', beat_id=b.id) }}"
+                  <a
+                    href="{{ url_for('market_confirm', beat_id=b.id) }}"
+                    class="pc-btn-primary pc-btn-small"
+                    style="text-decoration: none; display: inline-block;"
                   >
-                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <button type="submit" class="pc-btn-primary pc-btn-small">
-                      Buy with wallet
-                    </button>
-                  </form>
+                    Buy with wallet
+                  </a>
                 </div>
               </div>
             </article>

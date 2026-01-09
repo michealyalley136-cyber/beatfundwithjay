@@ -316,6 +316,9 @@
     <div class="bf-card span-4">
       <h3>Quick Actions</h3>
       <div class="bf-list">
+        <a class="bf-btn block" href="{{ url_for('vaults_index') }}" style="background: linear-gradient(135deg, rgba(6,182,212,.3), rgba(34,197,94,.2)); border-color: rgba(6,182,212,.5);">
+          💰 Project Vaults
+        </a>
         <a class="bf-btn block primary" href="{{ url_for('bookme_profile') }}">
           {{ "Edit" if artist_can_take_gigs else "Create" }} Videographer Profile
         </a>

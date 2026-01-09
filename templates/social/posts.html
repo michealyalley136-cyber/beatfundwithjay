@@ -1,0 +1,277 @@
+{% extends "base.html" %}
+{% block title %}Posts & Assets · Social Media Manager{% endblock %}
+
+{% block extra_head %}
+<style>
+  .smm-page {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 20px 16px;
+  }
+
+  .smm-nav {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 24px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid rgba(255,255,255,.1);
+  }
+
+  .smm-nav a {
+    padding: 10px 16px;
+    border-radius: 10px;
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 14px;
+    color: #cbd5f5;
+    background: rgba(255,255,255,.05);
+    border: 1px solid rgba(255,255,255,.1);
+    transition: all 0.2s ease;
+  }
+
+  .smm-nav a:hover {
+    background: rgba(255,255,255,.1);
+  }
+
+  .smm-nav a.active {
+    background: linear-gradient(135deg, rgba(6,182,212,.3), rgba(34,197,94,.2));
+    border-color: rgba(6,182,212,.5);
+    color: #fff;
+  }
+
+  .smm-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 24px;
+    flex-wrap: wrap;
+    gap: 16px;
+  }
+
+  .smm-title {
+    font-size: 1.75rem;
+    font-weight: 800;
+    margin: 0;
+  }
+
+  .smm-btn {
+    padding: 12px 20px;
+    border-radius: 12px;
+    text-decoration: none;
+    font-weight: 600;
+    background: linear-gradient(135deg, rgba(6,182,212,.4), rgba(34,197,94,.3));
+    border: 1px solid rgba(6,182,212,.5);
+    color: #fff;
+    transition: all 0.2s ease;
+  }
+
+  .smm-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(6,182,212,.3);
+  }
+
+  .smm-filter-tabs {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 24px;
+    flex-wrap: wrap;
+  }
+
+  .smm-filter-tab {
+    padding: 8px 16px;
+    border-radius: 10px;
+    text-decoration: none;
+    font-weight: 600;
+    font-size: .9rem;
+    color: #cbd5f5;
+    background: rgba(255,255,255,.05);
+    border: 1px solid rgba(255,255,255,.1);
+    transition: all 0.2s ease;
+  }
+
+  .smm-filter-tab.active {
+    background: rgba(6,182,212,.3);
+    border-color: rgba(6,182,212,.5);
+    color: #fff;
+  }
+
+  .smm-card {
+    border: 1px solid rgba(255,255,255,.12);
+    background: rgba(255,255,255,.06);
+    border-radius: 18px;
+    padding: 20px;
+    margin-bottom: 16px;
+  }
+
+  .smm-post-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+
+  .smm-post-title {
+    font-size: 1.1rem;
+    font-weight: 700;
+    margin: 0;
+  }
+
+  .smm-post-meta {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 8px;
+  }
+
+  .smm-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: rgba(6,182,212,.2);
+    border: 1px solid rgba(6,182,212,.4);
+    font-size: .8rem;
+    text-transform: capitalize;
+  }
+
+  .smm-post-content {
+    margin: 12px 0;
+    opacity: .9;
+    line-height: 1.6;
+  }
+
+  .smm-post-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 16px;
+    padding-top: 16px;
+    border-top: 1px solid rgba(255,255,255,.1);
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+
+  .smm-asset-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 16px;
+    margin-top: 24px;
+  }
+
+  .smm-asset-card {
+    border: 1px solid rgba(255,255,255,.12);
+    background: rgba(255,255,255,.06);
+    border-radius: 12px;
+    padding: 16px;
+  }
+
+  .smm-asset-title {
+    font-weight: 600;
+    margin-bottom: 8px;
+  }
+
+  .smm-asset-meta {
+    font-size: .85rem;
+    opacity: .8;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="smm-page">
+  <nav class="smm-nav">
+    <a href="{{ url_for('social_dashboard') }}">Dashboard</a>
+    <a href="{{ url_for('social_clients') }}">Clients</a>
+    <a href="{{ url_for('social_calendar') }}">Content Calendar</a>
+    <a href="{{ url_for('social_posts') }}" class="active">Posts & Assets</a>
+    <a href="{{ url_for('social_approvals') }}">Approvals</a>
+    <a href="{{ url_for('social_analytics') }}">Analytics</a>
+    <a href="{{ url_for('social_availability') }}">Availability</a>
+    <a href="{{ url_for('social_earnings') }}">Earnings</a>
+    <a href="{{ url_for('social_reviews') }}">Reviews</a>
+    <a href="{{ url_for('social_settings') }}">Settings</a>
+  </nav>
+
+  <div class="smm-header">
+    <h1 class="smm-title">Posts & Assets</h1>
+    <a href="#" class="smm-btn">+ Create Post</a>
+  </div>
+
+  <div class="smm-filter-tabs">
+    <a href="{{ url_for('social_posts', status='all') }}" class="smm-filter-tab {% if status_filter == 'all' %}active{% endif %}">All</a>
+    <a href="{{ url_for('social_posts', status='draft') }}" class="smm-filter-tab {% if status_filter == 'draft' %}active{% endif %}">Drafts</a>
+    <a href="{{ url_for('social_posts', status='scheduled') }}" class="smm-filter-tab {% if status_filter == 'scheduled' %}active{% endif %}">Scheduled</a>
+    <a href="{{ url_for('social_posts', status='pending_approval') }}" class="smm-filter-tab {% if status_filter == 'pending_approval' %}active{% endif %}">Pending Approval</a>
+    <a href="{{ url_for('social_posts', status='published') }}" class="smm-filter-tab {% if status_filter == 'published' %}active{% endif %}">Published</a>
+  </div>
+
+  {% if posts %}
+    {% for item in posts %}
+      <div class="smm-card">
+        <div class="smm-post-header">
+          <div>
+            <h3 class="smm-post-title">
+              {{ item.post.platform|title }} Post
+              {% if item.post.client %}
+                · {{ item.post.client.client_name }}
+              {% endif %}
+            </h3>
+            <div class="smm-post-meta">
+              <span class="smm-chip">{{ item.post.status.value }}</span>
+              <span class="smm-chip">{{ item.post.platform }}</span>
+              {% if item.post.scheduled_datetime %}
+                <span class="smm-chip">📅 {{ item.post.scheduled_datetime.strftime('%b %d, %Y %I:%M %p') }}</span>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+        <div class="smm-post-content">
+          {{ item.post.content[:200] }}{% if item.post.content|length > 200 %}...{% endif %}
+        </div>
+        {% if item.assets %}
+          <div style="margin-top: 12px;">
+            <strong>Assets:</strong>
+            <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px;">
+              {% for asset in item.assets %}
+                <span class="smm-chip">{{ asset.asset_type }}</span>
+              {% endfor %}
+            </div>
+          </div>
+        {% endif %}
+        <div class="smm-post-footer">
+          <div style="opacity: .7; font-size: .9rem;">
+            Created {{ item.post.created_at.strftime('%b %d, %Y') }}
+          </div>
+          <div style="display: flex; gap: 8px;">
+            <a href="#" style="padding: 6px 12px; border-radius: 8px; text-decoration: none; background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.12); font-size: .9rem;">Edit</a>
+            <a href="#" style="padding: 6px 12px; border-radius: 8px; text-decoration: none; background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.12); font-size: .9rem;">View</a>
+          </div>
+        </div>
+      </div>
+    {% endfor %}
+  {% else %}
+    <div class="smm-card">
+      <p style="opacity: .8; text-align: center; padding: 40px 20px;">No posts found. Create your first post to get started.</p>
+    </div>
+  {% endif %}
+
+  {% if assets %}
+    <h2 style="margin-top: 40px; margin-bottom: 20px; font-size: 1.5rem; font-weight: 700;">Unlinked Assets</h2>
+    <div class="smm-asset-grid">
+      {% for asset in assets %}
+        <div class="smm-asset-card">
+          <div class="smm-asset-title">{{ asset.title or 'Untitled Asset' }}</div>
+          <div class="smm-asset-meta">
+            Type: {{ asset.asset_type }}<br>
+            Created: {{ asset.created_at.strftime('%b %d, %Y') }}
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  {% endif %}
+</div>
+{% endblock %}
+

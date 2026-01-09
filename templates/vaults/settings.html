@@ -1,0 +1,292 @@
+{% extends "base.html" %}
+{% block title %}Vault Settings · {{ vault.name }}{% endblock %}
+
+{% block extra_head %}
+<style>
+  .vaults-page {
+    max-width: 700px;
+    margin: 40px auto;
+    padding: 0 16px;
+  }
+
+  .vaults-header {
+    margin-bottom: 32px;
+  }
+
+  .vaults-title {
+    font-size: 1.75rem;
+    font-weight: 800;
+    margin: 0 0 8px;
+  }
+
+  .vaults-subtitle {
+    opacity: .8;
+    font-size: .95rem;
+  }
+
+  .vault-form-card {
+    background: rgba(255,255,255,.06);
+    border: 1px solid rgba(255,255,255,.12);
+    border-radius: 18px;
+    padding: 32px;
+    margin-bottom: 24px;
+  }
+
+  .form-group {
+    margin-bottom: 24px;
+  }
+
+  .form-label {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: 600;
+    font-size: .95rem;
+  }
+
+  .form-input {
+    width: 100%;
+    padding: 12px 16px;
+    border-radius: 10px;
+    background: rgba(255,255,255,.08);
+    border: 1px solid rgba(255,255,255,.12);
+    color: #fff;
+    font-size: .95rem;
+    box-sizing: border-box;
+  }
+
+  .form-input:focus {
+    outline: none;
+    border-color: rgba(6,182,212,.5);
+    background: rgba(255,255,255,.1);
+  }
+
+  .form-textarea {
+    min-height: 100px;
+    resize: vertical;
+  }
+
+  .form-checkbox {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+  }
+
+  .form-checkbox input[type="checkbox"] {
+    width: 20px;
+    height: 20px;
+    cursor: pointer;
+  }
+
+  .form-help {
+    margin-top: 6px;
+    font-size: .85rem;
+    opacity: .7;
+  }
+
+  .auto-fund-section {
+    margin-top: 32px;
+    padding-top: 32px;
+    border-top: 1px solid rgba(255,255,255,.1);
+  }
+
+  .auto-fund-info {
+    background: rgba(6,182,212,.1);
+    border: 1px solid rgba(6,182,212,.3);
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 20px;
+    font-size: .9rem;
+    line-height: 1.6;
+  }
+
+  .form-actions {
+    display: flex;
+    gap: 12px;
+    margin-top: 32px;
+  }
+
+  .btn {
+    padding: 14px 24px;
+    border-radius: 12px;
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 1rem;
+    text-align: center;
+    transition: all 0.2s ease;
+    border: none;
+    cursor: pointer;
+    display: block;
+    flex: 1;
+  }
+
+  .btn-primary {
+    background: linear-gradient(135deg, rgba(6,182,212,.4), rgba(34,197,94,.3));
+    border: 1px solid rgba(6,182,212,.5);
+    color: #fff;
+  }
+
+  .btn-primary:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(6,182,212,.3);
+  }
+
+  .btn-secondary {
+    background: rgba(255,255,255,.08);
+    border: 1px solid rgba(255,255,255,.12);
+    color: #cbd5f5;
+  }
+
+  .btn-secondary:hover {
+    background: rgba(255,255,255,.12);
+  }
+
+  .auto-fund-options {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-top: 16px;
+  }
+
+  .auto-fund-option {
+    padding: 12px;
+    background: rgba(0,0,0,.2);
+    border-radius: 10px;
+    border: 1px solid rgba(255,255,255,.08);
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="vaults-page">
+  <div class="vaults-header">
+    <h1 class="vaults-title">Vault Settings</h1>
+    <p class="vaults-subtitle">{{ vault.name }}</p>
+  </div>
+
+  <div class="vault-form-card">
+    <form method="POST">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+      <div class="form-group">
+        <label class="form-label" for="name">Vault Name</label>
+        <input
+          type="text"
+          id="name"
+          name="name"
+          class="form-input"
+          value="{{ vault.name }}"
+          required
+          maxlength="200"
+        >
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="description">Description</label>
+        <textarea
+          id="description"
+          name="description"
+          class="form-input form-textarea"
+          maxlength="1000"
+        >{{ vault.description or '' }}</textarea>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="target">Target Amount ($)</label>
+        <input
+          type="number"
+          id="target"
+          name="target"
+          class="form-input"
+          value="{{ '%.2f'|format(vault.target_dollars) }}"
+          step="0.01"
+          min="0.01"
+          required
+        >
+        <div class="form-help">Current balance: ${{ '%.2f'|format(vault.current_balance_dollars) }}</div>
+      </div>
+
+      <div class="auto-fund-section">
+        <h3 style="margin: 0 0 16px; font-size: 1.2rem; font-weight: 700;">Auto-Funding</h3>
+        
+        <div class="auto-fund-info">
+          <strong>How it works:</strong> When enabled, a percentage of your incoming wallet funds (from sales, transfers, etc.) will automatically be allocated to this vault. This helps you save for your project without thinking about it.
+        </div>
+
+        <div class="form-group">
+          <label class="form-checkbox">
+            <input
+              type="checkbox"
+              name="auto_fund_enabled"
+              {% if vault.auto_fund_enabled %}checked{% endif %}
+            >
+            <span>Enable auto-funding</span>
+          </label>
+        </div>
+
+        <div id="auto-fund-options" style="{% if not vault.auto_fund_enabled %}display: none;{% endif %}">
+          <div class="auto-fund-options">
+            <div class="form-group">
+              <label class="form-label" for="auto_fund_percent">Percentage (%)</label>
+              <input
+                type="number"
+                id="auto_fund_percent"
+                name="auto_fund_percent"
+                class="form-input"
+                value="{{ vault.auto_fund_percent or 10 }}"
+                min="0"
+                max="100"
+                placeholder="10"
+              >
+              <div class="form-help">% of income to auto-fund</div>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="auto_fund_min">Minimum ($)</label>
+              <input
+                type="number"
+                id="auto_fund_min"
+                name="auto_fund_min"
+                class="form-input"
+                value="{% if vault.auto_fund_min_cents %}{{ '%.2f'|format(vault.auto_fund_min_cents / 100.0) }}{% endif %}"
+                step="0.01"
+                min="0"
+                placeholder="0.00"
+              >
+              <div class="form-help">Min income to trigger</div>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="auto_fund_frequency">Frequency</label>
+            <select id="auto_fund_frequency" name="auto_fund_frequency" class="form-input">
+              <option value="on_income" {% if vault.auto_fund_frequency == 'on_income' %}selected{% endif %}>On every income</option>
+              <option value="daily" {% if vault.auto_fund_frequency == 'daily' %}selected{% endif %}>Daily</option>
+              <option value="weekly" {% if vault.auto_fund_frequency == 'weekly' %}selected{% endif %}>Weekly</option>
+              <option value="monthly" {% if vault.auto_fund_frequency == 'monthly' %}selected{% endif %}>Monthly</option>
+            </select>
+            <div class="form-help">When to auto-fund</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary">Save Settings</button>
+        <a href="{{ url_for('vaults_detail', vault_id=vault.id) }}" class="btn btn-secondary">Cancel</a>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+  document.querySelector('input[name="auto_fund_enabled"]').addEventListener('change', function() {
+    const options = document.getElementById('auto-fund-options');
+    if (this.checked) {
+      options.style.display = 'block';
+    } else {
+      options.style.display = 'none';
+    }
+  });
+</script>
+{% endblock %}
+

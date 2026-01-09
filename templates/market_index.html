@@ -726,10 +726,7 @@
                       <div class="mk-price-sub">Paid from wallet balance</div>
                     </div>
 
-                    <form method="POST" action="{{ url_for('market_buy', beat_id=b.id) }}" class="mk-buy-inline-form">
-                      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                      <button type="submit" class="mk-btn-buy-inline">Buy with wallet</button>
-                    </form>
+                    <a href="{{ url_for('market_confirm', beat_id=b.id) }}" class="mk-btn-buy-inline">Buy with wallet</a>
                   </div>
                 </div>
               </article>

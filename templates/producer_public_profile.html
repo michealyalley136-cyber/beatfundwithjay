@@ -28,9 +28,7 @@
         {% endif %}
       </div>
       {% if b.owner_id != current_user.id %}
-      <form method="post" action="{{ url_for('market_buy', beat_id=b.id) }}" style="margin-top:10px;">
-        <button class="btn ok" type="submit">Buy & Download</button>
-      </form>
+      <a href="{{ url_for('market_confirm', beat_id=b.id) }}" class="btn ok" style="display:inline-block; margin-top:10px; text-decoration:none;">Buy & Download</a>
       {% endif %}
     </div>
     {% else %}

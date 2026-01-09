@@ -231,6 +231,25 @@
   @keyframes spin {
     to { transform: rotate(360deg); }
   }
+
+  /* Booking request status badges */
+  .status-pending {
+    background: rgba(251,191,36,.2) !important;
+    border-color: rgba(251,191,36,.4) !important;
+    color: #fbbf24 !important;
+  }
+
+  .status-accepted {
+    background: rgba(34,197,94,.2) !important;
+    border-color: rgba(34,197,94,.4) !important;
+    color: #22c55e !important;
+  }
+
+  .status-declined, .status-cancelled {
+    background: rgba(239,68,68,.2) !important;
+    border-color: rgba(239,68,68,.4) !important;
+    color: #ef4444 !important;
+  }
 </style>
 {% endblock %}
 
@@ -325,9 +344,97 @@
         <a class="bf-btn block" href="{{ url_for('wallet_home') }}">
           Wallet & Payments
         </a>
+        <a class="bf-btn block" href="{{ url_for('bookme_requests') }}">
+          Booking Requests
+          {% if incoming_requests_count > 0 %}
+            <span style="margin-left: 8px; background: rgba(251,191,36,.2); color: #fbbf24; padding: 2px 8px; border-radius: 999px; font-size: .8rem; font-weight: 700;">{{ incoming_requests_count }}</span>
+          {% endif %}
+        </a>
+        <a class="bf-btn block" href="{{ url_for('vaults_index') }}" style="background: linear-gradient(135deg, rgba(6,182,212,.3), rgba(34,197,94,.2)); border-color: rgba(6,182,212,.5);">
+          💰 Project Vaults
+        </a>
       </div>
     </div>
 
+    <!-- Booking Requests -->
+    {% if incoming_requests_count > 0 or outgoing_requests|length > 0 %}
+    <div class="bf-card span-8">
+      <h3>
+        Booking Requests
+        {% if incoming_requests_count > 0 %}
+          <span style="margin-left: 8px; background: rgba(251,191,36,.2); color: #fbbf24; padding: 2px 8px; border-radius: 999px; font-size: .8rem; font-weight: 700;">{{ incoming_requests_count }} pending</span>
+        {% endif %}
+      </h3>
+      
+      {% if incoming_requests|length > 0 %}
+        <div class="bf-list" style="margin-bottom: 16px;">
+          <div style="opacity: .8; font-size: .9rem; margin-bottom: 12px; font-weight: 600;">Incoming Requests</div>
+          {% for req in incoming_requests %}
+            <div class="bf-row">
+              <div class="left">
+                <div class="title">
+                  @{{ req.client.username }}
+                  <span class="bf-chip" style="background: rgba(251,191,36,.2); border-color: rgba(251,191,36,.4); color: #fbbf24;">Pending</span>
+                </div>
+                <div class="meta">
+                  <strong>Time:</strong> {{ req.preferred_time }}<br>
+                  {% if req.message %}
+                    <strong>Message:</strong> {{ req.message[:60] }}{% if req.message|length > 60 %}...{% endif %}
+                  {% endif %}
+                </div>
+              </div>
+              <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                <a href="{{ url_for('bookme_request_accept_confirm', req_id=req.id) }}" class="bf-btn" style="font-size: .9rem; padding: 8px 12px;">Accept</a>
+                <form method="post" action="{{ url_for('bookme_request_status', req_id=req.id) }}" style="display: inline;">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <input type="hidden" name="action" value="decline">
+                  <button type="submit" class="bf-btn" style="font-size: .9rem; padding: 8px 12px; background: rgba(239,68,68,.2); border-color: rgba(239,68,68,.4); color: #ef4444;">Decline</button>
+                </form>
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+        {% if incoming_requests_count > incoming_requests|length %}
+          <div style="margin-top: 12px;">
+            <a class="bf-btn block" href="{{ url_for('bookme_requests') }}">View All Requests ({{ incoming_requests_count }} total)</a>
+          </div>
+        {% else %}
+          <div style="margin-top: 12px;">
+            <a class="bf-btn block" href="{{ url_for('bookme_requests') }}">Manage All Requests</a>
+          </div>
+        {% endif %}
+      {% elif outgoing_requests|length > 0 %}
+        <div class="bf-list">
+          <div style="opacity: .8; font-size: .9rem; margin-bottom: 12px; font-weight: 600;">Your Requests</div>
+          {% for req in outgoing_requests[:3] %}
+            <div class="bf-row">
+              <div class="left">
+                <div class="title">
+                  @{{ req.provider.username }}
+                  <span class="bf-chip 
+                    {% if req.status == BookingStatus.pending %}status-pending
+                    {% elif req.status == BookingStatus.accepted %}status-accepted
+                    {% elif req.status == BookingStatus.declined %}status-declined
+                    {% endif %}">
+                    {{ req.status.value|title }}
+                  </span>
+                </div>
+                <div class="meta">{{ req.preferred_time }}</div>
+              </div>
+              <a class="bf-btn" href="{{ url_for('bookme_requests') }}" style="font-size: .9rem; padding: 8px 12px;">View</a>
+            </div>
+          {% endfor %}
+          <div style="margin-top: 12px;">
+            <a class="bf-btn block" href="{{ url_for('bookme_requests') }}">View All Your Requests</a>
+          </div>
+        </div>
+      {% else %}
+        <div style="padding: 20px; text-align: center; opacity: .7;">
+          No booking requests yet. <a href="{{ url_for('bookme_search') }}" style="color: #4de3ff;">Browse BookMe</a> to receive requests.
+        </div>
+      {% endif %}
+    </div>
+    {% else %}
     <!-- Recent Activity / Info -->
     <div class="bf-card span-8">
       <h3>Getting Started</h3>
@@ -360,8 +467,16 @@
           </div>
           <a class="bf-btn" href="{{ url_for('producer_catalog_detail', username=current_user.username) }}">View Profile</a>
         </div>
+        <div class="bf-row">
+          <div class="left">
+            <div class="title">Enable BookMe Booking</div>
+            <div class="meta">Set up your BookMe profile to receive booking requests from artists</div>
+          </div>
+          <a class="bf-btn" href="{{ url_for('bookme_profile') }}">Setup BookMe</a>
+        </div>
       </div>
     </div>
+    {% endif %}
 
     <!-- Marketplace Stats -->
     <div class="bf-card span-6">

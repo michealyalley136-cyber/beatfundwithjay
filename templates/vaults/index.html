@@ -1,0 +1,488 @@
+{% extends "base.html" %}
+{% block title %}Project Vaults · BeatFund{% endblock %}
+
+{% block extra_head %}
+<style>
+  .vaults-page {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 20px 16px;
+  }
+
+  .vaults-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 28px;
+    flex-wrap: wrap;
+    gap: 16px;
+  }
+
+  .vaults-title {
+    font-size: 1.75rem;
+    font-weight: 800;
+    margin: 0;
+  }
+
+  .vaults-subtitle {
+    opacity: .8;
+    font-size: .95rem;
+    margin-top: 6px;
+  }
+
+  .vault-btn {
+    padding: 12px 24px;
+    border-radius: 12px;
+    text-decoration: none;
+    font-weight: 600;
+    background: linear-gradient(135deg, rgba(6,182,212,.4), rgba(34,197,94,.3));
+    border: 1px solid rgba(6,182,212,.5);
+    color: #fff;
+    transition: all 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .vault-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(6,182,212,.3);
+  }
+
+  .vaults-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 20px;
+    margin-bottom: 32px;
+  }
+
+  .vault-card {
+    border: 1px solid rgba(255,255,255,.12);
+    background: rgba(255,255,255,.06);
+    border-radius: 18px;
+    padding: 24px;
+    transition: all 0.2s ease;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .vault-card:hover {
+    border-color: rgba(6,182,212,.4);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(6,182,212,.2);
+  }
+
+  .vault-card.completed {
+    background: linear-gradient(135deg, rgba(34,197,94,.15), rgba(6,182,212,.1));
+    border-color: rgba(34,197,94,.4);
+  }
+
+  .vault-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 16px;
+  }
+
+  .vault-name {
+    font-size: 1.3rem;
+    font-weight: 700;
+    margin: 0 0 4px;
+  }
+
+  .vault-status {
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: .8rem;
+    font-weight: 600;
+  }
+
+  .vault-status.active {
+    background: rgba(251,191,36,.2);
+    border: 1px solid rgba(251,191,36,.4);
+    color: #fbbf24;
+  }
+
+  .vault-status.completed {
+    background: rgba(34,197,94,.2);
+    border: 1px solid rgba(34,197,94,.4);
+    color: #22c55e;
+  }
+
+  .vault-progress {
+    margin: 16px 0;
+  }
+
+  .vault-progress-bar {
+    width: 100%;
+    height: 8px;
+    background: rgba(0,0,0,.3);
+    border-radius: 999px;
+    overflow: hidden;
+    margin-bottom: 8px;
+  }
+
+  .vault-progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #4de3ff, #a855f7);
+    border-radius: 999px;
+    transition: width 0.3s ease;
+  }
+
+  .vault-progress-text {
+    display: flex;
+    justify-content: space-between;
+    font-size: .9rem;
+    opacity: .8;
+  }
+
+  .vault-amounts {
+    display: flex;
+    justify-content: space-between;
+    margin: 16px 0;
+    padding: 12px;
+    background: rgba(0,0,0,.2);
+    border-radius: 10px;
+  }
+
+  .vault-amount {
+    text-align: center;
+  }
+
+  .vault-amount-label {
+    font-size: .8rem;
+    opacity: .7;
+    margin-bottom: 4px;
+  }
+
+  .vault-amount-value {
+    font-size: 1.2rem;
+    font-weight: 700;
+    color: #4de3ff;
+  }
+
+  .vault-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 16px;
+    flex-wrap: wrap;
+  }
+
+  .vault-btn-small {
+    padding: 8px 14px;
+    border-radius: 10px;
+    text-decoration: none;
+    font-size: .9rem;
+    font-weight: 600;
+    background: rgba(255,255,255,.08);
+    border: 1px solid rgba(255,255,255,.12);
+    color: #cbd5f5;
+    transition: all 0.2s ease;
+    flex: 1;
+    text-align: center;
+  }
+
+  .vault-btn-small:hover {
+    background: rgba(255,255,255,.12);
+  }
+
+  .vault-btn-small.primary {
+    background: linear-gradient(135deg, rgba(6,182,212,.3), rgba(34,197,94,.2));
+    border-color: rgba(6,182,212,.5);
+    color: #fff;
+  }
+
+  .empty-state {
+    text-align: center;
+    padding: 60px 20px;
+    border: 1px solid rgba(255,255,255,.12);
+    background: rgba(255,255,255,.06);
+    border-radius: 18px;
+  }
+
+  .empty-state-icon {
+    font-size: 4rem;
+    margin-bottom: 16px;
+  }
+
+  .empty-state-title {
+    font-size: 1.5rem;
+    font-weight: 700;
+    margin-bottom: 8px;
+  }
+
+  .empty-state-text {
+    opacity: .8;
+    margin-bottom: 24px;
+  }
+
+  .wallet-info {
+    background: rgba(6,182,212,.1);
+    border: 1px solid rgba(6,182,212,.3);
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 24px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .wallet-label {
+    opacity: .8;
+    font-size: .9rem;
+  }
+
+  .wallet-value {
+    font-size: 1.5rem;
+    font-weight: 800;
+    background: linear-gradient(135deg, #4de3ff, #a855f7);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  .form-group {
+    margin-bottom: 0;
+  }
+
+  .form-label {
+    display: block;
+    margin-bottom: 6px;
+    font-weight: 600;
+    font-size: .9rem;
+  }
+
+  .form-input {
+    width: 100%;
+    padding: 10px 14px;
+    border-radius: 8px;
+    background: rgba(255,255,255,.08);
+    border: 1px solid rgba(255,255,255,.12);
+    color: #fff;
+    font-size: .95rem;
+    box-sizing: border-box;
+  }
+
+  .form-input:focus {
+    outline: none;
+    border-color: rgba(6,182,212,.5);
+  }
+
+  .quick-amount-btn {
+    padding: 4px 8px;
+    border-radius: 6px;
+    border: 1px solid rgba(255,255,255,.2);
+    background: rgba(255,255,255,.08);
+    color: #cbd5f5;
+    font-size: .75rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .quick-amount-btn:hover {
+    background: rgba(6,182,212,.2);
+    border-color: rgba(6,182,212,.4);
+    color: #4de3ff;
+  }
+
+  .btn {
+    padding: 12px 20px;
+    border-radius: 10px;
+    text-decoration: none;
+    font-weight: 600;
+    font-size: .95rem;
+    text-align: center;
+    transition: all 0.2s ease;
+    border: none;
+    cursor: pointer;
+  }
+
+  .btn-primary {
+    background: linear-gradient(135deg, rgba(6,182,212,.4), rgba(34,197,94,.3));
+    border: 1px solid rgba(6,182,212,.5);
+    color: #fff;
+  }
+
+  .btn-primary:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(6,182,212,.3);
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="vaults-page">
+  <div class="vaults-header">
+    <div>
+      <h1 class="vaults-title">Project Vaults</h1>
+      <p class="vaults-subtitle">Save for your next creative project — set goals and fund them automatically</p>
+    </div>
+    <a href="{{ url_for('vaults_create') }}" class="vault-btn">+ Create Vault</a>
+  </div>
+
+  <div class="wallet-info">
+    <span class="wallet-label">Your Wallet Balance</span>
+    <span class="wallet-value">${{ '%.2f'|format(wallet_balance) }}</span>
+  </div>
+
+  {% if vaults %}
+    <div class="vault-card" style="margin-bottom: 24px;">
+      <h3 style="margin: 0 0 16px; font-size: 1.2rem; font-weight: 700;">Quick Fund</h3>
+      <form method="POST" action="{{ url_for('vaults_fund', vault_id=0) }}" id="quick-fund-form" style="display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 12px; align-items: end;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="form-group" style="margin-bottom: 0;">
+          <label class="form-label" for="quick_vault_id" style="font-size: .9rem; margin-bottom: 6px;">Select Vault</label>
+          <select id="quick_vault_id" name="vault_id" class="form-input" required style="width: 100%;">
+            <option value="">Choose a vault...</option>
+            {% for v in vaults %}
+              {% if not v.is_completed and not v.is_locked_now() and v.remaining_dollars > 0 %}
+                <option value="{{ v.id }}" data-remaining="{{ v.remaining_dollars }}">
+                  {{ v.name }} ({{ '%.0f'|format(v.progress_percent) }}% - ${{ '%.2f'|format(v.remaining_dollars) }} remaining)
+                </option>
+              {% endif %}
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group" style="margin-bottom: 0;">
+          <label class="form-label" for="quick_amount" style="font-size: .9rem; margin-bottom: 6px;">Amount ($)</label>
+          <input
+            type="number"
+            id="quick_amount"
+            name="amount"
+            class="form-input"
+            placeholder="0.00"
+            step="0.01"
+            min="0.01"
+            required
+            style="width: 100%;"
+          >
+          <div style="display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap;">
+            <button type="button" class="quick-amount-btn" data-percent="10">10%</button>
+            <button type="button" class="quick-amount-btn" data-percent="25">25%</button>
+            <button type="button" class="quick-amount-btn" data-percent="50">50%</button>
+            <button type="button" class="quick-amount-btn" data-percent="100">Max</button>
+          </div>
+        </div>
+        <button type="submit" class="btn btn-primary" style="height: fit-content;">Fund</button>
+      </form>
+    </div>
+  {% endif %}
+
+  {% if vaults %}
+    <div class="vaults-grid">
+      {% for vault in vaults %}
+        <div class="vault-card {% if vault.is_completed %}completed{% endif %}">
+          <div class="vault-card-header">
+            <div>
+              <h3 class="vault-name">{{ vault.name }}</h3>
+              {% if vault.description %}
+                <p style="opacity: .7; font-size: .9rem; margin: 4px 0 0;">{{ vault.description[:60] }}{% if vault.description|length > 60 %}...{% endif %}</p>
+              {% endif %}
+            </div>
+            <span class="vault-status {% if vault.is_completed %}completed{% else %}active{% endif %}">
+              {% if vault.is_completed %}✓ Completed{% else %}Active{% endif %}
+            </span>
+          </div>
+
+          <div class="vault-progress">
+            <div class="vault-progress-bar">
+              <div class="vault-progress-fill" style="width: {{ vault.progress_percent }}%"></div>
+            </div>
+            <div class="vault-progress-text">
+              <span>{{ '%.0f'|format(vault.progress_percent) }}% complete</span>
+              <span>${{ '%.2f'|format(vault.current_balance_dollars) }} / ${{ '%.2f'|format(vault.target_dollars) }}</span>
+            </div>
+          </div>
+
+          <div class="vault-amounts">
+            <div class="vault-amount">
+              <div class="vault-amount-label">Saved</div>
+              <div class="vault-amount-value">${{ '%.2f'|format(vault.current_balance_dollars) }}</div>
+            </div>
+            <div class="vault-amount">
+              <div class="vault-amount-label">Target</div>
+              <div class="vault-amount-value" style="color: #a855f7;">${{ '%.2f'|format(vault.target_dollars) }}</div>
+            </div>
+            <div class="vault-amount">
+              <div class="vault-amount-label">Remaining</div>
+              <div class="vault-amount-value" style="color: {% if vault.remaining_dollars > 0 %}#fbbf24{% else %}#22c55e{% endif %};">
+                ${{ '%.2f'|format(vault.remaining_dollars) }}
+              </div>
+            </div>
+          </div>
+
+          {% if vault.auto_fund_enabled %}
+            <div style="margin-top: 12px; padding: 8px; background: rgba(6,182,212,.1); border-radius: 8px; font-size: .85rem;">
+              🔄 Auto-funding: {{ vault.auto_fund_percent }}% on income
+            </div>
+          {% endif %}
+
+          <div class="vault-actions">
+            <a href="{{ url_for('vaults_detail', vault_id=vault.id) }}" class="vault-btn-small primary">View Details</a>
+            <a href="{{ url_for('vaults_settings', vault_id=vault.id) }}" class="vault-btn-small">Settings</a>
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="empty-state">
+      <div class="empty-state-icon">💰</div>
+      <div class="empty-state-title">No Vaults Yet</div>
+      <div class="empty-state-text">
+        Create your first project vault to start saving for your next creative project.<br>
+        Set a target and fund it manually or automatically from your wallet.
+      </div>
+      <a href="{{ url_for('vaults_create') }}" class="vault-btn">Create Your First Vault</a>
+    </div>
+  {% endif %}
+</div>
+
+<script>
+  // Quick fund form - update action URL when vault is selected
+  const quickFundForm = document.getElementById('quick-fund-form');
+  const quickVaultSelect = document.getElementById('quick_vault_id');
+  const quickAmountInput = document.getElementById('quick_amount');
+  const walletBalance = {{ wallet_balance }};
+
+  if (quickVaultSelect) {
+    quickVaultSelect.addEventListener('change', function() {
+      const vaultId = this.value;
+      if (vaultId) {
+        quickFundForm.action = "{{ url_for('vaults_fund', vault_id=0) }}".replace('/0', '/' + vaultId);
+        const remaining = parseFloat(this.options[this.selectedIndex].dataset.remaining);
+        quickAmountInput.max = Math.min(walletBalance, remaining).toFixed(2);
+      }
+    });
+  }
+
+  // Quick amount buttons for index page
+  document.querySelectorAll('#quick-fund-form .quick-amount-btn').forEach(btn => {
+    btn.addEventListener('click', function() {
+      const percent = parseFloat(this.dataset.percent);
+      const selectedOption = quickVaultSelect.options[quickVaultSelect.selectedIndex];
+      
+      if (!selectedOption.value) {
+        alert('Please select a vault first.');
+        return;
+      }
+      
+      const remaining = parseFloat(selectedOption.dataset.remaining);
+      const maxAmount = Math.min(walletBalance, remaining);
+      
+      let amount;
+      if (percent === 100) {
+        amount = maxAmount;
+      } else {
+        amount = (walletBalance * percent) / 100;
+        if (amount > remaining) {
+          amount = remaining;
+        }
+      }
+      
+      quickAmountInput.value = amount.toFixed(2);
+    });
+  });
+</script>
+{% endblock %}
+

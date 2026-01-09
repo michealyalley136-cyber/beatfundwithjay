@@ -118,12 +118,8 @@
                 {% if r.message %}<div class="meta">{{ r.message }}</div>{% endif %}
               </div>
               <div style="display:flex; gap:8px; flex-wrap:wrap;">
-                <form method="post" action="{{ url_for('bookme_request_status', req_id=r.id) }}">
-                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                  <input type="hidden" name="action" value="accept">
-                  <button class="bf-btn primary" type="submit">Accept</button>
-                </form>
-                <form method="post" action="{{ url_for('bookme_request_status', req_id=r.id) }}">
+                <a href="{{ url_for('bookme_request_accept_confirm', req_id=r.id) }}" class="bf-btn primary" style="text-decoration: none;">Accept</a>
+                <form method="post" action="{{ url_for('bookme_request_status', req_id=r.id) }}" style="display:inline;">
                   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                   <input type="hidden" name="action" value="decline">
                   <button class="bf-btn" type="submit">Decline</button>
@@ -150,6 +146,9 @@
           Portfolio ({{ portfolio_count or 0 }})
         </a>
         <a class="bf-btn block" href="{{ url_for('market_index') }}">Marketplace</a>
+        <a class="bf-btn block" href="{{ url_for('vaults_index') }}" style="background: linear-gradient(135deg, rgba(6,182,212,.3), rgba(34,197,94,.2)); border-color: rgba(6,182,212,.5);">
+          💰 Project Vaults
+        </a>
       </div>
     </div>
 

@@ -901,6 +901,296 @@ app.jinja_env.globals["TicketType"] = TicketType
 
 
 # =========================================================
+# Social Media Manager Models
+# =========================================================
+class SMMClient(db.Model):
+    __tablename__ = "smm_client"
+    id = db.Column(db.Integer, primary_key=True)
+    smm_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    client_name = db.Column(db.String(200), nullable=False)
+    client_email = db.Column(db.String(255), nullable=True)
+    client_phone = db.Column(db.String(40), nullable=True)
+    platforms = db.Column(db.String(500), nullable=True)  # JSON: ["instagram", "twitter", "tiktok"]
+    notes = db.Column(db.Text, nullable=True)
+    is_active = db.Column(db.Boolean, nullable=False, default=True)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    smm = db.relationship("User", foreign_keys=[smm_id], backref=db.backref("smm_clients", lazy="dynamic"))
+
+
+class SMMPostStatus(str, enum.Enum):
+    draft = "draft"
+    scheduled = "scheduled"
+    pending_approval = "pending_approval"
+    approved = "approved"
+    changes_requested = "changes_requested"
+    published = "published"
+    cancelled = "cancelled"
+
+
+class SMMPost(db.Model):
+    __tablename__ = "smm_post"
+    id = db.Column(db.Integer, primary_key=True)
+    smm_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    client_id = db.Column(db.Integer, db.ForeignKey("smm_client.id"), nullable=True, index=True)
+    
+    platform = db.Column(db.String(50), nullable=False)  # instagram, twitter, tiktok, etc.
+    content = db.Column(db.Text, nullable=False)
+    scheduled_datetime = db.Column(db.DateTime, nullable=True)
+    status = db.Column(db.Enum(SMMPostStatus), nullable=False, default=SMMPostStatus.draft)
+    
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    published_at = db.Column(db.DateTime, nullable=True)
+    
+    smm = db.relationship("User", foreign_keys=[smm_id], backref=db.backref("smm_posts", lazy="dynamic"))
+    client = db.relationship("SMMClient", backref=db.backref("posts", lazy="dynamic"))
+
+
+class SMMAsset(db.Model):
+    __tablename__ = "smm_asset"
+    id = db.Column(db.Integer, primary_key=True)
+    smm_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    client_id = db.Column(db.Integer, db.ForeignKey("smm_client.id"), nullable=True, index=True)
+    post_id = db.Column(db.Integer, db.ForeignKey("smm_post.id"), nullable=True, index=True)
+    
+    asset_type = db.Column(db.String(50), nullable=False)  # image, video, link
+    stored_filename = db.Column(db.String(255), nullable=True)
+    external_url = db.Column(db.String(500), nullable=True)
+    title = db.Column(db.String(200), nullable=True)
+    description = db.Column(db.Text, nullable=True)
+    
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    
+    smm = db.relationship("User", foreign_keys=[smm_id], backref=db.backref("smm_assets", lazy="dynamic"))
+    client = db.relationship("SMMClient", backref=db.backref("assets", lazy="dynamic"))
+    post = db.relationship("SMMPost", backref=db.backref("assets", lazy="dynamic"))
+
+
+class SMMApproval(db.Model):
+    __tablename__ = "smm_approval"
+    id = db.Column(db.Integer, primary_key=True)
+    post_id = db.Column(db.Integer, db.ForeignKey("smm_post.id"), nullable=False, index=True)
+    client_id = db.Column(db.Integer, db.ForeignKey("smm_client.id"), nullable=False, index=True)
+    
+    status = db.Column(db.String(50), nullable=False, default="pending")  # pending, approved, changes_requested
+    feedback = db.Column(db.Text, nullable=True)
+    requested_changes = db.Column(db.Text, nullable=True)
+    
+    submitted_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    reviewed_at = db.Column(db.DateTime, nullable=True)
+    
+    post = db.relationship("SMMPost", backref=db.backref("approvals", lazy="dynamic"))
+    client = db.relationship("SMMClient", backref=db.backref("approvals", lazy="dynamic"))
+
+
+class SMMAnalytics(db.Model):
+    __tablename__ = "smm_analytics"
+    id = db.Column(db.Integer, primary_key=True)
+    smm_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    client_id = db.Column(db.Integer, db.ForeignKey("smm_client.id"), nullable=False, index=True)
+    platform = db.Column(db.String(50), nullable=False)
+    
+    period_start = db.Column(db.Date, nullable=False)
+    period_end = db.Column(db.Date, nullable=False)
+    
+    followers = db.Column(db.Integer, nullable=True, default=0)
+    reach = db.Column(db.Integer, nullable=True, default=0)
+    engagement = db.Column(db.Integer, nullable=True, default=0)
+    impressions = db.Column(db.Integer, nullable=True, default=0)
+    likes = db.Column(db.Integer, nullable=True, default=0)
+    comments = db.Column(db.Integer, nullable=True, default=0)
+    shares = db.Column(db.Integer, nullable=True, default=0)
+    
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    smm = db.relationship("User", foreign_keys=[smm_id], backref=db.backref("smm_analytics", lazy="dynamic"))
+    client = db.relationship("SMMClient", backref=db.backref("analytics", lazy="dynamic"))
+
+
+class SMMCalendarItem(db.Model):
+    __tablename__ = "smm_calendar_item"
+    id = db.Column(db.Integer, primary_key=True)
+    smm_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    client_id = db.Column(db.Integer, db.ForeignKey("smm_client.id"), nullable=True, index=True)
+    post_id = db.Column(db.Integer, db.ForeignKey("smm_post.id"), nullable=True, index=True)
+    
+    scheduled_date = db.Column(db.Date, nullable=False, index=True)
+    scheduled_time = db.Column(db.Time, nullable=True)
+    title = db.Column(db.String(200), nullable=False)
+    description = db.Column(db.Text, nullable=True)
+    platform = db.Column(db.String(50), nullable=True)
+    
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    
+    smm = db.relationship("User", foreign_keys=[smm_id], backref=db.backref("smm_calendar_items", lazy="dynamic"))
+    client = db.relationship("SMMClient", backref=db.backref("calendar_items", lazy="dynamic"))
+    post = db.relationship("SMMPost", backref=db.backref("calendar_items", lazy="dynamic"))
+
+
+class SMMAvailability(db.Model):
+    __tablename__ = "smm_availability"
+    id = db.Column(db.Integer, primary_key=True)
+    smm_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    
+    day_of_week = db.Column(db.Integer, nullable=False)  # 0=Monday, 6=Sunday
+    start_time = db.Column(db.Time, nullable=True)
+    end_time = db.Column(db.Time, nullable=True)
+    is_available = db.Column(db.Boolean, nullable=False, default=True)
+    
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    smm = db.relationship("User", foreign_keys=[smm_id], backref=db.backref("smm_availability", lazy="dynamic"))
+
+
+class SMMReview(db.Model):
+    __tablename__ = "smm_review"
+    id = db.Column(db.Integer, primary_key=True)
+    smm_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    client_id = db.Column(db.Integer, db.ForeignKey("smm_client.id"), nullable=False, index=True)
+    
+    rating = db.Column(db.Integer, nullable=False)  # 1-5
+    comment = db.Column(db.Text, nullable=True)
+    
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    
+    smm = db.relationship("User", foreign_keys=[smm_id], backref=db.backref("smm_reviews", lazy="dynamic"))
+    client = db.relationship("SMMClient", backref=db.backref("reviews", lazy="dynamic"))
+
+
+app.jinja_env.globals["SMMPostStatus"] = SMMPostStatus
+
+
+# =========================================================
+# Project Vault Models
+# =========================================================
+class ProjectVault(db.Model):
+    __tablename__ = "project_vault"
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    
+    name = db.Column(db.String(200), nullable=False)
+    description = db.Column(db.Text, nullable=True)
+    target_cents = db.Column(db.Integer, nullable=False)  # Target amount in cents
+    current_balance_cents = db.Column(db.Integer, nullable=False, default=0)
+    
+    # Auto-funding settings
+    auto_fund_enabled = db.Column(db.Boolean, nullable=False, default=False)
+    auto_fund_percent = db.Column(db.Integer, nullable=True)  # Percentage of incoming funds (0-100)
+    auto_fund_min_cents = db.Column(db.Integer, nullable=True)  # Minimum amount before auto-funding
+    auto_fund_frequency = db.Column(db.String(50), nullable=True)  # daily, weekly, monthly, on_income
+    
+    # Lock settings
+    is_locked = db.Column(db.Boolean, nullable=False, default=False)
+    lock_until_date = db.Column(db.DateTime, nullable=True)  # Lock until specific date
+    lock_until_goal = db.Column(db.Boolean, nullable=False, default=False)  # Lock until goal reached
+    
+    is_active = db.Column(db.Boolean, nullable=False, default=True)
+    is_completed = db.Column(db.Boolean, nullable=False, default=False)
+    
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    completed_at = db.Column(db.DateTime, nullable=True)
+    
+    user = db.relationship("User", backref=db.backref("project_vaults", lazy="dynamic"))
+    
+    @property
+    def target_dollars(self):
+        return self.target_cents / 100.0
+    
+    @property
+    def current_balance_dollars(self):
+        return self.current_balance_cents / 100.0
+    
+    @property
+    def progress_percent(self):
+        if self.target_cents == 0:
+            return 0
+        return min(100, (self.current_balance_cents / self.target_cents) * 100)
+    
+    @property
+    def remaining_cents(self):
+        return max(0, self.target_cents - self.current_balance_cents)
+    
+    @property
+    def remaining_dollars(self):
+        return self.remaining_cents / 100.0
+    
+    def is_locked_now(self) -> bool:
+        """Check if vault is currently locked"""
+        if not self.is_locked:
+            return False
+        
+        # Check date-based lock
+        if self.lock_until_date:
+            if datetime.utcnow() < self.lock_until_date:
+                return True
+            else:
+                # Auto-unlock if date passed
+                self.is_locked = False
+                self.lock_until_date = None
+                db.session.commit()
+                return False
+        
+        # Check goal-based lock
+        if self.lock_until_goal:
+            if not self.is_completed:
+                return True
+            else:
+                # Auto-unlock if goal reached
+                self.is_locked = False
+                self.lock_until_goal = False
+                db.session.commit()
+                return False
+        
+        return False
+
+
+class VaultTransaction(db.Model):
+    __tablename__ = "vault_transaction"
+    id = db.Column(db.Integer, primary_key=True)
+    vault_id = db.Column(db.Integer, db.ForeignKey("project_vault.id"), nullable=False, index=True)
+    
+    amount_cents = db.Column(db.Integer, nullable=False)
+    transaction_type = db.Column(db.String(50), nullable=False)  # manual, auto_fund, withdrawal
+    source = db.Column(db.String(100), nullable=True)  # wallet, external, etc.
+    notes = db.Column(db.Text, nullable=True)
+    
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    
+    vault = db.relationship("ProjectVault", backref=db.backref("transactions", lazy="dynamic"))
+
+
+# Roles that can use project vaults
+VAULT_ELIGIBLE_ROLES: set[RoleEnum] = {
+    RoleEnum.artist,
+    RoleEnum.producer,
+    RoleEnum.studio,
+    RoleEnum.videographer,
+    RoleEnum.designer,
+    RoleEnum.engineer,
+    RoleEnum.photographer,
+    RoleEnum.event_planner,
+    RoleEnum.dj,
+    RoleEnum.live_sound_engineer,
+    RoleEnum.mix_master_engineer,
+    RoleEnum.lighting_designer,
+    RoleEnum.stage_set_designer,
+    RoleEnum.brand_pr_consultant,
+    RoleEnum.social_media_manager,
+}
+
+def is_vault_eligible(user: User) -> bool:
+    """Check if user's role is eligible for project vaults"""
+    if not user or not user.role:
+        return False
+    return user.role in VAULT_ELIGIBLE_ROLES
+
+
+# =========================================================
 # Login loader & helpers
 # =========================================================
 @login_manager.user_loader
@@ -975,11 +1265,99 @@ def wallet_balance_cents(wallet: Wallet) -> int:
     return total
 
 
-def post_ledger(wallet: Wallet, entry_type: EntryType, amount_cents: int, meta: str = "") -> LedgerEntry:
+def fund_vault(vault: ProjectVault, amount_cents: int, transaction_type: str = "manual", notes: str = None) -> bool:
+    """Fund a vault from wallet balance. Returns True if successful."""
+    if amount_cents <= 0:
+        return False
+    
+    # Check if vault is locked
+    if vault.is_locked_now():
+        return False
+    
+    user_wallet = get_or_create_wallet(vault.user_id, commit=False)
+    balance_cents = wallet_balance_cents(user_wallet)
+    
+    if balance_cents < amount_cents:
+        return False
+    
+    try:
+        with db_txn():
+            # Deduct from wallet (skip auto-funding to avoid recursion)
+            post_ledger(user_wallet, EntryType.purchase_spend, amount_cents, meta=f"fund vault '{vault.name[:80]}'", skip_auto_fund=True)
+            
+            # Add to vault
+            vault.current_balance_cents += amount_cents
+            vault.updated_at = datetime.utcnow()
+            
+            # Check if target reached
+            if vault.current_balance_cents >= vault.target_cents and not vault.is_completed:
+                vault.is_completed = True
+                vault.completed_at = datetime.utcnow()
+            
+            # Create transaction record
+            txn = VaultTransaction(
+                vault_id=vault.id,
+                amount_cents=amount_cents,
+                transaction_type=transaction_type,
+                source="wallet",
+                notes=notes
+            )
+            db.session.add(txn)
+            
+        return True
+    except Exception:
+        db.session.rollback()
+        return False
+
+
+def process_auto_funding(user_id: int, income_cents: int) -> None:
+    """Process automatic funding for all active vaults when user receives income"""
+    if income_cents <= 0:
+        return
+    
+    vaults = ProjectVault.query.filter_by(
+        user_id=user_id,
+        is_active=True,
+        is_completed=False,
+        auto_fund_enabled=True
+    ).all()
+    
+    for vault in vaults:
+        if vault.auto_fund_frequency != "on_income":
+            continue
+        
+        # Check minimum threshold
+        if vault.auto_fund_min_cents and income_cents < vault.auto_fund_min_cents:
+            continue
+        
+        # Calculate auto-fund amount
+        if vault.auto_fund_percent:
+            auto_amount_cents = int((income_cents * vault.auto_fund_percent) / 100)
+        else:
+            auto_amount_cents = income_cents
+        
+        # Don't exceed remaining target
+        if vault.current_balance_cents + auto_amount_cents > vault.target_cents:
+            auto_amount_cents = vault.remaining_cents
+        
+        if auto_amount_cents > 0:
+            fund_vault(vault, auto_amount_cents, transaction_type="auto_fund", notes=f"Auto-funded from income")
+
+
+def post_ledger(wallet: Wallet, entry_type: EntryType, amount_cents: int, meta: str = "", skip_auto_fund: bool = False) -> LedgerEntry:
     if amount_cents <= 0:
         raise ValueError("amount must be positive cents")
     entry = LedgerEntry(wallet_id=wallet.id, entry_type=entry_type, amount_cents=amount_cents, meta=meta)
     db.session.add(entry)
+    
+    # Trigger auto-funding for income types (unless explicitly skipped)
+    if not skip_auto_fund and entry_type in (EntryType.sale_income, EntryType.transfer_in, EntryType.deposit):
+        try:
+            process_auto_funding(wallet.user_id, amount_cents)
+        except Exception:
+            # Don't fail the ledger entry if auto-funding fails
+            pass
+    
     return entry
 
 
@@ -1109,11 +1487,16 @@ def _bootstrap_schema_once():
 # =========================================================
 @app.route("/")
 def home():
+    if current_user.is_authenticated:
+        return redirect(url_for("route_to_dashboard"))
     return render_template("home.html")
 
 
 @app.route("/register", methods=["GET", "POST"])
 def register():
+    if current_user.is_authenticated:
+        return redirect(url_for("route_to_dashboard"))
+    
     if request.method == "POST":
         full_name = (request.form.get("name") or "").strip()
         artist_name = (request.form.get("artist_name") or "").strip()
@@ -1224,6 +1607,9 @@ def _clear_failed_logins(remote_addr: str) -> None:
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
+    if current_user.is_authenticated:
+        return redirect(url_for("route_to_dashboard"))
+    
     if request.method == "POST":
         remote_addr = request.remote_addr or "unknown"
 
@@ -2284,6 +2670,95 @@ def provider_portfolio_public(username):
     )
 
 
+@app.route("/bookme/request/<int:provider_id>/confirm", methods=["GET", "POST"])
+@login_required
+def bookme_request_confirm(provider_id):
+    """Confirmation page for booking request"""
+    provider = User.query.get_or_404(provider_id)
+
+    if not is_service_provider(provider):
+        flash("This user is not available for BookMe bookings.", "error")
+        return redirect(url_for("bookme_search"))
+
+    # Check if profile is active (visible) - inactive profiles can't receive bookings
+    prof = BookMeProfile.query.filter_by(user_id=provider.id).first()
+    if prof and not prof.is_visible:
+        flash("This studio profile is currently inactive and not accepting new bookings. You can still follow and view their portfolio.", "error")
+        return redirect(url_for("bookme_search"))
+
+    if request.method == "GET":
+        # Get form data from session or query params
+        msg = request.args.get("message", "").strip()
+        pref = request.args.get("preferred_time", "").strip()
+        
+        if not pref:
+            flash("Please choose a date and time slot.", "error")
+            return redirect(url_for("bookme_request", provider_id=provider_id))
+        
+        # Check if the requested time is blocked (for studios)
+        time_blocked = False
+        if provider.role == RoleEnum.studio:
+            try:
+                if " " in pref:
+                    date_part = pref.split(" ", 1)[0]
+                    check_date = datetime.strptime(date_part, "%Y-%m-%d").date()
+                else:
+                    check_date = datetime.utcnow().date()
+                
+                if is_time_blocked(provider_id, check_date, pref):
+                    time_blocked = True
+            except (ValueError, AttributeError):
+                pass
+
+        return render_template(
+            "bookme_request_confirm.html",
+            provider=provider,
+            message=msg,
+            preferred_time=pref,
+            time_blocked=time_blocked,
+            BookingStatus=BookingStatus,
+        )
+
+    # POST - process confirmation
+    confirmed = request.form.get("confirmed") == "true"
+    if not confirmed:
+        flash("Please confirm your booking request.", "error")
+        return redirect(url_for("bookme_request", provider_id=provider_id))
+
+    msg = (request.form.get("message") or "").strip()
+    pref = (request.form.get("preferred_time") or "").strip()
+
+    if not pref:
+        flash("Please choose a date and time slot.", "error")
+        return redirect(url_for("bookme_request", provider_id=provider_id))
+    
+    # Check if the requested time is blocked (for studios)
+    if provider.role == RoleEnum.studio:
+        try:
+            if " " in pref:
+                date_part = pref.split(" ", 1)[0]
+                check_date = datetime.strptime(date_part, "%Y-%m-%d").date()
+            else:
+                check_date = datetime.utcnow().date()
+            
+            if is_time_blocked(provider_id, check_date, pref):
+                flash("This time slot is blocked and not available for booking.", "error")
+                return redirect(url_for("bookme_request", provider_id=provider_id))
+        except (ValueError, AttributeError):
+            pass
+
+    req = BookingRequest(
+        provider_id=provider.id,
+        client_id=current_user.id,
+        message=msg,
+        preferred_time=pref,
+    )
+    db.session.add(req)
+    db.session.commit()
+    flash("Booking request sent.", "success")
+    return redirect(url_for("bookme_requests"))
+
+
 @app.route("/bookme/request/<int:provider_id>", methods=["GET", "POST"])
 @login_required
 def bookme_request(provider_id):
@@ -2300,6 +2775,7 @@ def bookme_request(provider_id):
         return redirect(url_for("bookme_search"))
 
     if request.method == "POST":
+        # Redirect to confirmation page instead of processing directly
         msg = (request.form.get("message") or "").strip()
         pref = (request.form.get("preferred_time") or "").strip()
 
@@ -2307,34 +2783,8 @@ def bookme_request(provider_id):
             flash("Please choose a date and time slot.", "error")
             return redirect(url_for("bookme_request", provider_id=provider_id))
         
-        # Check if the requested time is blocked (for studios)
-        if provider.role == RoleEnum.studio:
-            try:
-                # Try to parse the preferred time to extract date
-                if " " in pref:
-                    date_part = pref.split(" ", 1)[0]
-                    check_date = datetime.strptime(date_part, "%Y-%m-%d").date()
-                else:
-                    # If no date in preferred_time, use today as fallback
-                    check_date = datetime.utcnow().date()
-                
-                if is_time_blocked(provider_id, check_date, pref):
-                    flash("This time slot is blocked and not available for booking.", "error")
-                    return redirect(url_for("bookme_request", provider_id=provider_id))
-            except (ValueError, AttributeError):
-                # If we can't parse, continue (let the studio handle it manually)
-                pass
-
-        req = BookingRequest(
-            provider_id=provider.id,
-            client_id=current_user.id,
-            message=msg,
-            preferred_time=pref,
-        )
-        db.session.add(req)
-        db.session.commit()
-        flash("Booking request sent.", "success")
-        return redirect(url_for("bookme_requests"))
+        # Redirect to confirmation with form data
+        return redirect(url_for("bookme_request_confirm", provider_id=provider_id, message=msg, preferred_time=pref))
 
     return render_template("bookme_request.html", provider=provider, BookingStatus=BookingStatus)
 
@@ -2384,6 +2834,40 @@ def bookme_requests():
     )
 
 
+@app.route("/bookme/requests/<int:req_id>/accept/confirm", methods=["GET"])
+@login_required
+def bookme_request_accept_confirm(req_id):
+    """Confirmation page for accepting booking request"""
+    req = BookingRequest.query.get_or_404(req_id)
+    
+    if current_user.id != req.provider_id:
+        flash("You are not allowed to do that.", "error")
+        return redirect(url_for("bookme_requests"))
+    
+    if req.status != BookingStatus.pending:
+        flash("This request is no longer pending.", "error")
+        return redirect(url_for("bookme_requests"))
+    
+    # Check for conflicts
+    conflict = (
+        BookingRequest.query
+        .filter(
+            BookingRequest.id != req.id,
+            BookingRequest.provider_id == req.provider_id,
+            BookingRequest.preferred_time == req.preferred_time,
+            BookingRequest.status == BookingStatus.accepted,
+        )
+        .first()
+    )
+    
+    return render_template(
+        "bookme_accept_confirm.html",
+        request=req,
+        conflict=conflict,
+        HOLD_FEE_CENTS=HOLD_FEE_CENTS,
+    )
+
+
 @app.route("/bookme/requests/<int:req_id>/status", methods=["POST"])
 @login_required
 def bookme_request_status(req_id):
@@ -2406,6 +2890,12 @@ def bookme_request_status(req_id):
             flash("Booking request declined." if updated else "This request is no longer pending.",
                   "success" if updated else "error")
             return redirect(url_for("bookme_requests"))
+
+        # Accept - require confirmation
+        confirmed = request.form.get("confirmed") == "true"
+        if not confirmed:
+            flash("Please confirm your acceptance on the confirmation page.", "error")
+            return redirect(url_for("bookme_request_accept_confirm", req_id=req_id))
 
         # Accept (atomic state change)
         updated = (
@@ -2953,9 +3443,10 @@ def market_my_purchases():
     return render_template("market_my_purchases.html", purchases=purchases)
 
 
-@app.route("/market/buy/<int:beat_id>", methods=["POST"])
+@app.route("/market/confirm/<int:beat_id>", methods=["GET"])
 @login_required
-def market_buy(beat_id):
+def market_confirm(beat_id):
+    """Purchase confirmation page - shows purchase details before processing"""
     if not require_kyc_approved():
         return redirect(url_for("kyc"))
 
@@ -2971,11 +3462,65 @@ def market_buy(beat_id):
         return redirect(url_for("market_index"))
 
     if seller.id == current_user.id:
-        flash("You can’t buy your own beat.", "error")
+        flash("You can't buy your own beat.", "error")
         return redirect(url_for("market_index"))
 
     if _user_has_paid_for_beat(current_user.id, beat.id):
-        flash("You already purchased this beat. Check “My purchases”.", "info")
+        flash("You already purchased this beat. Check \"My purchases\".", "info")
+        return redirect(url_for("market_my_purchases"))
+
+    price_cents = int(beat.price_cents or 0)
+    price_dollars = price_cents / 100.0
+    
+    # Get wallet balance
+    buyer_w = get_or_create_wallet(current_user.id, commit=False)
+    balance_cents = wallet_balance_cents(buyer_w)
+    balance_dollars = balance_cents / 100.0
+    
+    # Check if sufficient funds
+    has_sufficient_funds = balance_cents >= price_cents
+    
+    return render_template(
+        "market_confirm.html",
+        beat=beat,
+        seller=seller,
+        price_cents=price_cents,
+        price_dollars=price_dollars,
+        balance_dollars=balance_dollars,
+        has_sufficient_funds=has_sufficient_funds,
+    )
+
+
+@app.route("/market/buy/<int:beat_id>", methods=["POST"])
+@login_required
+def market_buy(beat_id):
+    """Process the purchase - requires confirmation"""
+    if not require_kyc_approved():
+        return redirect(url_for("kyc"))
+
+    # Check for confirmation parameter
+    confirmed = request.form.get("confirmed") == "true"
+    if not confirmed:
+        flash("Please confirm your purchase on the confirmation page.", "error")
+        return redirect(url_for("market_confirm", beat_id=beat_id))
+
+    beat = Beat.query.get_or_404(beat_id)
+
+    if hasattr(beat, "is_active") and not beat.is_active:
+        flash("This beat is not available for purchase.", "error")
+        return redirect(url_for("market_index"))
+
+    seller = User.query.get(beat.owner_id)
+    if not seller:
+        flash("Seller account not found.", "error")
+        return redirect(url_for("market_index"))
+
+    if seller.id == current_user.id:
+        flash("You can't buy your own beat.", "error")
+        return redirect(url_for("market_index"))
+
+    if _user_has_paid_for_beat(current_user.id, beat.id):
+        flash("You already purchased this beat. Check \"My purchases\".", "info")
         return redirect(url_for("market_my_purchases"))
 
     price_cents = int(beat.price_cents or 0)
@@ -3016,7 +3561,7 @@ def market_buy(beat_id):
             flash("Insufficient wallet balance.", "error")
             return redirect(url_for("wallet_home"))
         if str(e) == "already_purchased":
-            flash("You already purchased this beat. Check “My purchases”.", "info")
+            flash("You already purchased this beat. Check \"My purchases\".", "info")
             return redirect(url_for("market_my_purchases"))
         flash("Unable to complete purchase.", "error")
         return redirect(url_for("market_index"))
@@ -3630,6 +4175,8 @@ def route_to_dashboard():
         endpoint = "funder_dashboard"
     elif role == "client":
         endpoint = "client_dashboard"
+    elif role == "social_media_manager":
+        endpoint = "social_dashboard"
     elif is_service_provider(current_user):
         endpoint = "provider_dashboard"
     else:
@@ -3748,6 +4295,27 @@ def producer_dashboard():
     followers_count = UserFollow.query.filter_by(followed_id=current_user.id).count()
     following_count = UserFollow.query.filter_by(follower_id=current_user.id).count()
     
+    # Booking requests (producers can be BookMe providers)
+    incoming_requests = (
+        BookingRequest.query
+        .filter_by(provider_id=current_user.id, status=BookingStatus.pending)
+        .order_by(BookingRequest.created_at.desc())
+        .limit(5)
+        .all()
+    )
+    incoming_requests_count = BookingRequest.query.filter_by(
+        provider_id=current_user.id,
+        status=BookingStatus.pending
+    ).count()
+    
+    outgoing_requests = (
+        BookingRequest.query
+        .filter_by(client_id=current_user.id)
+        .order_by(BookingRequest.created_at.desc())
+        .limit(5)
+        .all()
+    )
+    
     return render_template(
         "dash_producer.html",
         total_beats=total_beats,
@@ -3756,6 +4324,11 @@ def producer_dashboard():
         wallet_balance=wallet_balance,
         followers_count=followers_count,
         following_count=following_count,
+        incoming_requests=incoming_requests,
+        incoming_requests_count=incoming_requests_count,
+        outgoing_requests=outgoing_requests,
+        BookingStatus=BookingStatus,
+        HOLD_FEE_CENTS=HOLD_FEE_CENTS,
     )
 
 
@@ -6761,6 +7334,613 @@ def admin_bookme():
 
 # =========================================================
 # Errors
+# =========================================================
+# Social Media Manager Routes
+# =========================================================
+@app.route("/social/dashboard", endpoint="social_dashboard")
+@role_required("social_media_manager")
+def social_dashboard():
+    smm = current_user
+    
+    # Overview stats
+    active_clients = SMMClient.query.filter_by(smm_id=smm.id, is_active=True).count()
+    scheduled_posts = SMMPost.query.filter_by(
+        smm_id=smm.id,
+        status=SMMPostStatus.scheduled
+    ).count()
+    pending_approvals = SMMApproval.query.join(SMMPost).filter(
+        SMMPost.smm_id == smm.id,
+        SMMApproval.status == "pending"
+    ).count()
+    
+    # Top channel (most posts)
+    top_channel_query = db.session.query(
+        SMMPost.platform,
+        func.count(SMMPost.id).label('count')
+    ).filter_by(smm_id=smm.id).group_by(SMMPost.platform).order_by(func.count(SMMPost.id).desc()).first()
+    top_channel = top_channel_query[0] if top_channel_query else "None"
+    
+    # Earnings this month
+    this_month_start = datetime.utcnow().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    earnings_this_month = 0  # Placeholder - would need transaction model integration
+    
+    stats = {
+        "active_clients": active_clients,
+        "scheduled_posts": scheduled_posts,
+        "pending_approvals": pending_approvals,
+        "top_channel": top_channel,
+        "earnings_this_month": earnings_this_month
+    }
+    
+    return render_template("social/dashboard.html", smm=smm, stats=stats)
+
+
+@app.route("/social/clients", endpoint="social_clients")
+@role_required("social_media_manager")
+def social_clients():
+    smm = current_user
+    clients = SMMClient.query.filter_by(smm_id=smm.id).order_by(SMMClient.created_at.desc()).all()
+    
+    # Add platform info for each client
+    clients_data = []
+    for client in clients:
+        platforms = []
+        if client.platforms:
+            try:
+                platforms = json.loads(client.platforms)
+            except:
+                platforms = []
+        clients_data.append({
+            "client": client,
+            "platforms": platforms
+        })
+    
+    return render_template("social/clients.html", smm=smm, clients=clients_data)
+
+
+@app.route("/social/calendar", endpoint="social_calendar")
+@role_required("social_media_manager")
+def social_calendar():
+    smm = current_user
+    view = request.args.get("view", "week")  # week or month
+    
+    today = datetime.utcnow().date()
+    if view == "month":
+        start_date = today.replace(day=1)
+        end_date = (start_date + timedelta(days=32)).replace(day=1) - timedelta(days=1)
+    else:
+        # Week view
+        days_since_monday = today.weekday()
+        start_date = today - timedelta(days=days_since_monday)
+        end_date = start_date + timedelta(days=6)
+    
+    calendar_items = SMMCalendarItem.query.filter(
+        SMMCalendarItem.smm_id == smm.id,
+        SMMCalendarItem.scheduled_date >= start_date,
+        SMMCalendarItem.scheduled_date <= end_date
+    ).order_by(SMMCalendarItem.scheduled_date, SMMCalendarItem.scheduled_time).all()
+    
+    return render_template("social/calendar.html", smm=smm, calendar_items=calendar_items, view=view, start_date=start_date, end_date=end_date)
+
+
+@app.route("/social/posts", endpoint="social_posts")
+@role_required("social_media_manager")
+def social_posts():
+    smm = current_user
+    status_filter = request.args.get("status", "all")
+    
+    query = SMMPost.query.filter_by(smm_id=smm.id)
+    if status_filter != "all":
+        query = query.filter_by(status=SMMPostStatus(status_filter))
+    
+    posts = query.order_by(SMMPost.created_at.desc()).all()
+    
+    # Get assets for posts
+    posts_data = []
+    for post in posts:
+        assets = SMMAsset.query.filter_by(post_id=post.id).all()
+        posts_data.append({
+            "post": post,
+            "assets": assets
+        })
+    
+    # Get all assets (not linked to posts)
+    all_assets = SMMAsset.query.filter_by(smm_id=smm.id, post_id=None).order_by(SMMAsset.created_at.desc()).all()
+    
+    return render_template("social/posts.html", smm=smm, posts=posts_data, assets=all_assets, status_filter=status_filter)
+
+
+@app.route("/social/approvals", endpoint="social_approvals")
+@role_required("social_media_manager")
+def social_approvals():
+    smm = current_user
+    status_filter = request.args.get("status", "pending")
+    
+    query = SMMApproval.query.join(SMMPost).filter(SMMPost.smm_id == smm.id)
+    if status_filter == "pending":
+        query = query.filter(SMMApproval.status == "pending")
+    elif status_filter == "approved":
+        query = query.filter(SMMApproval.status == "approved")
+    elif status_filter == "changes":
+        query = query.filter(SMMApproval.status == "changes_requested")
+    
+    approvals = query.order_by(SMMApproval.submitted_at.desc()).all()
+    
+    return render_template("social/approvals.html", smm=smm, approvals=approvals, status_filter=status_filter)
+
+
+@app.route("/social/analytics", endpoint="social_analytics")
+@role_required("social_media_manager")
+def social_analytics():
+    smm = current_user
+    client_id = request.args.get("client_id", type=int)
+    platform_filter = request.args.get("platform", "all")
+    
+    query = SMMAnalytics.query.filter_by(smm_id=smm.id)
+    if client_id:
+        query = query.filter_by(client_id=client_id)
+    if platform_filter != "all":
+        query = query.filter_by(platform=platform_filter)
+    
+    analytics_rows = query.order_by(SMMAnalytics.period_start.desc()).all()
+    
+    # Get clients for filter
+    clients = SMMClient.query.filter_by(smm_id=smm.id, is_active=True).all()
+    
+    return render_template("social/analytics.html", smm=smm, analytics_rows=analytics_rows, clients=clients, client_id=client_id, platform_filter=platform_filter)
+
+
+@app.route("/social/availability", endpoint="social_availability")
+@role_required("social_media_manager")
+def social_availability():
+    smm = current_user
+    availability = SMMAvailability.query.filter_by(smm_id=smm.id).all()
+    
+    # Create a dict by day of week
+    availability_dict = {day: None for day in range(7)}
+    for av in availability:
+        availability_dict[av.day_of_week] = av
+    
+    return render_template("social/availability.html", smm=smm, availability=availability_dict)
+
+
+@app.route("/social/earnings", endpoint="social_earnings")
+@role_required("social_media_manager")
+def social_earnings():
+    smm = current_user
+    
+    # Get wallet balance
+    wallet = Wallet.query.filter_by(user_id=smm.id).first()
+    if wallet:
+        balance_cents = wallet_balance_cents(wallet)
+        balance = balance_cents / 100.0
+    else:
+        balance = 0.0
+    
+    # Get transactions from ledger
+    transactions = []
+    if wallet:
+        ledger_entries = LedgerEntry.query.filter_by(wallet_id=wallet.id).order_by(LedgerEntry.created_at.desc()).limit(50).all()
+        for entry in ledger_entries:
+            transactions.append({
+                "date": entry.created_at.strftime('%b %d, %Y'),
+                "description": entry.meta or entry.entry_type.value,
+                "amount": entry.amount_cents / 100.0,
+                "status": "completed"
+            })
+    
+    # Calculate earnings this month
+    this_month_start = datetime.utcnow().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    earnings_this_month = 0.0
+    if wallet:
+        month_entries = LedgerEntry.query.filter(
+            LedgerEntry.wallet_id == wallet.id,
+            LedgerEntry.created_at >= this_month_start,
+            LedgerEntry.entry_type.in_([
+                EntryType.deposit,
+                EntryType.transfer_in,
+                EntryType.sale_income,
+                EntryType.adjustment
+            ])
+        ).all()
+        earnings_this_month = sum(entry.amount_cents for entry in month_entries) / 100.0
+    
+    earnings = {
+        "balance": balance,
+        "earnings_this_month": earnings_this_month,
+        "transactions": transactions
+    }
+    
+    return render_template("social/earnings.html", smm=smm, earnings=earnings)
+
+
+@app.route("/social/reviews", endpoint="social_reviews")
+@role_required("social_media_manager")
+def social_reviews():
+    smm = current_user
+    reviews = SMMReview.query.filter_by(smm_id=smm.id).order_by(SMMReview.created_at.desc()).all()
+    
+    # Calculate average rating
+    avg_rating = db.session.query(func.avg(SMMReview.rating)).filter_by(smm_id=smm.id).scalar() or 0
+    
+    return render_template("social/reviews.html", smm=smm, reviews=reviews, avg_rating=round(avg_rating, 1) if avg_rating else 0)
+
+
+@app.route("/social/settings", endpoint="social_settings")
+@role_required("social_media_manager")
+def social_settings():
+    smm = current_user
+    return render_template("social/settings.html", smm=smm)
+
+
+# =========================================================
+# Project Vault Routes
+# =========================================================
+@app.route("/vaults", endpoint="vaults_index")
+@login_required
+def vaults_index():
+    """Project vaults dashboard"""
+    if not is_vault_eligible(current_user):
+        flash("Project vaults are not available for your role.", "error")
+        return redirect(url_for("route_to_dashboard"))
+    
+    vaults = ProjectVault.query.filter_by(user_id=current_user.id).order_by(
+        ProjectVault.is_completed.asc(),
+        ProjectVault.created_at.desc()
+    ).all()
+    
+    # Get wallet balance
+    wallet = get_or_create_wallet(current_user.id)
+    wallet_balance = wallet_balance_cents(wallet) / 100.0
+    
+    return render_template(
+        "vaults/index.html",
+        vaults=vaults,
+        wallet_balance=wallet_balance,
+    )
+
+
+@app.route("/vaults/create", methods=["GET", "POST"], endpoint="vaults_create")
+@login_required
+def vaults_create():
+    """Create a new project vault"""
+    if not is_vault_eligible(current_user):
+        flash("Project vaults are not available for your role.", "error")
+        return redirect(url_for("route_to_dashboard"))
+    
+    if request.method == "POST":
+        name = (request.form.get("name") or "").strip()
+        description = (request.form.get("description") or "").strip()
+        target_dollars = request.form.get("target", "").strip()
+        
+        errors = []
+        if not name:
+            errors.append("Vault name is required.")
+        if not target_dollars:
+            errors.append("Target amount is required.")
+        else:
+            try:
+                target = float(target_dollars)
+                if target <= 0:
+                    errors.append("Target must be greater than zero.")
+                target_cents = int(target * 100)
+            except ValueError:
+                errors.append("Target must be a valid number.")
+                target_cents = None
+        
+        if errors:
+            for error in errors:
+                flash(error, "error")
+            return render_template("vaults/create.html")
+        
+        vault = ProjectVault(
+            user_id=current_user.id,
+            name=name,
+            description=description or None,
+            target_cents=target_cents,
+            current_balance_cents=0,
+        )
+        db.session.add(vault)
+        db.session.commit()
+        
+        flash(f"Vault '{name}' created successfully!", "success")
+        return redirect(url_for("vaults_detail", vault_id=vault.id))
+    
+    return render_template("vaults/create.html")
+
+
+@app.route("/vaults/<int:vault_id>", endpoint="vaults_detail")
+@login_required
+def vaults_detail(vault_id):
+    """View and manage a specific vault"""
+    vault = ProjectVault.query.get_or_404(vault_id)
+    
+    if vault.user_id != current_user.id:
+        flash("You don't have access to this vault.", "error")
+        return redirect(url_for("vaults_index"))
+    
+    # Get transactions
+    transactions = VaultTransaction.query.filter_by(vault_id=vault.id).order_by(
+        VaultTransaction.created_at.desc()
+    ).limit(50).all()
+    
+    # Get wallet balance
+    wallet = get_or_create_wallet(current_user.id)
+    wallet_balance = wallet_balance_cents(wallet) / 100.0
+    
+    return render_template(
+        "vaults/detail.html",
+        vault=vault,
+        transactions=transactions,
+        wallet_balance=wallet_balance,
+    )
+
+
+@app.route("/vaults/<int:vault_id>/fund", methods=["POST"], endpoint="vaults_fund")
+@login_required
+def vaults_fund(vault_id):
+    """Fund a vault manually"""
+    # Allow vault_id from form if provided (for quick fund from index)
+    form_vault_id = request.form.get("vault_id", "").strip()
+    if form_vault_id:
+        try:
+            vault_id = int(form_vault_id)
+        except ValueError:
+            pass
+    
+    vault = ProjectVault.query.get_or_404(vault_id)
+    
+    if vault.user_id != current_user.id:
+        flash("You don't have access to this vault.", "error")
+        return redirect(url_for("vaults_index"))
+    
+    if vault.is_completed:
+        flash("This vault has reached its target and is completed.", "info")
+        return redirect(url_for("vaults_detail", vault_id=vault.id))
+    
+    # Check if vault is locked
+    if vault.is_locked_now():
+        lock_reason = []
+        if vault.lock_until_date:
+            lock_reason.append(f"until {vault.lock_until_date.strftime('%B %d, %Y')}")
+        if vault.lock_until_goal:
+            lock_reason.append("until goal reached")
+        reason_text = " " + " and ".join(lock_reason) if lock_reason else ""
+        flash(f"This vault is locked{reason_text} and cannot be funded.", "error")
+        return redirect(url_for("vaults_detail", vault_id=vault.id))
+    
+    amount_dollars = request.form.get("amount", "").strip()
+    notes = (request.form.get("notes") or "").strip()
+    
+    if not amount_dollars:
+        flash("Please enter an amount to fund.", "error")
+        return redirect(url_for("vaults_detail", vault_id=vault.id))
+    
+    try:
+        amount = float(amount_dollars)
+        if amount <= 0:
+            flash("Amount must be greater than zero.", "error")
+            return redirect(url_for("vaults_detail", vault_id=vault.id))
+        
+        amount_cents = int(amount * 100)
+        
+        # Check if would exceed target
+        if vault.current_balance_cents + amount_cents > vault.target_cents:
+            max_amount = vault.remaining_dollars
+            flash(f"Amount exceeds target. Maximum: ${max_amount:.2f}", "error")
+            return redirect(url_for("vaults_detail", vault_id=vault.id))
+        
+        success = fund_vault(vault, amount_cents, transaction_type="manual", notes=notes)
+        
+        if success:
+            flash(f"Successfully funded ${amount:.2f} to '{vault.name}'", "success")
+        else:
+            flash("Insufficient wallet balance.", "error")
+        
+    except ValueError:
+        flash("Invalid amount. Please enter a valid number.", "error")
+    
+    return redirect(url_for("vaults_detail", vault_id=vault.id))
+
+
+@app.route("/vaults/<int:vault_id>/settings", methods=["GET", "POST"], endpoint="vaults_settings")
+@login_required
+def vaults_settings(vault_id):
+    """Configure vault settings including auto-funding"""
+    vault = ProjectVault.query.get_or_404(vault_id)
+    
+    if vault.user_id != current_user.id:
+        flash("You don't have access to this vault.", "error")
+        return redirect(url_for("vaults_index"))
+    
+    if request.method == "POST":
+        # Update basic info
+        name = (request.form.get("name") or "").strip()
+        description = (request.form.get("description") or "").strip()
+        target_dollars = request.form.get("target", "").strip()
+        
+        if name:
+            vault.name = name
+        vault.description = description or None
+        
+        if target_dollars:
+            try:
+                target = float(target_dollars)
+                if target > 0:
+                    vault.target_cents = int(target * 100)
+            except ValueError:
+                flash("Invalid target amount.", "error")
+        
+        # Auto-funding settings
+        auto_fund_enabled = request.form.get("auto_fund_enabled") == "on"
+        vault.auto_fund_enabled = auto_fund_enabled
+        
+        if auto_fund_enabled:
+            auto_fund_percent = request.form.get("auto_fund_percent", "").strip()
+            auto_fund_min = request.form.get("auto_fund_min", "").strip()
+            auto_fund_frequency = request.form.get("auto_fund_frequency", "").strip()
+            
+            if auto_fund_percent:
+                try:
+                    percent = int(auto_fund_percent)
+                    if 0 <= percent <= 100:
+                        vault.auto_fund_percent = percent
+                except ValueError:
+                    pass
+            
+            if auto_fund_min:
+                try:
+                    min_dollars = float(auto_fund_min)
+                    if min_dollars >= 0:
+                        vault.auto_fund_min_cents = int(min_dollars * 100)
+                except ValueError:
+                    pass
+            
+            if auto_fund_frequency in ["daily", "weekly", "monthly", "on_income"]:
+                vault.auto_fund_frequency = auto_fund_frequency
+        
+        vault.updated_at = datetime.utcnow()
+        db.session.commit()
+        
+        flash("Vault settings updated successfully!", "success")
+        return redirect(url_for("vaults_detail", vault_id=vault.id))
+    
+    return render_template("vaults/settings.html", vault=vault)
+
+
+@app.route("/vaults/<int:vault_id>/withdraw", methods=["POST"], endpoint="vaults_withdraw")
+@login_required
+def vaults_withdraw(vault_id):
+    """Withdraw funds from vault back to wallet"""
+    vault = ProjectVault.query.get_or_404(vault_id)
+    
+    if vault.user_id != current_user.id:
+        flash("You don't have access to this vault.", "error")
+        return redirect(url_for("vaults_index"))
+    
+    amount_dollars = request.form.get("amount", "").strip()
+    
+    if not amount_dollars:
+        flash("Please enter an amount to withdraw.", "error")
+        return redirect(url_for("vaults_detail", vault_id=vault.id))
+    
+    try:
+        amount = float(amount_dollars)
+        if amount <= 0:
+            flash("Amount must be greater than zero.", "error")
+            return redirect(url_for("vaults_detail", vault_id=vault.id))
+        
+        amount_cents = int(amount * 100)
+        
+        if amount_cents > vault.current_balance_cents:
+            flash("Insufficient vault balance.", "error")
+            return redirect(url_for("vaults_detail", vault_id=vault.id))
+        
+        # Check if vault is locked
+        if vault.is_locked_now():
+            flash("This vault is locked and cannot be withdrawn from.", "error")
+            return redirect(url_for("vaults_detail", vault_id=vault.id))
+        
+        # Withdraw to wallet
+        with db_txn():
+            vault.current_balance_cents -= amount_cents
+            vault.is_completed = False  # Reset completion if withdrawing
+            vault.completed_at = None
+            vault.updated_at = datetime.utcnow()
+            
+            # Add to wallet
+            wallet = get_or_create_wallet(current_user.id, commit=False)
+            post_ledger(wallet, EntryType.deposit, amount_cents, meta=f"withdraw from vault '{vault.name[:80]}'")
+            
+            # Create transaction record
+            txn = VaultTransaction(
+                vault_id=vault.id,
+                amount_cents=-amount_cents,
+                transaction_type="withdrawal",
+                source="wallet",
+                notes=f"Withdrawn ${amount:.2f}"
+            )
+            db.session.add(txn)
+        
+        flash(f"Successfully withdrew ${amount:.2f} from '{vault.name}' to wallet", "success")
+        
+    except ValueError:
+        flash("Invalid amount. Please enter a valid number.", "error")
+    
+    return redirect(url_for("vaults_detail", vault_id=vault.id))
+
+
+@app.route("/vaults/<int:vault_id>/lock", methods=["POST"], endpoint="vaults_lock")
+@login_required
+def vaults_lock(vault_id):
+    """Lock or unlock a vault"""
+    vault = ProjectVault.query.get_or_404(vault_id)
+    
+    if vault.user_id != current_user.id:
+        flash("You don't have access to this vault.", "error")
+        return redirect(url_for("vaults_index"))
+    
+    action = request.form.get("action", "").strip()
+    lock_until_date_str = request.form.get("lock_until_date", "").strip()
+    lock_until_goal = request.form.get("lock_until_goal") == "on"
+    
+    if action == "lock":
+        vault.is_locked = True
+        
+        if lock_until_date_str:
+            try:
+                lock_date = datetime.strptime(lock_until_date_str, "%Y-%m-%d")
+                vault.lock_until_date = lock_date
+            except ValueError:
+                flash("Invalid date format.", "error")
+                return redirect(url_for("vaults_detail", vault_id=vault.id))
+        
+        vault.lock_until_goal = lock_until_goal
+        
+        lock_reason = []
+        if vault.lock_until_date:
+            lock_reason.append(f"until {vault.lock_until_date.strftime('%B %d, %Y')}")
+        if vault.lock_until_goal:
+            lock_reason.append("until goal reached")
+        
+        reason_text = " " + " and ".join(lock_reason) if lock_reason else ""
+        flash(f"Vault '{vault.name}' has been locked{reason_text}.", "success")
+    elif action == "unlock":
+        vault.is_locked = False
+        vault.lock_until_date = None
+        vault.lock_until_goal = False
+        flash(f"Vault '{vault.name}' has been unlocked.", "success")
+    else:
+        flash("Invalid action.", "error")
+        return redirect(url_for("vaults_detail", vault_id=vault.id))
+    
+    vault.updated_at = datetime.utcnow()
+    db.session.commit()
+    
+    return redirect(url_for("vaults_detail", vault_id=vault.id))
+
+
+@app.route("/vaults/<int:vault_id>/delete", methods=["POST"], endpoint="vaults_delete")
+@login_required
+def vaults_delete(vault_id):
+    """Delete a vault (only if empty)"""
+    vault = ProjectVault.query.get_or_404(vault_id)
+    
+    if vault.user_id != current_user.id:
+        flash("You don't have access to this vault.", "error")
+        return redirect(url_for("vaults_index"))
+    
+    if vault.current_balance_cents > 0:
+        flash("Cannot delete vault with funds. Please withdraw all funds first.", "error")
+        return redirect(url_for("vaults_detail", vault_id=vault.id))
+    
+    db.session.delete(vault)
+    db.session.commit()
+    
+    flash(f"Vault '{vault.name}' deleted successfully.", "success")
+    return redirect(url_for("vaults_index"))
+
+
 # =========================================================
 @app.errorhandler(404)
 def not_found(e):

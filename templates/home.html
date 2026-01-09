@@ -125,33 +125,6 @@
     opacity: 0.9;
   }
 
-  .hero-app-stores {
-    display: flex;
-    gap: 12px;
-    flex-wrap: wrap;
-    align-items: center;
-    margin-bottom: 16px;
-  }
-
-  .app-store-link {
-    display: inline-flex;
-    align-items: center;
-    transition: opacity 0.2s ease, transform 0.2s ease;
-    text-decoration: none;
-  }
-
-  .app-store-link:hover {
-    opacity: 0.8;
-    transform: translateY(-1px);
-  }
-
-  .app-store-link svg {
-    height: 48px;
-    width: auto;
-    filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.4));
-    border-radius: 6px;
-  }
-
   .hero-tags {
     display: flex;
     flex-wrap: wrap;
@@ -391,27 +364,6 @@
       <div class="hero-secondary-links">
         <a href="{{ url_for('market_index') }}">Browse the marketplace →</a>
         <a href="{{ url_for('wallet_home') }}">Open your wallet →</a>
-      </div>
-
-      <div class="hero-app-stores">
-        <a href="https://play.google.com/store/apps" target="_blank" rel="noopener noreferrer" class="app-store-link" aria-label="Download on Google Play">
-          <svg width="155" height="48" viewBox="0 0 155 48" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <rect width="155" height="48" rx="6" fill="#000000"/>
-            <g fill="#FFFFFF">
-              <path d="M16.5 24L28.5 17V31L16.5 24ZM30.5 24L61.5 17L65.5 31L30.5 24ZM68.5 12L80.5 36L88.5 36L76.5 12H68.5ZM92.5 12L104.5 36L112.5 36L100.5 12H92.5ZM116.5 12L128.5 36L136.5 36L124.5 12H116.5Z"/>
-            </g>
-            <text x="77.5" y="33" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif" font-size="10" font-weight="600" fill="#FFFFFF" text-anchor="middle">GET IT ON</text>
-            <text x="77.5" y="42" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif" font-size="14" font-weight="700" fill="#FFFFFF" text-anchor="middle">Google Play</text>
-          </svg>
-        </a>
-        <a href="https://apps.apple.com" target="_blank" rel="noopener noreferrer" class="app-store-link" aria-label="Download on the App Store">
-          <svg width="155" height="48" viewBox="0 0 155 48" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <rect width="155" height="48" rx="6" fill="#000000"/>
-            <path d="M28 16.5C28 15.5 28.5 14.8 29.3 14.3C30 13.8 30.8 13.6 31.8 13.6C32.8 13.6 33.6 13.8 34.3 14.3C35 14.8 35.5 15.5 35.5 16.5C35.5 17.5 35 18.2 34.3 18.7C33.6 19.2 32.8 19.4 31.8 19.4C30.8 19.4 30 19.2 29.3 18.7C28.5 18.2 28 17.5 28 16.5ZM24 18.5V33.5H27V25.5H31L35 33.5H39L34 24.5C35.5 23.5 36.5 21.8 36.5 20C36.5 18.2 35.5 17 33.8 17H24V18.5ZM42 18.5V33.5H45V18.5H42ZM52 18.5V33.5H55V25.5H59L63 33.5H67L62 24.5C63.5 23.5 64.5 21.8 64.5 20C64.5 18.2 63.5 17 61.8 17H52V18.5ZM70 18.5V33.5H73V25.5H77L81 33.5H85L80 24.5C81.5 23.5 82.5 21.8 82.5 20C82.5 18.2 81.5 17 79.8 17H70V18.5Z" fill="#FFFFFF"/>
-            <text x="77.5" y="33" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif" font-size="10" font-weight="600" fill="#FFFFFF" text-anchor="middle">Download on the</text>
-            <text x="77.5" y="42" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif" font-size="14" font-weight="700" fill="#FFFFFF" text-anchor="middle">App Store</text>
-          </svg>
-        </a>
       </div>
 
       <div class="hero-tags">

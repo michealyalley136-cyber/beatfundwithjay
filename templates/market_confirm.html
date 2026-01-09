@@ -1,0 +1,283 @@
+{% extends "base.html" %}
+{% block title %}Confirm Purchase · BeatFund{% endblock %}
+
+{% block extra_head %}
+<style>
+  .confirm-page {
+    max-width: 600px;
+    margin: 40px auto;
+    padding: 0 16px;
+  }
+
+  .confirm-card {
+    background: rgba(255,255,255,.06);
+    border: 1px solid rgba(255,255,255,.12);
+    border-radius: 18px;
+    padding: 32px;
+  }
+
+  .confirm-header {
+    text-align: center;
+    margin-bottom: 32px;
+  }
+
+  .confirm-title {
+    font-size: 1.75rem;
+    font-weight: 800;
+    margin: 0 0 8px;
+  }
+
+  .confirm-subtitle {
+    opacity: .8;
+    font-size: .95rem;
+  }
+
+  .beat-info {
+    display: flex;
+    gap: 20px;
+    align-items: center;
+    padding: 20px;
+    background: rgba(0,0,0,.2);
+    border-radius: 12px;
+    margin-bottom: 24px;
+    border: 1px solid rgba(255,255,255,.08);
+  }
+
+  .beat-cover {
+    width: 100px;
+    height: 100px;
+    border-radius: 12px;
+    object-fit: cover;
+    border: 1px solid rgba(255,255,255,.15);
+  }
+
+  .beat-details {
+    flex: 1;
+  }
+
+  .beat-title {
+    font-size: 1.2rem;
+    font-weight: 700;
+    margin: 0 0 6px;
+  }
+
+  .beat-artist {
+    opacity: .8;
+    font-size: .9rem;
+    margin-bottom: 4px;
+  }
+
+  .beat-meta {
+    opacity: .7;
+    font-size: .85rem;
+  }
+
+  .purchase-summary {
+    background: rgba(0,0,0,.2);
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 24px;
+    border: 1px solid rgba(255,255,255,.08);
+  }
+
+  .summary-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 0;
+    border-bottom: 1px solid rgba(255,255,255,.08);
+  }
+
+  .summary-row:last-child {
+    border-bottom: none;
+    margin-top: 8px;
+    padding-top: 16px;
+    border-top: 2px solid rgba(255,255,255,.15);
+  }
+
+  .summary-label {
+    opacity: .8;
+    font-size: .95rem;
+  }
+
+  .summary-value {
+    font-weight: 700;
+    font-size: 1.1rem;
+  }
+
+  .summary-total {
+    font-size: 1.5rem;
+    background: linear-gradient(135deg, #4de3ff, #a855f7);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  .wallet-info {
+    background: rgba(6,182,212,.1);
+    border: 1px solid rgba(6,182,212,.3);
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 24px;
+  }
+
+  .wallet-balance {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+  }
+
+  .wallet-label {
+    opacity: .8;
+    font-size: .9rem;
+  }
+
+  .wallet-value {
+    font-weight: 700;
+    font-size: 1.1rem;
+  }
+
+  .wallet-warning {
+    color: #ef4444;
+    font-size: .85rem;
+    margin-top: 8px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .wallet-success {
+    color: #22c55e;
+    font-size: .85rem;
+    margin-top: 8px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .confirm-actions {
+    display: flex;
+    gap: 12px;
+    flex-direction: column;
+  }
+
+  .btn {
+    padding: 14px 24px;
+    border-radius: 12px;
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 1rem;
+    text-align: center;
+    transition: all 0.2s ease;
+    border: none;
+    cursor: pointer;
+    display: block;
+  }
+
+  .btn-primary {
+    background: linear-gradient(135deg, rgba(6,182,212,.4), rgba(34,197,94,.3));
+    border: 1px solid rgba(6,182,212,.5);
+    color: #fff;
+  }
+
+  .btn-primary:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(6,182,212,.3);
+  }
+
+  .btn-primary:disabled {
+    opacity: .5;
+    cursor: not-allowed;
+    transform: none;
+  }
+
+  .btn-secondary {
+    background: rgba(255,255,255,.08);
+    border: 1px solid rgba(255,255,255,.12);
+    color: #cbd5f5;
+  }
+
+  .btn-secondary:hover {
+    background: rgba(255,255,255,.12);
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="confirm-page">
+  <div class="confirm-card">
+    <div class="confirm-header">
+      <h1 class="confirm-title">Confirm Purchase</h1>
+      <p class="confirm-subtitle">Review your purchase details before confirming</p>
+    </div>
+
+    <div class="beat-info">
+      <img 
+        class="beat-cover" 
+        src="{{ beat.cover_url or url_for('static', filename='img/beat-placeholder.jpg') }}" 
+        alt="{{ beat.title }}"
+      >
+      <div class="beat-details">
+        <div class="beat-title">{{ beat.title }}</div>
+        <div class="beat-artist">by @{{ seller.username }}</div>
+        <div class="beat-meta">
+          {% if beat.genre %}{{ beat.genre }}{% endif %}
+          {% if beat.genre and beat.bpm %} · {% endif %}
+          {% if beat.bpm %}{{ beat.bpm }} BPM{% endif %}
+        </div>
+      </div>
+    </div>
+
+    <div class="purchase-summary">
+      <div class="summary-row">
+        <span class="summary-label">Beat Price</span>
+        <span class="summary-value">${{ '%.2f'|format(price_dollars) }}</span>
+      </div>
+      <div class="summary-row">
+        <span class="summary-label">Total Amount</span>
+        <span class="summary-value summary-total">${{ '%.2f'|format(price_dollars) }}</span>
+      </div>
+    </div>
+
+    <div class="wallet-info">
+      <div class="wallet-balance">
+        <span class="wallet-label">Your Wallet Balance</span>
+        <span class="wallet-value">${{ '%.2f'|format(balance_dollars) }}</span>
+      </div>
+      {% if has_sufficient_funds %}
+        <div class="wallet-success">
+          ✓ Sufficient funds available
+        </div>
+      {% else %}
+        <div class="wallet-warning">
+          ⚠ Insufficient funds. Please add funds to your wallet.
+        </div>
+      {% endif %}
+    </div>
+
+    <div class="confirm-actions">
+      <form method="POST" action="{{ url_for('market_buy', beat_id=beat.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="confirmed" value="true">
+        <button 
+          type="submit" 
+          class="btn btn-primary"
+          {% if not has_sufficient_funds %}disabled{% endif %}
+        >
+          {% if has_sufficient_funds %}
+            Confirm Purchase
+          {% else %}
+            Insufficient Funds
+          {% endif %}
+        </button>
+      </form>
+      <a href="{{ url_for('market_index') }}" class="btn btn-secondary">Cancel</a>
+      {% if not has_sufficient_funds %}
+        <a href="{{ url_for('wallet_home') }}" class="btn btn-secondary">Add Funds to Wallet</a>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}
+

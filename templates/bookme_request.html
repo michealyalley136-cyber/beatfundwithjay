@@ -202,15 +202,17 @@
               </td>
               <td>
                 {% if r.status == BookingStatus.pending %}
-                  <form method="post" action="{{ url_for('bookme_request_status', req_id=r.id) }}" style="display:inline-flex; gap:6px;">
-                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <button class="bf-btn bf-btn-sm bf-btn-primary" name="action" value="accept">
+                  <div style="display:inline-flex; gap:6px;">
+                    <a href="{{ url_for('bookme_request_accept_confirm', req_id=r.id) }}" class="bf-btn bf-btn-sm bf-btn-primary" style="text-decoration: none;">
                       Accept
-                    </button>
-                    <button class="bf-btn bf-btn-sm bf-btn-danger" name="action" value="decline">
-                      Decline
-                    </button>
-                  </form>
+                    </a>
+                    <form method="post" action="{{ url_for('bookme_request_status', req_id=r.id) }}" style="display:inline;">
+                      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                      <button class="bf-btn bf-btn-sm bf-btn-danger" name="action" value="decline">
+                        Decline
+                      </button>
+                    </form>
+                  </div>
                 {% elif r.status == BookingStatus.accepted %}
                   <span class="bf-text-muted" style="font-size:0.78rem;">
                     A confirmed booking record was created.

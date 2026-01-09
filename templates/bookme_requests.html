@@ -90,16 +90,13 @@
               </div>
 
               <div class="req-actions">
-                <form
-                  method="post"
-                  action="{{ url_for('bookme_request_status', req_id=req.id) }}"
-                  style="display:inline;"
+                <a
+                  href="{{ url_for('bookme_request_accept_confirm', req_id=req.id) }}"
+                  class="btn btn-primary btn-sm"
+                  style="text-decoration: none; display: inline-block;"
                 >
-                  <input type="hidden" name="action" value="accept">
-                  <button type="submit" class="btn btn-primary btn-sm">
-                    Accept &amp; hold fee
-                  </button>
-                </form>
+                  Accept &amp; hold fee
+                </a>
 
                 <form
                   method="post"
