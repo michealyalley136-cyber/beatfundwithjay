@@ -97,6 +97,96 @@
     .span-6 { grid-column: span 6; }
   }
 
+  /* Mobile Responsive Styles */
+  @media (max-width: 600px) {
+    .bf-studio {
+      padding: 12px;
+    }
+    
+    .bf-hero {
+      flex-direction: column;
+      align-items: stretch;
+      gap: 12px;
+    }
+    
+    .bf-hero-left {
+      min-width: 0;
+      width: 100%;
+    }
+    
+    .bf-title {
+      font-size: 1.2rem;
+    }
+    
+    .bf-sub {
+      font-size: 0.9rem;
+    }
+    
+    .bf-actions {
+      width: 100%;
+      flex-direction: column;
+    }
+    
+    .bf-actions .bf-btn {
+      width: 100%;
+      min-height: 48px;
+      font-size: 14px;
+    }
+    
+    .bf-grid {
+      grid-template-columns: 1fr;
+      gap: 12px;
+    }
+    
+    .bf-card {
+      padding: 12px;
+    }
+    
+    .bf-card h3 {
+      font-size: 1rem;
+    }
+    
+    .bf-kpis {
+      grid-template-columns: 1fr;
+    }
+    
+    .bf-kpi {
+      padding: 12px;
+    }
+    
+    .bf-kpi .value {
+      font-size: 1.3rem;
+    }
+    
+    .bf-profile-cta {
+      padding: 16px;
+    }
+    
+    .bf-profile-cta h2 {
+      font-size: 1.1rem;
+    }
+    
+    .bf-profile-cta p {
+      font-size: 0.9rem;
+    }
+    
+    .bf-row {
+      flex-direction: column;
+      align-items: stretch;
+      padding: 10px;
+    }
+    
+    .bf-row .title {
+      font-size: 0.95rem;
+    }
+    
+    .bf-chip {
+      padding: 6px 10px;
+      font-size: 0.8rem;
+      min-height: 32px;
+    }
+  }
+
   /* Modal styles */
   .modal-overlay {
     display: none;
@@ -297,6 +387,8 @@
     </a>
   </div>
   {% endif %}
+
+  {% include '_role_switcher.html' %}
 
   <div class="bf-grid">
 

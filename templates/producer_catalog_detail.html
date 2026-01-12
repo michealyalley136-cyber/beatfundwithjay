@@ -116,6 +116,15 @@
     transform: translateY(-1px);
     box-shadow: 0 10px 26px rgba(79, 70, 229, 0.55);
   }
+  .pc-btn-primary.following {
+    background: rgba(255,255,255,.1);
+    border-color: rgba(255,255,255,.2);
+    box-shadow: none;
+  }
+  .pc-btn-primary.following:hover {
+    background: rgba(255,255,255,.15);
+    transform: translateY(-1px);
+  }
   .pc-btn-small {
     padding-block: 5px;
     padding-inline: 13px;
@@ -300,10 +309,17 @@
           ← Marketplace
         </a>
 
-        {# Placeholder for future "Follow" button #}
-        <button type="button" class="pc-btn-primary pc-btn-small" disabled>
-          Follow (coming soon)
-        </button>
+        {% if current_user.is_authenticated and producer.user.id != current_user.id %}
+          <button
+            type="button"
+            class="pc-btn-primary pc-btn-small {% if producer.is_following %}following{% endif %}"
+            id="follow-btn-{{ producer.user.id }}"
+            data-url="{{ url_for('toggle_follow', user_id=producer.user.id) }}"
+            data-following="{{ '1' if producer.is_following else '0' }}"
+          >
+            {{ "Unfollow" if producer.is_following else "Follow" }}
+          </button>
+        {% endif %}
       </div>
     </header>
 
@@ -408,4 +424,70 @@
     </header>
   {% endif %}
 </div>
+
+{% if producer and current_user.is_authenticated and producer.user.id != current_user.id %}
+<script>
+(function() {
+  const btn = document.getElementById("follow-btn-{{ producer.user.id }}");
+  if (!btn) return;
+
+  const followersCountEl = document.getElementById("followers-count-{{ producer.user.id }}");
+  
+  function getCsrfToken() {
+    const meta = document.querySelector('meta[name="csrf-token"]');
+    if (meta) return meta.getAttribute("content");
+    {% if csrf_token %}
+    return "{{ csrf_token() }}";
+    {% else %}
+    return "";
+    {% endif %}
+  }
+
+  function setButtonState(isFollowing) {
+    btn.dataset.following = isFollowing ? "1" : "0";
+    btn.textContent = isFollowing ? "Unfollow" : "Follow";
+    
+    if (isFollowing) {
+      btn.classList.add("following");
+    } else {
+      btn.classList.remove("following");
+    }
+  }
+
+  btn.addEventListener("click", async function() {
+    btn.disabled = true;
+
+    try {
+      const res = await fetch(btn.dataset.url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRFToken": getCsrfToken()
+        },
+        body: JSON.stringify({})
+      });
+
+      const data = await res.json();
+
+      if (data.ok) {
+        setButtonState(data.following);
+        
+        // Update followers count if element exists
+        if (followersCountEl && data.followers_count !== undefined) {
+          const followerText = data.followers_count === 1 ? "follower" : "followers";
+          followersCountEl.textContent = `${data.followers_count} ${followerText}`;
+        }
+      } else {
+        alert(data.error || "An error occurred");
+      }
+    } catch (err) {
+      console.error("Follow error:", err);
+      alert("An error occurred. Please try again.");
+    } finally {
+      btn.disabled = false;
+    }
+  });
+})();
+</script>
+{% endif %}
 {% endblock %}

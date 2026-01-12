@@ -170,6 +170,9 @@ code{
   font-size: 13px;
   background: rgba(2, 6, 23, 0.35);
   transition: transform .12s ease, border-color .12s ease, background .12s ease, opacity .12s ease;
+  min-height: 44px; /* Touch-friendly minimum height */
+  -webkit-tap-highlight-color: rgba(255,255,255,0.1);
+  touch-action: manipulation;
 }
 .btn:hover{
   transform: translateY(-1px);
@@ -445,9 +448,17 @@ code{
   .stats-grid{ grid-template-columns: 1fr; }
 
   .btn-row{ display:grid; grid-template-columns: 1fr; gap: 10px; }
-  .btn{ width: 100%; }
+  .btn{ width: 100%; min-height: 48px; font-size: 14px; }
 
   .suggested-row{ flex-direction: column; align-items: stretch; }
+  
+  .card{ padding: 14px; }
+  .card-title{ font-size: 14px; }
+  
+  /* Better spacing on mobile */
+  .dash-hero-card{ padding: 14px; gap: 12px; }
+  .dash-actions{ width: 100%; justify-content: stretch; }
+  .dash-actions .btn{ flex: 1; min-width: 0; }
 }
 
 /* =========================================================
@@ -585,11 +596,37 @@ code{
     padding: 12px 14px;
     gap: 10px;
   }
+  
+  .brand-main{ font-size: 12px; }
+  .brand-sub{ font-size: 10px; }
 
   .nav-center{ display:none; }
   .nav-right{ display:none; }
 
-  .nav-toggle{ display:inline-flex; }
+  .nav-toggle{ 
+    display:inline-flex;
+    min-height: 44px;
+    min-width: 44px;
+    -webkit-tap-highlight-color: rgba(255,255,255,0.1);
+  }
+  
+  .mobile-menu-section a{
+    min-height: 48px;
+    font-size: 14px;
+    -webkit-tap-highlight-color: rgba(255,255,255,0.1);
+  }
+  
+  .mobile-close{
+    min-height: 44px;
+    min-width: 44px;
+    -webkit-tap-highlight-color: rgba(255,255,255,0.1);
+  }
+  
+  .mobile-logout-btn{
+    min-height: 48px;
+    font-size: 14px;
+    -webkit-tap-highlight-color: rgba(255,255,255,0.1);
+  }
 }
 
 /* =========================================================
@@ -795,5 +832,189 @@ code{
   .bf-profile-grid{ grid-template-columns: 1fr; }
   .bf-span-2{ grid-column: span 1; }
   .bf-form-grid{ grid-template-columns: 1fr; }
+  .bf-wrap{ padding: 14px; }
+  .bf-h1{ font-size: 1.4rem; }
+}
+
+/* =========================================================
+   Mobile-First Form Inputs & Tables
+   ========================================================= */
+
+/* Form inputs - mobile friendly */
+input[type="text"],
+input[type="email"],
+input[type="password"],
+input[type="number"],
+input[type="tel"],
+input[type="url"],
+input[type="date"],
+input[type="time"],
+input[type="datetime-local"],
+select,
+textarea,
+.form-control{
+  width: 100%;
+  min-height: 44px; /* Touch-friendly minimum height */
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: rgba(2, 6, 23, 0.35);
+  color: var(--text);
+  font-size: 16px; /* Prevents zoom on iOS */
+  font-family: inherit;
+  outline: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+
+input:focus,
+select:focus,
+textarea:focus,
+.form-control:focus{
+  border-color: rgba(99,102,241,0.6);
+  box-shadow: 0 0 0 3px rgba(99,102,241,0.15);
+}
+
+textarea{
+  min-height: 100px;
+  resize: vertical;
+}
+
+select{
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%239ca3af' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 12px;
+  padding-right: 36px;
+}
+
+/* Scrollable tables on mobile */
+.table-wrapper{
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  margin: 0 -14px;
+  padding: 0 14px;
+}
+
+@media (min-width: 601px){
+  .table-wrapper{
+    margin: 0;
+    padding: 0;
+  }
+}
+
+table{
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+@media (max-width: 600px){
+  table{
+    font-size: 13px;
+    min-width: 600px; /* Force horizontal scroll */
+  }
+  
+  table th,
+  table td{
+    padding: 10px 8px;
+    white-space: nowrap;
+  }
+  
+  /* Stack table rows on very small screens */
+  .table-stack{
+    min-width: 0;
+  }
+  
+  .table-stack thead{ display: none; }
+  
+  .table-stack tr{
+    display: block;
+    margin-bottom: 12px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 12px;
+    background: var(--card2);
+  }
+  
+  .table-stack td{
+    display: block;
+    padding: 6px 0;
+    text-align: left !important;
+    border: none;
+    white-space: normal;
+  }
+  
+  .table-stack td::before{
+    content: attr(data-label) ": ";
+    font-weight: 700;
+    opacity: .8;
+    margin-right: 8px;
+  }
+}
+
+/* Flash messages - mobile friendly */
+.flash-container{
+  padding: 12px 14px;
+}
+
+.flash{
+  padding: 12px 14px;
+  border-radius: 12px;
+  margin-bottom: 10px;
+  font-size: 14px;
+  line-height: 1.5;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+}
+
+/* Better spacing for mobile */
+@media (max-width: 600px){
+  .pill{ padding: 8px 12px; font-size: 13px; min-height: 36px; }
+  .avatar-lg{ width: 64px; height: 64px; }
+  .avatar-sm{ width: 40px; height: 40px; }
+  
+  /* Action cards - full width on mobile */
+  .action-card{ padding: 12px; min-height: 60px; display: flex; align-items: center; }
+  
+  /* Suggested row improvements */
+  .suggested-row{ padding: 10px; }
+  .suggested-actions{ width: 100%; justify-content: stretch; margin-top: 8px; }
+  .suggested-actions .btn{ flex: 1; min-width: 0; }
+}
+
+/* Prevent text selection issues on mobile */
+@media (max-width: 600px){
+  button, a, input, select, textarea{
+    -webkit-tap-highlight-color: rgba(255,255,255,0.1);
+  }
+  
+  /* Better scrolling */
+  body{
+    -webkit-overflow-scrolling: touch;
+  }
+  
+  /* Prevent zoom on input focus (iOS) */
+  input[type="text"],
+  input[type="email"],
+  input[type="password"],
+  input[type="number"],
+  input[type="tel"],
+  input[type="url"],
+  select,
+  textarea{
+    font-size: 16px;
+  }
+}
+
+/* Card improvements for mobile */
+@media (max-width: 600px){
+  .card{ margin-bottom: 12px; }
+  .stat{ padding: 12px; }
+  .stat-value{ font-size: 22px; }
+  .stat-label{ font-size: 11px; }
 }
 

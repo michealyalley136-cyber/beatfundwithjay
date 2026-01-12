@@ -418,6 +418,7 @@ app.jinja_env.globals["get_role_display"] = get_role_display
 
 # ✅ Needed if your templates use {{ datetime.utcnow().year }}
 app.jinja_env.globals["datetime"] = datetime
+app.jinja_env.globals["abs"] = abs
 
 
 class User(UserMixin, db.Model):
@@ -430,7 +431,8 @@ class User(UserMixin, db.Model):
     artist_name = db.Column(db.String(150), nullable=True)
 
     password_hash = db.Column(db.String(255), nullable=False)
-    role = db.Column(db.Enum(RoleEnum), nullable=False, default=RoleEnum.artist)
+    role = db.Column(db.Enum(RoleEnum), nullable=False, default=RoleEnum.artist)  # Legacy - kept for migration
+    primary_role = db.Column(db.Enum(RoleEnum), nullable=False, default=RoleEnum.artist)
     kyc_status = db.Column(db.Enum(KYCStatus), nullable=False, default=KYCStatus.not_started)
     is_active_col = db.Column("is_active", db.Boolean, nullable=False, default=True)
 
@@ -441,6 +443,9 @@ class User(UserMixin, db.Model):
     password_reset_sent_at = db.Column(db.DateTime, nullable=True)
 
     avatar_path = db.Column(db.String(255), nullable=True)
+
+    # Relationship for additional roles
+    roles = db.relationship("UserRole", backref="user", lazy="dynamic", cascade="all, delete-orphan")
 
     @property
     def is_active(self):
@@ -466,6 +471,70 @@ class User(UserMixin, db.Model):
     @property
     def display_name(self) -> str:
         return self.artist_name or self.full_name or self.username
+
+    def get_roles(self) -> set[RoleEnum]:
+        """Get all roles for this user (primary_role + additional roles)"""
+        roles_set = {self.primary_role}
+        for user_role in self.roles:
+            roles_set.add(user_role.role)
+        return roles_set
+
+    def has_role(self, *roles: str | RoleEnum) -> bool:
+        """Check if user has any of the specified roles"""
+        user_roles = self.get_roles()
+        for role in roles:
+            try:
+                role_enum = role if isinstance(role, RoleEnum) else RoleEnum(str(role))
+                if role_enum in user_roles:
+                    return True
+            except (ValueError, TypeError):
+                continue
+        return False
+
+    def active_role(self) -> RoleEnum:
+        """Get the active role from session, or fallback to primary_role"""
+        from flask import session
+        active_role_str = session.get("active_role")
+        if active_role_str:
+            try:
+                active_role_enum = RoleEnum(active_role_str)
+                # Verify user actually has this role
+                if active_role_enum in self.get_roles():
+                    return active_role_enum
+            except (ValueError, TypeError):
+                pass
+        return self.primary_role
+
+    def add_role(self, role: RoleEnum) -> bool:
+        """Add a role to the user if not already present"""
+        if role in self.get_roles():
+            return False
+        user_role = UserRole(user_id=self.id, role=role)
+        db.session.add(user_role)
+        return True
+
+    def remove_role(self, role: RoleEnum) -> bool:
+        """Remove a role from the user (cannot remove primary_role)"""
+        if role == self.primary_role:
+            return False
+        user_role = UserRole.query.filter_by(user_id=self.id, role=role).first()
+        if user_role:
+            db.session.delete(user_role)
+            return True
+        return False
+
+
+# ------- User Roles (Multi-role support) -------
+class UserRole(db.Model):
+    __tablename__ = "user_role"
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    role = db.Column(db.Enum(RoleEnum), nullable=False, index=True)
+    created_at = db.Column(db.DateTime(timezone=True), server_default=func.now(), nullable=False)
+    
+    __table_args__ = (
+        db.UniqueConstraint("user_id", "role", name="uq_user_role_user_role"),
+    )
 
 
 # ------- Follows -------
@@ -739,6 +808,10 @@ PORTFOLIO_OPTIONAL_ROLES = {RoleEnum.manager, RoleEnum.security_usher_crowd_cont
 
 
 def role_requires_portfolio(role) -> bool:
+    """Check if a role requires portfolio - works with RoleEnum or User object"""
+    if hasattr(role, 'get_roles'):  # User object
+        user_roles = role.get_roles()
+        return any(r in PORTFOLIO_REQUIRED_ROLES for r in user_roles)
     try:
         r = role if isinstance(role, RoleEnum) else RoleEnum(str(role))
     except Exception:
@@ -747,13 +820,13 @@ def role_requires_portfolio(role) -> bool:
 
 
 def is_service_provider(user) -> bool:
+    """Check if user is a service provider - user must have ANY role in BOOKME_PROVIDER_ROLES and not be admin"""
     if not user:
         return False
-    try:
-        r = user.role if isinstance(user.role, RoleEnum) else RoleEnum(str(user.role))
-    except Exception:
+    if user.has_role(RoleEnum.admin):
         return False
-    return (r in BOOKME_PROVIDER_ROLES) and (r != RoleEnum.admin)
+    user_roles = user.get_roles()
+    return any(r in BOOKME_PROVIDER_ROLES for r in user_roles)
 
 
 app.jinja_env.globals["is_service_provider"] = is_service_provider
@@ -1184,10 +1257,11 @@ VAULT_ELIGIBLE_ROLES: set[RoleEnum] = {
 }
 
 def is_vault_eligible(user: User) -> bool:
-    """Check if user's role is eligible for project vaults"""
-    if not user or not user.role:
+    """Check if user's role is eligible for project vaults - user must have ANY role in VAULT_ELIGIBLE_ROLES"""
+    if not user:
         return False
-    return user.role in VAULT_ELIGIBLE_ROLES
+    user_roles = user.get_roles()
+    return any(r in VAULT_ELIGIBLE_ROLES for r in user_roles)
 
 
 # =========================================================
@@ -1199,7 +1273,7 @@ def load_user(user_id):
 
 
 def is_password_expired(user: User) -> bool:
-    if user.role != RoleEnum.admin:
+    if not user.has_role(RoleEnum.admin):
         return False
     if not user.password_changed_at:
         return True
@@ -1211,7 +1285,7 @@ def role_required(*roles):
         @wraps(f)
         @login_required
         def wrapper(*args, **kwargs):
-            if current_user.role.value not in roles:
+            if not current_user.has_role(*roles):
                 flash("You don't have access to that page.", "error")
                 return redirect(url_for("home"))
             return f(*args, **kwargs)
@@ -1381,7 +1455,7 @@ def _user_has_paid_for_beat(user_id: int, beat_id: int) -> bool:
 
 
 def _is_admin() -> bool:
-    return current_user.is_authenticated and current_user.role == RoleEnum.admin
+    return current_user.is_authenticated and current_user.has_role(RoleEnum.admin)
 
 
 def get_social_counts(user_id: int) -> tuple[int, int]:
@@ -1554,7 +1628,8 @@ def register():
             email=email,
             full_name=full_name or None,
             artist_name=artist_name or None,
-            role=chosen_role,
+            role=chosen_role,  # Legacy - kept for migration compatibility
+            primary_role=chosen_role,
         )
 
         if IS_DEV:
@@ -1562,6 +1637,11 @@ def register():
 
         user.set_password(password)
         db.session.add(user)
+        db.session.flush()  # Get user.id
+        
+        # Create UserRole entry for primary_role
+        user_role = UserRole(user_id=user.id, role=chosen_role)
+        db.session.add(user_role)
         db.session.commit()
 
         get_or_create_wallet(user.id)
@@ -2143,7 +2223,37 @@ def profile_edit():
         flash("Profile updated successfully.", "success")
         return redirect(url_for("profile_edit"))
 
-    return render_template("profile_edit.html", prof=prof)
+    # Get user's roles for display
+    user_roles = current_user.get_roles()
+    
+    # Filter available roles: Only show Studio for Producer, Producer for Studio
+    available_roles = []
+    primary = current_user.primary_role
+    if primary == RoleEnum.producer:
+        # Producer can only add Studio
+        if not current_user.has_role(RoleEnum.studio):
+            available_roles = [RoleEnum.studio]
+    elif primary == RoleEnum.studio:
+        # Studio can only add Producer
+        if not current_user.has_role(RoleEnum.producer):
+            available_roles = [RoleEnum.producer]
+    else:
+        # For other roles, check if they have Producer or Studio
+        user_roles_set = current_user.get_roles()
+        if RoleEnum.producer in user_roles_set:
+            if not current_user.has_role(RoleEnum.studio):
+                available_roles = [RoleEnum.studio]
+        elif RoleEnum.studio in user_roles_set:
+            if not current_user.has_role(RoleEnum.producer):
+                available_roles = [RoleEnum.producer]
+    
+    return render_template(
+        "profile_edit.html",
+        prof=prof,
+        user_roles=user_roles,
+        available_roles=available_roles,
+        active_role=current_user.active_role(),
+    )
 
 
 @app.route("/profile/avatar", methods=["POST"])
@@ -2182,7 +2292,7 @@ def update_avatar():
 def toggle_follow(user_id: int):
     target = User.query.get_or_404(user_id)
 
-    if target.role == RoleEnum.admin:
+    if target.has_role(RoleEnum.admin):
         return jsonify({"ok": False, "error": "You can't follow an admin account."}), 403
     if target.id == current_user.id:
         return jsonify({"ok": False, "error": "You can't follow yourself."}), 400
@@ -2227,7 +2337,7 @@ def toggle_follow(user_id: int):
 def user_profile(username):
     profile_user = User.query.filter(func.lower(User.username) == username.lower()).first_or_404()
 
-    if profile_user.role == RoleEnum.producer:
+    if profile_user.has_role(RoleEnum.producer):
         return redirect(url_for("producer_catalog_detail", username=profile_user.username))
 
     if is_service_provider(profile_user):
@@ -2246,7 +2356,7 @@ def user_profile(username):
     return render_template(
         "public_profile.html",
         profile_user=profile_user,
-        role_label=get_role_display(profile_user.role),
+        role_label=get_role_display(profile_user.active_role()),
         followers_count=followers_count,
         following_count=following_count,
         is_following=is_following,
@@ -2276,7 +2386,7 @@ def api_followers(user_id):
                 "username": user.username,
                 "display_name": user.display_name or user.username,
                 "avatar_url": user.avatar_url,
-                "role": user.role.value if user.role else None,
+                "role": user.primary_role.value if user.primary_role else None,
             })
     
     return jsonify({"followers": result})
@@ -2305,7 +2415,7 @@ def api_following(user_id):
                 "username": user.username,
                 "display_name": user.display_name or user.username,
                 "avatar_url": user.avatar_url,
-                "role": user.role.value if user.role else None,
+                "role": user.primary_role.value if user.primary_role else None,
             })
     
     return jsonify({"following": result})
@@ -2320,8 +2430,8 @@ def user_follow_toggle(username):
         flash("You can’t follow yourself.", "info")
         return redirect(request.referrer or url_for("user_profile", username=target.username))
 
-    if target.role == RoleEnum.admin:
-        flash("You can’t follow an admin account.", "error")
+    if target.has_role(RoleEnum.admin):
+        flash("You can't follow an admin account.", "error")
         return redirect(request.referrer or url_for("market_index"))
 
     existing = UserFollow.query.filter_by(follower_id=current_user.id, followed_id=target.id).first()
@@ -2342,7 +2452,8 @@ def user_follow_toggle(username):
 # BookMe
 # =========================================================
 def _ensure_bookme_provider():
-    if current_user.role not in BOOKME_PROVIDER_ROLES:
+    """Ensure current user has at least one role in BOOKME_PROVIDER_ROLES"""
+    if not is_service_provider(current_user):
         flash("Only service providers can edit a BookMe profile.", "error")
         return False
     return True
@@ -2364,7 +2475,9 @@ def bookme_search():
 
     if role:
         try:
-            query = query.filter(User.role == RoleEnum(role))
+            role_enum = RoleEnum(role)
+            # Join with UserRole to filter by role
+            query = query.join(UserRole, UserRole.user_id == User.id).filter(UserRole.role == role_enum)
         except ValueError:
             pass
 
@@ -2394,7 +2507,7 @@ def bookme_search():
         providers_payload.append({
             "username": p.user.username if p.user else None,
             "display_name": p.display_name,
-            "role": p.user.role.value if getattr(p.user, "role", None) else "",
+            "role": p.user.primary_role.value if p.user.primary_role else "",
             "city": p.city or "",
             "state": p.state or "",
             "lat": p.lat,
@@ -2431,7 +2544,9 @@ def bookme_data():
 
     if role:
         try:
-            query = query.filter(User.role == RoleEnum(role))
+            role_enum = RoleEnum(role)
+            # Join with UserRole to filter by role
+            query = query.join(UserRole, UserRole.user_id == User.id).filter(UserRole.role == role_enum)
         except ValueError:
             pass
 
@@ -2608,7 +2723,7 @@ def bookme_portfolio():
         return redirect(url_for("bookme_portfolio"))
 
     items = prof.portfolio_items.order_by(PortfolioItem.sort_order.asc(), PortfolioItem.created_at.desc()).all()
-    requires_portfolio = role_requires_portfolio(current_user.role)
+    requires_portfolio = role_requires_portfolio(current_user)
 
     return render_template(
         "bookme_portfolio.html",
@@ -2697,7 +2812,7 @@ def bookme_request_confirm(provider_id):
         
         # Check if the requested time is blocked (for studios)
         time_blocked = False
-        if provider.role == RoleEnum.studio:
+        if provider.has_role(RoleEnum.studio):
             try:
                 if " " in pref:
                     date_part = pref.split(" ", 1)[0]
@@ -2733,7 +2848,7 @@ def bookme_request_confirm(provider_id):
         return redirect(url_for("bookme_request", provider_id=provider_id))
     
     # Check if the requested time is blocked (for studios)
-    if provider.role == RoleEnum.studio:
+    if provider.has_role(RoleEnum.studio):
         try:
             if " " in pref:
                 date_part = pref.split(" ", 1)[0]
@@ -2956,7 +3071,7 @@ def booking_detail(booking_id):
 
     is_provider = current_user.id == booking.provider_id
     is_client = current_user.id == booking.client_id
-    is_admin = current_user.role == RoleEnum.admin
+    is_admin = current_user.has_role(RoleEnum.admin)
 
     if not (is_provider or is_client or is_admin):
         flash("You don't have access to this booking.", "error")
@@ -3118,7 +3233,9 @@ def bookme_book_provider(username):
             )
         
         # Build comprehensive message from role-specific fields
-        role_val = (provider.role.value if provider.role and hasattr(provider.role, 'value') else str(provider.role)).lower()
+        # Use active_role or primary_role for role-specific logic
+        active_role = provider.active_role()
+        role_val = active_role.value.lower()
         message_parts = []
         
         if budget:
@@ -3400,17 +3517,34 @@ def book_artist(username):
 def market_index():
     items = Beat.query.filter_by(is_active=True).order_by(Beat.is_featured.desc(), Beat.id.desc()).all()
 
+    # Filter providers - user must have ANY role in BOOKME_PROVIDER_ROLES and not be admin
+    # Get all provider user IDs (from primary_role or UserRole)
+    provider_user_ids = set()
+    provider_primary = User.query.filter(User.primary_role.in_(list(BOOKME_PROVIDER_ROLES))).filter(User.primary_role != RoleEnum.admin).all()
+    provider_user_ids.update(u.id for u in provider_primary)
+    provider_in_userrole = UserRole.query.filter(UserRole.role.in_(list(BOOKME_PROVIDER_ROLES))).all()
+    provider_user_ids.update(ur.user_id for ur in provider_in_userrole)
+    # Exclude admins
+    admin_ids = set()
+    admin_primary = User.query.filter(User.primary_role == RoleEnum.admin).all()
+    admin_ids.update(u.id for u in admin_primary)
+    admin_in_userrole = UserRole.query.filter(UserRole.role == RoleEnum.admin).all()
+    admin_ids.update(ur.user_id for ur in admin_in_userrole)
+    provider_user_ids -= admin_ids
+    
     provider_profiles = (
         BookMeProfile.query
-        .join(User, BookMeProfile.user_id == User.id)
-        .filter(User.role.in_(list(BOOKME_PROVIDER_ROLES)))
+        .filter(BookMeProfile.user_id.in_(provider_user_ids) if provider_user_ids else False)
         .order_by(BookMeProfile.city.asc(), BookMeProfile.display_name.asc())
         .all()
     )
 
     def profile_has_role(profile, roles: set[RoleEnum]):
         u = profile.user
-        return (u is not None) and (u.role in roles)
+        if u is None:
+            return False
+        user_roles = u.get_roles()
+        return any(r in roles for r in user_roles)
 
     studios = [p for p in provider_profiles if profile_has_role(p, {RoleEnum.studio})]
     videographers = [p for p in provider_profiles if profile_has_role(p, {RoleEnum.videographer})]
@@ -3592,13 +3726,26 @@ def market_download(beat_id):
 @app.route("/market/providers.json", endpoint="market_providers_json")
 @login_required
 def market_providers_json():
+    # Get all provider user IDs (from primary_role or UserRole)
+    provider_user_ids = set()
+    provider_primary = User.query.filter(User.primary_role.in_(list(BOOKME_PROVIDER_ROLES))).filter(User.primary_role != RoleEnum.admin).all()
+    provider_user_ids.update(u.id for u in provider_primary)
+    provider_in_userrole = UserRole.query.filter(UserRole.role.in_(list(BOOKME_PROVIDER_ROLES))).all()
+    provider_user_ids.update(ur.user_id for ur in provider_in_userrole)
+    # Exclude admins
+    admin_ids = set()
+    admin_primary = User.query.filter(User.primary_role == RoleEnum.admin).all()
+    admin_ids.update(u.id for u in admin_primary)
+    admin_in_userrole = UserRole.query.filter(UserRole.role == RoleEnum.admin).all()
+    admin_ids.update(ur.user_id for ur in admin_in_userrole)
+    provider_user_ids -= admin_ids
+    
     rows = (
         BookMeProfile.query
-        .join(User, BookMeProfile.user_id == User.id)
         .filter(
             BookMeProfile.lat.isnot(None),
             BookMeProfile.lng.isnot(None),
-            User.role.in_(list(BOOKME_PROVIDER_ROLES)),
+            BookMeProfile.user_id.in_(provider_user_ids) if provider_user_ids else False
         )
         .all()
     )
@@ -3610,7 +3757,7 @@ def market_providers_json():
         payload.append({
             "username": p.user.username,
             "display_name": p.display_name,
-            "role": p.user.role.value if p.user.role else "",
+            "role": p.user.primary_role.value if p.user.primary_role else "",
             "city": p.city or "",
             "state": p.state or "",
             "lat": float(p.lat),
@@ -3824,7 +3971,7 @@ def producer_market_delete(beat_id):
 @login_required
 def market_upload():
     # Only producers can upload beats
-    if current_user.role != RoleEnum.producer:
+    if not current_user.has_role(RoleEnum.producer):
         flash("Only producers can upload beats to the marketplace.", "error")
         return redirect(url_for("market_index"))
     
@@ -3924,7 +4071,7 @@ def my_tickets():
 @login_required
 def my_ticket_detail(ticket_id):
     ticket = SupportTicket.query.get_or_404(ticket_id)
-    if (ticket.user_id != current_user.id) and (current_user.role != RoleEnum.admin):
+    if (ticket.user_id != current_user.id) and (not current_user.has_role(RoleEnum.admin)):
         abort(403)
 
     comments = ticket.comments.order_by(SupportTicketComment.created_at.asc()).all()
@@ -3937,7 +4084,17 @@ def my_ticket_detail(ticket_id):
 @app.route("/dashboard/admin", endpoint="admin_dashboard")
 @role_required("admin")
 def admin_dashboard():
-    total_users = User.query.filter(User.role != RoleEnum.admin).count()
+    # Count users who don't have admin role (simpler approach)
+    total_all_users = User.query.count()
+    admin_user_ids = set()
+    # Get users with admin as primary_role
+    admin_primary = User.query.filter(User.primary_role == RoleEnum.admin).all()
+    admin_user_ids.update(u.id for u in admin_primary)
+    # Get users with admin in UserRole
+    admin_in_userrole = UserRole.query.filter(UserRole.role == RoleEnum.admin).all()
+    admin_user_ids.update(ur.user_id for ur in admin_in_userrole)
+    total_users = total_all_users - len(admin_user_ids)
+    
     total_wallets = Wallet.query.count()
     total_beats = Beat.query.count()
     total_orders = Order.query.count()
@@ -3946,8 +4103,21 @@ def admin_dashboard():
     approved_kyc = User.query.filter_by(kyc_status=KYCStatus.approved).count()
     rejected_kyc = User.query.filter_by(kyc_status=KYCStatus.rejected).count()
 
-    total_artists = User.query.filter_by(role=RoleEnum.artist).count()
-    total_producers = User.query.filter_by(role=RoleEnum.producer).count()
+    # Count users with artist role (primary or additional)
+    artist_user_ids = set()
+    artist_primary = User.query.filter(User.primary_role == RoleEnum.artist).all()
+    artist_user_ids.update(u.id for u in artist_primary)
+    artist_in_userrole = UserRole.query.filter(UserRole.role == RoleEnum.artist).all()
+    artist_user_ids.update(ur.user_id for ur in artist_in_userrole)
+    total_artists = len(artist_user_ids)
+    
+    # Count users with producer role (primary or additional)
+    producer_user_ids = set()
+    producer_primary = User.query.filter(User.primary_role == RoleEnum.producer).all()
+    producer_user_ids.update(u.id for u in producer_primary)
+    producer_in_userrole = UserRole.query.filter(UserRole.role == RoleEnum.producer).all()
+    producer_user_ids.update(ur.user_id for ur in producer_in_userrole)
+    total_producers = len(producer_user_ids)
 
     total_tickets = SupportTicket.query.count()
     open_tickets = SupportTicket.query.filter_by(status=TicketStatus.open).count()
@@ -4081,7 +4251,16 @@ def superadmin_dashboard():
     if not owner_panel_unlocked():
         return redirect(url_for("superadmin_unlock"))
 
-    total_users = User.query.filter(User.role != RoleEnum.admin).count()
+    # Count users who don't have admin role (simpler approach)
+    total_all_users = User.query.count()
+    admin_user_ids = set()
+    # Get users with admin as primary_role
+    admin_primary = User.query.filter(User.primary_role == RoleEnum.admin).all()
+    admin_user_ids.update(u.id for u in admin_primary)
+    # Get users with admin in UserRole
+    admin_in_userrole = UserRole.query.filter(UserRole.role == RoleEnum.admin).all()
+    admin_user_ids.update(ur.user_id for ur in admin_in_userrole)
+    total_users = total_all_users - len(admin_user_ids)
     total_wallets = Wallet.query.count()
     total_beats = Beat.query.count()
     total_orders = Order.query.count()
@@ -4139,7 +4318,9 @@ def superadmin_dashboard():
 @app.route("/dashboard")
 @login_required
 def route_to_dashboard():
-    role = current_user.role.value
+    # Use active_role from session, or fallback to primary_role
+    active_role = current_user.active_role()
+    role = active_role.value
 
     if role == "admin":
         endpoint = "admin_dashboard"
@@ -4254,7 +4435,7 @@ def artist_dashboard():
 
     return render_template(
         "dash_artist.html",
-        role_label=get_role_display(current_user.role),
+        role_label=get_role_display(current_user.active_role()),
         prof=prof,
         portfolio_count=portfolio_count,
 
@@ -4381,7 +4562,7 @@ def provider_dashboard():
     
     return render_template(
         "dash_provider.html",
-        role_label=get_role_display(current_user.role),
+        role_label=get_role_display(current_user.active_role()),
         prof=prof,
         followers_count=followers_count,
         following_count=following_count,
@@ -4442,7 +4623,7 @@ def studio_dashboard():
     
     return render_template(
         "dash_studio.html",
-        role_label=get_role_display(current_user.role),
+        role_label=get_role_display(current_user.active_role()),
         prof=prof,
         followers_count=followers_count,
         following_count=following_count,
@@ -4497,11 +4678,11 @@ def provider_toggle_live():
     db.session.commit()
     
     status = "activated" if prof.is_visible else "deactivated"
-    role_name = get_role_display(current_user.role)
+    role_name = get_role_display(current_user.active_role())
     flash(f"Profile {status}. {'Your services are now visible on the marketplace.' if prof.is_visible else 'Your services are hidden from the marketplace, but your profile is still visible for following and portfolio viewing.'}", "success")
     
     # Redirect to appropriate dashboard based on role
-    role = current_user.role.value
+    role = current_user.active_role().value
     if role == "videographer":
         return redirect(url_for("videographer_dashboard"))
     elif role == "designer":
@@ -4846,7 +5027,7 @@ def videographer_dashboard():
     
     return render_template(
         "dash_videographer.html",
-        role_label=get_role_display(current_user.role),
+        role_label=get_role_display(current_user.active_role()),
         prof=prof,
         followers_count=followers_count,
         following_count=following_count,
@@ -5007,7 +5188,7 @@ def designer_dashboard():
     
     return render_template(
         "dash_designer.html",
-        role_label=get_role_display(current_user.role),
+        role_label=get_role_display(current_user.active_role()),
         prof=prof,
         followers_count=followers_count,
         following_count=following_count,
@@ -5179,7 +5360,7 @@ def photographer_dashboard():
     
     return render_template(
         "dash_photographer.html",
-        role_label=get_role_display(current_user.role),
+        role_label=get_role_display(current_user.active_role()),
         photographer={
             "display_name": prof.display_name if prof else current_user.display_name or current_user.username,
             "studio_name": prof.display_name if prof else None,
@@ -5264,7 +5445,7 @@ def engineer_dashboard():
     
     return render_template(
         "dash_engineer.html",
-        role_label=get_role_display(current_user.role),
+        role_label=get_role_display(current_user.active_role()),
         prof=prof,
         followers_count=followers_count,
         following_count=following_count,
@@ -5569,7 +5750,7 @@ def manager_dashboard():
     
     return render_template(
         "dash_manager.html",
-        role_label=get_role_display(current_user.role),
+        role_label=get_role_display(current_user.active_role()),
         manager=manager_info,
         stats=stats,
         artists=artists_list,
@@ -5808,7 +5989,7 @@ def dj_dashboard():
     
     return render_template(
         "dash_dj.html",
-        role_label=get_role_display(current_user.role),
+        role_label=get_role_display(current_user.active_role()),
         dj=dj_info,
         stats=stats,
         bookings=bookings_list,
@@ -6036,7 +6217,7 @@ def host_dashboard():
     
     return render_template(
         "dash_host.html",
-        role_label=get_role_display(current_user.role),
+        role_label=get_role_display(current_user.active_role()),
         host=host_info,
         stats=stats,
         requests=requests_list,
@@ -6265,7 +6446,7 @@ def hair_dashboard():
     
     return render_template(
         "dash_hair.html",
-        role_label=get_role_display(current_user.role),
+        role_label=get_role_display(current_user.active_role()),
         stylist=stylist_info,
         stats=stats,
         requests=requests_list,
@@ -6459,7 +6640,7 @@ def wardrobe_dashboard():
     
     return render_template(
         "dash_wardrobe.html",
-        role_label=get_role_display(current_user.role),
+        role_label=get_role_display(current_user.active_role()),
         stylist=stylist_info,
         stats=stats,
         requests=requests_list,
@@ -6693,7 +6874,7 @@ def makeup_dashboard():
     
     return render_template(
         "dash_makeup.html",
-        role_label=get_role_display(current_user.role),
+        role_label=get_role_display(current_user.active_role()),
         makeup_artist=makeup_artist_info,
         stats=stats,
         requests=requests_list,
@@ -6810,7 +6991,7 @@ def vendor_dashboard():
     
     return render_template(
         "dash_vendor.html",
-        role_label=get_role_display(current_user.role),
+        role_label=get_role_display(current_user.active_role()),
         prof=prof,
         artist_can_take_gigs=artist_can_take_gigs,
         followers_count=followers_count,
@@ -6947,7 +7128,7 @@ def opportunities():
 def whoami():
     return (
         f"id={current_user.id}, username={current_user.username}, "
-        f"role={current_user.role.value}, "
+        f"role={current_user.active_role().value}, "
         f"kyc={current_user.kyc_status.value}, "
         f"active={current_user.is_active_col}"
     )
@@ -7298,7 +7479,7 @@ def admin_user_toggle_active(user_id: int):
         return redirect(url_for("admin_team"))
     
     # Only allow toggling admin accounts
-    if user.role != RoleEnum.admin:
+    if not user.has_role(RoleEnum.admin):
         flash("This endpoint is only for admin accounts.", "error")
         return redirect(url_for("admin_team"))
     
@@ -7939,6 +8120,199 @@ def vaults_delete(vault_id):
     
     flash(f"Vault '{vault.name}' deleted successfully.", "success")
     return redirect(url_for("vaults_index"))
+
+
+# =========================================================
+# Role Switching Endpoints
+# =========================================================
+@app.route("/role/switch", methods=["POST"], endpoint="role_switch")
+@login_required
+def role_switch():
+    """Switch active role for the current user"""
+    requested_role_str = request.form.get("role", "").strip()
+    
+    if not requested_role_str:
+        flash("No role specified.", "error")
+        return redirect(request.referrer or url_for("route_to_dashboard"))
+    
+    try:
+        requested_role = RoleEnum(requested_role_str)
+    except (ValueError, TypeError):
+        flash("Invalid role.", "error")
+        return redirect(request.referrer or url_for("route_to_dashboard"))
+    
+    # Verify user has this role
+    if not current_user.has_role(requested_role):
+        flash("You don't have access to that role.", "error")
+        return redirect(request.referrer or url_for("route_to_dashboard"))
+    
+    # Set active role in session
+    from flask import session
+    session["active_role"] = requested_role.value
+    
+    flash(f"Switched to {get_role_display(requested_role)} view.", "success")
+    return redirect(url_for("route_to_dashboard"))
+
+
+@app.route("/role/options", methods=["GET"], endpoint="role_options")
+@login_required
+def role_options():
+    """Get list of roles available to the current user"""
+    user_roles = current_user.get_roles()
+    options = [
+        {
+            "value": role.value,
+            "label": get_role_display(role),
+            "is_primary": role == current_user.primary_role,
+            "is_active": role == current_user.active_role()
+        }
+        for role in sorted(user_roles, key=lambda r: (r != current_user.primary_role, r.value))
+    ]
+    return jsonify({"roles": options})
+
+
+@app.route("/role/add", methods=["POST"], endpoint="role_add")
+@login_required
+def role_add():
+    """Add a role to the current user - only allows Producer ↔ Studio pairing"""
+    role_str = request.form.get("role", "").strip()
+    
+    if not role_str:
+        flash("No role specified.", "error")
+        return redirect(request.referrer or url_for("profile_edit"))
+    
+    try:
+        role = RoleEnum(role_str)
+    except (ValueError, TypeError):
+        flash("Invalid role.", "error")
+        return redirect(request.referrer or url_for("profile_edit"))
+    
+    # Cannot add admin role
+    if role == RoleEnum.admin:
+        flash("Cannot add admin role.", "error")
+        return redirect(request.referrer or url_for("profile_edit"))
+    
+    # Only allow Producer ↔ Studio pairing
+    primary = current_user.primary_role
+    if primary == RoleEnum.producer:
+        if role != RoleEnum.studio:
+            flash("Producers can only add the Studio role.", "error")
+            return redirect(request.referrer or url_for("profile_edit"))
+    elif primary == RoleEnum.studio:
+        if role != RoleEnum.producer:
+            flash("Studios can only add the Producer role.", "error")
+            return redirect(request.referrer or url_for("profile_edit"))
+    else:
+        # For other roles, only allow Producer ↔ Studio pairing if they already have one
+        user_roles = current_user.get_roles()
+        if RoleEnum.producer in user_roles:
+            if role != RoleEnum.studio:
+                flash("You can only add the Studio role.", "error")
+                return redirect(request.referrer or url_for("profile_edit"))
+        elif RoleEnum.studio in user_roles:
+            if role != RoleEnum.producer:
+                flash("You can only add the Producer role.", "error")
+                return redirect(request.referrer or url_for("profile_edit"))
+        else:
+            flash("Only Producer and Studio roles can be paired together.", "error")
+            return redirect(request.referrer or url_for("profile_edit"))
+    
+    # Check if user already has this role
+    if current_user.has_role(role):
+        flash(f"You already have the {get_role_display(role)} role.", "info")
+        return redirect(request.referrer or url_for("profile_edit"))
+    
+    # Add the role
+    if current_user.add_role(role):
+        db.session.commit()
+        flash(f"Added {get_role_display(role)} role successfully!", "success")
+    else:
+        flash("Could not add role.", "error")
+    
+    return redirect(request.referrer or url_for("profile_edit"))
+
+
+@app.route("/role/remove", methods=["POST"], endpoint="role_remove")
+@login_required
+def role_remove():
+    """Remove a role from the current user (cannot remove primary_role)"""
+    role_str = request.form.get("role", "").strip()
+    
+    if not role_str:
+        flash("No role specified.", "error")
+        return redirect(request.referrer or url_for("profile_edit"))
+    
+    try:
+        role = RoleEnum(role_str)
+    except (ValueError, TypeError):
+        flash("Invalid role.", "error")
+        return redirect(request.referrer or url_for("profile_edit"))
+    
+    # Cannot remove primary_role
+    if role == current_user.primary_role:
+        flash("Cannot remove your primary role. Change your primary role first.", "error")
+        return redirect(request.referrer or url_for("profile_edit"))
+    
+    # Remove the role
+    if current_user.remove_role(role):
+        db.session.commit()
+        # Clear active_role from session if it was the removed role
+        from flask import session
+        if session.get("active_role") == role.value:
+            session.pop("active_role", None)
+        flash(f"Removed {get_role_display(role)} role successfully!", "success")
+    else:
+        flash("Could not remove role. You may not have this role.", "error")
+    
+    return redirect(request.referrer or url_for("profile_edit"))
+
+
+@app.route("/role/set-primary", methods=["POST"], endpoint="role_set_primary")
+@login_required
+def role_set_primary():
+    """Change the user's primary role"""
+    role_str = request.form.get("role", "").strip()
+    
+    if not role_str:
+        flash("No role specified.", "error")
+        return redirect(request.referrer or url_for("profile_edit"))
+    
+    try:
+        new_primary = RoleEnum(role_str)
+    except (ValueError, TypeError):
+        flash("Invalid role.", "error")
+        return redirect(request.referrer or url_for("profile_edit"))
+    
+    # User must have this role
+    if not current_user.has_role(new_primary):
+        flash("You don't have this role. Add it first.", "error")
+        return redirect(request.referrer or url_for("profile_edit"))
+    
+    old_primary = current_user.primary_role
+    
+    # Update primary_role
+    current_user.primary_role = new_primary
+    
+    # Move old primary to UserRole if it's not already there
+    if old_primary != new_primary:
+        existing = UserRole.query.filter_by(user_id=current_user.id, role=old_primary).first()
+        if not existing:
+            old_role_entry = UserRole(user_id=current_user.id, role=old_primary)
+            db.session.add(old_role_entry)
+        
+        # Remove new primary from UserRole (since it's now the primary)
+        new_role_entry = UserRole.query.filter_by(user_id=current_user.id, role=new_primary).first()
+        if new_role_entry:
+            db.session.delete(new_role_entry)
+    
+    db.session.commit()
+    
+    # Update active role in session
+    from flask import session
+    session["active_role"] = new_primary.value
+    
+    flash(f"Changed primary role to {get_role_display(new_primary)}.", "success")
+    return redirect(request.referrer or url_for("profile_edit"))
 
 
 # =========================================================
