@@ -120,8 +120,9 @@ if db_url:
     if db_url.startswith("postgres://"):
         db_url = db_url.replace("postgres://", "postgresql://", 1)
 
-    if db_url.startswith("postgresql://") and not db_url.startswith("postgresql+psycopg://"):
-        db_url = db_url.replace("postgresql://", "postgresql+psycopg://", 1)
+    # Use psycopg2 for psycopg2-binary (SQLAlchemy 2.0 compatible)
+    if db_url.startswith("postgresql://") and not db_url.startswith("postgresql+psycopg2://"):
+        db_url = db_url.replace("postgresql://", "postgresql+psycopg2://", 1)
 
     app.config["SQLALCHEMY_DATABASE_URI"] = db_url
 else:

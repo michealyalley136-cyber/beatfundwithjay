@@ -1,0 +1,57 @@
+# Render ignore file
+# Files and directories to exclude from deployment
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+.venv
+
+# Database
+instance/app.db
+*.db
+*.sqlite
+*.sqlite3
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Local uploads (use cloud storage in production)
+uploads/
+instance/
+
+# Development files
+check_*.py
+fix_*.py
+model_old.py
+models_unused.py
+migrate_*.py
+migrate_*.sql
+reset_*.py
+create_admin.py
+
+# Documentation
+SETUP_POSTGRES.md
+RENDER_DEPLOY.md
+README.md
+
+# Git
+.git/
+.gitignore
+
