@@ -448,6 +448,29 @@ code{
   .btn{ width: 100%; }
 
   .suggested-row{ flex-direction: column; align-items: stretch; }
+  
+  .dash-hero-card{
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  
+  .dash-actions{
+    width: 100%;
+    justify-content: flex-start;
+  }
+  
+  .dash-actions .btn{
+    flex: 1;
+    min-width: 0;
+  }
+  
+  .card{
+    padding: 14px;
+  }
+  
+  .card-title{
+    font-size: 14px;
+  }
 }
 
 /* =========================================================
@@ -592,6 +615,23 @@ code{
   .nav-toggle{ display:inline-flex; }
 }
 
+/* Additional mobile enhancements */
+@media (max-width: 640px){
+  .top-nav{
+    padding: 10px 12px;
+  }
+  
+  .brand-main{ font-size: 12px; }
+  .brand-sub{ font-size: 10px; }
+  
+  .nav-toggle{
+    padding: 8px 10px;
+    font-size: 12px;
+  }
+  
+  .nav-toggle-label{ font-size: 11px; }
+}
+
 /* =========================================================
    Role accents for dashboards (same layout, different vibe)
    Add this at the VERY BOTTOM of app.css
@@ -629,6 +669,162 @@ code{
 .dashboard[data-role="producer"] .role-pill{ border-color: rgba(34,197,94,0.35); background: rgba(34,197,94,0.12); }
 .dashboard[data-role="provider"] .role-pill{ border-color: rgba(56,189,248,0.35); background: rgba(56,189,248,0.12); }
 .dashboard[data-role="admin"] .role-pill{ border-color: rgba(251,113,133,0.35); background: rgba(251,113,133,0.12); }
+
+/* =========================================================
+   Responsive Tables (Global Utility)
+   ========================================================= */
+.table-responsive{
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  margin: 0 0 1rem;
+}
+
+.table-responsive table{
+  width: 100%;
+  min-width: 600px;
+  border-collapse: collapse;
+}
+
+@media (max-width: 768px){
+  .table-responsive{
+    border-radius: 12px;
+    border: 1px solid var(--border);
+  }
+  
+  .table-responsive table{
+    font-size: 13px;
+  }
+  
+  .table-responsive th,
+  .table-responsive td{
+    padding: 8px 6px;
+  }
+}
+
+/* Card-based table layout for very small screens */
+@media (max-width: 480px){
+  .table-responsive-mobile-cards table,
+  .table-responsive-mobile-cards thead,
+  .table-responsive-mobile-cards tbody,
+  .table-responsive-mobile-cards tr{
+    display: block;
+    width: 100%;
+  }
+  
+  .table-responsive-mobile-cards thead{
+    display: none;
+  }
+  
+  .table-responsive-mobile-cards tr{
+    margin-bottom: 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+    padding: 12px;
+    background: var(--card);
+  }
+  
+  .table-responsive-mobile-cards td{
+    display: block;
+    padding: 6px 0;
+    border: none;
+    text-align: left !important;
+  }
+  
+  .table-responsive-mobile-cards td::before{
+    content: attr(data-label) ": ";
+    font-weight: 700;
+    color: var(--text);
+    opacity: 0.8;
+    display: inline-block;
+    min-width: 100px;
+    margin-right: 8px;
+  }
+}
+
+/* =========================================================
+   Global Form Mobile Enhancements
+   ========================================================= */
+@media (max-width: 768px){
+  /* Ensure all form inputs are mobile-friendly */
+  input[type="text"],
+  input[type="email"],
+  input[type="password"],
+  input[type="number"],
+  input[type="date"],
+  input[type="time"],
+  input[type="tel"],
+  input[type="url"],
+  textarea,
+  select{
+    font-size: 16px !important; /* Prevents zoom on iOS */
+    width: 100%;
+    box-sizing: border-box;
+    padding: 10px 12px;
+  }
+  
+  /* Form groups stack vertically on mobile */
+  .form-group,
+  .field-group,
+  .bf-group{
+    margin-bottom: 14px;
+  }
+  
+  /* Form rows become single column */
+  .form-row,
+  .bf-form-grid,
+  .wallet-row-inline{
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 12px;
+  }
+  
+  /* Button groups stack or wrap */
+  .btn-row,
+  .bf-footer-actions,
+  .bf-form-actions,
+  .bf-actions,
+  .opps-actions{
+    flex-direction: column;
+    width: 100%;
+  }
+  
+  .btn-row .btn,
+  .bf-footer-actions .btn,
+  .bf-form-actions .btn,
+  .bf-actions .btn,
+  .opps-actions .btn,
+  .opps-actions button{
+    width: 100%;
+    margin: 0;
+  }
+}
+
+@media (max-width: 480px){
+  /* Even smaller adjustments for tiny screens */
+  input[type="text"],
+  input[type="email"],
+  input[type="password"],
+  input[type="number"],
+  input[type="date"],
+  input[type="time"],
+  input[type="tel"],
+  input[type="url"],
+  textarea,
+  select{
+    padding: 12px;
+    font-size: 16px !important;
+  }
+  
+  button,
+  .btn,
+  input[type="submit"],
+  input[type="button"]{
+    padding: 12px 16px;
+    font-size: 15px;
+    min-height: 44px; /* iOS touch target */
+  }
+}
 
 /* =========================
    BeatFund Profile (Responsive)
@@ -795,5 +991,150 @@ code{
   .bf-profile-grid{ grid-template-columns: 1fr; }
   .bf-span-2{ grid-column: span 1; }
   .bf-form-grid{ grid-template-columns: 1fr; }
+  
+  .bf-wrap{ padding: 12px; }
+  .bf-pagehead{ flex-direction: column; align-items: flex-start; }
+  .bf-avatar-row{ flex-direction: column; }
+  .bf-avatar-lg{ width: 80px; height: 80px; }
+  .bf-actions{ flex-direction: column; width: 100%; }
+  .bf-btn{ width: 100%; }
+}
+
+@media (max-width: 480px){
+  .bf-wrap{ padding: 10px; }
+  .bf-h1{ font-size: 1.3rem; }
+  .bf-h2{ font-size: 1rem; }
+  .bf-avatar-lg{ width: 70px; height: 70px; }
+  .bf-card{ padding: 12px; }
+}
+
+/* ---- Policy & Careers Pages ---- */
+.policy-page,
+.careers-page {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 24px 0;
+  line-height: 1.7;
+  color: var(--text);
+}
+
+.policy-page h1,
+.careers-page h1 {
+  font-size: 28px;
+  font-weight: 600;
+  margin-bottom: 16px;
+  color: var(--text);
+}
+
+.policy-page h2,
+.careers-page h2 {
+  font-size: 20px;
+  font-weight: 600;
+  margin-top: 32px;
+  margin-bottom: 12px;
+  color: var(--text);
+}
+
+.policy-page p,
+.careers-page p {
+  margin-bottom: 16px;
+  color: var(--text);
+}
+
+.policy-page ul,
+.careers-page ul {
+  margin-left: 24px;
+  margin-bottom: 16px;
+  padding-left: 0;
+}
+
+.policy-page li,
+.careers-page li {
+  margin-bottom: 8px;
+  list-style-position: outside;
+}
+
+.policy-page strong,
+.careers-page strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.policy-page em,
+.careers-page em {
+  color: var(--muted);
+  font-style: italic;
+}
+
+/* ---- Footer ---- */
+.site-footer {
+  border-top: 1px solid var(--border);
+  background: rgba(2, 6, 23, 0.96);
+  padding: 48px 32px 32px;
+  margin-top: 64px;
+}
+
+.footer-content {
+  max-width: 1120px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 32px;
+}
+
+.footer-section h3 {
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin-bottom: 16px;
+  color: var(--text);
+}
+
+.footer-section a {
+  display: block;
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 13px;
+  margin-bottom: 10px;
+  transition: color 0.15s ease;
+}
+
+.footer-section a:hover {
+  color: var(--text);
+}
+
+@media (max-width: 768px) {
+  .site-footer {
+    padding: 32px 24px 24px;
+  }
+  
+  .footer-content {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 24px;
+  }
+}
+
+@media (max-width: 480px) {
+  .footer-content {
+    grid-template-columns: 1fr;
+    gap: 24px;
+  }
+  
+  .policy-page,
+  .careers-page {
+    padding: 16px 0;
+  }
+  
+  .policy-page h1,
+  .careers-page h1 {
+    font-size: 24px;
+  }
+  
+  .policy-page h2,
+  .careers-page h2 {
+    font-size: 18px;
+    margin-top: 24px;
+  }
 }
 

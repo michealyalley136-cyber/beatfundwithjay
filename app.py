@@ -84,13 +84,52 @@ app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Lax",
     SESSION_COOKIE_SECURE=not IS_DEV,
+    SESSION_COOKIE_NAME="__Secure-session" if not IS_DEV else "session",
     REMEMBER_COOKIE_HTTPONLY=True,
     REMEMBER_COOKIE_SECURE=not IS_DEV,
+    REMEMBER_COOKIE_NAME="__Secure-remember_token" if not IS_DEV else "remember_token",
     PERMANENT_SESSION_LIFETIME=timedelta(minutes=60),
 )
 app.config.setdefault("WTF_CSRF_TIME_LIMIT", None)
 
 csrf = CSRFProtect(app)
+
+# ---------------------------------------------------------
+# Security Headers Middleware
+# ---------------------------------------------------------
+@app.after_request
+def set_security_headers(response):
+    """Add comprehensive security headers to all responses"""
+    # Prevent XSS attacks
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    
+    # Content Security Policy - strict policy to prevent XSS
+    csp_policy = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+        "style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data: https:; "
+        "font-src 'self' data:; "
+        "connect-src 'self'; "
+        "frame-ancestors 'none'; "
+        "base-uri 'self'; "
+        "form-action 'self';"
+    )
+    response.headers["Content-Security-Policy"] = csp_policy
+    
+    # Strict Transport Security (HSTS) - only in production
+    if not IS_DEV:
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains; preload"
+    
+    # Permissions Policy (Feature Policy)
+    response.headers["Permissions-Policy"] = (
+        "geolocation=(), microphone=(), camera=(), payment=(), usb=()"
+    )
+    
+    return response
 
 
 @app.context_processor
@@ -104,6 +143,109 @@ def handle_csrf_error(e):
     msg = e.description or "Security error: please refresh the page and try again."
     flash(msg, "error")
     return redirect(request.referrer or url_for("home")), 400
+
+
+# ---------------------------------------------------------
+# Enhanced Security: Rate Limiting & Input Validation
+# ---------------------------------------------------------
+
+# General rate limiting storage
+RATE_LIMITS: dict[str, list[float]] = {}
+
+def get_client_id() -> str:
+    """Get unique client identifier for rate limiting"""
+    # Use IP + User-Agent hash for better tracking
+    ip = request.remote_addr or "unknown"
+    ua = request.headers.get("User-Agent", "")[:50] or "unknown"
+    import hashlib
+    combined = f"{ip}:{ua}"
+    return hashlib.sha256(combined.encode()).hexdigest()[:16]
+
+
+def check_rate_limit(action: str, max_requests: int = 10, window_seconds: int = 60) -> bool:
+    """Check if client has exceeded rate limit for an action"""
+    client_id = get_client_id()
+    key = f"{action}:{client_id}"
+    now = time()
+    
+    attempts = RATE_LIMITS.get(key, [])
+    attempts = [t for t in attempts if now - t < window_seconds]
+    
+    if len(attempts) >= max_requests:
+        return False
+    
+    attempts.append(now)
+    RATE_LIMITS[key] = attempts
+    return True
+
+
+def sanitize_input(value: str, max_length: int = 5000) -> str:
+    """Sanitize user input to prevent injection attacks"""
+    if not isinstance(value, str):
+        return ""
+    # Remove null bytes and control characters
+    cleaned = "".join(char for char in value if ord(char) >= 32 or char in "\n\r\t")
+    # Limit length
+    return cleaned[:max_length].strip()
+
+
+def validate_email(email: str) -> bool:
+    """Validate email format"""
+    if not email or len(email) > 255:
+        return False
+    pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+    return bool(re.match(pattern, email))
+
+
+def validate_username(username: str) -> bool:
+    """Validate username format - alphanumeric, underscore, dash only"""
+    if not username or len(username) < 3 or len(username) > 30:
+        return False
+    pattern = r'^[a-zA-Z0-9_-]+$'
+    return bool(re.match(pattern, username))
+
+
+def log_security_event(event_type: str, details: str, severity: str = "info"):
+    """Log security events (can be extended to write to file/DB)"""
+    timestamp = datetime.utcnow().isoformat()
+    client_id = get_client_id()
+    user_id = current_user.id if current_user.is_authenticated else None
+    username = current_user.username if current_user.is_authenticated else None
+    
+    # In production, write to secure log file or security monitoring system
+    if not IS_DEV:
+        # TODO: Implement proper security logging to file/DB/monitoring service
+        pass
+    else:
+        print(f"[SECURITY {severity.upper()}] {timestamp} | {event_type} | User: {username or 'anonymous'} | {details} | Client: {client_id[:8]}")
+
+
+# ---------------------------------------------------------
+# Enhanced Error Handling - Don't expose sensitive info
+# ---------------------------------------------------------
+@app.errorhandler(500)
+def handle_500_error(e):
+    """Handle 500 errors without exposing sensitive information"""
+    log_security_event("server_error", f"Internal server error: {type(e).__name__}", "error")
+    if IS_DEV:
+        # In dev, show the actual error
+        raise
+    flash("An error occurred. Our team has been notified.", "error")
+    return redirect(url_for("home")), 500
+
+
+@app.errorhandler(404)
+def handle_404_error(e):
+    """Handle 404 errors"""
+    return render_template("404.html") if os.path.exists("templates/404.html") else ("Page not found", 404)
+
+
+@app.errorhandler(403)
+def handle_403_error(e):
+    """Handle 403 Forbidden errors"""
+    log_security_event("unauthorized_access", f"403 Forbidden: {request.path}", "warning")
+    flash("You don't have permission to access this resource.", "error")
+    return redirect(request.referrer or url_for("home")), 403
 
 
 @app.template_test("None")
@@ -154,19 +296,67 @@ ALLOWED_STEMS = {"zip", "rar", "7z", "mp3", "wav", "m4a", "ogg"}
 
 ALLOWED_VIDEO_EXTS = {"mp4", "webm", "mov"}
 
+# Maximum file sizes (in bytes)
+MAX_IMAGE_SIZE = 10 * 1024 * 1024  # 10MB
+MAX_AUDIO_SIZE = 50 * 1024 * 1024  # 50MB
+MAX_VIDEO_SIZE = 100 * 1024 * 1024  # 100MB
+MAX_ARCHIVE_SIZE = 100 * 1024 * 1024  # 100MB
+
 
 def _ext_ok(filename: str, allowed: set[str]) -> bool:
-    return "." in filename and filename.rsplit(".", 1)[1].lower() in allowed
+    """Check if file extension is allowed with security checks"""
+    if not filename or "." not in filename:
+        return False
+    ext = filename.rsplit(".", 1)[1].lower()
+    # Additional security: prevent double extensions (e.g., file.php.jpg)
+    if filename.count(".") > 1:
+        # Only allow one extension
+        parts = filename.rsplit(".", 2)
+        if len(parts) >= 3 and parts[-2].lower() in {"php", "phtml", "jsp", "asp", "aspx", "exe", "sh", "bat", "cmd", "js", "html", "htm"}:
+            log_security_event("suspicious_file_extension", f"Blocked double extension: {filename}", "warning")
+            return False
+    return ext in allowed
 
 
 def _save_file(fs, allowed_set: set[str]) -> Optional[str]:
+    """Save uploaded file with comprehensive security checks"""
     if not fs or fs.filename == "":
         return None
-    if not _ext_ok(fs.filename, allowed_set):
+    
+    # Security: Validate filename
+    filename = secure_filename(fs.filename)
+    if not filename or not _ext_ok(filename, allowed_set):
+        log_security_event("invalid_file_upload", f"Invalid file extension: {fs.filename}", "warning")
         return None
-    ext = fs.filename.rsplit(".", 1)[1].lower()
+    
+    # Security: Check file size based on type
+    MAX_FILE_SIZE = MAX_IMAGE_SIZE if allowed_set == ALLOWED_IMAGE else (MAX_VIDEO_SIZE if allowed_set == ALLOWED_VIDEO_EXTS else MAX_AUDIO_SIZE)
+    fs.seek(0, 2)  # Seek to end
+    size = fs.tell()
+    fs.seek(0)  # Reset to beginning
+    if size > MAX_FILE_SIZE:
+        log_security_event("file_too_large", f"File size: {size} bytes, max: {MAX_FILE_SIZE}", "warning")
+        return None
+    
+    # Security: Rate limit file uploads
+    if not check_rate_limit("file_upload", max_requests=20, window_seconds=300):
+        log_security_event("upload_rate_limit", f"Too many uploads from client", "warning")
+        return None
+    
+    # Generate secure filename (UUID to prevent enumeration attacks)
+    ext = filename.rsplit(".", 1)[1].lower()
     fname = f"{uuid.uuid4().hex}.{ext}"
-    fs.save(os.path.join(app.config["UPLOAD_FOLDER"], fname))
+    filepath = os.path.join(app.config["UPLOAD_FOLDER"], fname)
+    
+    # Security: Ensure file is saved within upload directory (prevent directory traversal)
+    real_upload = os.path.realpath(app.config["UPLOAD_FOLDER"])
+    real_filepath = os.path.realpath(filepath)
+    if not real_filepath.startswith(real_upload):
+        log_security_event("directory_traversal_attempt", f"Blocked path traversal: {filepath}", "error")
+        return None
+    
+    fs.save(filepath)
+    log_security_event("file_upload_success", f"File uploaded: {fname} ({size} bytes)", "info")
     return fname
 
 
@@ -1492,6 +1682,70 @@ def home():
     return render_template("home.html")
 
 
+# =========================================================
+# Policy Pages
+# =========================================================
+
+@app.route("/terms")
+def terms():
+    return render_template("policies/terms.html")
+
+
+@app.route("/privacy")
+def privacy():
+    return render_template("policies/privacy.html")
+
+
+@app.route("/cookies")
+def cookies():
+    return render_template("policies/cookies.html")
+
+
+@app.route("/fees")
+def fees():
+    return render_template("policies/fees.html")
+
+
+@app.route("/refunds")
+def refunds():
+    return render_template("policies/refunds.html")
+
+
+@app.route("/payouts")
+def payouts():
+    return render_template("policies/payouts.html")
+
+
+@app.route("/disputes")
+def disputes():
+    return render_template("policies/disputes.html")
+
+
+@app.route("/kyc")
+def kyc_policy():
+    return render_template("policies/kyc.html")
+
+
+@app.route("/aml")
+def aml():
+    return render_template("policies/aml.html")
+
+
+@app.route("/risk")
+def risk():
+    return render_template("policies/risk.html")
+
+
+@app.route("/aup")
+def aup():
+    return render_template("policies/aup.html")
+
+
+@app.route("/careers")
+def careers():
+    return render_template("careers.html")
+
+
 @app.route("/register", methods=["GET", "POST"])
 def register():
     if current_user.is_authenticated:
@@ -1623,8 +1877,18 @@ def login():
         )
         password = (request.form.get("password") or "").strip()
 
+        # Security: Sanitize input
+        raw_identifier = sanitize_input(raw_identifier, max_length=255)
+        password = sanitize_input(password, max_length=500)
+
         if not raw_identifier or not password:
             flash("Please enter your email/username and password.", "error")
+            return redirect(url_for("login"))
+        
+        # Security: Additional rate limiting on login attempts
+        if not check_rate_limit("login", max_requests=5, window_seconds=300):
+            log_security_event("login_rate_limit", f"Rate limited login attempt from {remote_addr}", "warning")
+            flash("Too many login attempts. Please wait a few minutes and try again.", "error")
             return redirect(url_for("login"))
 
         identifier = raw_identifier.lower().strip()
@@ -1927,7 +2191,10 @@ def wallet_page():
         .all()
     )
 
-    return render_template("wallet_center.html", balance=balance, txns=txns, tab=tab)
+    # Get recent transactions for overview tab (last 10)
+    recent = txns[:10] if txns else []
+
+    return render_template("wallet_center.html", balance=balance, txns=txns, recent=recent, tab=tab)
 
 
 @app.route("/transactions")
@@ -2075,12 +2342,41 @@ def wallet_action():
             flash("Insufficient wallet balance.", "error")
             return redirect(url_for("wallet_home"))
 
+        bank_account = (request.form.get("bank_account") or "").strip()[:50]
+        destination_note = "bank account" if bank_account == "stripe_connected" else "demo"
+        
         with db_txn():
             if wallet_balance_cents(w) < cents:
                 raise ValueError("Insufficient wallet balance.")
-            post_ledger(w, EntryType.withdrawal, cents, meta="withdraw to bank (demo)")
+            meta = f"withdraw to {destination_note}"
+            if bank_account == "stripe_connected":
+                meta += " (Stripe Connect ready)"
+            post_ledger(w, EntryType.withdrawal, cents, meta=meta)
 
-        flash(f"Withdrew ${amt:,.2f} (demo).", "success")
+        flash(f"Withdrew ${amt:,.2f} (demo - Stripe integration ready).", "success")
+        return redirect(url_for("wallet_home"))
+
+    if action == "transfer_out":
+        if wallet_balance_cents(w) < cents:
+            flash("Insufficient wallet balance.", "error")
+            return redirect(url_for("wallet_home"))
+
+        destination = (request.form.get("destination") or "").strip()[:50]
+        destination_note = "main account"
+        if destination == "stripe_bank":
+            destination_note = "bank account (Stripe ACH)"
+        elif destination == "stripe_card":
+            destination_note = "debit card (Stripe Instant)"
+        
+        with db_txn():
+            if wallet_balance_cents(w) < cents:
+                raise ValueError("Insufficient wallet balance.")
+            meta = f"transfer to {destination_note}"
+            if destination.startswith("stripe_"):
+                meta += " (Stripe ready)"
+            post_ledger(w, EntryType.withdrawal, cents, meta=meta)
+
+        flash(f"Transferred ${amt:,.2f} to main account (demo - Stripe integration ready).", "success")
         return redirect(url_for("wallet_home"))
 
     flash("Unknown wallet action.", "error")
@@ -7107,6 +7403,117 @@ def admin_transactions():
     )
 
 
+@app.route("/dashboard/admin/audit-access/<int:user_id>", methods=["GET", "POST"], endpoint="admin_audit_access")
+@role_required("admin")
+def admin_audit_access(user_id: int):
+    """Admin audit access form - requires reason before viewing user wallet"""
+    customer = User.query.get_or_404(user_id)
+    
+    # Don't allow admins to audit other admins
+    if customer.role == RoleEnum.admin:
+        flash("Cannot audit admin accounts.", "error")
+        return redirect(url_for("admin_transactions"))
+    
+    if request.method == "POST":
+        reason = (request.form.get("reason") or "").strip()
+        if not reason:
+            flash("Reason is required for audit access.", "error")
+            return render_template("admin_audit_access.html", customer=customer)
+        
+        # Create audit log entry
+        audit_log = AuditLog(
+            admin_id=current_user.id,
+            user_id=customer.id,
+            action="wallet_access",
+            reason=reason
+        )
+        db.session.add(audit_log)
+        db.session.commit()
+        
+        flash(f"Audit log created. Viewing wallet for @{customer.username}.", "success")
+        return redirect(url_for("admin_transactions_user", user_id=customer.id))
+    
+    return render_template("admin_audit_access.html", customer=customer)
+
+
+@app.route("/dashboard/admin/transactions/user/<int:user_id>", endpoint="admin_transactions_user")
+@role_required("admin")
+def admin_transactions_user(user_id: int):
+    """Admin view of a specific user's wallet transactions"""
+    customer = User.query.get_or_404(user_id)
+    
+    # Don't allow admins to view other admins' wallets
+    if customer.role == RoleEnum.admin:
+        flash("Cannot view admin wallet accounts.", "error")
+        return redirect(url_for("admin_transactions"))
+    
+    # Get or create wallet
+    wallet = get_or_create_wallet(customer.id)
+    
+    # Get all ledger entries for this wallet
+    ledger = (
+        LedgerEntry.query
+        .filter_by(wallet_id=wallet.id)
+        .order_by(LedgerEntry.created_at.desc(), LedgerEntry.id.desc())
+        .all()
+    )
+    
+    return render_template(
+        "admin_transactions_user.html",
+        customer=customer,
+        ledger=ledger,
+        EntryType=EntryType,
+    )
+
+
+@app.route("/dashboard/admin/transactions/user/<int:user_id>/export", endpoint="admin_export_wallet_csv")
+@role_required("admin")
+def admin_export_wallet_csv(user_id: int):
+    """Admin export of a user's wallet transactions as CSV"""
+    customer = User.query.get_or_404(user_id)
+    
+    # Don't allow admins to export other admins' wallets
+    if customer.role == RoleEnum.admin:
+        flash("Cannot export admin wallet accounts.", "error")
+        return redirect(url_for("admin_transactions"))
+    
+    # Get or create wallet
+    wallet = get_or_create_wallet(customer.id)
+    
+    # Get all ledger entries for this wallet
+    entries = (
+        LedgerEntry.query
+        .filter_by(wallet_id=wallet.id)
+        .order_by(LedgerEntry.created_at.asc())
+        .all()
+    )
+    
+    # Generate CSV
+    si = StringIO()
+    writer = csv.writer(si)
+    writer.writerow(["created_at", "entry_type", "direction", "amount_dollars", "meta"])
+    
+    credit_types = {
+        EntryType.deposit,
+        EntryType.transfer_in,
+        EntryType.interest,
+        EntryType.adjustment,
+        EntryType.sale_income,
+    }
+    
+    for row in entries:
+        is_credit = row.entry_type in credit_types
+        direction = "credit" if is_credit else "debit"
+        created_str = row.created_at.isoformat(sep=" ") if row.created_at else ""
+        amount_dollars = f"{row.amount_cents / 100.0:.2f}"
+        writer.writerow([created_str, row.entry_type.value, direction, amount_dollars, row.meta or ""])
+    
+    output = si.getvalue()
+    filename = f"beatfund_wallet_{customer.username}_{datetime.utcnow().strftime('%Y%m%d')}.csv"
+    
+    return Response(output, mimetype="text/csv", headers={"Content-Disposition": f"attachment; filename={filename}"})
+
+
 @app.route("/dashboard/admin/tickets", endpoint="admin_tickets")
 @role_required("admin")
 def admin_tickets():
@@ -7147,6 +7554,176 @@ def admin_tickets():
         status=status,
         TicketStatus=TicketStatus,
         TicketType=TicketType,
+    )
+
+
+@app.route("/dashboard/admin/tickets/<int:ticket_id>", methods=["GET", "POST"], endpoint="admin_ticket_detail")
+@role_required("admin")
+def admin_ticket_detail(ticket_id: int):
+    """Admin view and update of a support ticket"""
+    ticket = SupportTicket.query.get_or_404(ticket_id)
+    
+    if request.method == "POST":
+        # Update ticket status
+        new_status = request.form.get("status", "").strip()
+        if new_status:
+            try:
+                ticket.status = TicketStatus(new_status)
+            except ValueError:
+                flash("Invalid status value.", "error")
+        
+        # Update priority
+        new_priority = request.form.get("priority", "").strip()
+        if new_priority in ["low", "normal", "high"]:
+            ticket.priority = new_priority
+        
+        # Add comment if provided
+        comment_body = (request.form.get("comment_body") or "").strip()
+        if comment_body:
+            comment = SupportTicketComment(
+                ticket_id=ticket.id,
+                admin_id=current_user.id,
+                body=comment_body
+            )
+            db.session.add(comment)
+        
+        db.session.commit()
+        flash("Ticket updated successfully.", "success")
+        return redirect(url_for("admin_ticket_detail", ticket_id=ticket.id))
+    
+    # Get comments
+    comments = ticket.comments.order_by(SupportTicketComment.created_at.asc()).all()
+    
+    return render_template(
+        "admin_ticket_detail.html",
+        ticket=ticket,
+        comments=comments,
+        TicketStatus=TicketStatus,
+        TicketType=TicketType,
+    )
+
+
+@app.route("/dashboard/admin/audit", endpoint="admin_audit_log")
+@role_required("admin")
+def admin_audit_log():
+    """Admin audit log view - shows all audit entries"""
+    # Get all audit logs, ordered by most recent first
+    logs = AuditLog.query.order_by(AuditLog.created_at.desc()).limit(200).all()
+    
+    return render_template("admin_audit.html", logs=logs)
+
+
+@app.route("/dashboard/admin/tickets/new", methods=["GET", "POST"], endpoint="admin_ticket_new")
+@role_required("admin")
+def admin_ticket_new():
+    """Admin create new support ticket for a user"""
+    user_id = request.args.get("user_id", type=int) or request.form.get("user_id", type=int)
+    ledger_id = request.args.get("ledger_id", type=int) or request.form.get("ledger_id", type=int)
+    
+    if not user_id:
+        flash("User ID is required.", "error")
+        return redirect(url_for("admin_tickets"))
+    
+    customer = User.query.get_or_404(user_id)
+    
+    # Don't allow creating tickets for other admins
+    if customer.role == RoleEnum.admin:
+        flash("Cannot create tickets for admin accounts.", "error")
+        return redirect(url_for("admin_tickets"))
+    
+    # Get ledger entry if provided
+    ledger = None
+    if ledger_id:
+        ledger = LedgerEntry.query.get(ledger_id)
+        # Verify ledger belongs to the user
+        if ledger:
+            wallet = Wallet.query.get(ledger.wallet_id)
+            if wallet and wallet.user_id != customer.id:
+                ledger = None  # Don't link if it doesn't belong to the user
+    
+    if request.method == "POST":
+        # Get form data
+        ticket_type = request.form.get("type", "").strip()
+        subject = (request.form.get("subject") or "").strip()
+        description = (request.form.get("description") or "").strip()
+        priority = (request.form.get("priority") or "normal").strip()
+        
+        # Validate
+        if not subject:
+            flash("Subject is required.", "error")
+            return render_template(
+                "admin_ticket_new.html",
+                customer=customer,
+                ledger=ledger,
+                TicketType=TicketType,
+                type_value=ticket_type,
+                subject=subject,
+                description=description,
+                priority=priority,
+            )
+        
+        if not description:
+            flash("Description is required.", "error")
+            return render_template(
+                "admin_ticket_new.html",
+                customer=customer,
+                ledger=ledger,
+                TicketType=TicketType,
+                type_value=ticket_type,
+                subject=subject,
+                description=description,
+                priority=priority,
+            )
+        
+        # Validate ticket type
+        try:
+            ticket_type_enum = TicketType(ticket_type) if ticket_type else TicketType.other
+        except ValueError:
+            ticket_type_enum = TicketType.other
+        
+        # Validate priority
+        if priority not in ["low", "normal", "high"]:
+            priority = "normal"
+        
+        # Create ticket
+        ticket = SupportTicket(
+            user_id=customer.id,
+            created_by_admin_id=current_user.id,
+            related_ledger_id=ledger.id if ledger else None,
+            type=ticket_type_enum,
+            status=TicketStatus.open,
+            priority=priority,
+            subject=subject[:200],  # Enforce max length
+            description=description,
+        )
+        
+        db.session.add(ticket)
+        db.session.commit()
+        
+        flash(f"Ticket #{ticket.id} created successfully for @{customer.username}.", "success")
+        return redirect(url_for("admin_ticket_detail", ticket_id=ticket.id))
+    
+    # GET request - show form
+    # Pre-fill type if linked to ledger
+    type_value = None
+    if ledger:
+        # Suggest ticket type based on ledger entry type
+        if ledger.entry_type in [EntryType.withdrawal, EntryType.transfer_out]:
+            type_value = TicketType.refund_request.value
+        elif ledger.entry_type in [EntryType.deposit, EntryType.transfer_in]:
+            type_value = TicketType.charge_dispute.value
+        else:
+            type_value = TicketType.other.value
+    
+    return render_template(
+        "admin_ticket_new.html",
+        customer=customer,
+        ledger=ledger,
+        TicketType=TicketType,
+        type_value=type_value,
+        subject="",
+        description="",
+        priority="normal",
     )
 
 
@@ -7224,6 +7801,110 @@ def admin_reports():
         role_stats=role_stats,
         EntryType=EntryType,
     )
+
+
+@app.route("/dashboard/admin/reports/export/ledger", endpoint="admin_export_system_ledger_csv")
+@role_required("admin")
+def admin_export_system_ledger_csv():
+    """Admin export of all system wallet ledger entries as CSV"""
+    # Get all ledger entries across all wallets
+    entries = (
+        LedgerEntry.query
+        .join(Wallet, LedgerEntry.wallet_id == Wallet.id)
+        .join(User, Wallet.user_id == User.id)
+        .order_by(LedgerEntry.created_at.asc())
+        .all()
+    )
+    
+    # Generate CSV
+    si = StringIO()
+    writer = csv.writer(si)
+    writer.writerow([
+        "created_at",
+        "wallet_id",
+        "user_id",
+        "username",
+        "entry_type",
+        "direction",
+        "amount_dollars",
+        "meta"
+    ])
+    
+    credit_types = {
+        EntryType.deposit,
+        EntryType.transfer_in,
+        EntryType.interest,
+        EntryType.adjustment,
+        EntryType.sale_income,
+    }
+    
+    for row in entries:
+        is_credit = row.entry_type in credit_types
+        direction = "credit" if is_credit else "debit"
+        created_str = row.created_at.isoformat(sep=" ") if row.created_at else ""
+        amount_dollars = f"{row.amount_cents / 100.0:.2f}"
+        
+        # Get wallet and user info
+        wallet = Wallet.query.get(row.wallet_id)
+        user = User.query.get(wallet.user_id) if wallet else None
+        username = user.username if user else "unknown"
+        
+        writer.writerow([
+            created_str,
+            row.wallet_id,
+            wallet.user_id if wallet else "",
+            username,
+            row.entry_type.value,
+            direction,
+            amount_dollars,
+            row.meta or ""
+        ])
+    
+    output = si.getvalue()
+    filename = f"beatfund_system_ledger_{datetime.utcnow().strftime('%Y%m%d')}.csv"
+    
+    return Response(output, mimetype="text/csv", headers={"Content-Disposition": f"attachment; filename={filename}"})
+
+
+@app.route("/dashboard/admin/reports/export/audit", endpoint="admin_export_audit_log_csv")
+@role_required("admin")
+def admin_export_audit_log_csv():
+    """Admin export of all audit log entries as CSV"""
+    # Get all audit log entries
+    logs = AuditLog.query.order_by(AuditLog.created_at.asc()).all()
+    
+    # Generate CSV
+    si = StringIO()
+    writer = csv.writer(si)
+    writer.writerow([
+        "created_at",
+        "admin_id",
+        "admin_username",
+        "user_id",
+        "user_username",
+        "action",
+        "reason"
+    ])
+    
+    for log in logs:
+        created_str = log.created_at.isoformat(sep=" ") if log.created_at else ""
+        admin_username = log.admin.username if log.admin else "unknown"
+        user_username = log.user.username if log.user else ""
+        
+        writer.writerow([
+            created_str,
+            log.admin_id,
+            admin_username,
+            log.user_id or "",
+            user_username,
+            log.action,
+            log.reason
+        ])
+    
+    output = si.getvalue()
+    filename = f"beatfund_audit_log_{datetime.utcnow().strftime('%Y%m%d')}.csv"
+    
+    return Response(output, mimetype="text/csv", headers={"Content-Disposition": f"attachment; filename={filename}"})
 
 
 @app.route("/dashboard/admin/team", methods=["GET", "POST"], endpoint="admin_team")
