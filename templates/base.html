@@ -54,6 +54,29 @@
         <a href="{{ url_for('opportunities') }}">Opportunities</a>
       {% endif %}
 
+      {# Notifications bell #}
+      <div class="notifications-bell-container" style="position: relative; display: inline-block;">
+        <button id="notificationsBell" class="notifications-bell" type="button" aria-label="Notifications" style="background: none; border: none; cursor: pointer; padding: 8px; position: relative;">
+          <span style="font-size: 20px;">🔔</span>
+          <span id="notificationsBadge" class="notifications-badge" style="display: none; position: absolute; top: 4px; right: 4px; background: #ef4444; color: white; border-radius: 50%; width: 18px; height: 18px; font-size: 11px; font-weight: bold; display: flex; align-items: center; justify-content: center; line-height: 1;">0</span>
+        </button>
+        <div id="notificationsDropdown" class="notifications-dropdown" style="display: none; position: absolute; right: 0; top: 100%; margin-top: 8px; background: white; border: 1px solid #ddd; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); min-width: 320px; max-width: 400px; max-height: 500px; overflow-y: auto; z-index: 1000;">
+          <div style="padding: 12px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center;">
+            <strong>Notifications</strong>
+            <form method="POST" action="{{ url_for('mark_all_notifications_read_route') }}" style="display: inline; margin: 0;">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button type="submit" style="background: none; border: none; color: #4f8bff; cursor: pointer; font-size: 12px; padding: 0;">Mark all read</button>
+            </form>
+          </div>
+          <div id="notificationsList" style="max-height: 400px; overflow-y: auto;">
+            <div style="padding: 20px; text-align: center; color: #999;">Loading...</div>
+          </div>
+          <div style="padding: 8px; border-top: 1px solid #eee; text-align: center;">
+            <a href="{{ url_for('notifications_page') }}" style="color: #4f8bff; text-decoration: none; font-size: 13px;">View all notifications</a>
+          </div>
+        </div>
+      </div>
+
       <form method="get" action="{{ url_for('logout_get') }}" class="logout-form">
         <button type="submit" class="nav-link-button">Logout</button>
       </form>
@@ -214,6 +237,78 @@
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') closeMenu();
     });
+  })();
+
+  // Notifications bell polling and dropdown
+  (function() {
+    const bell = document.getElementById('notificationsBell');
+    const badge = document.getElementById('notificationsBadge');
+    const dropdown = document.getElementById('notificationsDropdown');
+    const list = document.getElementById('notificationsList');
+    
+    if (!bell || !badge || !dropdown || !list) return;
+    
+    function updateNotifications() {
+      fetch('/api/notifications/unread-count')
+        .then(r => r.json())
+        .then(data => {
+          if (data.count > 0) {
+            badge.textContent = data.count > 99 ? '99+' : data.count;
+            badge.style.display = 'flex';
+          } else {
+            badge.style.display = 'none';
+          }
+        })
+        .catch(() => {});
+      
+      fetch('/api/notifications/recent')
+        .then(r => r.json())
+        .then(data => {
+          if (data.length === 0) {
+            list.innerHTML = '<div style="padding: 20px; text-align: center; color: #999;">No notifications</div>';
+            return;
+          }
+          
+          list.innerHTML = data.map(n => {
+            const timeAgo = n.created_at ? new Date(n.created_at).toLocaleString() : '';
+            const kindClass = n.kind || 'info';
+            const readClass = n.is_read ? 'read' : 'unread';
+            const url = n.url || '#';
+            return `
+              <div class="notification-item ${readClass}" style="padding: 12px; border-bottom: 1px solid #eee; cursor: pointer; ${!n.is_read ? 'background: #f8f9ff;' : ''}" onclick="window.location.href='${url}'">
+                <div style="display: flex; justify-content: space-between; align-items: start;">
+                  <div style="flex: 1;">
+                    <div style="font-weight: ${n.is_read ? 'normal' : 'bold'}; margin-bottom: 4px;">${n.title || ''}</div>
+                    <div style="font-size: 12px; color: #666;">${timeAgo}</div>
+                  </div>
+                  <span class="notification-kind-${kindClass}" style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: ${kindClass === 'success' ? '#10b981' : kindClass === 'warning' ? '#f59e0b' : kindClass === 'error' ? '#ef4444' : '#3b82f6'}; margin-left: 8px;"></span>
+                </div>
+              </div>
+            `;
+          }).join('');
+        })
+        .catch(() => {
+          list.innerHTML = '<div style="padding: 20px; text-align: center; color: #999;">Error loading notifications</div>';
+        });
+    }
+    
+    bell.addEventListener('click', (e) => {
+      e.stopPropagation();
+      dropdown.style.display = dropdown.style.display === 'none' ? 'block' : 'none';
+      if (dropdown.style.display === 'block') {
+        updateNotifications();
+      }
+    });
+    
+    document.addEventListener('click', (e) => {
+      if (!dropdown.contains(e.target) && !bell.contains(e.target)) {
+        dropdown.style.display = 'none';
+      }
+    });
+    
+    // Poll every 20 seconds
+    updateNotifications();
+    setInterval(updateNotifications, 20000);
   })();
 </script>
 

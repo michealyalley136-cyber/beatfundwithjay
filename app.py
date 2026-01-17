@@ -14,6 +14,7 @@ from flask_wtf.csrf import CSRFError, generate_csrf
 
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
+from werkzeug.exceptions import RequestEntityTooLarge
 
 from sqlalchemy import UniqueConstraint, inspect, text
 from sqlalchemy.sql import func
@@ -36,6 +37,14 @@ import csv
 from io import StringIO
 import re
 import json
+
+# Load environment variables from .env file (for local development)
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    # python-dotenv not installed, skip .env loading
+    pass
 
 
 # =========================================================
@@ -92,6 +101,10 @@ app.config.update(
 )
 app.config.setdefault("WTF_CSRF_TIME_LIMIT", None)
 
+# Maximum request size (prevents large uploads from consuming too much memory)
+# 120MB = 120 * 1024 * 1024 bytes
+app.config["MAX_CONTENT_LENGTH"] = 120 * 1024 * 1024  # 120MB
+
 csrf = CSRFProtect(app)
 
 # ---------------------------------------------------------
@@ -142,7 +155,7 @@ def inject_csrf_token():
 def handle_csrf_error(e):
     msg = e.description or "Security error: please refresh the page and try again."
     flash(msg, "error")
-    return redirect(request.referrer or url_for("home")), 400
+    return redirect(request.referrer or url_for("home"))
 
 
 # ---------------------------------------------------------
@@ -226,18 +239,23 @@ def log_security_event(event_type: str, details: str, severity: str = "info"):
 @app.errorhandler(500)
 def handle_500_error(e):
     """Handle 500 errors without exposing sensitive information"""
+    db.session.rollback()
     log_security_event("server_error", f"Internal server error: {type(e).__name__}", "error")
     if IS_DEV:
         # In dev, show the actual error
         raise
-    flash("An error occurred. Our team has been notified.", "error")
-    return redirect(url_for("home")), 500
+    # In production, render 500.html if exists, else safe generic message
+    if os.path.exists(os.path.join(BASE_DIR, "templates", "500.html")):
+        return render_template("500.html"), 500
+    return "An error occurred. Our team has been notified.", 500
 
 
 @app.errorhandler(404)
 def handle_404_error(e):
     """Handle 404 errors"""
-    return render_template("404.html") if os.path.exists("templates/404.html") else ("Page not found", 404)
+    if os.path.exists(os.path.join(BASE_DIR, "templates", "404.html")):
+        return render_template("404.html"), 404
+    return "Page not found", 404
 
 
 @app.errorhandler(403)
@@ -245,7 +263,20 @@ def handle_403_error(e):
     """Handle 403 Forbidden errors"""
     log_security_event("unauthorized_access", f"403 Forbidden: {request.path}", "warning")
     flash("You don't have permission to access this resource.", "error")
-    return redirect(request.referrer or url_for("home")), 403
+    return redirect(request.referrer or url_for("home"))
+
+
+@app.errorhandler(RequestEntityTooLarge)
+def handle_request_entity_too_large(e):
+    """Handle 413 Request Entity Too Large errors (file upload size exceeded)"""
+    log_security_event("upload_too_large", f"Request size exceeded limit: {request.path}", "warning")
+    flash("Upload too large. Please upload a smaller file.", "error")
+    
+    # Try to redirect to the referrer, or home page if no referrer
+    referrer = request.referrer
+    if referrer:
+        return redirect(referrer)
+    return redirect(url_for("home"))
 
 
 @app.template_test("None")
@@ -286,6 +317,11 @@ if os.getenv("BOOTSTRAP_DB") == "1":
 # =========================================================
 # Uploads
 # =========================================================
+# NOTE: Currently using local filesystem storage. Files will be lost on container/instance restart.
+# For production deployment, consider:
+# - AWS S3 / Google Cloud Storage / Azure Blob Storage
+# - Persistent volumes (if using containers)
+# - Database-backed file references with external storage
 UPLOAD_ROOT = os.path.join(BASE_DIR, "uploads")
 os.makedirs(UPLOAD_ROOT, exist_ok=True)
 app.config["UPLOAD_FOLDER"] = UPLOAD_ROOT
@@ -329,13 +365,29 @@ def _save_file(fs, allowed_set: set[str]) -> Optional[str]:
         log_security_event("invalid_file_upload", f"Invalid file extension: {fs.filename}", "warning")
         return None
     
-    # Security: Check file size based on type
-    MAX_FILE_SIZE = MAX_IMAGE_SIZE if allowed_set == ALLOWED_IMAGE else (MAX_VIDEO_SIZE if allowed_set == ALLOWED_VIDEO_EXTS else MAX_AUDIO_SIZE)
+    # Extract extension from sanitized filename for size checking
+    ext = filename.rsplit(".", 1)[1].lower() if "." in filename else ""
+    
+    # Security: Check file size based on actual file extension
+    if ext in ALLOWED_IMAGE:
+        MAX_FILE_SIZE = MAX_IMAGE_SIZE
+    elif ext in ALLOWED_VIDEO_EXTS:
+        MAX_FILE_SIZE = MAX_VIDEO_SIZE
+    elif ext in {"zip", "rar", "7z"}:
+        # Archive files get archive size limit (important for ALLOWED_STEMS)
+        MAX_FILE_SIZE = MAX_ARCHIVE_SIZE
+    elif ext in ALLOWED_AUDIO:
+        # Audio files (including those in ALLOWED_STEMS)
+        MAX_FILE_SIZE = MAX_AUDIO_SIZE
+    else:
+        # Default to smallest limit for unknown extensions (shouldn't happen due to _ext_ok check)
+        MAX_FILE_SIZE = MAX_IMAGE_SIZE
+    
     fs.seek(0, 2)  # Seek to end
     size = fs.tell()
     fs.seek(0)  # Reset to beginning
     if size > MAX_FILE_SIZE:
-        log_security_event("file_too_large", f"File size: {size} bytes, max: {MAX_FILE_SIZE}", "warning")
+        log_security_event("file_too_large", f"File size: {size} bytes, max: {MAX_FILE_SIZE}, extension: {ext}", "warning")
         return None
     
     # Security: Rate limit file uploads
@@ -344,7 +396,7 @@ def _save_file(fs, allowed_set: set[str]) -> Optional[str]:
         return None
     
     # Generate secure filename (UUID to prevent enumeration attacks)
-    ext = filename.rsplit(".", 1)[1].lower()
+    # ext already extracted above for size checking
     fname = f"{uuid.uuid4().hex}.{ext}"
     filepath = os.path.join(app.config["UPLOAD_FOLDER"], fname)
     
@@ -440,35 +492,50 @@ def _save_owner_pass_hash_to_instance(pass_hash: str) -> None:
 
 
 def _get_effective_owner_pass_hash() -> Optional[str]:
+    # Priority A: OWNER_PANEL_PASS_HASH (use as-is)
     env_hash = os.getenv("OWNER_PANEL_PASS_HASH")
     if env_hash and env_hash.strip():
         return env_hash.strip()
 
-    inst_hash = _load_owner_pass_hash_from_instance()
-    if inst_hash:
-        return inst_hash
-
+    # Priority B: OWNER_PANEL_PASS (generate hash)
     env_plain = os.getenv("OWNER_PANEL_PASS")
     if env_plain and env_plain.strip():
         return generate_password_hash(env_plain.strip())
 
-    if IS_DEV:
-        dev_default = os.getenv("DEV_OWNER_PANEL_PASS", "Acidrain@0911")
-        return generate_password_hash(dev_default)
+    # Priority C: instance/owner_passcode.json (allows UI changes to persist)
+    inst_hash = _load_owner_pass_hash_from_instance()
+    if inst_hash:
+        return inst_hash
 
+    # Priority D: DEV_OWNER_PANEL_PASS (dev only, generate hash)
+    if IS_DEV:
+        dev_plain = os.getenv("DEV_OWNER_PANEL_PASS")
+        if dev_plain and dev_plain.strip():
+            return generate_password_hash(dev_plain.strip())
+
+    # No valid passcode found
     return None
 
 
 OWNER_PANEL_PASS_HASH_EFFECTIVE = _get_effective_owner_pass_hash()
 if not OWNER_PANEL_PASS_HASH_EFFECTIVE:
-    raise RuntimeError(
-        "SECURITY ERROR: Owner passcode is not configured.\n"
-        "Production requires one of:\n"
-        "- OWNER_PANEL_PASS_HASH (recommended)\n"
-        "- OWNER_PANEL_PASS\n"
-        "- instance/owner_passcode.json with {'pass_hash': '...'}\n"
-    )
+    if IS_DEV:
+        raise RuntimeError(
+            "SECURITY ERROR: Owner passcode is not configured for development.\n"
+            "Set one of:\n"
+            "- DEV_OWNER_PANEL_PASS (recommended for dev)\n"
+            "- OWNER_PANEL_PASS\n"
+            "- OWNER_PANEL_PASS_HASH\n"
+        )
+    else:
+        raise RuntimeError(
+            "SECURITY ERROR: Owner passcode is not configured for production.\n"
+            "Set one of:\n"
+            "- OWNER_PANEL_PASS_HASH (recommended)\n"
+            "- OWNER_PANEL_PASS\n"
+        )
 
+# OWNER_PASS_MANAGED_BY_ENV is True if using env vars (but NOT DEV_OWNER_PANEL_PASS)
 OWNER_PASS_MANAGED_BY_ENV = bool(
     (os.getenv("OWNER_PANEL_PASS_HASH") and os.getenv("OWNER_PANEL_PASS_HASH").strip())
     or (os.getenv("OWNER_PANEL_PASS") and os.getenv("OWNER_PANEL_PASS").strip())
@@ -631,6 +698,7 @@ class User(UserMixin, db.Model):
     password_reset_sent_at = db.Column(db.DateTime, nullable=True)
 
     avatar_path = db.Column(db.String(255), nullable=True)
+    email_notifications_enabled = db.Column(db.Boolean, nullable=False, default=True)
 
     @property
     def is_active(self):
@@ -751,7 +819,43 @@ class Order(db.Model):
     seller = db.relationship("User", foreign_keys=[seller_id])
 
 
+# ------- Notifications -------
+class Notification(db.Model):
+    __tablename__ = "notification"
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    kind = db.Column(db.String(50), nullable=False, default="info")  # info, success, warning, error
+    title = db.Column(db.String(160), nullable=False)
+    body = db.Column(db.Text, nullable=True)
+    url = db.Column(db.String(400), nullable=True)  # where to send user when clicked
+    is_read = db.Column(db.Boolean, nullable=False, default=False, index=True)
+    created_at = db.Column(db.DateTime, server_default=func.now(), index=True)
+    emailed_at = db.Column(db.DateTime, nullable=True)
+
+    user = db.relationship("User", backref=db.backref("notifications", lazy="dynamic"))
+
+
 # ------- Bookings (legacy-ish but used) -------
+# Standard Booking status values (string constants for consistency)
+BOOKING_STATUS_PENDING = "pending"
+BOOKING_STATUS_ACCEPTED = "accepted"
+BOOKING_STATUS_CONFIRMED = "confirmed"
+BOOKING_STATUS_COMPLETED = "completed"
+BOOKING_STATUS_CANCELLED = "cancelled"
+BOOKING_STATUS_DECLINED = "declined"
+BOOKING_STATUS_DISPUTED = "disputed"
+
+# Valid booking statuses set
+VALID_BOOKING_STATUSES = {
+    BOOKING_STATUS_PENDING,
+    BOOKING_STATUS_ACCEPTED,
+    BOOKING_STATUS_CONFIRMED,
+    BOOKING_STATUS_COMPLETED,
+    BOOKING_STATUS_CANCELLED,
+    BOOKING_STATUS_DECLINED,
+    BOOKING_STATUS_DISPUTED,
+}
+
 class Booking(db.Model):
     __tablename__ = "booking"
     id = db.Column(db.Integer, primary_key=True)
@@ -767,7 +871,7 @@ class Booking(db.Model):
     location_text = db.Column(db.String(255), nullable=True)
 
     total_cents = db.Column(db.Integer, nullable=True)
-    status = db.Column(db.String(32), nullable=False, default="pending")
+    status = db.Column(db.String(32), nullable=False, default=BOOKING_STATUS_PENDING)
 
     notes_from_client = db.Column(db.Text, nullable=True)
     notes_from_provider = db.Column("notes_from_artist", db.Text, nullable=True)
@@ -1659,6 +1763,40 @@ def _ensure_sqlite_follow_table_name_and_indexes():
     db.session.commit()
 
 
+def _ensure_sqlite_notifications_table():
+    """Create notifications table and add email_notifications_enabled column to user if missing"""
+    if db.engine.url.get_backend_name() != "sqlite":
+        return
+    
+    # Create notifications table if missing
+    if not _sqlite_has_table("notification"):
+        db.session.execute(text("""
+            CREATE TABLE notification (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                kind VARCHAR(50) NOT NULL DEFAULT 'info',
+                title VARCHAR(160) NOT NULL,
+                body TEXT,
+                url VARCHAR(400),
+                is_read BOOLEAN NOT NULL DEFAULT 0,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                emailed_at DATETIME,
+                FOREIGN KEY (user_id) REFERENCES user (id)
+            )
+        """))
+        db.session.execute(text("CREATE INDEX IF NOT EXISTS ix_notification_user_id ON notification (user_id)"))
+        db.session.execute(text("CREATE INDEX IF NOT EXISTS ix_notification_is_read ON notification (is_read)"))
+        db.session.execute(text("CREATE INDEX IF NOT EXISTS ix_notification_created_at ON notification (created_at)"))
+        db.session.commit()
+    
+    # Add email_notifications_enabled to user table if missing
+    if _sqlite_has_table("user"):
+        cols = _sqlite_columns("user")
+        if "email_notifications_enabled" not in cols:
+            db.session.execute(text("ALTER TABLE user ADD COLUMN email_notifications_enabled BOOLEAN NOT NULL DEFAULT 1"))
+            db.session.commit()
+
+
 @app.before_request
 def _bootstrap_schema_once():
     global _SCHEMA_BOOTSTRAP_DONE
@@ -1668,8 +1806,123 @@ def _bootstrap_schema_once():
     try:
         _ensure_sqlite_follow_table_name_and_indexes()
         _ensure_sqlite_booking_request_booking_id()
+        _ensure_sqlite_notifications_table()
     except Exception:
         db.session.rollback()
+
+
+# =========================================================
+# Notifications System
+# =========================================================
+def create_notification(user_id: int, kind: str, title: str, body: str = None, url: str = None, *, commit: bool = True) -> Notification:
+    """Create a notification for a user"""
+    notif = Notification(
+        user_id=user_id,
+        kind=kind,
+        title=title,
+        body=body,
+        url=url
+    )
+    db.session.add(notif)
+    if commit:
+        db.session.commit()
+    return notif
+
+
+def get_unread_notification_count(user_id: int) -> int:
+    """Get count of unread notifications for a user"""
+    return Notification.query.filter_by(user_id=user_id, is_read=False).count()
+
+
+def get_recent_notifications(user_id: int, limit: int = 8) -> list[Notification]:
+    """Get recent notifications for a user, latest first"""
+    return Notification.query.filter_by(user_id=user_id).order_by(Notification.created_at.desc()).limit(limit).all()
+
+
+def mark_notification_read(user_id: int, notif_id: int) -> bool:
+    """Mark a notification as read if it belongs to the user"""
+    notif = Notification.query.filter_by(id=notif_id, user_id=user_id).first()
+    if notif:
+        notif.is_read = True
+        db.session.commit()
+        return True
+    return False
+
+
+def mark_all_notifications_read(user_id: int) -> int:
+    """Mark all unread notifications as read for a user, return count"""
+    count = Notification.query.filter_by(user_id=user_id, is_read=False).update({"is_read": True})
+    db.session.commit()
+    return count
+
+
+def send_email(to_email: str, subject: str, text_body: str) -> bool:
+    """Send email via SMTP or print to console in dev"""
+    if IS_DEV and not os.getenv("SMTP_HOST"):
+        print(f"\n{'='*60}")
+        print(f"EMAIL (dev mode - SMTP not configured)")
+        print(f"To: {to_email}")
+        print(f"Subject: {subject}")
+        print(f"{'='*60}")
+        print(text_body)
+        print(f"{'='*60}\n")
+        return True
+    
+    try:
+        import smtplib
+        from email.message import EmailMessage
+        
+        smtp_host = os.getenv("SMTP_HOST", "").strip()
+        if not smtp_host:
+            if IS_DEV:
+                print(f"[DEV] Email not sent - SMTP_HOST not configured")
+            return False
+        
+        smtp_port = int(os.getenv("SMTP_PORT", "587"))
+        smtp_user = os.getenv("SMTP_USER", "").strip()
+        smtp_pass = os.getenv("SMTP_PASS", "").strip()
+        smtp_from = os.getenv("SMTP_FROM", smtp_user).strip()
+        smtp_tls = os.getenv("SMTP_TLS", "1").strip() == "1"
+        
+        msg = EmailMessage()
+        msg["From"] = smtp_from
+        msg["To"] = to_email
+        msg["Subject"] = subject
+        msg.set_content(text_body)
+        
+        with smtplib.SMTP(smtp_host, smtp_port) as server:
+            if smtp_tls:
+                server.starttls()
+            if smtp_user and smtp_pass:
+                server.login(smtp_user, smtp_pass)
+            server.send_message(msg)
+        
+        return True
+    except Exception as e:
+        if IS_DEV:
+            print(f"[DEV] Email send failed: {e}")
+        return False
+
+
+def notify_user(user: User, kind: str, title: str, body: str = None, url: str = None, *, email: bool = False) -> None:
+    """Create a notification and optionally send email"""
+    notif = create_notification(user.id, kind, title, body, url, commit=True)
+    
+    if email:
+        email_enabled = getattr(user, "email_notifications_enabled", True)
+        if user.email and email_enabled:
+            app_base_url = os.getenv("APP_BASE_URL", "").strip()
+            email_body = f"{title}\n\n"
+            if body:
+                email_body += f"{body}\n\n"
+            if url and app_base_url:
+                full_url = f"{app_base_url}{url}" if url.startswith("/") else f"{app_base_url}/{url}"
+                email_body += f"View: {full_url}\n"
+            email_body += f"\n---\nBeatFund"
+            
+            if send_email(user.email, title, email_body):
+                notif.emailed_at = datetime.utcnow()
+                db.session.commit()
 
 
 # =========================================================
@@ -1721,7 +1974,7 @@ def disputes():
     return render_template("policies/disputes.html")
 
 
-@app.route("/kyc")
+@app.route("/policies/kyc", endpoint="kyc_policy")
 def kyc_policy():
     return render_template("policies/kyc.html")
 
@@ -1768,8 +2021,11 @@ def register():
         if not username:
             flash("Username is required.", "error")
             return redirect(url_for("register"))
-        if "@" not in email or "." not in email:
+        if not validate_email(email):
             flash("Please enter a valid email address.", "error")
+            return redirect(url_for("register"))
+        if not validate_username(username):
+            flash("Username must be 3-30 characters and contain only letters, numbers, underscores, and dashes.", "error")
             return redirect(url_for("register"))
 
         pw_errors = []
@@ -2073,11 +2329,19 @@ def start_kyc():
 @app.route("/uploads/<path:filename>")
 @login_required
 def media_file(filename):
-    beat = Beat.query.filter_by(stems_path=filename).first()
-    if beat:
-        if beat.owner_id != current_user.id and not _user_has_paid_for_beat(current_user.id, beat.id):
+    # Check if this is a deliverable (stems_path) - requires purchase/ownership
+    beat_stems = Beat.query.filter_by(stems_path=filename).first()
+    if beat_stems:
+        if beat_stems.owner_id != current_user.id and not _user_has_paid_for_beat(current_user.id, beat_stems.id):
             abort(403)
         return send_from_directory(app.config["UPLOAD_FOLDER"], filename, as_attachment=True)
+    
+    # Check if this is a preview (preview_path) - always streamable for logged-in users
+    beat_preview = Beat.query.filter_by(preview_path=filename).first()
+    if beat_preview:
+        return send_from_directory(app.config["UPLOAD_FOLDER"], filename, as_attachment=False)
+    
+    # Default: serve other files without attachment
     return send_from_directory(app.config["UPLOAD_FOLDER"], filename, as_attachment=False)
 
 @app.route("/avatar/<int:user_id>", endpoint="user_avatar")
@@ -3051,6 +3315,16 @@ def bookme_request_confirm(provider_id):
     )
     db.session.add(req)
     db.session.commit()
+    
+    # Notify provider
+    notify_user(
+        provider,
+        kind="info",
+        title="New booking request",
+        body=f"@{current_user.username} requested {pref}",
+        url=url_for("bookme_requests")
+    )
+    
     flash("Booking request sent.", "success")
     return redirect(url_for("bookme_requests"))
 
@@ -3183,6 +3457,21 @@ def bookme_request_status(req_id):
                 .update({BookingRequest.status: BookingStatus.declined})
             )
             db.session.commit()
+            
+            if updated:
+                # Notify client
+                req = BookingRequest.query.get(req_id)
+                if req:
+                    client = User.query.get(req.client_id)
+                    if client:
+                        notify_user(
+                            client,
+                            kind="warning",
+                            title="Booking request declined",
+                            body=f"@{current_user.username} declined your request.",
+                            url=url_for("bookme_requests")
+                        )
+            
             flash("Booking request declined." if updated else "This request is no longer pending.",
                   "success" if updated else "error")
             return redirect(url_for("bookme_requests"))
@@ -3222,6 +3511,20 @@ def bookme_request_status(req_id):
             flash("This time slot is already booked.", "error")
             return redirect(url_for("bookme_requests"))
 
+        # Notify client
+        req = BookingRequest.query.get(req_id)
+        if req:
+            client = User.query.get(req.client_id)
+            if client:
+                notify_user(
+                    client,
+                    kind="success",
+                    title="Booking request accepted",
+                    body=f"@{current_user.username} accepted your request for {req.preferred_time}",
+                    url=url_for("bookme_requests"),
+                    email=True
+                )
+        
         flash("Accepted. Waiting for client to confirm & pay the hold fee.", "success")
         return redirect(url_for("bookme_requests"))
 
@@ -3235,9 +3538,21 @@ def bookme_request_status(req_id):
         if req.status in (BookingStatus.pending, BookingStatus.accepted) and not req.booking_id:
             req.status = BookingStatus.cancelled
             db.session.commit()
+            
+            # Notify provider
+            provider = User.query.get(req.provider_id)
+            if provider:
+                notify_user(
+                    provider,
+                    kind="warning",
+                    title="Booking request cancelled",
+                    body=f"@{current_user.username} cancelled the request.",
+                    url=url_for("bookme_requests")
+                )
+            
             flash("Booking request cancelled.", "success")
         else:
-            flash("You can only cancel pending/accepted requests that aren’t already paid.", "error")
+            flash("You can only cancel pending/accepted requests that aren't already paid.", "error")
 
         return redirect(url_for("bookme_requests"))
 
@@ -3262,8 +3577,8 @@ def booking_detail(booking_id):
         action = (request.form.get("action") or "").strip().lower()
         
         if action == "edit_booking":
-            # Both provider and client can edit booking details (for pending/confirmed bookings)
-            if booking.status in ["completed", "cancelled", "disputed"]:
+            # Both provider and client can edit booking details (for pending/accepted/confirmed bookings)
+            if booking.status in [BOOKING_STATUS_COMPLETED, BOOKING_STATUS_CANCELLED, BOOKING_STATUS_DISPUTED]:
                 flash("Cannot edit bookings that are completed, cancelled, or disputed.", "error")
                 return redirect(url_for("booking_detail", booking_id=booking.id))
             
@@ -3318,14 +3633,16 @@ def booking_detail(booking_id):
                 notes_from_client = (request.form.get("notes_from_client") or "").strip()
                 booking.notes_from_client = notes_from_client or None
             
-            # Status updates (only provider can change status)
+            # Status updates (only provider can change status to accepted/confirmed/cancelled)
             if is_provider:
                 new_status = (request.form.get("status") or "").strip().lower()
-                if new_status and new_status in ["pending", "confirmed", "cancelled"]:
+                if new_status and new_status in [BOOKING_STATUS_PENDING, BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED, BOOKING_STATUS_CANCELLED]:
                     booking.status = new_status
-                    if new_status == "cancelled":
+                    if new_status == BOOKING_STATUS_CANCELLED:
                         flash("Booking has been cancelled.", "success")
-                    elif new_status == "confirmed":
+                    elif new_status == BOOKING_STATUS_ACCEPTED:
+                        flash("Booking has been accepted.", "success")
+                    elif new_status == BOOKING_STATUS_CONFIRMED:
                         flash("Booking has been confirmed.", "success")
             
             db.session.commit()
@@ -3347,11 +3664,11 @@ def booking_detail(booking_id):
             status_action = (request.form.get("status_action") or "").strip().lower()
             
             if status_action == "mark_completed" and is_provider:
-                if booking.status == "confirmed":
-                    booking.status = "completed"
+                if booking.status in [BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED]:
+                    booking.status = BOOKING_STATUS_COMPLETED
                     flash("Booking marked as completed.", "success")
                 else:
-                    flash("Only confirmed bookings can be marked completed.", "error")
+                    flash("Only accepted or confirmed bookings can be marked completed.", "error")
             else:
                 flash("Notes updated.", "success")
             
@@ -3590,6 +3907,27 @@ def bookme_book_provider(username):
             else:
                 full_message = message
         
+        # Check if the requested time is blocked (for studios)
+        if provider.role == RoleEnum.studio:
+            try:
+                if " " in preferred_time:
+                    date_part = preferred_time.split(" ", 1)[0]
+                    check_date = datetime.strptime(date_part, "%Y-%m-%d").date()
+                else:
+                    check_date = datetime.utcnow().date()
+                
+                if is_time_blocked(provider.id, check_date, preferred_time):
+                    flash("This time slot is blocked and not available for booking.", "error")
+                    return render_template(
+                        "bookme_book_provider.html",
+                        provider=provider,
+                        form_data=request.form,
+                        follower_count=follower_count,
+                        is_following=is_following
+                    )
+            except (ValueError, AttributeError):
+                pass
+        
         # Create booking request
         req = BookingRequest(
             provider_id=provider.id,
@@ -3599,6 +3937,15 @@ def bookme_book_provider(username):
         )
         db.session.add(req)
         db.session.commit()
+        
+        # Notify provider
+        notify_user(
+            provider,
+            kind="info",
+            title="New booking request",
+            body=f"@{current_user.username} requested {preferred_time}",
+            url=url_for("bookme_requests")
+        )
         
         flash("Booking request sent successfully.", "success")
         return redirect(url_for("bookme_requests"))
@@ -3677,7 +4024,7 @@ def book_artist(username):
             location_text=location_text or None,
             total_cents=total_cents,
             notes_from_client=notes_from_client or None,
-            status="pending",
+            status=BOOKING_STATUS_PENDING,
         )
         db.session.add(booking)
         db.session.commit()
@@ -3752,6 +4099,11 @@ def market_confirm(beat_id):
         flash("This beat is not available for purchase.", "error")
         return redirect(url_for("market_index"))
 
+    # Check if exclusive beat has already been sold
+    if beat.license == "exclusive" and not beat.is_active:
+        flash("This exclusive beat has already been sold.", "error")
+        return redirect(url_for("market_index"))
+
     seller = User.query.get(beat.owner_id)
     if not seller:
         flash("Seller account not found.", "error")
@@ -3784,6 +4136,7 @@ def market_confirm(beat_id):
         price_dollars=price_dollars,
         balance_dollars=balance_dollars,
         has_sufficient_funds=has_sufficient_funds,
+        is_exclusive=(beat.license == "exclusive"),
     )
 
 
@@ -3804,6 +4157,11 @@ def market_buy(beat_id):
 
     if hasattr(beat, "is_active") and not beat.is_active:
         flash("This beat is not available for purchase.", "error")
+        return redirect(url_for("market_index"))
+
+    # Check if exclusive beat has already been sold
+    if beat.license == "exclusive" and not beat.is_active:
+        flash("This exclusive beat has already been sold.", "error")
         return redirect(url_for("market_index"))
 
     seller = User.query.get(beat.owner_id)
@@ -3827,8 +4185,24 @@ def market_buy(beat_id):
     if price_cents == 0:
         try:
             with db_txn():
+                # Re-check exclusive beat status within transaction
+                beat_check = Beat.query.filter_by(id=beat.id).with_for_update().first()
+                if beat_check.license == "exclusive" and not beat_check.is_active:
+                    raise ValueError("sold_out")
+                
                 order = Order(beat_id=beat.id, buyer_id=current_user.id, seller_id=seller.id, amount_cents=0, status=OrderStatus.paid)
                 db.session.add(order)
+                
+                # Mark exclusive beat as inactive after purchase
+                if beat_check.license == "exclusive":
+                    beat_check.is_active = False
+                    beat_check.updated_at = datetime.utcnow()
+        except ValueError as e:
+            if str(e) == "sold_out":
+                flash("This exclusive beat has already been sold.", "error")
+            else:
+                flash("Unable to complete purchase.", "error")
+            return redirect(url_for("market_index"))
         except IntegrityError:
             flash("This purchase was already processed.", "info")
             return redirect(url_for("market_my_purchases"))
@@ -3841,6 +4215,11 @@ def market_buy(beat_id):
 
     try:
         with db_txn():
+            # Re-check beat status within transaction (with lock)
+            beat_check = Beat.query.filter_by(id=beat.id).with_for_update().first()
+            if beat_check.license == "exclusive" and not beat_check.is_active:
+                raise ValueError("sold_out")
+            
             if _user_has_paid_for_beat(current_user.id, beat.id):
                 raise ValueError("already_purchased")
             if wallet_balance_cents(buyer_w) < price_cents:
@@ -3851,6 +4230,21 @@ def market_buy(beat_id):
 
             order = Order(beat_id=beat.id, buyer_id=current_user.id, seller_id=seller.id, amount_cents=price_cents, status=OrderStatus.paid)
             db.session.add(order)
+            
+            # Mark exclusive beat as inactive after purchase
+            if beat_check.license == "exclusive":
+                beat_check.is_active = False
+                beat_check.updated_at = datetime.utcnow()
+            
+            # Notify seller
+            notify_user(
+                seller,
+                kind="success",
+                title="Beat sold!",
+                body=f"@{current_user.username} purchased '{beat_check.title}'",
+                url=url_for("producer_market_mine"),
+                email=True
+            )
 
     except ValueError as e:
         if str(e) == "insufficient_funds":
@@ -3859,12 +4253,25 @@ def market_buy(beat_id):
         if str(e) == "already_purchased":
             flash("You already purchased this beat. Check \"My purchases\".", "info")
             return redirect(url_for("market_my_purchases"))
+        if str(e) == "sold_out":
+            flash("This exclusive beat has already been sold.", "error")
+            return redirect(url_for("market_index"))
         flash("Unable to complete purchase.", "error")
         return redirect(url_for("market_index"))
 
     except IntegrityError:
         flash("This purchase was already processed.", "info")
         return redirect(url_for("market_my_purchases"))
+
+    # Notify seller
+    notify_user(
+        seller,
+        kind="success",
+        title="Beat sold!",
+        body=f"@{current_user.username} purchased '{beat.title}'",
+        url=url_for("producer_market_mine"),
+        email=True
+    )
 
     flash("Purchase complete! You now have download access.", "success")
     return redirect(url_for("market_my_purchases"))
@@ -4109,6 +4516,14 @@ def producer_market_delete(beat_id):
         flash("You can only delete your own beats.", "error")
         return redirect(url_for("producer_market_mine"))
     
+    # Remove uploaded files before deleting the beat
+    if beat.cover_path:
+        _safe_remove(beat.cover_path)
+    if beat.preview_path:
+        _safe_remove(beat.preview_path)
+    if beat.stems_path:
+        _safe_remove(beat.stems_path)
+    
     db.session.delete(beat)
     db.session.commit()
     flash("Beat deleted from marketplace.", "success")
@@ -4152,7 +4567,7 @@ def market_upload():
             errors.append("Price is required.")
         
         if not audio_file or not audio_file.filename:
-            errors.append("Audio file is required.")
+            errors.append("Preview audio file is required.")
         
         bpm = None
         if bpm_raw:
@@ -4162,6 +4577,16 @@ def market_upload():
                     errors.append("BPM cannot be negative.")
             except ValueError:
                 errors.append("BPM must be a whole number.")
+        
+        # Validate license type
+        if license_type not in {"standard", "exclusive"}:
+            license_type = "standard"
+        
+        # Validate deliverable file requirement
+        deliverable_file = request.files.get("deliverable_file")
+        if not deliverable_file or not deliverable_file.filename:
+            if price_cents > 0:
+                errors.append("Deliverable file required for paid beats.")
         
         if errors:
             for e in errors:
@@ -4187,14 +4612,30 @@ def market_upload():
             else:
                 flash("Invalid cover image format. Please use PNG, JPG, or JPEG.", "error")
         
-        # Save audio file (used for both preview and stems/deliverable)
-        if audio_file and audio_file.filename:
-            audio_path = _save_file(audio_file, ALLOWED_AUDIO)
-            if audio_path:
-                beat.preview_path = audio_path
-                beat.stems_path = audio_path  # Use same file for both preview and delivery
+        # Save preview audio file
+        audio_path = _save_file(audio_file, ALLOWED_AUDIO)
+        if audio_path:
+            beat.preview_path = audio_path
+        else:
+            flash("Invalid audio file format. Please use MP3, WAV, M4A, or OGG.", "error")
+            return render_template("market_upload.html")
+        
+        # Save deliverable file (stems/deliverable)
+        if deliverable_file and deliverable_file.filename:
+            deliverable_path = _save_file(deliverable_file, ALLOWED_STEMS)
+            if deliverable_path:
+                beat.stems_path = deliverable_path
             else:
-                flash("Invalid audio file format. Please use MP3, WAV, M4A, or OGG.", "error")
+                flash("Invalid deliverable file format. Please use ZIP, RAR, 7Z, MP3, WAV, M4A, or OGG.", "error")
+                return render_template("market_upload.html")
+        else:
+            # Free beats can use preview as deliverable
+            # IMPORTANT: Never set stems_path = preview_path for paid beats
+            if price_cents == 0:
+                beat.stems_path = beat.preview_path
+            elif price_cents > 0:
+                # This should never happen due to validation above, but safety check
+                flash("Deliverable file required for paid beats.", "error")
                 return render_template("market_upload.html")
         
         db.session.add(beat)
@@ -4204,6 +4645,60 @@ def market_upload():
         return redirect(url_for("market_index"))
     
     return render_template("market_upload.html")
+
+
+# =========================================================
+# Notifications Routes
+# =========================================================
+@app.route("/notifications")
+@login_required
+def notifications_page():
+    """Notifications page - list all notifications"""
+    notifications = Notification.query.filter_by(user_id=current_user.id).order_by(Notification.created_at.desc()).limit(50).all()
+    return render_template("notifications.html", notifications=notifications)
+
+
+@app.route("/notifications/<int:notif_id>/read", methods=["POST"])
+@login_required
+def mark_notification_read_route(notif_id):
+    """Mark a single notification as read"""
+    if mark_notification_read(current_user.id, notif_id):
+        flash("Notification marked as read.", "success")
+    else:
+        flash("Notification not found.", "error")
+    return redirect(request.referrer or url_for("notifications_page"))
+
+
+@app.route("/notifications/read-all", methods=["POST"])
+@login_required
+def mark_all_notifications_read_route():
+    """Mark all notifications as read"""
+    count = mark_all_notifications_read(current_user.id)
+    flash(f"Marked {count} notification(s) as read.", "success")
+    return redirect(url_for("notifications_page"))
+
+
+@app.route("/api/notifications/unread-count")
+@login_required
+def api_notifications_unread_count():
+    """API endpoint for unread notification count"""
+    count = get_unread_notification_count(current_user.id)
+    return jsonify({"count": count})
+
+
+@app.route("/api/notifications/recent")
+@login_required
+def api_notifications_recent():
+    """API endpoint for recent notifications"""
+    notifications = get_recent_notifications(current_user.id, limit=8)
+    return jsonify([{
+        "id": n.id,
+        "title": n.title,
+        "kind": n.kind,
+        "url": n.url,
+        "is_read": n.is_read,
+        "created_at": n.created_at.isoformat() if n.created_at else None
+    } for n in notifications])
 
 
 # =========================================================
@@ -4330,23 +4825,45 @@ def superadmin_unlock():
 def superadmin_change_passcode():
     global OWNER_PANEL_PASS_HASH_EFFECTIVE
 
+    # Access control: require owner panel unlocked
+    if not owner_panel_unlocked():
+        flash("Owner panel must be unlocked to change the passcode.", "error")
+        return redirect(url_for("superadmin_unlock"))
+
+    # Env-managed block
     if OWNER_PASS_MANAGED_BY_ENV:
         flash(
-            "Owner passcode is managed by server environment secrets in this deployment. "
-            "Update OWNER_PANEL_PASS_HASH (recommended) or OWNER_PANEL_PASS in your host settings.",
+            "Owner passcode is managed by environment secrets; update it in your .env/host settings.",
             "error",
         )
         return redirect(url_for("superadmin_dashboard"))
 
     if request.method == "POST":
+        # Rate limiting
+        if not check_rate_limit("owner_passcode_change", max_requests=5, window_seconds=600):
+            log_security_event("owner_passcode_change_failed", "Rate limit exceeded for owner passcode change", "warning")
+            flash("Too many attempts. Please wait 10 minutes and try again.", "error")
+            return redirect(url_for("superadmin_change_passcode"))
+
+        # Get all 4 required inputs
+        admin_password = (request.form.get("admin_password") or "").strip()
         current_code = (request.form.get("current_passcode") or "").strip()
         new_code = (request.form.get("new_passcode") or "").strip()
         confirm_code = (request.form.get("confirm_passcode") or "").strip()
 
-        if not check_password_hash(OWNER_PANEL_PASS_HASH_EFFECTIVE, current_code):
+        # Re-auth check: validate admin password
+        if not admin_password or not current_user.check_password(admin_password):
+            log_security_event("owner_passcode_change_failed", f"Admin password wrong for @{current_user.username}", "warning")
+            flash("Admin password is incorrect.", "error")
+            return redirect(url_for("superadmin_change_passcode"))
+
+        # Current owner passcode check
+        if not current_code or not check_password_hash(OWNER_PANEL_PASS_HASH_EFFECTIVE, current_code):
+            log_security_event("owner_passcode_change_failed", f"Owner passcode wrong for @{current_user.username}", "warning")
             flash("Current owner passcode is incorrect.", "error")
             return redirect(url_for("superadmin_change_passcode"))
 
+        # New passcode validation
         errors = []
         if len(new_code) < 8:
             errors.append("Passcode must be at least 8 characters long.")
@@ -4361,12 +4878,19 @@ def superadmin_change_passcode():
             flash(" ".join(errors), "error")
             return redirect(url_for("superadmin_change_passcode"))
 
+        # Apply change
         new_hash = generate_password_hash(new_code)
         _save_owner_pass_hash_to_instance(new_hash)
         OWNER_PANEL_PASS_HASH_EFFECTIVE = new_hash
 
-        flash("Owner passcode updated and saved securely.", "success")
-        return redirect(url_for("superadmin_dashboard"))
+        # Session hardening: invalidate owner unlock session
+        session.pop(OWNER_UNLOCK_SESSION_KEY, None)
+
+        # Security logging
+        log_security_event("owner_passcode_changed", f"superadmin @{current_user.username} changed owner passcode", "warning")
+
+        flash("Owner passcode updated. Please unlock again with your new passcode.", "success")
+        return redirect(url_for("superadmin_unlock"))
 
     return render_template("superadmin_change_passcode.html")
 
@@ -4652,7 +5176,7 @@ def provider_dashboard():
     # Bookings as provider
     provider_bookings_count = Booking.query.filter_by(provider_id=current_user.id).count()
     provider_pending_bookings = Booking.query.filter_by(
-        provider_id=current_user.id, status="pending"
+        provider_id=current_user.id, status=BOOKING_STATUS_PENDING
     ).count()
     provider_recent_bookings = (
         Booking.query
@@ -4665,7 +5189,7 @@ def provider_dashboard():
     # Bookings as client
     client_bookings_count = Booking.query.filter_by(client_id=current_user.id).count()
     client_pending_bookings = Booking.query.filter_by(
-        client_id=current_user.id, status="pending"
+        client_id=current_user.id, status=BOOKING_STATUS_PENDING
     ).count()
     client_recent_bookings = (
         Booking.query
@@ -4713,7 +5237,7 @@ def studio_dashboard():
     # Bookings as provider
     provider_bookings_count = Booking.query.filter_by(provider_id=current_user.id).count()
     provider_pending_bookings = Booking.query.filter_by(
-        provider_id=current_user.id, status="pending"
+        provider_id=current_user.id, status=BOOKING_STATUS_PENDING
     ).count()
     provider_recent_bookings = (
         Booking.query
@@ -4726,7 +5250,7 @@ def studio_dashboard():
     # Bookings as client
     client_bookings_count = Booking.query.filter_by(client_id=current_user.id).count()
     client_pending_bookings = Booking.query.filter_by(
-        client_id=current_user.id, status="pending"
+        client_id=current_user.id, status=BOOKING_STATUS_PENDING
     ).count()
     client_recent_bookings = (
         Booking.query
@@ -4836,18 +5360,18 @@ def studio_crm():
     
     # Statistics
     pending_requests = sum(1 for r in all_requests if r.status == BookingStatus.pending)
-    confirmed_bookings = sum(1 for b in all_bookings if b.status == "confirmed")
+    confirmed_bookings = sum(1 for b in all_bookings if b.status == BOOKING_STATUS_CONFIRMED)
     upcoming_bookings = [
         b for b in all_bookings 
-        if b.event_datetime and b.event_datetime > datetime.utcnow() and b.status in ["pending", "confirmed"]
+        if b.event_datetime and b.event_datetime > datetime.utcnow() and b.status in [BOOKING_STATUS_PENDING, BOOKING_STATUS_CONFIRMED]
     ]
     
     # Group bookings by status
     bookings_by_status = {
-        "pending": [b for b in all_bookings if b.status == "pending"],
-        "confirmed": [b for b in all_bookings if b.status == "confirmed"],
-        "completed": [b for b in all_bookings if b.status == "completed"],
-        "cancelled": [b for b in all_bookings if b.status == "cancelled"],
+        BOOKING_STATUS_PENDING: [b for b in all_bookings if b.status == BOOKING_STATUS_PENDING],
+        BOOKING_STATUS_CONFIRMED: [b for b in all_bookings if b.status == BOOKING_STATUS_CONFIRMED],
+        BOOKING_STATUS_COMPLETED: [b for b in all_bookings if b.status == BOOKING_STATUS_COMPLETED],
+        BOOKING_STATUS_CANCELLED: [b for b in all_bookings if b.status == BOOKING_STATUS_CANCELLED],
     }
     
     return render_template(
@@ -5041,7 +5565,7 @@ def videographer_dashboard():
         Booking.query
         .filter_by(provider_id=current_user.id)
         .filter(Booking.event_datetime >= now)
-        .filter(Booking.status.in_(["accepted", "confirmed", "pending"]))
+        .filter(Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED, BOOKING_STATUS_PENDING]))
         .order_by(Booking.event_datetime.asc())
         .limit(10)
         .all()
@@ -5052,7 +5576,7 @@ def videographer_dashboard():
     active_projects = (
         Booking.query
         .filter_by(provider_id=current_user.id)
-        .filter(Booking.status.in_(["accepted", "confirmed"]))
+        .filter(Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED]))
         .filter(Booking.event_datetime >= now)
         .count()
     )
@@ -5060,7 +5584,7 @@ def videographer_dashboard():
     # Bookings as provider
     provider_bookings_count = Booking.query.filter_by(provider_id=current_user.id).count()
     provider_pending_bookings = Booking.query.filter_by(
-        provider_id=current_user.id, status="pending"
+        provider_id=current_user.id, status=BOOKING_STATUS_PENDING
     ).count()
     provider_recent_bookings = (
         Booking.query
@@ -5074,7 +5598,7 @@ def videographer_dashboard():
     accepted_bookings = (
         Booking.query
         .filter_by(provider_id=current_user.id)
-        .filter(Booking.status.in_(["accepted", "confirmed"]))
+        .filter(Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED]))
         .order_by(Booking.event_datetime.asc())
         .limit(20)
         .all()
@@ -5085,7 +5609,7 @@ def videographer_dashboard():
     earnings_this_month_cents = (
         db.session.query(func.coalesce(func.sum(Booking.total_cents), 0))
         .filter(Booking.provider_id == current_user.id)
-        .filter(Booking.status.in_(["accepted", "confirmed", "completed"]))
+        .filter(Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED, BOOKING_STATUS_COMPLETED]))
         .filter(Booking.created_at >= start_of_month)
         .scalar() or 0
     )
@@ -5095,7 +5619,7 @@ def videographer_dashboard():
     total_earnings_cents = (
         db.session.query(func.coalesce(func.sum(Booking.total_cents), 0))
         .filter(Booking.provider_id == current_user.id)
-        .filter(Booking.status.in_(["accepted", "confirmed", "completed"]))
+        .filter(Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED, BOOKING_STATUS_COMPLETED]))
         .scalar() or 0
     )
     total_earnings = total_earnings_cents / 100.0
@@ -5130,7 +5654,7 @@ def videographer_dashboard():
     # Bookings as client
     client_bookings_count = Booking.query.filter_by(client_id=current_user.id).count()
     client_pending_bookings = Booking.query.filter_by(
-        client_id=current_user.id, status="pending"
+        client_id=current_user.id, status=BOOKING_STATUS_PENDING
     ).count()
     client_recent_bookings = (
         Booking.query
@@ -5209,14 +5733,14 @@ def designer_dashboard():
     active_projects = (
         Booking.query
         .filter_by(provider_id=current_user.id)
-        .filter(Booking.status.in_(["accepted", "confirmed"]))
+        .filter(Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED]))
         .count()
     )
     
     # Bookings as provider
     provider_bookings_count = Booking.query.filter_by(provider_id=current_user.id).count()
     provider_pending_bookings = Booking.query.filter_by(
-        provider_id=current_user.id, status="pending"
+        provider_id=current_user.id, status=BOOKING_STATUS_PENDING
     ).count()
     provider_recent_bookings = (
         Booking.query
@@ -5230,7 +5754,7 @@ def designer_dashboard():
     accepted_bookings = (
         Booking.query
         .filter_by(provider_id=current_user.id)
-        .filter(Booking.status.in_(["accepted", "confirmed"]))
+        .filter(Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED]))
         .order_by(Booking.created_at.desc())
         .limit(20)
         .all()
@@ -5241,7 +5765,7 @@ def designer_dashboard():
     earnings_this_month_cents = (
         db.session.query(func.coalesce(func.sum(Booking.total_cents), 0))
         .filter(Booking.provider_id == current_user.id)
-        .filter(Booking.status.in_(["accepted", "confirmed", "completed"]))
+        .filter(Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED, BOOKING_STATUS_COMPLETED]))
         .filter(Booking.created_at >= start_of_month)
         .scalar() or 0
     )
@@ -5251,7 +5775,7 @@ def designer_dashboard():
     total_earnings_cents = (
         db.session.query(func.coalesce(func.sum(Booking.total_cents), 0))
         .filter(Booking.provider_id == current_user.id)
-        .filter(Booking.status.in_(["accepted", "confirmed", "completed"]))
+        .filter(Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED, BOOKING_STATUS_COMPLETED]))
         .scalar() or 0
     )
     total_earnings = total_earnings_cents / 100.0
@@ -5291,7 +5815,7 @@ def designer_dashboard():
     # Bookings as client
     client_bookings_count = Booking.query.filter_by(client_id=current_user.id).count()
     client_pending_bookings = Booking.query.filter_by(
-        client_id=current_user.id, status="pending"
+        client_id=current_user.id, status=BOOKING_STATUS_PENDING
     ).count()
     client_recent_bookings = (
         Booking.query
@@ -5355,7 +5879,7 @@ def photographer_dashboard():
     upcoming_shoots_count = (
         Booking.query
         .filter_by(provider_id=current_user.id)
-        .filter(Booking.status.in_(["accepted", "confirmed"]))
+        .filter(Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED]))
         .filter(Booking.event_datetime >= now)
         .count()
     )
@@ -5363,7 +5887,7 @@ def photographer_dashboard():
     active_projects_count = (
         Booking.query
         .filter_by(provider_id=current_user.id)
-        .filter(Booking.status.in_(["accepted", "confirmed"]))
+        .filter(Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED]))
         .count()
     )
     
@@ -5372,7 +5896,7 @@ def photographer_dashboard():
     monthly_earnings_total_cents = (
         db.session.query(func.coalesce(func.sum(Booking.total_cents), 0))
         .filter(Booking.provider_id == current_user.id)
-        .filter(Booking.status.in_(["accepted", "confirmed", "completed"]))
+        .filter(Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED, BOOKING_STATUS_COMPLETED]))
         .filter(Booking.created_at >= start_of_month)
         .scalar() or 0
     )
@@ -5395,7 +5919,7 @@ def photographer_dashboard():
     active_shoots = (
         Booking.query
         .filter_by(provider_id=current_user.id)
-        .filter(Booking.status.in_(["accepted", "confirmed"]))
+        .filter(Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED]))
         .order_by(Booking.event_datetime.asc())
         .limit(20)
         .all()
@@ -5424,7 +5948,7 @@ def photographer_dashboard():
     total_earnings_cents = (
         db.session.query(func.coalesce(func.sum(Booking.total_cents), 0))
         .filter(Booking.provider_id == current_user.id)
-        .filter(Booking.status.in_(["accepted", "confirmed", "completed"]))
+        .filter(Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED, BOOKING_STATUS_COMPLETED]))
         .scalar() or 0
     )
     total_earnings = total_earnings_cents / 100.0
@@ -5433,7 +5957,7 @@ def photographer_dashboard():
     pending_payouts_cents = (
         db.session.query(func.coalesce(func.sum(Booking.total_cents), 0))
         .filter(Booking.provider_id == current_user.id)
-        .filter(Booking.status.in_(["accepted", "confirmed"]))
+        .filter(Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED]))
         .filter(Booking.total_cents.isnot(None))
         .scalar() or 0
     )
@@ -5443,7 +5967,7 @@ def photographer_dashboard():
     completed_payouts_cents = (
         db.session.query(func.coalesce(func.sum(Booking.total_cents), 0))
         .filter(Booking.provider_id == current_user.id)
-        .filter(Booking.status == "completed")
+        .filter(Booking.status == BOOKING_STATUS_COMPLETED)
         .scalar() or 0
     )
     completed_payouts = completed_payouts_cents / 100.0
@@ -5535,7 +6059,7 @@ def engineer_dashboard():
     # Bookings as provider
     provider_bookings_count = Booking.query.filter_by(provider_id=current_user.id).count()
     provider_pending_bookings = Booking.query.filter_by(
-        provider_id=current_user.id, status="pending"
+        provider_id=current_user.id, status=BOOKING_STATUS_PENDING
     ).count()
     provider_recent_bookings = (
         Booking.query
@@ -5548,7 +6072,7 @@ def engineer_dashboard():
     # Bookings as client
     client_bookings_count = Booking.query.filter_by(client_id=current_user.id).count()
     client_pending_bookings = Booking.query.filter_by(
-        client_id=current_user.id, status="pending"
+        client_id=current_user.id, status=BOOKING_STATUS_PENDING
     ).count()
     client_recent_bookings = (
         Booking.query
@@ -5610,7 +6134,7 @@ def manager_dashboard():
     # Active projects (bookings in progress)
     active_projects_count = (
         Booking.query
-        .filter(Booking.status.in_(["accepted", "confirmed", "pending"]))
+        .filter(Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED, BOOKING_STATUS_PENDING]))
         .filter(Booking.event_datetime >= now)
         .count()
     )
@@ -5618,7 +6142,7 @@ def manager_dashboard():
     # Upcoming bookings
     upcoming_bookings_count = (
         Booking.query
-        .filter(Booking.status.in_(["accepted", "confirmed"]))
+        .filter(Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED]))
         .filter(Booking.event_datetime >= now)
         .count()
     )
@@ -5626,7 +6150,7 @@ def manager_dashboard():
     # Total earnings this month (from all bookings)
     total_earnings_this_month_cents = (
         db.session.query(func.coalesce(func.sum(Booking.total_cents), 0))
-        .filter(Booking.status.in_(["accepted", "confirmed", "completed"]))
+        .filter(Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED, BOOKING_STATUS_COMPLETED]))
         .filter(Booking.created_at >= start_of_month)
         .scalar() or 0
     )
@@ -5638,7 +6162,7 @@ def manager_dashboard():
         # Get upcoming bookings count for this artist
         upcoming_count = Booking.query.filter(
             Booking.provider_id == user.id,
-            Booking.status.in_(["accepted", "confirmed"]),
+            Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED]),
             Booking.event_datetime >= now
         ).count()
         
@@ -5647,7 +6171,7 @@ def manager_dashboard():
             db.session.query(func.coalesce(func.sum(Booking.total_cents), 0))
             .filter(
                 Booking.provider_id == user.id,
-                Booking.status.in_(["accepted", "confirmed", "completed"])
+                Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED, BOOKING_STATUS_COMPLETED])
             )
             .scalar() or 0
         )
@@ -5712,7 +6236,7 @@ def manager_dashboard():
             'event_title': proj.event_title,
             'status': proj.status,
             'deliverables_status': 'pending',  # Placeholder
-            'payment_status': 'paid' if proj.total_cents and proj.status in ['accepted', 'confirmed', 'completed'] else 'pending',
+            'payment_status': 'paid' if proj.total_cents and proj.status in [BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED, BOOKING_STATUS_COMPLETED] else 'pending',
             'updated_at': proj.updated_at
         })
     
@@ -5741,7 +6265,7 @@ def manager_dashboard():
     # Total paid (completed bookings)
     total_paid_cents = (
         db.session.query(func.coalesce(func.sum(Booking.total_cents), 0))
-        .filter(Booking.status == "completed")
+        .filter(Booking.status == BOOKING_STATUS_COMPLETED)
         .scalar() or 0
     )
     total_paid = total_paid_cents / 100.0
@@ -5749,7 +6273,7 @@ def manager_dashboard():
     # Total pending (accepted/confirmed but not completed)
     total_pending_cents = (
         db.session.query(func.coalesce(func.sum(Booking.total_cents), 0))
-        .filter(Booking.status.in_(["accepted", "confirmed"]))
+        .filter(Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED]))
         .scalar() or 0
     )
     total_pending = total_pending_cents / 100.0
@@ -5786,7 +6310,7 @@ def manager_dashboard():
             db.session.query(func.coalesce(func.sum(Booking.total_cents), 0))
             .filter(
                 Booking.provider_id == user.id,
-                Booking.status.in_(["accepted", "confirmed", "completed"])
+                Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED, BOOKING_STATUS_COMPLETED])
             )
             .scalar() or 0
         )
@@ -5801,7 +6325,7 @@ def manager_dashboard():
     top_services = []
     service_counts = (
         db.session.query(Booking.provider_role, func.count(Booking.id).label('count'))
-        .filter(Booking.status.in_(["accepted", "confirmed", "completed"]))
+        .filter(Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED, BOOKING_STATUS_COMPLETED]))
         .group_by(Booking.provider_role)
         .order_by(func.count(Booking.id).desc())
         .limit(10)
@@ -5915,7 +6439,7 @@ def dj_dashboard():
         Booking.query
         .filter(
             Booking.provider_id == current_user.id,
-            Booking.status.in_(["accepted", "confirmed"]),
+            Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED]),
             Booking.event_datetime >= now
         )
         .count()
@@ -5933,7 +6457,7 @@ def dj_dashboard():
         Booking.query
         .filter(
             Booking.provider_id == current_user.id,
-            Booking.status.in_(["accepted", "confirmed", "completed"]),
+            Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED, BOOKING_STATUS_COMPLETED]),
             Booking.event_datetime >= start_of_month,
             Booking.event_datetime < now + timedelta(days=31)
         )
@@ -5945,7 +6469,7 @@ def dj_dashboard():
         db.session.query(func.coalesce(func.sum(Booking.total_cents), 0))
         .filter(
             Booking.provider_id == current_user.id,
-            Booking.status.in_(["accepted", "confirmed", "completed"]),
+            Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED, BOOKING_STATUS_COMPLETED]),
             Booking.created_at >= start_of_month
         )
         .scalar() or 0
@@ -6004,7 +6528,7 @@ def dj_dashboard():
         Booking.query
         .filter(
             Booking.provider_id == current_user.id,
-            Booking.status.in_(["accepted", "confirmed"])
+            Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED])
         )
         .order_by(Booking.event_datetime.asc())
         .limit(50)
@@ -6031,7 +6555,7 @@ def dj_dashboard():
             'date': booking.event_datetime,
             'venue': booking.location_text or "TBA",
             'event_type': event_type,
-            'payment_status': 'paid' if booking.total_cents and booking.status == 'completed' else 'pending'
+            'payment_status': 'paid' if booking.total_cents and booking.status == BOOKING_STATUS_COMPLETED else 'pending'
         })
     
     # 4. Setlists (placeholder - no setlist model yet)
@@ -6076,7 +6600,7 @@ def dj_dashboard():
         db.session.query(func.coalesce(func.sum(Booking.total_cents), 0))
         .filter(
             Booking.provider_id == current_user.id,
-            Booking.status.in_(["accepted", "confirmed"])
+            Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED])
         )
         .scalar() or 0
     )
@@ -6162,7 +6686,7 @@ def host_dashboard():
         Booking.query
         .filter(
             Booking.provider_id == current_user.id,
-            Booking.status.in_(["accepted", "confirmed"]),
+            Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED]),
             Booking.event_datetime >= now
         )
         .count()
@@ -6173,7 +6697,7 @@ def host_dashboard():
         Booking.query
         .filter(
             Booking.provider_id == current_user.id,
-            Booking.status.in_(["accepted", "confirmed"])
+            Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED])
         )
         .count()
     )
@@ -6183,7 +6707,7 @@ def host_dashboard():
         db.session.query(func.coalesce(func.sum(Booking.total_cents), 0))
         .filter(
             Booking.provider_id == current_user.id,
-            Booking.status.in_(["accepted", "confirmed", "completed"]),
+            Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED, BOOKING_STATUS_COMPLETED]),
             Booking.created_at >= start_of_month
         )
         .scalar() or 0
@@ -6242,7 +6766,7 @@ def host_dashboard():
         Booking.query
         .filter(
             Booking.provider_id == current_user.id,
-            Booking.status.in_(["accepted", "confirmed"])
+            Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED])
         )
         .order_by(Booking.event_datetime.asc())
         .limit(50)
@@ -6257,7 +6781,7 @@ def host_dashboard():
             'location': booking.location_text or "TBA",
             'client_requirements': booking.notes_from_client or "None",
             'run_of_show': booking.notes_from_provider or "None",
-            'payment_status': 'paid' if booking.total_cents and booking.status == 'completed' else 'pending',
+            'payment_status': 'paid' if booking.total_cents and booking.status == BOOKING_STATUS_COMPLETED else 'pending',
             'timing': f"{booking.duration_minutes} minutes" if booking.duration_minutes else "TBA"
         })
     
@@ -6305,7 +6829,7 @@ def host_dashboard():
         db.session.query(func.coalesce(func.sum(Booking.total_cents), 0))
         .filter(
             Booking.provider_id == current_user.id,
-            Booking.status.in_(["accepted", "confirmed"])
+            Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED])
         )
         .scalar() or 0
     )
@@ -6383,7 +6907,7 @@ def hair_dashboard():
         Booking.query
         .filter(
             Booking.provider_id == current_user.id,
-            Booking.status.in_(["accepted", "confirmed"]),
+            Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED]),
             Booking.event_datetime >= now
         )
         .count()
@@ -6404,7 +6928,7 @@ def hair_dashboard():
         db.session.query(func.coalesce(func.sum(Booking.total_cents), 0))
         .filter(
             Booking.provider_id == current_user.id,
-            Booking.status.in_(["accepted", "confirmed", "completed"]),
+            Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED, BOOKING_STATUS_COMPLETED]),
             Booking.created_at >= start_of_month
         )
         .scalar() or 0
@@ -6464,7 +6988,7 @@ def hair_dashboard():
         Booking.query
         .filter(
             Booking.provider_id == current_user.id,
-            Booking.status.in_(["accepted", "confirmed"])
+            Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED])
         )
         .order_by(Booking.event_datetime.asc())
         .limit(50)
@@ -6479,7 +7003,7 @@ def hair_dashboard():
             'date_time': booking.event_datetime,
             'duration': f"{booking.duration_minutes} minutes" if booking.duration_minutes else "TBA",
             'notes': booking.notes_from_client or "None",
-            'payment_status': 'paid' if booking.total_cents and booking.status == 'completed' else 'pending',
+            'payment_status': 'paid' if booking.total_cents and booking.status == BOOKING_STATUS_COMPLETED else 'pending',
             'location': booking.location_text or "TBA"
         })
     
@@ -6534,7 +7058,7 @@ def hair_dashboard():
         db.session.query(func.coalesce(func.sum(Booking.total_cents), 0))
         .filter(
             Booking.provider_id == current_user.id,
-            Booking.status.in_(["accepted", "confirmed"])
+            Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED])
         )
         .scalar() or 0
     )
@@ -6611,7 +7135,7 @@ def wardrobe_dashboard():
         Booking.query
         .filter(
             Booking.provider_id == current_user.id,
-            Booking.status.in_(["accepted", "confirmed"])
+            Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED])
         )
         .count()
     )
@@ -6623,7 +7147,7 @@ def wardrobe_dashboard():
         db.session.query(func.coalesce(func.sum(Booking.total_cents), 0))
         .filter(
             Booking.provider_id == current_user.id,
-            Booking.status.in_(["accepted", "confirmed", "completed"]),
+            Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED, BOOKING_STATUS_COMPLETED]),
             Booking.created_at >= start_of_month
         )
         .scalar() or 0
@@ -6680,7 +7204,7 @@ def wardrobe_dashboard():
         Booking.query
         .filter(
             Booking.provider_id == current_user.id,
-            Booking.status.in_(["accepted", "confirmed"])
+            Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED])
         )
         .order_by(Booking.event_datetime.asc())
         .limit(50)
@@ -6695,7 +7219,7 @@ def wardrobe_dashboard():
             'timeline': booking.event_datetime.strftime("%b %d - %b %d, %Y") if booking.event_datetime else "TBA",
             'status': booking.status,
             'deliverables': "Looks: TBD",
-            'payment_status': 'paid' if booking.total_cents and booking.status == 'completed' else 'pending'
+            'payment_status': 'paid' if booking.total_cents and booking.status == BOOKING_STATUS_COMPLETED else 'pending'
         })
     
     # 4. Lookboards (placeholder)
@@ -6728,7 +7252,7 @@ def wardrobe_dashboard():
         db.session.query(func.coalesce(func.sum(Booking.total_cents), 0))
         .filter(
             Booking.provider_id == current_user.id,
-            Booking.status.in_(["accepted", "confirmed"])
+            Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED])
         )
         .scalar() or 0
     )
@@ -6807,7 +7331,7 @@ def makeup_dashboard():
         Booking.query
         .filter(
             Booking.provider_id == current_user.id,
-            Booking.status.in_(["accepted", "confirmed"]),
+            Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED]),
             Booking.event_datetime >= now
         )
         .count()
@@ -6818,7 +7342,7 @@ def makeup_dashboard():
         db.session.query(func.count(func.distinct(Booking.client_id)))
         .filter(
             Booking.provider_id == current_user.id,
-            Booking.status.in_(["accepted", "confirmed"])
+            Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED])
         )
         .scalar() or 0
     )
@@ -6828,7 +7352,7 @@ def makeup_dashboard():
         db.session.query(func.coalesce(func.sum(Booking.total_cents), 0))
         .filter(
             Booking.provider_id == current_user.id,
-            Booking.status.in_(["accepted", "confirmed", "completed"]),
+            Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED, BOOKING_STATUS_COMPLETED]),
             Booking.created_at >= start_of_month
         )
         .scalar() or 0
@@ -6892,7 +7416,7 @@ def makeup_dashboard():
         Booking.query
         .filter(
             Booking.provider_id == current_user.id,
-            Booking.status.in_(["accepted", "confirmed"])
+            Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED])
         )
         .order_by(Booking.event_datetime.asc())
         .limit(50)
@@ -6907,7 +7431,7 @@ def makeup_dashboard():
             'date_time': booking.event_datetime,
             'time_block': f"{booking.duration_minutes} minutes" if booking.duration_minutes else "TBA",
             'prep_notes': booking.notes_from_client or "None",
-            'payment_status': 'paid' if booking.total_cents and booking.status == 'completed' else 'pending',
+            'payment_status': 'paid' if booking.total_cents and booking.status == BOOKING_STATUS_COMPLETED else 'pending',
             'location': booking.location_text or "TBA"
         })
     
@@ -6962,7 +7486,7 @@ def makeup_dashboard():
         db.session.query(func.coalesce(func.sum(Booking.total_cents), 0))
         .filter(
             Booking.provider_id == current_user.id,
-            Booking.status.in_(["accepted", "confirmed"])
+            Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED])
         )
         .scalar() or 0
     )
@@ -7023,7 +7547,7 @@ def vendor_dashboard():
     # Orders (bookings as provider)
     total_orders = Booking.query.filter_by(provider_id=current_user.id).count()
     pending_orders = Booking.query.filter_by(
-        provider_id=current_user.id, status="pending"
+        provider_id=current_user.id, status=BOOKING_STATUS_PENDING
     ).count()
     active_orders = Booking.query.filter(
         Booking.provider_id == current_user.id,
@@ -7046,7 +7570,7 @@ def vendor_dashboard():
     monthly_earnings_cents = (
         db.session.query(func.coalesce(func.sum(Booking.total_cents), 0))
         .filter(Booking.provider_id == current_user.id)
-        .filter(Booking.status.in_(["accepted", "confirmed", "completed"]))
+        .filter(Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED, BOOKING_STATUS_COMPLETED]))
         .filter(Booking.created_at >= start_of_month)
         .scalar() or 0
     )
@@ -7055,7 +7579,7 @@ def vendor_dashboard():
     total_earnings_cents = (
         db.session.query(func.coalesce(func.sum(Booking.total_cents), 0))
         .filter(Booking.provider_id == current_user.id)
-        .filter(Booking.status.in_(["accepted", "confirmed", "completed"]))
+        .filter(Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED, BOOKING_STATUS_COMPLETED]))
         .scalar() or 0
     )
     total_earnings = total_earnings_cents / 100.0
@@ -8620,18 +9144,6 @@ def vaults_delete(vault_id):
     
     flash(f"Vault '{vault.name}' deleted successfully.", "success")
     return redirect(url_for("vaults_index"))
-
-
-# =========================================================
-@app.errorhandler(404)
-def not_found(e):
-    return render_template("404.html"), 404
-
-
-@app.errorhandler(500)
-def server_error(e):
-    db.session.rollback()
-    return render_template("500.html"), 500
 
 
 # =========================================================

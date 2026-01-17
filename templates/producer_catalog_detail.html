@@ -343,8 +343,7 @@
                   {% if b.id %}#{{ b.id }}{% endif %}
                 </div>
 
-                {% set preview_url = b.preview_url or b.audio_url or b.file_url %}
-                {% if preview_url %}
+                {% if b.preview_url %}
                   <div class="pc-beat-audio-row">
                     <audio
                       class="pc-beat-audio"
@@ -352,7 +351,7 @@
                       controlsList="nodownload noplaybackrate"
                       preload="none"
                     >
-                      <source src="{{ preview_url }}" type="audio/mpeg">
+                      <source src="{{ b.preview_url }}" type="audio/mpeg">
                       Your browser does not support audio playback.
                     </audio>
                   </div>
