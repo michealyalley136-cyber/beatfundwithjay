@@ -712,7 +712,7 @@
         Complete ledger of all wallet movements and transactions.
       </div>
 
-      {% set txns = (transactions if transactions is defined and transactions else []) %}
+      {% set txns = (transactions if transactions is defined and transactions else (txns if txns is defined and txns else [])) %}
 
       {% if txns and txns|length > 0 %}
         <div class="wallet-ledger-wrap">

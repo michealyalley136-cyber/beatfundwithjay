@@ -218,6 +218,16 @@ def validate_username(username: str) -> bool:
     return bool(re.match(pattern, username))
 
 
+def _validate_url_optional(url: str) -> bool:
+    """Validate optional URL - must be blank or start with http:// or https://, max 500 chars"""
+    if not url or not url.strip():
+        return True
+    url = url.strip()
+    if len(url) > 500:
+        return False
+    return url.startswith("http://") or url.startswith("https://")
+
+
 def log_security_event(event_type: str, details: str, severity: str = "info"):
     """Log security events (can be extended to write to file/DB)"""
     timestamp = datetime.utcnow().isoformat()
@@ -331,12 +341,14 @@ ALLOWED_AUDIO = {"mp3", "wav", "m4a", "ogg"}
 ALLOWED_STEMS = {"zip", "rar", "7z", "mp3", "wav", "m4a", "ogg"}
 
 ALLOWED_VIDEO_EXTS = {"mp4", "webm", "mov"}
+ALLOWED_RESUME = {"pdf", "doc", "docx"}
 
 # Maximum file sizes (in bytes)
 MAX_IMAGE_SIZE = 10 * 1024 * 1024  # 10MB
 MAX_AUDIO_SIZE = 50 * 1024 * 1024  # 50MB
 MAX_VIDEO_SIZE = 100 * 1024 * 1024  # 100MB
 MAX_ARCHIVE_SIZE = 100 * 1024 * 1024  # 100MB
+MAX_RESUME_SIZE = 8 * 1024 * 1024  # 8MB
 
 
 def _ext_ok(filename: str, allowed: set[str]) -> bool:
@@ -373,6 +385,8 @@ def _save_file(fs, allowed_set: set[str]) -> Optional[str]:
         MAX_FILE_SIZE = MAX_IMAGE_SIZE
     elif ext in ALLOWED_VIDEO_EXTS:
         MAX_FILE_SIZE = MAX_VIDEO_SIZE
+    elif ext in ALLOWED_RESUME:
+        MAX_FILE_SIZE = MAX_RESUME_SIZE
     elif ext in {"zip", "rar", "7z"}:
         # Archive files get archive size limit (important for ALLOWED_STEMS)
         MAX_FILE_SIZE = MAX_ARCHIVE_SIZE
@@ -926,6 +940,46 @@ class BookingRequest(db.Model):
     created_at = db.Column(db.DateTime, server_default=func.now(), index=True)
 
     booking_id = db.Column(db.Integer, db.ForeignKey("booking.id"), nullable=True, unique=True, index=True)
+
+    provider = db.relationship("User", foreign_keys=[provider_id])
+    client = db.relationship("User", foreign_keys=[client_id])
+    booking = db.relationship("Booking", foreign_keys=[booking_id])
+
+
+# ------- Careers -------
+class JobPost(db.Model):
+    __tablename__ = "job_post"
+    id = db.Column(db.Integer, primary_key=True)
+    title = db.Column(db.String(200), nullable=False)
+    department = db.Column(db.String(120), nullable=True)
+    location = db.Column(db.String(120), nullable=True)
+    employment_type = db.Column(db.String(80), nullable=True)
+    level = db.Column(db.String(80), nullable=True)
+    description = db.Column(db.Text, nullable=False)
+    responsibilities = db.Column(db.Text, nullable=True)
+    requirements = db.Column(db.Text, nullable=True)
+    nice_to_have = db.Column(db.Text, nullable=True)
+    how_to_apply = db.Column(db.Text, nullable=True)
+    is_active = db.Column(db.Boolean, nullable=False, default=True, index=True)
+    created_at = db.Column(db.DateTime, server_default=func.now())
+    updated_at = db.Column(db.DateTime, server_default=func.now(), onupdate=func.now())
+
+    applications = db.relationship("JobApplication", backref="job", lazy="dynamic")
+
+
+class JobApplication(db.Model):
+    __tablename__ = "job_application"
+    id = db.Column(db.Integer, primary_key=True)
+    job_id = db.Column(db.Integer, db.ForeignKey("job_post.id"), nullable=True, index=True)
+    full_name = db.Column(db.String(150), nullable=False)
+    email = db.Column(db.String(255), nullable=False)
+    phone = db.Column(db.String(40), nullable=True)
+    portfolio_url = db.Column(db.String(500), nullable=True)
+    linkedin_url = db.Column(db.String(500), nullable=True)
+    cover_letter = db.Column(db.Text, nullable=True)
+    resume_filename = db.Column(db.String(255), nullable=True)
+    status = db.Column(db.String(32), nullable=False, default="new", index=True)
+    created_at = db.Column(db.DateTime, server_default=func.now(), index=True)
 
     provider = db.relationship("User", foreign_keys=[provider_id])
     client = db.relationship("User", foreign_keys=[client_id])
@@ -1797,6 +1851,58 @@ def _ensure_sqlite_notifications_table():
             db.session.commit()
 
 
+def _ensure_sqlite_careers_tables():
+    """Create careers tables (job_post and job_application) if missing"""
+    if db.engine.url.get_backend_name() != "sqlite":
+        return
+    
+    # Create job_post table if missing
+    if not _sqlite_has_table("job_post"):
+        db.session.execute(text("""
+            CREATE TABLE job_post (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title VARCHAR(200) NOT NULL,
+                department VARCHAR(120),
+                location VARCHAR(120),
+                employment_type VARCHAR(80),
+                level VARCHAR(80),
+                description TEXT NOT NULL,
+                responsibilities TEXT,
+                requirements TEXT,
+                nice_to_have TEXT,
+                how_to_apply TEXT,
+                is_active BOOLEAN NOT NULL DEFAULT 1,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """))
+        db.session.execute(text("CREATE INDEX IF NOT EXISTS ix_job_post_is_active ON job_post (is_active)"))
+        db.session.commit()
+    
+    # Create job_application table if missing
+    if not _sqlite_has_table("job_application"):
+        db.session.execute(text("""
+            CREATE TABLE job_application (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                job_id INTEGER,
+                full_name VARCHAR(150) NOT NULL,
+                email VARCHAR(255) NOT NULL,
+                phone VARCHAR(40),
+                portfolio_url VARCHAR(500),
+                linkedin_url VARCHAR(500),
+                cover_letter TEXT,
+                resume_filename VARCHAR(255),
+                status VARCHAR(32) NOT NULL DEFAULT 'new',
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (job_id) REFERENCES job_post (id)
+            )
+        """))
+        db.session.execute(text("CREATE INDEX IF NOT EXISTS ix_job_application_job_id ON job_application (job_id)"))
+        db.session.execute(text("CREATE INDEX IF NOT EXISTS ix_job_application_status ON job_application (status)"))
+        db.session.execute(text("CREATE INDEX IF NOT EXISTS ix_job_application_created_at ON job_application (created_at)"))
+        db.session.commit()
+
+
 @app.before_request
 def _bootstrap_schema_once():
     global _SCHEMA_BOOTSTRAP_DONE
@@ -1807,6 +1913,7 @@ def _bootstrap_schema_once():
         _ensure_sqlite_follow_table_name_and_indexes()
         _ensure_sqlite_booking_request_booking_id()
         _ensure_sqlite_notifications_table()
+        _ensure_sqlite_careers_tables()
     except Exception:
         db.session.rollback()
 
@@ -1994,9 +2101,113 @@ def aup():
     return render_template("policies/aup.html")
 
 
+# =========================================================
+# Careers Routes (Public)
+# =========================================================
 @app.route("/careers")
 def careers():
-    return render_template("careers.html")
+    """List all active job postings"""
+    jobs = JobPost.query.filter_by(is_active=True).order_by(JobPost.created_at.desc()).all()
+    return render_template("careers/index.html", jobs=jobs)
+
+
+@app.route("/careers/<int:job_id>")
+def careers_detail(job_id):
+    """View job details"""
+    job = JobPost.query.get_or_404(job_id)
+    if not job.is_active:
+        flash("This job posting is no longer active.", "error")
+        return redirect(url_for("careers"))
+    return render_template("careers/detail.html", job=job)
+
+
+@app.route("/careers/apply", methods=["GET", "POST"])
+@app.route("/careers/<int:job_id>/apply", methods=["GET", "POST"])
+def careers_apply(job_id=None):
+    """Apply for a job (general or specific)"""
+    job = None
+    if job_id:
+        job = JobPost.query.get_or_404(job_id)
+        if not job.is_active:
+            flash("This job posting is no longer active.", "error")
+            return redirect(url_for("careers"))
+    
+    if request.method == "POST":
+        # Rate limiting
+        if not check_rate_limit("job_apply", max_requests=6, window_seconds=600):
+            flash("Too many applications. Please wait a few minutes before trying again.", "error")
+            return render_template("careers/apply.html", job=job)
+        
+        # Validate inputs
+        full_name = sanitize_input(request.form.get("full_name", "").strip(), max_length=150)
+        email = request.form.get("email", "").strip()
+        phone = sanitize_input(request.form.get("phone", "").strip(), max_length=40)
+        portfolio_url = request.form.get("portfolio_url", "").strip()
+        linkedin_url = request.form.get("linkedin_url", "").strip()
+        cover_letter = sanitize_input(request.form.get("cover_letter", ""), max_length=8000)
+        resume_file = request.files.get("resume")
+        
+        errors = []
+        
+        if not full_name:
+            errors.append("Full name is required.")
+        if not email:
+            errors.append("Email is required.")
+        elif not validate_email(email):
+            errors.append("Invalid email format.")
+        if phone and not re.match(r'^[\d\s\-\+\(\)]+$', phone):
+            errors.append("Invalid phone number format.")
+        if portfolio_url and not _validate_url_optional(portfolio_url):
+            errors.append("Portfolio URL must start with http:// or https://")
+        if linkedin_url and not _validate_url_optional(linkedin_url):
+            errors.append("LinkedIn URL must start with http:// or https://")
+        
+        if errors:
+            for error in errors:
+                flash(error, "error")
+            return render_template("careers/apply.html", job=job)
+        
+        # Handle resume upload
+        resume_filename = None
+        if resume_file and resume_file.filename:
+            resume_filename = _save_file(resume_file, ALLOWED_RESUME)
+            if not resume_filename:
+                flash("Invalid resume file. Please upload PDF, DOC, or DOCX (max 8MB).", "error")
+                return render_template("careers/apply.html", job=job)
+        
+        # Create application
+        application = JobApplication(
+            job_id=job.id if job else None,
+            full_name=full_name,
+            email=email,
+            phone=phone if phone else None,
+            portfolio_url=portfolio_url if portfolio_url else None,
+            linkedin_url=linkedin_url if linkedin_url else None,
+            cover_letter=cover_letter if cover_letter else None,
+            resume_filename=resume_filename,
+            status="new"
+        )
+        
+        db.session.add(application)
+        db.session.commit()
+        
+        # Notify all active admins
+        job_title = job.title if job else "General Application"
+        admins = User.query.filter_by(role=RoleEnum.admin, is_active_col=True).all()
+        for admin in admins:
+            notify_user(
+                admin,
+                kind="info",
+                title="New job application",
+                body=f"{full_name} applied for {job_title}",
+                url=url_for("admin_job_applications"),
+                email=admin.email_notifications_enabled and bool(admin.email)
+            )
+        
+        flash("Application submitted successfully! We'll review it and get back to you soon.", "success")
+        return redirect(url_for("careers"))
+    
+    return render_template("careers/apply.html", job=job)
 
 
 @app.route("/register", methods=["GET", "POST"])
@@ -2458,7 +2669,7 @@ def wallet_page():
     # Get recent transactions for overview tab (last 10)
     recent = txns[:10] if txns else []
 
-    return render_template("wallet_center.html", balance=balance, txns=txns, recent=recent, tab=tab)
+    return render_template("wallet_center.html", balance=balance, transactions=txns, txns=txns, recent=recent, tab=tab)
 
 
 @app.route("/transactions")
@@ -4348,6 +4559,12 @@ def producer_catalog_index():
         beats_for_user = data["beats"]
         genres = list(data["genres"])
         prof = BookMeProfile.query.filter_by(user_id=user.id).first()
+        
+        # Check if current user is following this producer
+        is_following = UserFollow.query.filter_by(
+            follower_id=current_user.id, 
+            followed_id=user.id
+        ).first() is not None
 
         producers.append({
             "user": user,
@@ -4357,6 +4574,7 @@ def producer_catalog_index():
             "city": prof.city if prof else "",
             "state": prof.state if prof else "",
             "followers_count": UserFollow.query.filter_by(followed_id=user.id).count(),
+            "is_following": is_following,
             "rating": None,
             "rating_count": 0,
             "genres": genres[:3],
@@ -4789,6 +5007,162 @@ def admin_dashboard():
         RoleEnum=RoleEnum,
         TicketStatus=TicketStatus,
     )
+
+
+# =========================================================
+# Admin Careers Routes
+# =========================================================
+@app.route("/dashboard/admin/jobs", endpoint="admin_jobs")
+@role_required("admin")
+def admin_jobs():
+    """List all job posts"""
+    jobs = JobPost.query.order_by(JobPost.is_active.desc(), JobPost.created_at.desc()).all()
+    return render_template("admin/jobs/index.html", jobs=jobs)
+
+
+@app.route("/dashboard/admin/jobs/new", methods=["GET", "POST"], endpoint="admin_jobs_new")
+@role_required("admin")
+def admin_jobs_new():
+    """Create new job post"""
+    if request.method == "POST":
+        title = sanitize_input(request.form.get("title", "").strip(), max_length=200)
+        department = sanitize_input(request.form.get("department", "").strip(), max_length=120) or None
+        location = sanitize_input(request.form.get("location", "").strip(), max_length=120) or None
+        employment_type = sanitize_input(request.form.get("employment_type", "").strip(), max_length=80) or None
+        level = sanitize_input(request.form.get("level", "").strip(), max_length=80) or None
+        description = sanitize_input(request.form.get("description", ""), max_length=50000)
+        responsibilities = sanitize_input(request.form.get("responsibilities", ""), max_length=50000) or None
+        requirements = sanitize_input(request.form.get("requirements", ""), max_length=50000) or None
+        nice_to_have = sanitize_input(request.form.get("nice_to_have", ""), max_length=50000) or None
+        how_to_apply = sanitize_input(request.form.get("how_to_apply", ""), max_length=50000) or None
+        is_active = request.form.get("is_active") == "on"
+        
+        if not title or not description:
+            flash("Title and description are required.", "error")
+            return render_template("admin/jobs/form.html")
+        
+        job = JobPost(
+            title=title,
+            department=department,
+            location=location,
+            employment_type=employment_type,
+            level=level,
+            description=description,
+            responsibilities=responsibilities,
+            requirements=requirements,
+            nice_to_have=nice_to_have,
+            how_to_apply=how_to_apply,
+            is_active=is_active
+        )
+        
+        db.session.add(job)
+        db.session.commit()
+        
+        flash("Job post created successfully!", "success")
+        return redirect(url_for("admin_jobs"))
+    
+    return render_template("admin/jobs/form.html")
+
+
+@app.route("/dashboard/admin/jobs/<int:job_id>/edit", methods=["GET", "POST"], endpoint="admin_jobs_edit")
+@role_required("admin")
+def admin_jobs_edit(job_id):
+    """Edit job post"""
+    job = JobPost.query.get_or_404(job_id)
+    
+    if request.method == "POST":
+        job.title = sanitize_input(request.form.get("title", "").strip(), max_length=200)
+        job.department = sanitize_input(request.form.get("department", "").strip(), max_length=120) or None
+        job.location = sanitize_input(request.form.get("location", "").strip(), max_length=120) or None
+        job.employment_type = sanitize_input(request.form.get("employment_type", "").strip(), max_length=80) or None
+        job.level = sanitize_input(request.form.get("level", "").strip(), max_length=80) or None
+        job.description = sanitize_input(request.form.get("description", ""), max_length=50000)
+        job.responsibilities = sanitize_input(request.form.get("responsibilities", ""), max_length=50000) or None
+        job.requirements = sanitize_input(request.form.get("requirements", ""), max_length=50000) or None
+        job.nice_to_have = sanitize_input(request.form.get("nice_to_have", ""), max_length=50000) or None
+        job.how_to_apply = sanitize_input(request.form.get("how_to_apply", ""), max_length=50000) or None
+        job.is_active = request.form.get("is_active") == "on"
+        
+        if not job.title or not job.description:
+            flash("Title and description are required.", "error")
+            return render_template("admin/jobs/form.html", job=job)
+        
+        db.session.commit()
+        flash("Job post updated successfully!", "success")
+        return redirect(url_for("admin_jobs"))
+    
+    return render_template("admin/jobs/form.html", job=job)
+
+
+@app.route("/dashboard/admin/jobs/<int:job_id>/toggle", methods=["POST"], endpoint="admin_jobs_toggle")
+@role_required("admin")
+def admin_jobs_toggle(job_id):
+    """Toggle job active status"""
+    job = JobPost.query.get_or_404(job_id)
+    job.is_active = not job.is_active
+    db.session.commit()
+    flash(f"Job post {'activated' if job.is_active else 'archived'} successfully!", "success")
+    return redirect(url_for("admin_jobs"))
+
+
+@app.route("/dashboard/admin/applications", endpoint="admin_job_applications")
+@role_required("admin")
+def admin_job_applications():
+    """Global applications inbox with filters"""
+    status_filter = request.args.get("status", "").strip()
+    job_id_filter = request.args.get("job_id", "").strip()
+    search_q = request.args.get("q", "").strip()
+    
+    query = JobApplication.query
+    
+    if status_filter:
+        query = query.filter_by(status=status_filter)
+    if job_id_filter:
+        try:
+            query = query.filter_by(job_id=int(job_id_filter))
+        except ValueError:
+            pass
+    if search_q:
+        query = query.filter(
+            db.or_(
+                JobApplication.full_name.ilike(f"%{search_q}%"),
+                JobApplication.email.ilike(f"%{search_q}%")
+            )
+        )
+    
+    applications = query.order_by(JobApplication.created_at.desc()).limit(200).all()
+    jobs = JobPost.query.order_by(JobPost.title).all()
+    
+    return render_template("admin/applications/index.html", applications=applications, jobs=jobs, 
+                         status_filter=status_filter, job_id_filter=job_id_filter, search_q=search_q)
+
+
+@app.route("/dashboard/admin/jobs/<int:job_id>/applications", endpoint="admin_job_applications_for_job")
+@role_required("admin")
+def admin_job_applications_for_job(job_id):
+    """Applications inbox for a specific job"""
+    job = JobPost.query.get_or_404(job_id)
+    applications = JobApplication.query.filter_by(job_id=job_id).order_by(JobApplication.created_at.desc()).all()
+    return render_template("admin/jobs/applications.html", job=job, applications=applications)
+
+
+@app.route("/dashboard/admin/applications/<int:app_id>/status", methods=["POST"], endpoint="admin_job_application_status")
+@role_required("admin")
+def admin_job_application_status(app_id):
+    """Update application status"""
+    application = JobApplication.query.get_or_404(app_id)
+    new_status = request.form.get("status", "").strip()
+    
+    valid_statuses = {"new", "reviewed", "interviewing", "rejected", "hired"}
+    if new_status not in valid_statuses:
+        flash("Invalid status.", "error")
+        return redirect(request.referrer or url_for("admin_job_applications"))
+    
+    application.status = new_status
+    db.session.commit()
+    
+    flash(f"Application status updated to {new_status}.", "success")
+    return redirect(request.referrer or url_for("admin_job_applications"))
 
 
 @app.route("/dashboard/admin/superadmin/unlock", methods=["GET", "POST"], endpoint="superadmin_unlock")

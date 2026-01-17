@@ -304,7 +304,15 @@
             </div>
           </div>
 
-          <div class="pc-footer">
+          <div class="pc-footer" style="display: flex; gap: 8px; justify-content: flex-end;">
+            {% if p.username and p.user and p.user.id != current_user.id %}
+              <form method="POST" action="{{ url_for('follow_producer', username=p.username) }}" style="display: inline;">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="pc-btn-ghost" style="padding: 6px 12px; font-size: 13px;">
+                  {{ 'Unfollow' if p.is_following else 'Follow' }}
+                </button>
+              </form>
+            {% endif %}
             {% if p.username %}
               <a href="{{ url_for('producer_catalog_detail', username=p.username) }}"
                  class="pc-btn-primary">

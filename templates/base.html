@@ -58,7 +58,7 @@
       <div class="notifications-bell-container" style="position: relative; display: inline-block;">
         <button id="notificationsBell" class="notifications-bell" type="button" aria-label="Notifications" style="background: none; border: none; cursor: pointer; padding: 8px; position: relative;">
           <span style="font-size: 20px;">🔔</span>
-          <span id="notificationsBadge" class="notifications-badge" style="display: none; position: absolute; top: 4px; right: 4px; background: #ef4444; color: white; border-radius: 50%; width: 18px; height: 18px; font-size: 11px; font-weight: bold; display: flex; align-items: center; justify-content: center; line-height: 1;">0</span>
+          <span id="notificationsBadge" class="notifications-badge" style="display: none; position: absolute; top: 4px; right: 4px; background: #ef4444; color: white; border-radius: 50%; width: 18px; height: 18px; font-size: 11px; font-weight: bold; align-items: center; justify-content: center; line-height: 1;">0</span>
         </button>
         <div id="notificationsDropdown" class="notifications-dropdown" style="display: none; position: absolute; right: 0; top: 100%; margin-top: 8px; background: white; border: 1px solid #ddd; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); min-width: 320px; max-width: 400px; max-height: 500px; overflow-y: auto; z-index: 1000;">
           <div style="padding: 12px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center;">
@@ -239,7 +239,7 @@
     });
   })();
 
-  // Notifications bell polling and dropdown
+  // Notifications bell polling and dropdown (secure version)
   (function() {
     const bell = document.getElementById('notificationsBell');
     const badge = document.getElementById('notificationsBadge');
@@ -248,67 +248,188 @@
     
     if (!bell || !badge || !dropdown || !list) return;
     
-    function updateNotifications() {
+    let unreadCount = 0;
+    
+    // Update unread count badge
+    function updateUnreadCount() {
       fetch('/api/notifications/unread-count')
         .then(r => r.json())
         .then(data => {
-          if (data.count > 0) {
-            badge.textContent = data.count > 99 ? '99+' : data.count;
+          unreadCount = data.count || 0;
+          if (unreadCount > 0) {
+            badge.textContent = unreadCount > 99 ? '99+' : String(unreadCount);
             badge.style.display = 'flex';
           } else {
             badge.style.display = 'none';
           }
         })
         .catch(() => {});
+    }
+    
+    // Get kind color safely
+    function getKindColor(kind) {
+      switch (kind) {
+        case 'success': return '#10b981';
+        case 'warning': return '#f59e0b';
+        case 'error': return '#ef4444';
+        default: return '#3b82f6';
+      }
+    }
+    
+    // Render notifications using DOM manipulation (no innerHTML with untrusted data)
+    function renderNotifications(notifications) {
+      // Clear list
+      while (list.firstChild) {
+        list.removeChild(list.firstChild);
+      }
+      
+      if (!notifications || notifications.length === 0) {
+        const emptyDiv = document.createElement('div');
+        emptyDiv.style.cssText = 'padding: 20px; text-align: center; color: #999;';
+        emptyDiv.textContent = 'No notifications';
+        list.appendChild(emptyDiv);
+        return;
+      }
+      
+      notifications.forEach(n => {
+        const row = document.createElement('div');
+        row.style.cssText = 'padding: 12px; border-bottom: 1px solid #eee; cursor: pointer;';
+        if (!n.is_read) {
+          row.style.background = '#f8f9ff';
+        }
+        
+        const contentDiv = document.createElement('div');
+        contentDiv.style.cssText = 'display: flex; justify-content: space-between; align-items: start;';
+        
+        const leftDiv = document.createElement('div');
+        leftDiv.style.flex = '1';
+        
+        const titleDiv = document.createElement('div');
+        titleDiv.style.cssText = 'font-weight: ' + (n.is_read ? 'normal' : 'bold') + '; margin-bottom: 4px;';
+        titleDiv.textContent = n.title || '';
+        
+        const timeDiv = document.createElement('div');
+        timeDiv.style.cssText = 'font-size: 12px; color: #666;';
+        if (n.created_at) {
+          try {
+            timeDiv.textContent = new Date(n.created_at).toLocaleString();
+          } catch (e) {
+            timeDiv.textContent = '';
+          }
+        }
+        
+        leftDiv.appendChild(titleDiv);
+        leftDiv.appendChild(timeDiv);
+        
+        const dotSpan = document.createElement('span');
+        dotSpan.style.cssText = 'display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-left: 8px;';
+        dotSpan.style.backgroundColor = getKindColor(n.kind || 'info');
+        
+        contentDiv.appendChild(leftDiv);
+        contentDiv.appendChild(dotSpan);
+        row.appendChild(contentDiv);
+        
+        // Click handler - mark as read and navigate
+        row.addEventListener('click', function() {
+          const safeUrl = (n.url && n.url.startsWith('/')) ? n.url : null;
+          
+          // Mark as read if unread
+          if (!n.is_read && n.id) {
+            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
+            if (csrfToken) {
+              const formData = new FormData();
+              formData.append('csrf_token', csrfToken);
+              
+              fetch(`/notifications/${n.id}/read`, {
+                method: 'POST',
+                body: formData,
+                credentials: 'same-origin'
+              })
+              .then(response => {
+                if (response.ok) {
+                  // Update UI
+                  row.style.background = '';
+                  titleDiv.style.fontWeight = 'normal';
+                  n.is_read = true;
+                  
+                  // Decrement badge count
+                  unreadCount = Math.max(0, unreadCount - 1);
+                  if (unreadCount > 0) {
+                    badge.textContent = unreadCount > 99 ? '99+' : String(unreadCount);
+                    badge.style.display = 'flex';
+                  } else {
+                    badge.style.display = 'none';
+                  }
+                }
+              })
+              .catch(() => {
+                // Best effort - continue navigation
+              });
+            }
+          }
+          
+          // Navigate
+          if (safeUrl) {
+            window.location.href = safeUrl;
+          } else {
+            window.location.href = '/notifications';
+          }
+        });
+        
+        list.appendChild(row);
+      });
+    }
+    
+    // Load recent notifications (only when dropdown is open)
+    function loadRecentNotifications() {
+      // Show loading state
+      while (list.firstChild) {
+        list.removeChild(list.firstChild);
+      }
+      const loadingDiv = document.createElement('div');
+      loadingDiv.style.cssText = 'padding: 20px; text-align: center; color: #999;';
+      loadingDiv.textContent = 'Loading...';
+      list.appendChild(loadingDiv);
       
       fetch('/api/notifications/recent')
         .then(r => r.json())
         .then(data => {
-          if (data.length === 0) {
-            list.innerHTML = '<div style="padding: 20px; text-align: center; color: #999;">No notifications</div>';
-            return;
-          }
-          
-          list.innerHTML = data.map(n => {
-            const timeAgo = n.created_at ? new Date(n.created_at).toLocaleString() : '';
-            const kindClass = n.kind || 'info';
-            const readClass = n.is_read ? 'read' : 'unread';
-            const url = n.url || '#';
-            return `
-              <div class="notification-item ${readClass}" style="padding: 12px; border-bottom: 1px solid #eee; cursor: pointer; ${!n.is_read ? 'background: #f8f9ff;' : ''}" onclick="window.location.href='${url}'">
-                <div style="display: flex; justify-content: space-between; align-items: start;">
-                  <div style="flex: 1;">
-                    <div style="font-weight: ${n.is_read ? 'normal' : 'bold'}; margin-bottom: 4px;">${n.title || ''}</div>
-                    <div style="font-size: 12px; color: #666;">${timeAgo}</div>
-                  </div>
-                  <span class="notification-kind-${kindClass}" style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: ${kindClass === 'success' ? '#10b981' : kindClass === 'warning' ? '#f59e0b' : kindClass === 'error' ? '#ef4444' : '#3b82f6'}; margin-left: 8px;"></span>
-                </div>
-              </div>
-            `;
-          }).join('');
+          renderNotifications(data);
         })
         .catch(() => {
-          list.innerHTML = '<div style="padding: 20px; text-align: center; color: #999;">Error loading notifications</div>';
+          const errorDiv = document.createElement('div');
+          errorDiv.style.cssText = 'padding: 20px; text-align: center; color: #999;';
+          errorDiv.textContent = 'Error loading notifications';
+          while (list.firstChild) {
+            list.removeChild(list.firstChild);
+          }
+          list.appendChild(errorDiv);
         });
     }
     
+    // Toggle dropdown
     bell.addEventListener('click', (e) => {
       e.stopPropagation();
-      dropdown.style.display = dropdown.style.display === 'none' ? 'block' : 'none';
-      if (dropdown.style.display === 'block') {
-        updateNotifications();
+      const isOpen = dropdown.style.display === 'block';
+      dropdown.style.display = isOpen ? 'none' : 'block';
+      
+      if (!isOpen) {
+        // Opening dropdown - refresh count and load recent
+        updateUnreadCount();
+        loadRecentNotifications();
       }
     });
     
+    // Close dropdown when clicking outside
     document.addEventListener('click', (e) => {
       if (!dropdown.contains(e.target) && !bell.contains(e.target)) {
         dropdown.style.display = 'none';
       }
     });
     
-    // Poll every 20 seconds
-    updateNotifications();
-    setInterval(updateNotifications, 20000);
+    // Poll unread count every 20 seconds
+    updateUnreadCount();
+    setInterval(updateUnreadCount, 20000);
   })();
 </script>
 

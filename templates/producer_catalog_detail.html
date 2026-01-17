@@ -300,10 +300,14 @@
           ← Marketplace
         </a>
 
-        {# Placeholder for future "Follow" button #}
-        <button type="button" class="pc-btn-primary pc-btn-small" disabled>
-          Follow (coming soon)
-        </button>
+        {% if producer and producer.user and producer.user.id != current_user.id %}
+          <form method="POST" action="{{ url_for('follow_producer', username=producer.username) }}" style="display: inline;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="pc-btn-primary pc-btn-small {{ 'pc-btn-secondary' if producer.is_following else '' }}">
+              {{ 'Unfollow' if producer.is_following else 'Follow' }}
+            </button>
+          </form>
+        {% endif %}
       </div>
     </header>
 
