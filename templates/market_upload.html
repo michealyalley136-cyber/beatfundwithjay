@@ -344,6 +344,9 @@
                 <option value="standard">Standard</option>
                 <option value="exclusive">Exclusive</option>
               </select>
+              <div class="up-hint">
+                Standard: multiple buyers allowed. Exclusive: sold once, automatically removed after purchase.
+              </div>
             </div>
 
             <div></div> <!-- spacer -->
@@ -363,7 +366,7 @@
           </div>
 
           <div style="margin-top:14px;">
-            <div class="up-label">Audio file</div>
+            <div class="up-label">Preview audio file</div>
             <input
               type="file"
               name="audio_file"
@@ -372,8 +375,20 @@
               required
             >
             <div class="up-hint">
-              This file will be used for preview and for the paid download.
-              The full file is only downloadable after purchase.
+              Preview is what people listen to before buying. Deliverable is what they download after purchase.
+            </div>
+          </div>
+
+          <div style="margin-top:14px;">
+            <div class="up-label">Deliverable file (optional for free beats)</div>
+            <input
+              type="file"
+              name="deliverable_file"
+              accept=".zip,.rar,.7z,.mp3,.wav,.m4a,.ogg"
+              class="up-file"
+            >
+            <div class="up-hint">
+              Preview is what people listen to before buying. Deliverable is what they download after purchase.
             </div>
           </div>
 

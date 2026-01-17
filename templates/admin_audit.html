@@ -14,12 +14,12 @@
   </tr>
   {% for log in logs %}
   <tr>
-    <td style="padding:8px;">{{ log.created_at }}</td>
-    <td style="padding:8px;">{{ log.actor.username if log.actor else '-' }}</td>
+    <td style="padding:8px;">{{ log.created_at.strftime('%Y-%m-%d %H:%M:%S') if log.created_at else '-' }}</td>
+    <td style="padding:8px;">{{ log.admin.username if log.admin else '-' }}</td>
     <td style="padding:8px;">{{ log.action }}</td>
-    <td style="padding:8px;">{{ log.target.username if log.target else '-' }}</td>
+    <td style="padding:8px;">{{ log.user.username if log.user else '-' }}</td>
     <td style="padding:8px;">{{ log.reason or '' }}</td>
-    <td style="padding:8px;">{{ log.meta or '' }}</td>
+    <td style="padding:8px;">-</td>
   </tr>
   {% endfor %}
 </table>

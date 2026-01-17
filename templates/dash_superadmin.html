@@ -22,25 +22,6 @@
   <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-2">
     <div>
       <h1 class="h4 mb-1 fw-semibold">Owner &amp; Finance Dashboard</h1>
-      <p class="text-muted mb-0 small">
-        Internal view of platform volume, wallet liability and marketplace performance.
-      </p>
-    </div>
-    <div class="text-end small text-muted">
-      <div>
-        Environment:
-        <span class="badge bg-secondary-subtle border text-secondary ms-1">
-          {{ APP_ENV|upper }}
-        </span>
-        {% if IS_DEV %}
-          <span class="badge bg-warning-subtle border text-warning ms-1">
-            DEV
-          </span>
-        {% endif %}
-      </div>
-      <div class="mt-1">
-        Access: <code>is_superadmin = True</code> &amp; owner passcode.
-      </div>
     </div>
   </div>
 
@@ -228,11 +209,6 @@
     </div>
   </div>
 
-  <!-- FOOTNOTE -->
-  <div class="mt-4 small text-muted">
-    This page is intentionally not linked in the standard admin menu. Navigate directly to
-    <code>/dashboard/admin/owner</code> or use the superadmin unlock panel to access it.
-  </div>
 </div>
 
 <!-- Chart.js (if not already loaded in base.html) -->

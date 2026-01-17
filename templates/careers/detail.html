@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+{% block title %}{{ job.title }} · Careers · BeatFund{% endblock %}
+
+{% block extra_head %}
+<style>
+  .job-detail-page {
+    max-width: 800px;
+    margin: 32px auto 40px;
+    padding-inline: 16px;
+  }
+  
+  .job-detail-header {
+    margin-bottom: 32px;
+  }
+  
+  .job-detail-title {
+    font-size: 32px;
+    font-weight: 700;
+    margin: 0 0 12px;
+    color: #e5e7eb;
+  }
+  
+  .job-detail-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    margin-bottom: 24px;
+    font-size: 14px;
+    color: #9ca3af;
+  }
+  
+  .job-detail-meta span {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  
+  .job-detail-section {
+    margin-bottom: 32px;
+  }
+  
+  .job-detail-section-title {
+    font-size: 18px;
+    font-weight: 600;
+    margin: 0 0 12px;
+    color: #e5e7eb;
+  }
+  
+  .job-detail-content {
+    font-size: 14px;
+    color: #cbd5f5;
+    line-height: 1.8;
+    white-space: pre-wrap;
+  }
+  
+  .job-detail-apply {
+    margin-top: 40px;
+    padding-top: 32px;
+    border-top: 1px solid #1f2937;
+  }
+  
+  .apply-button {
+    display: inline-block;
+    background: linear-gradient(135deg, #4de3ff, #6366f1);
+    color: white;
+    padding: 12px 24px;
+    border-radius: 8px;
+    text-decoration: none;
+    font-weight: 500;
+    transition: transform 0.2s, box-shadow 0.2s;
+  }
+  
+  .apply-button:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 18px rgba(79, 70, 229, 0.4);
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="job-detail-page">
+  <div class="job-detail-header">
+    <h1 class="job-detail-title">{{ job.title }}</h1>
+    <div class="job-detail-meta">
+      {% if job.department %}
+        <span>📁 {{ job.department }}</span>
+      {% endif %}
+      {% if job.location %}
+        <span>📍 {{ job.location }}</span>
+      {% endif %}
+      {% if job.employment_type %}
+        <span>⏰ {{ job.employment_type }}</span>
+      {% endif %}
+      {% if job.level %}
+        <span>🎯 {{ job.level }}</span>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="job-detail-section">
+    <h2 class="job-detail-section-title">Description</h2>
+    <div class="job-detail-content">{{ job.description }}</div>
+  </div>
+
+  {% if job.responsibilities %}
+    <div class="job-detail-section">
+      <h2 class="job-detail-section-title">Responsibilities</h2>
+      <div class="job-detail-content">{{ job.responsibilities }}</div>
+    </div>
+  {% endif %}
+
+  {% if job.requirements %}
+    <div class="job-detail-section">
+      <h2 class="job-detail-section-title">Requirements</h2>
+      <div class="job-detail-content">{{ job.requirements }}</div>
+    </div>
+  {% endif %}
+
+  {% if job.nice_to_have %}
+    <div class="job-detail-section">
+      <h2 class="job-detail-section-title">Nice to Have</h2>
+      <div class="job-detail-content">{{ job.nice_to_have }}</div>
+    </div>
+  {% endif %}
+
+  {% if job.how_to_apply %}
+    <div class="job-detail-section">
+      <h2 class="job-detail-section-title">How to Apply</h2>
+      <div class="job-detail-content">{{ job.how_to_apply }}</div>
+    </div>
+  {% endif %}
+
+  <div class="job-detail-apply">
+    <a href="{{ url_for('careers_apply', job_id=job.id) }}" class="apply-button">
+      Apply for this position
+    </a>
+  </div>
+</div>
+{% endblock %}

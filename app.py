@@ -14,6 +14,7 @@ from flask_wtf.csrf import CSRFError, generate_csrf
 
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
+from werkzeug.exceptions import RequestEntityTooLarge
 
 from sqlalchemy import UniqueConstraint, inspect, text
 from sqlalchemy.sql import func
@@ -36,6 +37,14 @@ import csv
 from io import StringIO
 import re
 import json
+
+# Load environment variables from .env file (for local development)
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    # python-dotenv not installed, skip .env loading
+    pass
 
 
 # =========================================================
@@ -84,13 +93,56 @@ app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Lax",
     SESSION_COOKIE_SECURE=not IS_DEV,
+    SESSION_COOKIE_NAME="__Secure-session" if not IS_DEV else "session",
     REMEMBER_COOKIE_HTTPONLY=True,
     REMEMBER_COOKIE_SECURE=not IS_DEV,
+    REMEMBER_COOKIE_NAME="__Secure-remember_token" if not IS_DEV else "remember_token",
     PERMANENT_SESSION_LIFETIME=timedelta(minutes=60),
 )
 app.config.setdefault("WTF_CSRF_TIME_LIMIT", None)
 
+# Maximum request size (prevents large uploads from consuming too much memory)
+# 120MB = 120 * 1024 * 1024 bytes
+app.config["MAX_CONTENT_LENGTH"] = 120 * 1024 * 1024  # 120MB
+
 csrf = CSRFProtect(app)
+
+# ---------------------------------------------------------
+# Security Headers Middleware
+# ---------------------------------------------------------
+@app.after_request
+def set_security_headers(response):
+    """Add comprehensive security headers to all responses"""
+    # Prevent XSS attacks
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    
+    # Content Security Policy - strict policy to prevent XSS
+    csp_policy = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+        "style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data: https:; "
+        "font-src 'self' data:; "
+        "connect-src 'self'; "
+        "frame-ancestors 'none'; "
+        "base-uri 'self'; "
+        "form-action 'self';"
+    )
+    response.headers["Content-Security-Policy"] = csp_policy
+    
+    # Strict Transport Security (HSTS) - only in production
+    if not IS_DEV:
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains; preload"
+    
+    # Permissions Policy (Feature Policy)
+    response.headers["Permissions-Policy"] = (
+        "geolocation=(), microphone=(), camera=(), payment=(), usb=()"
+    )
+    
+    return response
 
 
 @app.context_processor
@@ -103,7 +155,138 @@ def inject_csrf_token():
 def handle_csrf_error(e):
     msg = e.description or "Security error: please refresh the page and try again."
     flash(msg, "error")
-    return redirect(request.referrer or url_for("home")), 400
+    return redirect(request.referrer or url_for("home"))
+
+
+# ---------------------------------------------------------
+# Enhanced Security: Rate Limiting & Input Validation
+# ---------------------------------------------------------
+
+# General rate limiting storage
+RATE_LIMITS: dict[str, list[float]] = {}
+
+def get_client_id() -> str:
+    """Get unique client identifier for rate limiting"""
+    # Use IP + User-Agent hash for better tracking
+    ip = request.remote_addr or "unknown"
+    ua = request.headers.get("User-Agent", "")[:50] or "unknown"
+    import hashlib
+    combined = f"{ip}:{ua}"
+    return hashlib.sha256(combined.encode()).hexdigest()[:16]
+
+
+def check_rate_limit(action: str, max_requests: int = 10, window_seconds: int = 60) -> bool:
+    """Check if client has exceeded rate limit for an action"""
+    client_id = get_client_id()
+    key = f"{action}:{client_id}"
+    now = time()
+    
+    attempts = RATE_LIMITS.get(key, [])
+    attempts = [t for t in attempts if now - t < window_seconds]
+    
+    if len(attempts) >= max_requests:
+        return False
+    
+    attempts.append(now)
+    RATE_LIMITS[key] = attempts
+    return True
+
+
+def sanitize_input(value: str, max_length: int = 5000) -> str:
+    """Sanitize user input to prevent injection attacks"""
+    if not isinstance(value, str):
+        return ""
+    # Remove null bytes and control characters
+    cleaned = "".join(char for char in value if ord(char) >= 32 or char in "\n\r\t")
+    # Limit length
+    return cleaned[:max_length].strip()
+
+
+def validate_email(email: str) -> bool:
+    """Validate email format"""
+    if not email or len(email) > 255:
+        return False
+    pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+    return bool(re.match(pattern, email))
+
+
+def validate_username(username: str) -> bool:
+    """Validate username format - alphanumeric, underscore, dash only"""
+    if not username or len(username) < 3 or len(username) > 30:
+        return False
+    pattern = r'^[a-zA-Z0-9_-]+$'
+    return bool(re.match(pattern, username))
+
+
+def _validate_url_optional(url: str) -> bool:
+    """Validate optional URL - must be blank or start with http:// or https://, max 500 chars"""
+    if not url or not url.strip():
+        return True
+    url = url.strip()
+    if len(url) > 500:
+        return False
+    return url.startswith("http://") or url.startswith("https://")
+
+
+def log_security_event(event_type: str, details: str, severity: str = "info"):
+    """Log security events (can be extended to write to file/DB)"""
+    timestamp = datetime.utcnow().isoformat()
+    client_id = get_client_id()
+    user_id = current_user.id if current_user.is_authenticated else None
+    username = current_user.username if current_user.is_authenticated else None
+    
+    # In production, write to secure log file or security monitoring system
+    if not IS_DEV:
+        # TODO: Implement proper security logging to file/DB/monitoring service
+        pass
+    else:
+        print(f"[SECURITY {severity.upper()}] {timestamp} | {event_type} | User: {username or 'anonymous'} | {details} | Client: {client_id[:8]}")
+
+
+# ---------------------------------------------------------
+# Enhanced Error Handling - Don't expose sensitive info
+# ---------------------------------------------------------
+@app.errorhandler(500)
+def handle_500_error(e):
+    """Handle 500 errors without exposing sensitive information"""
+    db.session.rollback()
+    log_security_event("server_error", f"Internal server error: {type(e).__name__}", "error")
+    if IS_DEV:
+        # In dev, show the actual error
+        raise
+    # In production, render 500.html if exists, else safe generic message
+    if os.path.exists(os.path.join(BASE_DIR, "templates", "500.html")):
+        return render_template("500.html"), 500
+    return "An error occurred. Our team has been notified.", 500
+
+
+@app.errorhandler(404)
+def handle_404_error(e):
+    """Handle 404 errors"""
+    if os.path.exists(os.path.join(BASE_DIR, "templates", "404.html")):
+        return render_template("404.html"), 404
+    return "Page not found", 404
+
+
+@app.errorhandler(403)
+def handle_403_error(e):
+    """Handle 403 Forbidden errors"""
+    log_security_event("unauthorized_access", f"403 Forbidden: {request.path}", "warning")
+    flash("You don't have permission to access this resource.", "error")
+    return redirect(request.referrer or url_for("home"))
+
+
+@app.errorhandler(RequestEntityTooLarge)
+def handle_request_entity_too_large(e):
+    """Handle 413 Request Entity Too Large errors (file upload size exceeded)"""
+    log_security_event("upload_too_large", f"Request size exceeded limit: {request.path}", "warning")
+    flash("Upload too large. Please upload a smaller file.", "error")
+    
+    # Try to redirect to the referrer, or home page if no referrer
+    referrer = request.referrer
+    if referrer:
+        return redirect(referrer)
+    return redirect(url_for("home"))
 
 
 @app.template_test("None")
@@ -120,9 +303,8 @@ if db_url:
     if db_url.startswith("postgres://"):
         db_url = db_url.replace("postgres://", "postgresql://", 1)
 
-    # Use psycopg2 for psycopg2-binary (SQLAlchemy 2.0 compatible)
-    if db_url.startswith("postgresql://") and not db_url.startswith("postgresql+psycopg2://"):
-        db_url = db_url.replace("postgresql://", "postgresql+psycopg2://", 1)
+    if db_url.startswith("postgresql://") and not db_url.startswith("postgresql+psycopg://"):
+        db_url = db_url.replace("postgresql://", "postgresql+psycopg://", 1)
 
     app.config["SQLALCHEMY_DATABASE_URI"] = db_url
 else:
@@ -145,6 +327,11 @@ if os.getenv("BOOTSTRAP_DB") == "1":
 # =========================================================
 # Uploads
 # =========================================================
+# NOTE: Currently using local filesystem storage. Files will be lost on container/instance restart.
+# For production deployment, consider:
+# - AWS S3 / Google Cloud Storage / Azure Blob Storage
+# - Persistent volumes (if using containers)
+# - Database-backed file references with external storage
 UPLOAD_ROOT = os.path.join(BASE_DIR, "uploads")
 os.makedirs(UPLOAD_ROOT, exist_ok=True)
 app.config["UPLOAD_FOLDER"] = UPLOAD_ROOT
@@ -154,20 +341,88 @@ ALLOWED_AUDIO = {"mp3", "wav", "m4a", "ogg"}
 ALLOWED_STEMS = {"zip", "rar", "7z", "mp3", "wav", "m4a", "ogg"}
 
 ALLOWED_VIDEO_EXTS = {"mp4", "webm", "mov"}
+ALLOWED_RESUME = {"pdf", "doc", "docx"}
+
+# Maximum file sizes (in bytes)
+MAX_IMAGE_SIZE = 10 * 1024 * 1024  # 10MB
+MAX_AUDIO_SIZE = 50 * 1024 * 1024  # 50MB
+MAX_VIDEO_SIZE = 100 * 1024 * 1024  # 100MB
+MAX_ARCHIVE_SIZE = 100 * 1024 * 1024  # 100MB
+MAX_RESUME_SIZE = 8 * 1024 * 1024  # 8MB
 
 
 def _ext_ok(filename: str, allowed: set[str]) -> bool:
-    return "." in filename and filename.rsplit(".", 1)[1].lower() in allowed
+    """Check if file extension is allowed with security checks"""
+    if not filename or "." not in filename:
+        return False
+    ext = filename.rsplit(".", 1)[1].lower()
+    # Additional security: prevent double extensions (e.g., file.php.jpg)
+    if filename.count(".") > 1:
+        # Only allow one extension
+        parts = filename.rsplit(".", 2)
+        if len(parts) >= 3 and parts[-2].lower() in {"php", "phtml", "jsp", "asp", "aspx", "exe", "sh", "bat", "cmd", "js", "html", "htm"}:
+            log_security_event("suspicious_file_extension", f"Blocked double extension: {filename}", "warning")
+            return False
+    return ext in allowed
 
 
 def _save_file(fs, allowed_set: set[str]) -> Optional[str]:
+    """Save uploaded file with comprehensive security checks"""
     if not fs or fs.filename == "":
         return None
-    if not _ext_ok(fs.filename, allowed_set):
+    
+    # Security: Validate filename
+    filename = secure_filename(fs.filename)
+    if not filename or not _ext_ok(filename, allowed_set):
+        log_security_event("invalid_file_upload", f"Invalid file extension: {fs.filename}", "warning")
         return None
-    ext = fs.filename.rsplit(".", 1)[1].lower()
+    
+    # Extract extension from sanitized filename for size checking
+    ext = filename.rsplit(".", 1)[1].lower() if "." in filename else ""
+    
+    # Security: Check file size based on actual file extension
+    if ext in ALLOWED_IMAGE:
+        MAX_FILE_SIZE = MAX_IMAGE_SIZE
+    elif ext in ALLOWED_VIDEO_EXTS:
+        MAX_FILE_SIZE = MAX_VIDEO_SIZE
+    elif ext in ALLOWED_RESUME:
+        MAX_FILE_SIZE = MAX_RESUME_SIZE
+    elif ext in {"zip", "rar", "7z"}:
+        # Archive files get archive size limit (important for ALLOWED_STEMS)
+        MAX_FILE_SIZE = MAX_ARCHIVE_SIZE
+    elif ext in ALLOWED_AUDIO:
+        # Audio files (including those in ALLOWED_STEMS)
+        MAX_FILE_SIZE = MAX_AUDIO_SIZE
+    else:
+        # Default to smallest limit for unknown extensions (shouldn't happen due to _ext_ok check)
+        MAX_FILE_SIZE = MAX_IMAGE_SIZE
+    
+    fs.seek(0, 2)  # Seek to end
+    size = fs.tell()
+    fs.seek(0)  # Reset to beginning
+    if size > MAX_FILE_SIZE:
+        log_security_event("file_too_large", f"File size: {size} bytes, max: {MAX_FILE_SIZE}, extension: {ext}", "warning")
+        return None
+    
+    # Security: Rate limit file uploads
+    if not check_rate_limit("file_upload", max_requests=20, window_seconds=300):
+        log_security_event("upload_rate_limit", f"Too many uploads from client", "warning")
+        return None
+    
+    # Generate secure filename (UUID to prevent enumeration attacks)
+    # ext already extracted above for size checking
     fname = f"{uuid.uuid4().hex}.{ext}"
-    fs.save(os.path.join(app.config["UPLOAD_FOLDER"], fname))
+    filepath = os.path.join(app.config["UPLOAD_FOLDER"], fname)
+    
+    # Security: Ensure file is saved within upload directory (prevent directory traversal)
+    real_upload = os.path.realpath(app.config["UPLOAD_FOLDER"])
+    real_filepath = os.path.realpath(filepath)
+    if not real_filepath.startswith(real_upload):
+        log_security_event("directory_traversal_attempt", f"Blocked path traversal: {filepath}", "error")
+        return None
+    
+    fs.save(filepath)
+    log_security_event("file_upload_success", f"File uploaded: {fname} ({size} bytes)", "info")
     return fname
 
 
@@ -251,35 +506,50 @@ def _save_owner_pass_hash_to_instance(pass_hash: str) -> None:
 
 
 def _get_effective_owner_pass_hash() -> Optional[str]:
+    # Priority A: OWNER_PANEL_PASS_HASH (use as-is)
     env_hash = os.getenv("OWNER_PANEL_PASS_HASH")
     if env_hash and env_hash.strip():
         return env_hash.strip()
 
-    inst_hash = _load_owner_pass_hash_from_instance()
-    if inst_hash:
-        return inst_hash
-
+    # Priority B: OWNER_PANEL_PASS (generate hash)
     env_plain = os.getenv("OWNER_PANEL_PASS")
     if env_plain and env_plain.strip():
         return generate_password_hash(env_plain.strip())
 
-    if IS_DEV:
-        dev_default = os.getenv("DEV_OWNER_PANEL_PASS", "Acidrain@0911")
-        return generate_password_hash(dev_default)
+    # Priority C: instance/owner_passcode.json (allows UI changes to persist)
+    inst_hash = _load_owner_pass_hash_from_instance()
+    if inst_hash:
+        return inst_hash
 
+    # Priority D: DEV_OWNER_PANEL_PASS (dev only, generate hash)
+    if IS_DEV:
+        dev_plain = os.getenv("DEV_OWNER_PANEL_PASS")
+        if dev_plain and dev_plain.strip():
+            return generate_password_hash(dev_plain.strip())
+
+    # No valid passcode found
     return None
 
 
 OWNER_PANEL_PASS_HASH_EFFECTIVE = _get_effective_owner_pass_hash()
 if not OWNER_PANEL_PASS_HASH_EFFECTIVE:
-    raise RuntimeError(
-        "SECURITY ERROR: Owner passcode is not configured.\n"
-        "Production requires one of:\n"
-        "- OWNER_PANEL_PASS_HASH (recommended)\n"
-        "- OWNER_PANEL_PASS\n"
-        "- instance/owner_passcode.json with {'pass_hash': '...'}\n"
-    )
+    if IS_DEV:
+        raise RuntimeError(
+            "SECURITY ERROR: Owner passcode is not configured for development.\n"
+            "Set one of:\n"
+            "- DEV_OWNER_PANEL_PASS (recommended for dev)\n"
+            "- OWNER_PANEL_PASS\n"
+            "- OWNER_PANEL_PASS_HASH\n"
+        )
+    else:
+        raise RuntimeError(
+            "SECURITY ERROR: Owner passcode is not configured for production.\n"
+            "Set one of:\n"
+            "- OWNER_PANEL_PASS_HASH (recommended)\n"
+            "- OWNER_PANEL_PASS\n"
+        )
 
+# OWNER_PASS_MANAGED_BY_ENV is True if using env vars (but NOT DEV_OWNER_PANEL_PASS)
 OWNER_PASS_MANAGED_BY_ENV = bool(
     (os.getenv("OWNER_PANEL_PASS_HASH") and os.getenv("OWNER_PANEL_PASS_HASH").strip())
     or (os.getenv("OWNER_PANEL_PASS") and os.getenv("OWNER_PANEL_PASS").strip())
@@ -419,7 +689,6 @@ app.jinja_env.globals["get_role_display"] = get_role_display
 
 # ✅ Needed if your templates use {{ datetime.utcnow().year }}
 app.jinja_env.globals["datetime"] = datetime
-app.jinja_env.globals["abs"] = abs
 
 
 class User(UserMixin, db.Model):
@@ -432,8 +701,7 @@ class User(UserMixin, db.Model):
     artist_name = db.Column(db.String(150), nullable=True)
 
     password_hash = db.Column(db.String(255), nullable=False)
-    role = db.Column(db.Enum(RoleEnum), nullable=False, default=RoleEnum.artist)  # Legacy - kept for migration
-    primary_role = db.Column(db.Enum(RoleEnum), nullable=False, default=RoleEnum.artist)
+    role = db.Column(db.Enum(RoleEnum), nullable=False, default=RoleEnum.artist)
     kyc_status = db.Column(db.Enum(KYCStatus), nullable=False, default=KYCStatus.not_started)
     is_active_col = db.Column("is_active", db.Boolean, nullable=False, default=True)
 
@@ -444,9 +712,7 @@ class User(UserMixin, db.Model):
     password_reset_sent_at = db.Column(db.DateTime, nullable=True)
 
     avatar_path = db.Column(db.String(255), nullable=True)
-
-    # Relationship for additional roles
-    roles = db.relationship("UserRole", backref="user", lazy="dynamic", cascade="all, delete-orphan")
+    email_notifications_enabled = db.Column(db.Boolean, nullable=False, default=True)
 
     @property
     def is_active(self):
@@ -472,70 +738,6 @@ class User(UserMixin, db.Model):
     @property
     def display_name(self) -> str:
         return self.artist_name or self.full_name or self.username
-
-    def get_roles(self) -> set[RoleEnum]:
-        """Get all roles for this user (primary_role + additional roles)"""
-        roles_set = {self.primary_role}
-        for user_role in self.roles:
-            roles_set.add(user_role.role)
-        return roles_set
-
-    def has_role(self, *roles: str | RoleEnum) -> bool:
-        """Check if user has any of the specified roles"""
-        user_roles = self.get_roles()
-        for role in roles:
-            try:
-                role_enum = role if isinstance(role, RoleEnum) else RoleEnum(str(role))
-                if role_enum in user_roles:
-                    return True
-            except (ValueError, TypeError):
-                continue
-        return False
-
-    def active_role(self) -> RoleEnum:
-        """Get the active role from session, or fallback to primary_role"""
-        from flask import session
-        active_role_str = session.get("active_role")
-        if active_role_str:
-            try:
-                active_role_enum = RoleEnum(active_role_str)
-                # Verify user actually has this role
-                if active_role_enum in self.get_roles():
-                    return active_role_enum
-            except (ValueError, TypeError):
-                pass
-        return self.primary_role
-
-    def add_role(self, role: RoleEnum) -> bool:
-        """Add a role to the user if not already present"""
-        if role in self.get_roles():
-            return False
-        user_role = UserRole(user_id=self.id, role=role)
-        db.session.add(user_role)
-        return True
-
-    def remove_role(self, role: RoleEnum) -> bool:
-        """Remove a role from the user (cannot remove primary_role)"""
-        if role == self.primary_role:
-            return False
-        user_role = UserRole.query.filter_by(user_id=self.id, role=role).first()
-        if user_role:
-            db.session.delete(user_role)
-            return True
-        return False
-
-
-# ------- User Roles (Multi-role support) -------
-class UserRole(db.Model):
-    __tablename__ = "user_role"
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
-    role = db.Column(db.Enum(RoleEnum), nullable=False, index=True)
-    created_at = db.Column(db.DateTime(timezone=True), server_default=func.now(), nullable=False)
-    
-    __table_args__ = (
-        db.UniqueConstraint("user_id", "role", name="uq_user_role_user_role"),
-    )
 
 
 # ------- Follows -------
@@ -631,7 +833,43 @@ class Order(db.Model):
     seller = db.relationship("User", foreign_keys=[seller_id])
 
 
+# ------- Notifications -------
+class Notification(db.Model):
+    __tablename__ = "notification"
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    kind = db.Column(db.String(50), nullable=False, default="info")  # info, success, warning, error
+    title = db.Column(db.String(160), nullable=False)
+    body = db.Column(db.Text, nullable=True)
+    url = db.Column(db.String(400), nullable=True)  # where to send user when clicked
+    is_read = db.Column(db.Boolean, nullable=False, default=False, index=True)
+    created_at = db.Column(db.DateTime, server_default=func.now(), index=True)
+    emailed_at = db.Column(db.DateTime, nullable=True)
+
+    user = db.relationship("User", backref=db.backref("notifications", lazy="dynamic"))
+
+
 # ------- Bookings (legacy-ish but used) -------
+# Standard Booking status values (string constants for consistency)
+BOOKING_STATUS_PENDING = "pending"
+BOOKING_STATUS_ACCEPTED = "accepted"
+BOOKING_STATUS_CONFIRMED = "confirmed"
+BOOKING_STATUS_COMPLETED = "completed"
+BOOKING_STATUS_CANCELLED = "cancelled"
+BOOKING_STATUS_DECLINED = "declined"
+BOOKING_STATUS_DISPUTED = "disputed"
+
+# Valid booking statuses set
+VALID_BOOKING_STATUSES = {
+    BOOKING_STATUS_PENDING,
+    BOOKING_STATUS_ACCEPTED,
+    BOOKING_STATUS_CONFIRMED,
+    BOOKING_STATUS_COMPLETED,
+    BOOKING_STATUS_CANCELLED,
+    BOOKING_STATUS_DECLINED,
+    BOOKING_STATUS_DISPUTED,
+}
+
 class Booking(db.Model):
     __tablename__ = "booking"
     id = db.Column(db.Integer, primary_key=True)
@@ -647,7 +885,7 @@ class Booking(db.Model):
     location_text = db.Column(db.String(255), nullable=True)
 
     total_cents = db.Column(db.Integer, nullable=True)
-    status = db.Column(db.String(32), nullable=False, default="pending")
+    status = db.Column(db.String(32), nullable=False, default=BOOKING_STATUS_PENDING)
 
     notes_from_client = db.Column(db.Text, nullable=True)
     notes_from_provider = db.Column("notes_from_artist", db.Text, nullable=True)
@@ -702,6 +940,46 @@ class BookingRequest(db.Model):
     created_at = db.Column(db.DateTime, server_default=func.now(), index=True)
 
     booking_id = db.Column(db.Integer, db.ForeignKey("booking.id"), nullable=True, unique=True, index=True)
+
+    provider = db.relationship("User", foreign_keys=[provider_id])
+    client = db.relationship("User", foreign_keys=[client_id])
+    booking = db.relationship("Booking", foreign_keys=[booking_id])
+
+
+# ------- Careers -------
+class JobPost(db.Model):
+    __tablename__ = "job_post"
+    id = db.Column(db.Integer, primary_key=True)
+    title = db.Column(db.String(200), nullable=False)
+    department = db.Column(db.String(120), nullable=True)
+    location = db.Column(db.String(120), nullable=True)
+    employment_type = db.Column(db.String(80), nullable=True)
+    level = db.Column(db.String(80), nullable=True)
+    description = db.Column(db.Text, nullable=False)
+    responsibilities = db.Column(db.Text, nullable=True)
+    requirements = db.Column(db.Text, nullable=True)
+    nice_to_have = db.Column(db.Text, nullable=True)
+    how_to_apply = db.Column(db.Text, nullable=True)
+    is_active = db.Column(db.Boolean, nullable=False, default=True, index=True)
+    created_at = db.Column(db.DateTime, server_default=func.now())
+    updated_at = db.Column(db.DateTime, server_default=func.now(), onupdate=func.now())
+
+    applications = db.relationship("JobApplication", backref="job", lazy="dynamic")
+
+
+class JobApplication(db.Model):
+    __tablename__ = "job_application"
+    id = db.Column(db.Integer, primary_key=True)
+    job_id = db.Column(db.Integer, db.ForeignKey("job_post.id"), nullable=True, index=True)
+    full_name = db.Column(db.String(150), nullable=False)
+    email = db.Column(db.String(255), nullable=False)
+    phone = db.Column(db.String(40), nullable=True)
+    portfolio_url = db.Column(db.String(500), nullable=True)
+    linkedin_url = db.Column(db.String(500), nullable=True)
+    cover_letter = db.Column(db.Text, nullable=True)
+    resume_filename = db.Column(db.String(255), nullable=True)
+    status = db.Column(db.String(32), nullable=False, default="new", index=True)
+    created_at = db.Column(db.DateTime, server_default=func.now(), index=True)
 
     provider = db.relationship("User", foreign_keys=[provider_id])
     client = db.relationship("User", foreign_keys=[client_id])
@@ -809,10 +1087,6 @@ PORTFOLIO_OPTIONAL_ROLES = {RoleEnum.manager, RoleEnum.security_usher_crowd_cont
 
 
 def role_requires_portfolio(role) -> bool:
-    """Check if a role requires portfolio - works with RoleEnum or User object"""
-    if hasattr(role, 'get_roles'):  # User object
-        user_roles = role.get_roles()
-        return any(r in PORTFOLIO_REQUIRED_ROLES for r in user_roles)
     try:
         r = role if isinstance(role, RoleEnum) else RoleEnum(str(role))
     except Exception:
@@ -821,13 +1095,13 @@ def role_requires_portfolio(role) -> bool:
 
 
 def is_service_provider(user) -> bool:
-    """Check if user is a service provider - user must have ANY role in BOOKME_PROVIDER_ROLES and not be admin"""
     if not user:
         return False
-    if user.has_role(RoleEnum.admin):
+    try:
+        r = user.role if isinstance(user.role, RoleEnum) else RoleEnum(str(user.role))
+    except Exception:
         return False
-    user_roles = user.get_roles()
-    return any(r in BOOKME_PROVIDER_ROLES for r in user_roles)
+    return (r in BOOKME_PROVIDER_ROLES) and (r != RoleEnum.admin)
 
 
 app.jinja_env.globals["is_service_provider"] = is_service_provider
@@ -1258,11 +1532,10 @@ VAULT_ELIGIBLE_ROLES: set[RoleEnum] = {
 }
 
 def is_vault_eligible(user: User) -> bool:
-    """Check if user's role is eligible for project vaults - user must have ANY role in VAULT_ELIGIBLE_ROLES"""
-    if not user:
+    """Check if user's role is eligible for project vaults"""
+    if not user or not user.role:
         return False
-    user_roles = user.get_roles()
-    return any(r in VAULT_ELIGIBLE_ROLES for r in user_roles)
+    return user.role in VAULT_ELIGIBLE_ROLES
 
 
 # =========================================================
@@ -1274,7 +1547,7 @@ def load_user(user_id):
 
 
 def is_password_expired(user: User) -> bool:
-    if not user.has_role(RoleEnum.admin):
+    if user.role != RoleEnum.admin:
         return False
     if not user.password_changed_at:
         return True
@@ -1286,7 +1559,7 @@ def role_required(*roles):
         @wraps(f)
         @login_required
         def wrapper(*args, **kwargs):
-            if not current_user.has_role(*roles):
+            if current_user.role.value not in roles:
                 flash("You don't have access to that page.", "error")
                 return redirect(url_for("home"))
             return f(*args, **kwargs)
@@ -1456,7 +1729,7 @@ def _user_has_paid_for_beat(user_id: int, beat_id: int) -> bool:
 
 
 def _is_admin() -> bool:
-    return current_user.is_authenticated and current_user.has_role(RoleEnum.admin)
+    return current_user.is_authenticated and current_user.role == RoleEnum.admin
 
 
 def get_social_counts(user_id: int) -> tuple[int, int]:
@@ -1544,6 +1817,92 @@ def _ensure_sqlite_follow_table_name_and_indexes():
     db.session.commit()
 
 
+def _ensure_sqlite_notifications_table():
+    """Create notifications table and add email_notifications_enabled column to user if missing"""
+    if db.engine.url.get_backend_name() != "sqlite":
+        return
+    
+    # Create notifications table if missing
+    if not _sqlite_has_table("notification"):
+        db.session.execute(text("""
+            CREATE TABLE notification (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                kind VARCHAR(50) NOT NULL DEFAULT 'info',
+                title VARCHAR(160) NOT NULL,
+                body TEXT,
+                url VARCHAR(400),
+                is_read BOOLEAN NOT NULL DEFAULT 0,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                emailed_at DATETIME,
+                FOREIGN KEY (user_id) REFERENCES user (id)
+            )
+        """))
+        db.session.execute(text("CREATE INDEX IF NOT EXISTS ix_notification_user_id ON notification (user_id)"))
+        db.session.execute(text("CREATE INDEX IF NOT EXISTS ix_notification_is_read ON notification (is_read)"))
+        db.session.execute(text("CREATE INDEX IF NOT EXISTS ix_notification_created_at ON notification (created_at)"))
+        db.session.commit()
+    
+    # Add email_notifications_enabled to user table if missing
+    if _sqlite_has_table("user"):
+        cols = _sqlite_columns("user")
+        if "email_notifications_enabled" not in cols:
+            db.session.execute(text("ALTER TABLE user ADD COLUMN email_notifications_enabled BOOLEAN NOT NULL DEFAULT 1"))
+            db.session.commit()
+
+
+def _ensure_sqlite_careers_tables():
+    """Create careers tables (job_post and job_application) if missing"""
+    if db.engine.url.get_backend_name() != "sqlite":
+        return
+    
+    # Create job_post table if missing
+    if not _sqlite_has_table("job_post"):
+        db.session.execute(text("""
+            CREATE TABLE job_post (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title VARCHAR(200) NOT NULL,
+                department VARCHAR(120),
+                location VARCHAR(120),
+                employment_type VARCHAR(80),
+                level VARCHAR(80),
+                description TEXT NOT NULL,
+                responsibilities TEXT,
+                requirements TEXT,
+                nice_to_have TEXT,
+                how_to_apply TEXT,
+                is_active BOOLEAN NOT NULL DEFAULT 1,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """))
+        db.session.execute(text("CREATE INDEX IF NOT EXISTS ix_job_post_is_active ON job_post (is_active)"))
+        db.session.commit()
+    
+    # Create job_application table if missing
+    if not _sqlite_has_table("job_application"):
+        db.session.execute(text("""
+            CREATE TABLE job_application (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                job_id INTEGER,
+                full_name VARCHAR(150) NOT NULL,
+                email VARCHAR(255) NOT NULL,
+                phone VARCHAR(40),
+                portfolio_url VARCHAR(500),
+                linkedin_url VARCHAR(500),
+                cover_letter TEXT,
+                resume_filename VARCHAR(255),
+                status VARCHAR(32) NOT NULL DEFAULT 'new',
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (job_id) REFERENCES job_post (id)
+            )
+        """))
+        db.session.execute(text("CREATE INDEX IF NOT EXISTS ix_job_application_job_id ON job_application (job_id)"))
+        db.session.execute(text("CREATE INDEX IF NOT EXISTS ix_job_application_status ON job_application (status)"))
+        db.session.execute(text("CREATE INDEX IF NOT EXISTS ix_job_application_created_at ON job_application (created_at)"))
+        db.session.commit()
+
+
 @app.before_request
 def _bootstrap_schema_once():
     global _SCHEMA_BOOTSTRAP_DONE
@@ -1553,8 +1912,124 @@ def _bootstrap_schema_once():
     try:
         _ensure_sqlite_follow_table_name_and_indexes()
         _ensure_sqlite_booking_request_booking_id()
+        _ensure_sqlite_notifications_table()
+        _ensure_sqlite_careers_tables()
     except Exception:
         db.session.rollback()
+
+
+# =========================================================
+# Notifications System
+# =========================================================
+def create_notification(user_id: int, kind: str, title: str, body: str = None, url: str = None, *, commit: bool = True) -> Notification:
+    """Create a notification for a user"""
+    notif = Notification(
+        user_id=user_id,
+        kind=kind,
+        title=title,
+        body=body,
+        url=url
+    )
+    db.session.add(notif)
+    if commit:
+        db.session.commit()
+    return notif
+
+
+def get_unread_notification_count(user_id: int) -> int:
+    """Get count of unread notifications for a user"""
+    return Notification.query.filter_by(user_id=user_id, is_read=False).count()
+
+
+def get_recent_notifications(user_id: int, limit: int = 8) -> list[Notification]:
+    """Get recent notifications for a user, latest first"""
+    return Notification.query.filter_by(user_id=user_id).order_by(Notification.created_at.desc()).limit(limit).all()
+
+
+def mark_notification_read(user_id: int, notif_id: int) -> bool:
+    """Mark a notification as read if it belongs to the user"""
+    notif = Notification.query.filter_by(id=notif_id, user_id=user_id).first()
+    if notif:
+        notif.is_read = True
+        db.session.commit()
+        return True
+    return False
+
+
+def mark_all_notifications_read(user_id: int) -> int:
+    """Mark all unread notifications as read for a user, return count"""
+    count = Notification.query.filter_by(user_id=user_id, is_read=False).update({"is_read": True})
+    db.session.commit()
+    return count
+
+
+def send_email(to_email: str, subject: str, text_body: str) -> bool:
+    """Send email via SMTP or print to console in dev"""
+    if IS_DEV and not os.getenv("SMTP_HOST"):
+        print(f"\n{'='*60}")
+        print(f"EMAIL (dev mode - SMTP not configured)")
+        print(f"To: {to_email}")
+        print(f"Subject: {subject}")
+        print(f"{'='*60}")
+        print(text_body)
+        print(f"{'='*60}\n")
+        return True
+    
+    try:
+        import smtplib
+        from email.message import EmailMessage
+        
+        smtp_host = os.getenv("SMTP_HOST", "").strip()
+        if not smtp_host:
+            if IS_DEV:
+                print(f"[DEV] Email not sent - SMTP_HOST not configured")
+            return False
+        
+        smtp_port = int(os.getenv("SMTP_PORT", "587"))
+        smtp_user = os.getenv("SMTP_USER", "").strip()
+        smtp_pass = os.getenv("SMTP_PASS", "").strip()
+        smtp_from = os.getenv("SMTP_FROM", smtp_user).strip()
+        smtp_tls = os.getenv("SMTP_TLS", "1").strip() == "1"
+        
+        msg = EmailMessage()
+        msg["From"] = smtp_from
+        msg["To"] = to_email
+        msg["Subject"] = subject
+        msg.set_content(text_body)
+        
+        with smtplib.SMTP(smtp_host, smtp_port) as server:
+            if smtp_tls:
+                server.starttls()
+            if smtp_user and smtp_pass:
+                server.login(smtp_user, smtp_pass)
+            server.send_message(msg)
+        
+        return True
+    except Exception as e:
+        if IS_DEV:
+            print(f"[DEV] Email send failed: {e}")
+        return False
+
+
+def notify_user(user: User, kind: str, title: str, body: str = None, url: str = None, *, email: bool = False) -> None:
+    """Create a notification and optionally send email"""
+    notif = create_notification(user.id, kind, title, body, url, commit=True)
+    
+    if email:
+        email_enabled = getattr(user, "email_notifications_enabled", True)
+        if user.email and email_enabled:
+            app_base_url = os.getenv("APP_BASE_URL", "").strip()
+            email_body = f"{title}\n\n"
+            if body:
+                email_body += f"{body}\n\n"
+            if url and app_base_url:
+                full_url = f"{app_base_url}{url}" if url.startswith("/") else f"{app_base_url}/{url}"
+                email_body += f"View: {full_url}\n"
+            email_body += f"\n---\nBeatFund"
+            
+            if send_email(user.email, title, email_body):
+                notif.emailed_at = datetime.utcnow()
+                db.session.commit()
 
 
 # =========================================================
@@ -1565,6 +2040,174 @@ def home():
     if current_user.is_authenticated:
         return redirect(url_for("route_to_dashboard"))
     return render_template("home.html")
+
+
+# =========================================================
+# Policy Pages
+# =========================================================
+
+@app.route("/terms")
+def terms():
+    return render_template("policies/terms.html")
+
+
+@app.route("/privacy")
+def privacy():
+    return render_template("policies/privacy.html")
+
+
+@app.route("/cookies")
+def cookies():
+    return render_template("policies/cookies.html")
+
+
+@app.route("/fees")
+def fees():
+    return render_template("policies/fees.html")
+
+
+@app.route("/refunds")
+def refunds():
+    return render_template("policies/refunds.html")
+
+
+@app.route("/payouts")
+def payouts():
+    return render_template("policies/payouts.html")
+
+
+@app.route("/disputes")
+def disputes():
+    return render_template("policies/disputes.html")
+
+
+@app.route("/policies/kyc", endpoint="kyc_policy")
+def kyc_policy():
+    return render_template("policies/kyc.html")
+
+
+@app.route("/aml")
+def aml():
+    return render_template("policies/aml.html")
+
+
+@app.route("/risk")
+def risk():
+    return render_template("policies/risk.html")
+
+
+@app.route("/aup")
+def aup():
+    return render_template("policies/aup.html")
+
+
+# =========================================================
+# Careers Routes (Public)
+# =========================================================
+@app.route("/careers")
+def careers():
+    """List all active job postings"""
+    jobs = JobPost.query.filter_by(is_active=True).order_by(JobPost.created_at.desc()).all()
+    return render_template("careers/index.html", jobs=jobs)
+
+
+@app.route("/careers/<int:job_id>")
+def careers_detail(job_id):
+    """View job details"""
+    job = JobPost.query.get_or_404(job_id)
+    if not job.is_active:
+        flash("This job posting is no longer active.", "error")
+        return redirect(url_for("careers"))
+    return render_template("careers/detail.html", job=job)
+
+
+@app.route("/careers/apply", methods=["GET", "POST"])
+@app.route("/careers/<int:job_id>/apply", methods=["GET", "POST"])
+def careers_apply(job_id=None):
+    """Apply for a job (general or specific)"""
+    job = None
+    if job_id:
+        job = JobPost.query.get_or_404(job_id)
+        if not job.is_active:
+            flash("This job posting is no longer active.", "error")
+            return redirect(url_for("careers"))
+    
+    if request.method == "POST":
+        # Rate limiting
+        if not check_rate_limit("job_apply", max_requests=6, window_seconds=600):
+            flash("Too many applications. Please wait a few minutes before trying again.", "error")
+            return render_template("careers/apply.html", job=job)
+        
+        # Validate inputs
+        full_name = sanitize_input(request.form.get("full_name", "").strip(), max_length=150)
+        email = request.form.get("email", "").strip()
+        phone = sanitize_input(request.form.get("phone", "").strip(), max_length=40)
+        portfolio_url = request.form.get("portfolio_url", "").strip()
+        linkedin_url = request.form.get("linkedin_url", "").strip()
+        cover_letter = sanitize_input(request.form.get("cover_letter", ""), max_length=8000)
+        resume_file = request.files.get("resume")
+        
+        errors = []
+        
+        if not full_name:
+            errors.append("Full name is required.")
+        if not email:
+            errors.append("Email is required.")
+        elif not validate_email(email):
+            errors.append("Invalid email format.")
+        if phone and not re.match(r'^[\d\s\-\+\(\)]+$', phone):
+            errors.append("Invalid phone number format.")
+        if portfolio_url and not _validate_url_optional(portfolio_url):
+            errors.append("Portfolio URL must start with http:// or https://")
+        if linkedin_url and not _validate_url_optional(linkedin_url):
+            errors.append("LinkedIn URL must start with http:// or https://")
+        
+        if errors:
+            for error in errors:
+                flash(error, "error")
+            return render_template("careers/apply.html", job=job)
+        
+        # Handle resume upload
+        resume_filename = None
+        if resume_file and resume_file.filename:
+            resume_filename = _save_file(resume_file, ALLOWED_RESUME)
+            if not resume_filename:
+                flash("Invalid resume file. Please upload PDF, DOC, or DOCX (max 8MB).", "error")
+                return render_template("careers/apply.html", job=job)
+        
+        # Create application
+        application = JobApplication(
+            job_id=job.id if job else None,
+            full_name=full_name,
+            email=email,
+            phone=phone if phone else None,
+            portfolio_url=portfolio_url if portfolio_url else None,
+            linkedin_url=linkedin_url if linkedin_url else None,
+            cover_letter=cover_letter if cover_letter else None,
+            resume_filename=resume_filename,
+            status="new"
+        )
+        
+        db.session.add(application)
+        db.session.commit()
+        
+        # Notify all active admins
+        job_title = job.title if job else "General Application"
+        admins = User.query.filter_by(role=RoleEnum.admin, is_active_col=True).all()
+        for admin in admins:
+            notify_user(
+                admin,
+                kind="info",
+                title="New job application",
+                body=f"{full_name} applied for {job_title}",
+                url=url_for("admin_job_applications"),
+                email=admin.email_notifications_enabled and bool(admin.email)
+            )
+        
+        flash("Application submitted successfully! We'll review it and get back to you soon.", "success")
+        return redirect(url_for("careers"))
+    
+    return render_template("careers/apply.html", job=job)
 
 
 @app.route("/register", methods=["GET", "POST"])
@@ -1589,8 +2232,11 @@ def register():
         if not username:
             flash("Username is required.", "error")
             return redirect(url_for("register"))
-        if "@" not in email or "." not in email:
+        if not validate_email(email):
             flash("Please enter a valid email address.", "error")
+            return redirect(url_for("register"))
+        if not validate_username(username):
+            flash("Username must be 3-30 characters and contain only letters, numbers, underscores, and dashes.", "error")
             return redirect(url_for("register"))
 
         pw_errors = []
@@ -1629,8 +2275,7 @@ def register():
             email=email,
             full_name=full_name or None,
             artist_name=artist_name or None,
-            role=chosen_role,  # Legacy - kept for migration compatibility
-            primary_role=chosen_role,
+            role=chosen_role,
         )
 
         if IS_DEV:
@@ -1638,11 +2283,6 @@ def register():
 
         user.set_password(password)
         db.session.add(user)
-        db.session.flush()  # Get user.id
-        
-        # Create UserRole entry for primary_role
-        user_role = UserRole(user_id=user.id, role=chosen_role)
-        db.session.add(user_role)
         db.session.commit()
 
         get_or_create_wallet(user.id)
@@ -1704,8 +2344,18 @@ def login():
         )
         password = (request.form.get("password") or "").strip()
 
+        # Security: Sanitize input
+        raw_identifier = sanitize_input(raw_identifier, max_length=255)
+        password = sanitize_input(password, max_length=500)
+
         if not raw_identifier or not password:
             flash("Please enter your email/username and password.", "error")
+            return redirect(url_for("login"))
+        
+        # Security: Additional rate limiting on login attempts
+        if not check_rate_limit("login", max_requests=5, window_seconds=300):
+            log_security_event("login_rate_limit", f"Rate limited login attempt from {remote_addr}", "warning")
+            flash("Too many login attempts. Please wait a few minutes and try again.", "error")
             return redirect(url_for("login"))
 
         identifier = raw_identifier.lower().strip()
@@ -1890,11 +2540,19 @@ def start_kyc():
 @app.route("/uploads/<path:filename>")
 @login_required
 def media_file(filename):
-    beat = Beat.query.filter_by(stems_path=filename).first()
-    if beat:
-        if beat.owner_id != current_user.id and not _user_has_paid_for_beat(current_user.id, beat.id):
+    # Check if this is a deliverable (stems_path) - requires purchase/ownership
+    beat_stems = Beat.query.filter_by(stems_path=filename).first()
+    if beat_stems:
+        if beat_stems.owner_id != current_user.id and not _user_has_paid_for_beat(current_user.id, beat_stems.id):
             abort(403)
         return send_from_directory(app.config["UPLOAD_FOLDER"], filename, as_attachment=True)
+    
+    # Check if this is a preview (preview_path) - always streamable for logged-in users
+    beat_preview = Beat.query.filter_by(preview_path=filename).first()
+    if beat_preview:
+        return send_from_directory(app.config["UPLOAD_FOLDER"], filename, as_attachment=False)
+    
+    # Default: serve other files without attachment
     return send_from_directory(app.config["UPLOAD_FOLDER"], filename, as_attachment=False)
 
 @app.route("/avatar/<int:user_id>", endpoint="user_avatar")
@@ -2008,7 +2666,10 @@ def wallet_page():
         .all()
     )
 
-    return render_template("wallet_center.html", balance=balance, txns=txns, tab=tab)
+    # Get recent transactions for overview tab (last 10)
+    recent = txns[:10] if txns else []
+
+    return render_template("wallet_center.html", balance=balance, transactions=txns, txns=txns, recent=recent, tab=tab)
 
 
 @app.route("/transactions")
@@ -2156,12 +2817,41 @@ def wallet_action():
             flash("Insufficient wallet balance.", "error")
             return redirect(url_for("wallet_home"))
 
+        bank_account = (request.form.get("bank_account") or "").strip()[:50]
+        destination_note = "bank account" if bank_account == "stripe_connected" else "demo"
+        
         with db_txn():
             if wallet_balance_cents(w) < cents:
                 raise ValueError("Insufficient wallet balance.")
-            post_ledger(w, EntryType.withdrawal, cents, meta="withdraw to bank (demo)")
+            meta = f"withdraw to {destination_note}"
+            if bank_account == "stripe_connected":
+                meta += " (Stripe Connect ready)"
+            post_ledger(w, EntryType.withdrawal, cents, meta=meta)
 
-        flash(f"Withdrew ${amt:,.2f} (demo).", "success")
+        flash(f"Withdrew ${amt:,.2f} (demo - Stripe integration ready).", "success")
+        return redirect(url_for("wallet_home"))
+
+    if action == "transfer_out":
+        if wallet_balance_cents(w) < cents:
+            flash("Insufficient wallet balance.", "error")
+            return redirect(url_for("wallet_home"))
+
+        destination = (request.form.get("destination") or "").strip()[:50]
+        destination_note = "main account"
+        if destination == "stripe_bank":
+            destination_note = "bank account (Stripe ACH)"
+        elif destination == "stripe_card":
+            destination_note = "debit card (Stripe Instant)"
+        
+        with db_txn():
+            if wallet_balance_cents(w) < cents:
+                raise ValueError("Insufficient wallet balance.")
+            meta = f"transfer to {destination_note}"
+            if destination.startswith("stripe_"):
+                meta += " (Stripe ready)"
+            post_ledger(w, EntryType.withdrawal, cents, meta=meta)
+
+        flash(f"Transferred ${amt:,.2f} to main account (demo - Stripe integration ready).", "success")
         return redirect(url_for("wallet_home"))
 
     flash("Unknown wallet action.", "error")
@@ -2224,37 +2914,7 @@ def profile_edit():
         flash("Profile updated successfully.", "success")
         return redirect(url_for("profile_edit"))
 
-    # Get user's roles for display
-    user_roles = current_user.get_roles()
-    
-    # Filter available roles: Only show Studio for Producer, Producer for Studio
-    available_roles = []
-    primary = current_user.primary_role
-    if primary == RoleEnum.producer:
-        # Producer can only add Studio
-        if not current_user.has_role(RoleEnum.studio):
-            available_roles = [RoleEnum.studio]
-    elif primary == RoleEnum.studio:
-        # Studio can only add Producer
-        if not current_user.has_role(RoleEnum.producer):
-            available_roles = [RoleEnum.producer]
-    else:
-        # For other roles, check if they have Producer or Studio
-        user_roles_set = current_user.get_roles()
-        if RoleEnum.producer in user_roles_set:
-            if not current_user.has_role(RoleEnum.studio):
-                available_roles = [RoleEnum.studio]
-        elif RoleEnum.studio in user_roles_set:
-            if not current_user.has_role(RoleEnum.producer):
-                available_roles = [RoleEnum.producer]
-    
-    return render_template(
-        "profile_edit.html",
-        prof=prof,
-        user_roles=user_roles,
-        available_roles=available_roles,
-        active_role=current_user.active_role(),
-    )
+    return render_template("profile_edit.html", prof=prof)
 
 
 @app.route("/profile/avatar", methods=["POST"])
@@ -2293,7 +2953,7 @@ def update_avatar():
 def toggle_follow(user_id: int):
     target = User.query.get_or_404(user_id)
 
-    if target.has_role(RoleEnum.admin):
+    if target.role == RoleEnum.admin:
         return jsonify({"ok": False, "error": "You can't follow an admin account."}), 403
     if target.id == current_user.id:
         return jsonify({"ok": False, "error": "You can't follow yourself."}), 400
@@ -2338,7 +2998,7 @@ def toggle_follow(user_id: int):
 def user_profile(username):
     profile_user = User.query.filter(func.lower(User.username) == username.lower()).first_or_404()
 
-    if profile_user.has_role(RoleEnum.producer):
+    if profile_user.role == RoleEnum.producer:
         return redirect(url_for("producer_catalog_detail", username=profile_user.username))
 
     if is_service_provider(profile_user):
@@ -2357,7 +3017,7 @@ def user_profile(username):
     return render_template(
         "public_profile.html",
         profile_user=profile_user,
-        role_label=get_role_display(profile_user.active_role()),
+        role_label=get_role_display(profile_user.role),
         followers_count=followers_count,
         following_count=following_count,
         is_following=is_following,
@@ -2387,7 +3047,7 @@ def api_followers(user_id):
                 "username": user.username,
                 "display_name": user.display_name or user.username,
                 "avatar_url": user.avatar_url,
-                "role": user.primary_role.value if user.primary_role else None,
+                "role": user.role.value if user.role else None,
             })
     
     return jsonify({"followers": result})
@@ -2416,7 +3076,7 @@ def api_following(user_id):
                 "username": user.username,
                 "display_name": user.display_name or user.username,
                 "avatar_url": user.avatar_url,
-                "role": user.primary_role.value if user.primary_role else None,
+                "role": user.role.value if user.role else None,
             })
     
     return jsonify({"following": result})
@@ -2431,8 +3091,8 @@ def user_follow_toggle(username):
         flash("You can’t follow yourself.", "info")
         return redirect(request.referrer or url_for("user_profile", username=target.username))
 
-    if target.has_role(RoleEnum.admin):
-        flash("You can't follow an admin account.", "error")
+    if target.role == RoleEnum.admin:
+        flash("You can’t follow an admin account.", "error")
         return redirect(request.referrer or url_for("market_index"))
 
     existing = UserFollow.query.filter_by(follower_id=current_user.id, followed_id=target.id).first()
@@ -2453,8 +3113,7 @@ def user_follow_toggle(username):
 # BookMe
 # =========================================================
 def _ensure_bookme_provider():
-    """Ensure current user has at least one role in BOOKME_PROVIDER_ROLES"""
-    if not is_service_provider(current_user):
+    if current_user.role not in BOOKME_PROVIDER_ROLES:
         flash("Only service providers can edit a BookMe profile.", "error")
         return False
     return True
@@ -2476,9 +3135,7 @@ def bookme_search():
 
     if role:
         try:
-            role_enum = RoleEnum(role)
-            # Join with UserRole to filter by role
-            query = query.join(UserRole, UserRole.user_id == User.id).filter(UserRole.role == role_enum)
+            query = query.filter(User.role == RoleEnum(role))
         except ValueError:
             pass
 
@@ -2508,7 +3165,7 @@ def bookme_search():
         providers_payload.append({
             "username": p.user.username if p.user else None,
             "display_name": p.display_name,
-            "role": p.user.primary_role.value if p.user.primary_role else "",
+            "role": p.user.role.value if getattr(p.user, "role", None) else "",
             "city": p.city or "",
             "state": p.state or "",
             "lat": p.lat,
@@ -2545,9 +3202,7 @@ def bookme_data():
 
     if role:
         try:
-            role_enum = RoleEnum(role)
-            # Join with UserRole to filter by role
-            query = query.join(UserRole, UserRole.user_id == User.id).filter(UserRole.role == role_enum)
+            query = query.filter(User.role == RoleEnum(role))
         except ValueError:
             pass
 
@@ -2724,7 +3379,7 @@ def bookme_portfolio():
         return redirect(url_for("bookme_portfolio"))
 
     items = prof.portfolio_items.order_by(PortfolioItem.sort_order.asc(), PortfolioItem.created_at.desc()).all()
-    requires_portfolio = role_requires_portfolio(current_user)
+    requires_portfolio = role_requires_portfolio(current_user.role)
 
     return render_template(
         "bookme_portfolio.html",
@@ -2813,7 +3468,7 @@ def bookme_request_confirm(provider_id):
         
         # Check if the requested time is blocked (for studios)
         time_blocked = False
-        if provider.has_role(RoleEnum.studio):
+        if provider.role == RoleEnum.studio:
             try:
                 if " " in pref:
                     date_part = pref.split(" ", 1)[0]
@@ -2849,7 +3504,7 @@ def bookme_request_confirm(provider_id):
         return redirect(url_for("bookme_request", provider_id=provider_id))
     
     # Check if the requested time is blocked (for studios)
-    if provider.has_role(RoleEnum.studio):
+    if provider.role == RoleEnum.studio:
         try:
             if " " in pref:
                 date_part = pref.split(" ", 1)[0]
@@ -2871,6 +3526,16 @@ def bookme_request_confirm(provider_id):
     )
     db.session.add(req)
     db.session.commit()
+    
+    # Notify provider
+    notify_user(
+        provider,
+        kind="info",
+        title="New booking request",
+        body=f"@{current_user.username} requested {pref}",
+        url=url_for("bookme_requests")
+    )
+    
     flash("Booking request sent.", "success")
     return redirect(url_for("bookme_requests"))
 
@@ -3003,6 +3668,21 @@ def bookme_request_status(req_id):
                 .update({BookingRequest.status: BookingStatus.declined})
             )
             db.session.commit()
+            
+            if updated:
+                # Notify client
+                req = BookingRequest.query.get(req_id)
+                if req:
+                    client = User.query.get(req.client_id)
+                    if client:
+                        notify_user(
+                            client,
+                            kind="warning",
+                            title="Booking request declined",
+                            body=f"@{current_user.username} declined your request.",
+                            url=url_for("bookme_requests")
+                        )
+            
             flash("Booking request declined." if updated else "This request is no longer pending.",
                   "success" if updated else "error")
             return redirect(url_for("bookme_requests"))
@@ -3042,6 +3722,20 @@ def bookme_request_status(req_id):
             flash("This time slot is already booked.", "error")
             return redirect(url_for("bookme_requests"))
 
+        # Notify client
+        req = BookingRequest.query.get(req_id)
+        if req:
+            client = User.query.get(req.client_id)
+            if client:
+                notify_user(
+                    client,
+                    kind="success",
+                    title="Booking request accepted",
+                    body=f"@{current_user.username} accepted your request for {req.preferred_time}",
+                    url=url_for("bookme_requests"),
+                    email=True
+                )
+        
         flash("Accepted. Waiting for client to confirm & pay the hold fee.", "success")
         return redirect(url_for("bookme_requests"))
 
@@ -3055,9 +3749,21 @@ def bookme_request_status(req_id):
         if req.status in (BookingStatus.pending, BookingStatus.accepted) and not req.booking_id:
             req.status = BookingStatus.cancelled
             db.session.commit()
+            
+            # Notify provider
+            provider = User.query.get(req.provider_id)
+            if provider:
+                notify_user(
+                    provider,
+                    kind="warning",
+                    title="Booking request cancelled",
+                    body=f"@{current_user.username} cancelled the request.",
+                    url=url_for("bookme_requests")
+                )
+            
             flash("Booking request cancelled.", "success")
         else:
-            flash("You can only cancel pending/accepted requests that aren’t already paid.", "error")
+            flash("You can only cancel pending/accepted requests that aren't already paid.", "error")
 
         return redirect(url_for("bookme_requests"))
 
@@ -3072,7 +3778,7 @@ def booking_detail(booking_id):
 
     is_provider = current_user.id == booking.provider_id
     is_client = current_user.id == booking.client_id
-    is_admin = current_user.has_role(RoleEnum.admin)
+    is_admin = current_user.role == RoleEnum.admin
 
     if not (is_provider or is_client or is_admin):
         flash("You don't have access to this booking.", "error")
@@ -3082,8 +3788,8 @@ def booking_detail(booking_id):
         action = (request.form.get("action") or "").strip().lower()
         
         if action == "edit_booking":
-            # Both provider and client can edit booking details (for pending/confirmed bookings)
-            if booking.status in ["completed", "cancelled", "disputed"]:
+            # Both provider and client can edit booking details (for pending/accepted/confirmed bookings)
+            if booking.status in [BOOKING_STATUS_COMPLETED, BOOKING_STATUS_CANCELLED, BOOKING_STATUS_DISPUTED]:
                 flash("Cannot edit bookings that are completed, cancelled, or disputed.", "error")
                 return redirect(url_for("booking_detail", booking_id=booking.id))
             
@@ -3138,14 +3844,16 @@ def booking_detail(booking_id):
                 notes_from_client = (request.form.get("notes_from_client") or "").strip()
                 booking.notes_from_client = notes_from_client or None
             
-            # Status updates (only provider can change status)
+            # Status updates (only provider can change status to accepted/confirmed/cancelled)
             if is_provider:
                 new_status = (request.form.get("status") or "").strip().lower()
-                if new_status and new_status in ["pending", "confirmed", "cancelled"]:
+                if new_status and new_status in [BOOKING_STATUS_PENDING, BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED, BOOKING_STATUS_CANCELLED]:
                     booking.status = new_status
-                    if new_status == "cancelled":
+                    if new_status == BOOKING_STATUS_CANCELLED:
                         flash("Booking has been cancelled.", "success")
-                    elif new_status == "confirmed":
+                    elif new_status == BOOKING_STATUS_ACCEPTED:
+                        flash("Booking has been accepted.", "success")
+                    elif new_status == BOOKING_STATUS_CONFIRMED:
                         flash("Booking has been confirmed.", "success")
             
             db.session.commit()
@@ -3167,11 +3875,11 @@ def booking_detail(booking_id):
             status_action = (request.form.get("status_action") or "").strip().lower()
             
             if status_action == "mark_completed" and is_provider:
-                if booking.status == "confirmed":
-                    booking.status = "completed"
+                if booking.status in [BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED]:
+                    booking.status = BOOKING_STATUS_COMPLETED
                     flash("Booking marked as completed.", "success")
                 else:
-                    flash("Only confirmed bookings can be marked completed.", "error")
+                    flash("Only accepted or confirmed bookings can be marked completed.", "error")
             else:
                 flash("Notes updated.", "success")
             
@@ -3234,9 +3942,7 @@ def bookme_book_provider(username):
             )
         
         # Build comprehensive message from role-specific fields
-        # Use active_role or primary_role for role-specific logic
-        active_role = provider.active_role()
-        role_val = active_role.value.lower()
+        role_val = (provider.role.value if provider.role and hasattr(provider.role, 'value') else str(provider.role)).lower()
         message_parts = []
         
         if budget:
@@ -3412,6 +4118,27 @@ def bookme_book_provider(username):
             else:
                 full_message = message
         
+        # Check if the requested time is blocked (for studios)
+        if provider.role == RoleEnum.studio:
+            try:
+                if " " in preferred_time:
+                    date_part = preferred_time.split(" ", 1)[0]
+                    check_date = datetime.strptime(date_part, "%Y-%m-%d").date()
+                else:
+                    check_date = datetime.utcnow().date()
+                
+                if is_time_blocked(provider.id, check_date, preferred_time):
+                    flash("This time slot is blocked and not available for booking.", "error")
+                    return render_template(
+                        "bookme_book_provider.html",
+                        provider=provider,
+                        form_data=request.form,
+                        follower_count=follower_count,
+                        is_following=is_following
+                    )
+            except (ValueError, AttributeError):
+                pass
+        
         # Create booking request
         req = BookingRequest(
             provider_id=provider.id,
@@ -3421,6 +4148,15 @@ def bookme_book_provider(username):
         )
         db.session.add(req)
         db.session.commit()
+        
+        # Notify provider
+        notify_user(
+            provider,
+            kind="info",
+            title="New booking request",
+            body=f"@{current_user.username} requested {preferred_time}",
+            url=url_for("bookme_requests")
+        )
         
         flash("Booking request sent successfully.", "success")
         return redirect(url_for("bookme_requests"))
@@ -3499,7 +4235,7 @@ def book_artist(username):
             location_text=location_text or None,
             total_cents=total_cents,
             notes_from_client=notes_from_client or None,
-            status="pending",
+            status=BOOKING_STATUS_PENDING,
         )
         db.session.add(booking)
         db.session.commit()
@@ -3518,34 +4254,17 @@ def book_artist(username):
 def market_index():
     items = Beat.query.filter_by(is_active=True).order_by(Beat.is_featured.desc(), Beat.id.desc()).all()
 
-    # Filter providers - user must have ANY role in BOOKME_PROVIDER_ROLES and not be admin
-    # Get all provider user IDs (from primary_role or UserRole)
-    provider_user_ids = set()
-    provider_primary = User.query.filter(User.primary_role.in_(list(BOOKME_PROVIDER_ROLES))).filter(User.primary_role != RoleEnum.admin).all()
-    provider_user_ids.update(u.id for u in provider_primary)
-    provider_in_userrole = UserRole.query.filter(UserRole.role.in_(list(BOOKME_PROVIDER_ROLES))).all()
-    provider_user_ids.update(ur.user_id for ur in provider_in_userrole)
-    # Exclude admins
-    admin_ids = set()
-    admin_primary = User.query.filter(User.primary_role == RoleEnum.admin).all()
-    admin_ids.update(u.id for u in admin_primary)
-    admin_in_userrole = UserRole.query.filter(UserRole.role == RoleEnum.admin).all()
-    admin_ids.update(ur.user_id for ur in admin_in_userrole)
-    provider_user_ids -= admin_ids
-    
     provider_profiles = (
         BookMeProfile.query
-        .filter(BookMeProfile.user_id.in_(provider_user_ids) if provider_user_ids else False)
+        .join(User, BookMeProfile.user_id == User.id)
+        .filter(User.role.in_(list(BOOKME_PROVIDER_ROLES)))
         .order_by(BookMeProfile.city.asc(), BookMeProfile.display_name.asc())
         .all()
     )
 
     def profile_has_role(profile, roles: set[RoleEnum]):
         u = profile.user
-        if u is None:
-            return False
-        user_roles = u.get_roles()
-        return any(r in roles for r in user_roles)
+        return (u is not None) and (u.role in roles)
 
     studios = [p for p in provider_profiles if profile_has_role(p, {RoleEnum.studio})]
     videographers = [p for p in provider_profiles if profile_has_role(p, {RoleEnum.videographer})]
@@ -3591,6 +4310,11 @@ def market_confirm(beat_id):
         flash("This beat is not available for purchase.", "error")
         return redirect(url_for("market_index"))
 
+    # Check if exclusive beat has already been sold
+    if beat.license == "exclusive" and not beat.is_active:
+        flash("This exclusive beat has already been sold.", "error")
+        return redirect(url_for("market_index"))
+
     seller = User.query.get(beat.owner_id)
     if not seller:
         flash("Seller account not found.", "error")
@@ -3623,6 +4347,7 @@ def market_confirm(beat_id):
         price_dollars=price_dollars,
         balance_dollars=balance_dollars,
         has_sufficient_funds=has_sufficient_funds,
+        is_exclusive=(beat.license == "exclusive"),
     )
 
 
@@ -3643,6 +4368,11 @@ def market_buy(beat_id):
 
     if hasattr(beat, "is_active") and not beat.is_active:
         flash("This beat is not available for purchase.", "error")
+        return redirect(url_for("market_index"))
+
+    # Check if exclusive beat has already been sold
+    if beat.license == "exclusive" and not beat.is_active:
+        flash("This exclusive beat has already been sold.", "error")
         return redirect(url_for("market_index"))
 
     seller = User.query.get(beat.owner_id)
@@ -3666,8 +4396,24 @@ def market_buy(beat_id):
     if price_cents == 0:
         try:
             with db_txn():
+                # Re-check exclusive beat status within transaction
+                beat_check = Beat.query.filter_by(id=beat.id).with_for_update().first()
+                if beat_check.license == "exclusive" and not beat_check.is_active:
+                    raise ValueError("sold_out")
+                
                 order = Order(beat_id=beat.id, buyer_id=current_user.id, seller_id=seller.id, amount_cents=0, status=OrderStatus.paid)
                 db.session.add(order)
+                
+                # Mark exclusive beat as inactive after purchase
+                if beat_check.license == "exclusive":
+                    beat_check.is_active = False
+                    beat_check.updated_at = datetime.utcnow()
+        except ValueError as e:
+            if str(e) == "sold_out":
+                flash("This exclusive beat has already been sold.", "error")
+            else:
+                flash("Unable to complete purchase.", "error")
+            return redirect(url_for("market_index"))
         except IntegrityError:
             flash("This purchase was already processed.", "info")
             return redirect(url_for("market_my_purchases"))
@@ -3680,6 +4426,11 @@ def market_buy(beat_id):
 
     try:
         with db_txn():
+            # Re-check beat status within transaction (with lock)
+            beat_check = Beat.query.filter_by(id=beat.id).with_for_update().first()
+            if beat_check.license == "exclusive" and not beat_check.is_active:
+                raise ValueError("sold_out")
+            
             if _user_has_paid_for_beat(current_user.id, beat.id):
                 raise ValueError("already_purchased")
             if wallet_balance_cents(buyer_w) < price_cents:
@@ -3690,6 +4441,21 @@ def market_buy(beat_id):
 
             order = Order(beat_id=beat.id, buyer_id=current_user.id, seller_id=seller.id, amount_cents=price_cents, status=OrderStatus.paid)
             db.session.add(order)
+            
+            # Mark exclusive beat as inactive after purchase
+            if beat_check.license == "exclusive":
+                beat_check.is_active = False
+                beat_check.updated_at = datetime.utcnow()
+            
+            # Notify seller
+            notify_user(
+                seller,
+                kind="success",
+                title="Beat sold!",
+                body=f"@{current_user.username} purchased '{beat_check.title}'",
+                url=url_for("producer_market_mine"),
+                email=True
+            )
 
     except ValueError as e:
         if str(e) == "insufficient_funds":
@@ -3698,12 +4464,25 @@ def market_buy(beat_id):
         if str(e) == "already_purchased":
             flash("You already purchased this beat. Check \"My purchases\".", "info")
             return redirect(url_for("market_my_purchases"))
+        if str(e) == "sold_out":
+            flash("This exclusive beat has already been sold.", "error")
+            return redirect(url_for("market_index"))
         flash("Unable to complete purchase.", "error")
         return redirect(url_for("market_index"))
 
     except IntegrityError:
         flash("This purchase was already processed.", "info")
         return redirect(url_for("market_my_purchases"))
+
+    # Notify seller
+    notify_user(
+        seller,
+        kind="success",
+        title="Beat sold!",
+        body=f"@{current_user.username} purchased '{beat.title}'",
+        url=url_for("producer_market_mine"),
+        email=True
+    )
 
     flash("Purchase complete! You now have download access.", "success")
     return redirect(url_for("market_my_purchases"))
@@ -3727,26 +4506,13 @@ def market_download(beat_id):
 @app.route("/market/providers.json", endpoint="market_providers_json")
 @login_required
 def market_providers_json():
-    # Get all provider user IDs (from primary_role or UserRole)
-    provider_user_ids = set()
-    provider_primary = User.query.filter(User.primary_role.in_(list(BOOKME_PROVIDER_ROLES))).filter(User.primary_role != RoleEnum.admin).all()
-    provider_user_ids.update(u.id for u in provider_primary)
-    provider_in_userrole = UserRole.query.filter(UserRole.role.in_(list(BOOKME_PROVIDER_ROLES))).all()
-    provider_user_ids.update(ur.user_id for ur in provider_in_userrole)
-    # Exclude admins
-    admin_ids = set()
-    admin_primary = User.query.filter(User.primary_role == RoleEnum.admin).all()
-    admin_ids.update(u.id for u in admin_primary)
-    admin_in_userrole = UserRole.query.filter(UserRole.role == RoleEnum.admin).all()
-    admin_ids.update(ur.user_id for ur in admin_in_userrole)
-    provider_user_ids -= admin_ids
-    
     rows = (
         BookMeProfile.query
+        .join(User, BookMeProfile.user_id == User.id)
         .filter(
             BookMeProfile.lat.isnot(None),
             BookMeProfile.lng.isnot(None),
-            BookMeProfile.user_id.in_(provider_user_ids) if provider_user_ids else False
+            User.role.in_(list(BOOKME_PROVIDER_ROLES)),
         )
         .all()
     )
@@ -3758,7 +4524,7 @@ def market_providers_json():
         payload.append({
             "username": p.user.username,
             "display_name": p.display_name,
-            "role": p.user.primary_role.value if p.user.primary_role else "",
+            "role": p.user.role.value if p.user.role else "",
             "city": p.city or "",
             "state": p.state or "",
             "lat": float(p.lat),
@@ -3793,6 +4559,12 @@ def producer_catalog_index():
         beats_for_user = data["beats"]
         genres = list(data["genres"])
         prof = BookMeProfile.query.filter_by(user_id=user.id).first()
+        
+        # Check if current user is following this producer
+        is_following = UserFollow.query.filter_by(
+            follower_id=current_user.id, 
+            followed_id=user.id
+        ).first() is not None
 
         producers.append({
             "user": user,
@@ -3802,6 +4574,7 @@ def producer_catalog_index():
             "city": prof.city if prof else "",
             "state": prof.state if prof else "",
             "followers_count": UserFollow.query.filter_by(followed_id=user.id).count(),
+            "is_following": is_following,
             "rating": None,
             "rating_count": 0,
             "genres": genres[:3],
@@ -3961,6 +4734,14 @@ def producer_market_delete(beat_id):
         flash("You can only delete your own beats.", "error")
         return redirect(url_for("producer_market_mine"))
     
+    # Remove uploaded files before deleting the beat
+    if beat.cover_path:
+        _safe_remove(beat.cover_path)
+    if beat.preview_path:
+        _safe_remove(beat.preview_path)
+    if beat.stems_path:
+        _safe_remove(beat.stems_path)
+    
     db.session.delete(beat)
     db.session.commit()
     flash("Beat deleted from marketplace.", "success")
@@ -3972,7 +4753,7 @@ def producer_market_delete(beat_id):
 @login_required
 def market_upload():
     # Only producers can upload beats
-    if not current_user.has_role(RoleEnum.producer):
+    if current_user.role != RoleEnum.producer:
         flash("Only producers can upload beats to the marketplace.", "error")
         return redirect(url_for("market_index"))
     
@@ -4004,7 +4785,7 @@ def market_upload():
             errors.append("Price is required.")
         
         if not audio_file or not audio_file.filename:
-            errors.append("Audio file is required.")
+            errors.append("Preview audio file is required.")
         
         bpm = None
         if bpm_raw:
@@ -4014,6 +4795,16 @@ def market_upload():
                     errors.append("BPM cannot be negative.")
             except ValueError:
                 errors.append("BPM must be a whole number.")
+        
+        # Validate license type
+        if license_type not in {"standard", "exclusive"}:
+            license_type = "standard"
+        
+        # Validate deliverable file requirement
+        deliverable_file = request.files.get("deliverable_file")
+        if not deliverable_file or not deliverable_file.filename:
+            if price_cents > 0:
+                errors.append("Deliverable file required for paid beats.")
         
         if errors:
             for e in errors:
@@ -4039,14 +4830,30 @@ def market_upload():
             else:
                 flash("Invalid cover image format. Please use PNG, JPG, or JPEG.", "error")
         
-        # Save audio file (used for both preview and stems/deliverable)
-        if audio_file and audio_file.filename:
-            audio_path = _save_file(audio_file, ALLOWED_AUDIO)
-            if audio_path:
-                beat.preview_path = audio_path
-                beat.stems_path = audio_path  # Use same file for both preview and delivery
+        # Save preview audio file
+        audio_path = _save_file(audio_file, ALLOWED_AUDIO)
+        if audio_path:
+            beat.preview_path = audio_path
+        else:
+            flash("Invalid audio file format. Please use MP3, WAV, M4A, or OGG.", "error")
+            return render_template("market_upload.html")
+        
+        # Save deliverable file (stems/deliverable)
+        if deliverable_file and deliverable_file.filename:
+            deliverable_path = _save_file(deliverable_file, ALLOWED_STEMS)
+            if deliverable_path:
+                beat.stems_path = deliverable_path
             else:
-                flash("Invalid audio file format. Please use MP3, WAV, M4A, or OGG.", "error")
+                flash("Invalid deliverable file format. Please use ZIP, RAR, 7Z, MP3, WAV, M4A, or OGG.", "error")
+                return render_template("market_upload.html")
+        else:
+            # Free beats can use preview as deliverable
+            # IMPORTANT: Never set stems_path = preview_path for paid beats
+            if price_cents == 0:
+                beat.stems_path = beat.preview_path
+            elif price_cents > 0:
+                # This should never happen due to validation above, but safety check
+                flash("Deliverable file required for paid beats.", "error")
                 return render_template("market_upload.html")
         
         db.session.add(beat)
@@ -4056,6 +4863,60 @@ def market_upload():
         return redirect(url_for("market_index"))
     
     return render_template("market_upload.html")
+
+
+# =========================================================
+# Notifications Routes
+# =========================================================
+@app.route("/notifications")
+@login_required
+def notifications_page():
+    """Notifications page - list all notifications"""
+    notifications = Notification.query.filter_by(user_id=current_user.id).order_by(Notification.created_at.desc()).limit(50).all()
+    return render_template("notifications.html", notifications=notifications)
+
+
+@app.route("/notifications/<int:notif_id>/read", methods=["POST"])
+@login_required
+def mark_notification_read_route(notif_id):
+    """Mark a single notification as read"""
+    if mark_notification_read(current_user.id, notif_id):
+        flash("Notification marked as read.", "success")
+    else:
+        flash("Notification not found.", "error")
+    return redirect(request.referrer or url_for("notifications_page"))
+
+
+@app.route("/notifications/read-all", methods=["POST"])
+@login_required
+def mark_all_notifications_read_route():
+    """Mark all notifications as read"""
+    count = mark_all_notifications_read(current_user.id)
+    flash(f"Marked {count} notification(s) as read.", "success")
+    return redirect(url_for("notifications_page"))
+
+
+@app.route("/api/notifications/unread-count")
+@login_required
+def api_notifications_unread_count():
+    """API endpoint for unread notification count"""
+    count = get_unread_notification_count(current_user.id)
+    return jsonify({"count": count})
+
+
+@app.route("/api/notifications/recent")
+@login_required
+def api_notifications_recent():
+    """API endpoint for recent notifications"""
+    notifications = get_recent_notifications(current_user.id, limit=8)
+    return jsonify([{
+        "id": n.id,
+        "title": n.title,
+        "kind": n.kind,
+        "url": n.url,
+        "is_read": n.is_read,
+        "created_at": n.created_at.isoformat() if n.created_at else None
+    } for n in notifications])
 
 
 # =========================================================
@@ -4072,7 +4933,7 @@ def my_tickets():
 @login_required
 def my_ticket_detail(ticket_id):
     ticket = SupportTicket.query.get_or_404(ticket_id)
-    if (ticket.user_id != current_user.id) and (not current_user.has_role(RoleEnum.admin)):
+    if (ticket.user_id != current_user.id) and (current_user.role != RoleEnum.admin):
         abort(403)
 
     comments = ticket.comments.order_by(SupportTicketComment.created_at.asc()).all()
@@ -4085,17 +4946,7 @@ def my_ticket_detail(ticket_id):
 @app.route("/dashboard/admin", endpoint="admin_dashboard")
 @role_required("admin")
 def admin_dashboard():
-    # Count users who don't have admin role (simpler approach)
-    total_all_users = User.query.count()
-    admin_user_ids = set()
-    # Get users with admin as primary_role
-    admin_primary = User.query.filter(User.primary_role == RoleEnum.admin).all()
-    admin_user_ids.update(u.id for u in admin_primary)
-    # Get users with admin in UserRole
-    admin_in_userrole = UserRole.query.filter(UserRole.role == RoleEnum.admin).all()
-    admin_user_ids.update(ur.user_id for ur in admin_in_userrole)
-    total_users = total_all_users - len(admin_user_ids)
-    
+    total_users = User.query.filter(User.role != RoleEnum.admin).count()
     total_wallets = Wallet.query.count()
     total_beats = Beat.query.count()
     total_orders = Order.query.count()
@@ -4104,21 +4955,8 @@ def admin_dashboard():
     approved_kyc = User.query.filter_by(kyc_status=KYCStatus.approved).count()
     rejected_kyc = User.query.filter_by(kyc_status=KYCStatus.rejected).count()
 
-    # Count users with artist role (primary or additional)
-    artist_user_ids = set()
-    artist_primary = User.query.filter(User.primary_role == RoleEnum.artist).all()
-    artist_user_ids.update(u.id for u in artist_primary)
-    artist_in_userrole = UserRole.query.filter(UserRole.role == RoleEnum.artist).all()
-    artist_user_ids.update(ur.user_id for ur in artist_in_userrole)
-    total_artists = len(artist_user_ids)
-    
-    # Count users with producer role (primary or additional)
-    producer_user_ids = set()
-    producer_primary = User.query.filter(User.primary_role == RoleEnum.producer).all()
-    producer_user_ids.update(u.id for u in producer_primary)
-    producer_in_userrole = UserRole.query.filter(UserRole.role == RoleEnum.producer).all()
-    producer_user_ids.update(ur.user_id for ur in producer_in_userrole)
-    total_producers = len(producer_user_ids)
+    total_artists = User.query.filter_by(role=RoleEnum.artist).count()
+    total_producers = User.query.filter_by(role=RoleEnum.producer).count()
 
     total_tickets = SupportTicket.query.count()
     open_tickets = SupportTicket.query.filter_by(status=TicketStatus.open).count()
@@ -4171,6 +5009,162 @@ def admin_dashboard():
     )
 
 
+# =========================================================
+# Admin Careers Routes
+# =========================================================
+@app.route("/dashboard/admin/jobs", endpoint="admin_jobs")
+@role_required("admin")
+def admin_jobs():
+    """List all job posts"""
+    jobs = JobPost.query.order_by(JobPost.is_active.desc(), JobPost.created_at.desc()).all()
+    return render_template("admin/jobs/index.html", jobs=jobs)
+
+
+@app.route("/dashboard/admin/jobs/new", methods=["GET", "POST"], endpoint="admin_jobs_new")
+@role_required("admin")
+def admin_jobs_new():
+    """Create new job post"""
+    if request.method == "POST":
+        title = sanitize_input(request.form.get("title", "").strip(), max_length=200)
+        department = sanitize_input(request.form.get("department", "").strip(), max_length=120) or None
+        location = sanitize_input(request.form.get("location", "").strip(), max_length=120) or None
+        employment_type = sanitize_input(request.form.get("employment_type", "").strip(), max_length=80) or None
+        level = sanitize_input(request.form.get("level", "").strip(), max_length=80) or None
+        description = sanitize_input(request.form.get("description", ""), max_length=50000)
+        responsibilities = sanitize_input(request.form.get("responsibilities", ""), max_length=50000) or None
+        requirements = sanitize_input(request.form.get("requirements", ""), max_length=50000) or None
+        nice_to_have = sanitize_input(request.form.get("nice_to_have", ""), max_length=50000) or None
+        how_to_apply = sanitize_input(request.form.get("how_to_apply", ""), max_length=50000) or None
+        is_active = request.form.get("is_active") == "on"
+        
+        if not title or not description:
+            flash("Title and description are required.", "error")
+            return render_template("admin/jobs/form.html")
+        
+        job = JobPost(
+            title=title,
+            department=department,
+            location=location,
+            employment_type=employment_type,
+            level=level,
+            description=description,
+            responsibilities=responsibilities,
+            requirements=requirements,
+            nice_to_have=nice_to_have,
+            how_to_apply=how_to_apply,
+            is_active=is_active
+        )
+        
+        db.session.add(job)
+        db.session.commit()
+        
+        flash("Job post created successfully!", "success")
+        return redirect(url_for("admin_jobs"))
+    
+    return render_template("admin/jobs/form.html")
+
+
+@app.route("/dashboard/admin/jobs/<int:job_id>/edit", methods=["GET", "POST"], endpoint="admin_jobs_edit")
+@role_required("admin")
+def admin_jobs_edit(job_id):
+    """Edit job post"""
+    job = JobPost.query.get_or_404(job_id)
+    
+    if request.method == "POST":
+        job.title = sanitize_input(request.form.get("title", "").strip(), max_length=200)
+        job.department = sanitize_input(request.form.get("department", "").strip(), max_length=120) or None
+        job.location = sanitize_input(request.form.get("location", "").strip(), max_length=120) or None
+        job.employment_type = sanitize_input(request.form.get("employment_type", "").strip(), max_length=80) or None
+        job.level = sanitize_input(request.form.get("level", "").strip(), max_length=80) or None
+        job.description = sanitize_input(request.form.get("description", ""), max_length=50000)
+        job.responsibilities = sanitize_input(request.form.get("responsibilities", ""), max_length=50000) or None
+        job.requirements = sanitize_input(request.form.get("requirements", ""), max_length=50000) or None
+        job.nice_to_have = sanitize_input(request.form.get("nice_to_have", ""), max_length=50000) or None
+        job.how_to_apply = sanitize_input(request.form.get("how_to_apply", ""), max_length=50000) or None
+        job.is_active = request.form.get("is_active") == "on"
+        
+        if not job.title or not job.description:
+            flash("Title and description are required.", "error")
+            return render_template("admin/jobs/form.html", job=job)
+        
+        db.session.commit()
+        flash("Job post updated successfully!", "success")
+        return redirect(url_for("admin_jobs"))
+    
+    return render_template("admin/jobs/form.html", job=job)
+
+
+@app.route("/dashboard/admin/jobs/<int:job_id>/toggle", methods=["POST"], endpoint="admin_jobs_toggle")
+@role_required("admin")
+def admin_jobs_toggle(job_id):
+    """Toggle job active status"""
+    job = JobPost.query.get_or_404(job_id)
+    job.is_active = not job.is_active
+    db.session.commit()
+    flash(f"Job post {'activated' if job.is_active else 'archived'} successfully!", "success")
+    return redirect(url_for("admin_jobs"))
+
+
+@app.route("/dashboard/admin/applications", endpoint="admin_job_applications")
+@role_required("admin")
+def admin_job_applications():
+    """Global applications inbox with filters"""
+    status_filter = request.args.get("status", "").strip()
+    job_id_filter = request.args.get("job_id", "").strip()
+    search_q = request.args.get("q", "").strip()
+    
+    query = JobApplication.query
+    
+    if status_filter:
+        query = query.filter_by(status=status_filter)
+    if job_id_filter:
+        try:
+            query = query.filter_by(job_id=int(job_id_filter))
+        except ValueError:
+            pass
+    if search_q:
+        query = query.filter(
+            db.or_(
+                JobApplication.full_name.ilike(f"%{search_q}%"),
+                JobApplication.email.ilike(f"%{search_q}%")
+            )
+        )
+    
+    applications = query.order_by(JobApplication.created_at.desc()).limit(200).all()
+    jobs = JobPost.query.order_by(JobPost.title).all()
+    
+    return render_template("admin/applications/index.html", applications=applications, jobs=jobs, 
+                         status_filter=status_filter, job_id_filter=job_id_filter, search_q=search_q)
+
+
+@app.route("/dashboard/admin/jobs/<int:job_id>/applications", endpoint="admin_job_applications_for_job")
+@role_required("admin")
+def admin_job_applications_for_job(job_id):
+    """Applications inbox for a specific job"""
+    job = JobPost.query.get_or_404(job_id)
+    applications = JobApplication.query.filter_by(job_id=job_id).order_by(JobApplication.created_at.desc()).all()
+    return render_template("admin/jobs/applications.html", job=job, applications=applications)
+
+
+@app.route("/dashboard/admin/applications/<int:app_id>/status", methods=["POST"], endpoint="admin_job_application_status")
+@role_required("admin")
+def admin_job_application_status(app_id):
+    """Update application status"""
+    application = JobApplication.query.get_or_404(app_id)
+    new_status = request.form.get("status", "").strip()
+    
+    valid_statuses = {"new", "reviewed", "interviewing", "rejected", "hired"}
+    if new_status not in valid_statuses:
+        flash("Invalid status.", "error")
+        return redirect(request.referrer or url_for("admin_job_applications"))
+    
+    application.status = new_status
+    db.session.commit()
+    
+    flash(f"Application status updated to {new_status}.", "success")
+    return redirect(request.referrer or url_for("admin_job_applications"))
+
+
 @app.route("/dashboard/admin/superadmin/unlock", methods=["GET", "POST"], endpoint="superadmin_unlock")
 @superadmin_required
 def superadmin_unlock():
@@ -4205,23 +5199,45 @@ def superadmin_unlock():
 def superadmin_change_passcode():
     global OWNER_PANEL_PASS_HASH_EFFECTIVE
 
+    # Access control: require owner panel unlocked
+    if not owner_panel_unlocked():
+        flash("Owner panel must be unlocked to change the passcode.", "error")
+        return redirect(url_for("superadmin_unlock"))
+
+    # Env-managed block
     if OWNER_PASS_MANAGED_BY_ENV:
         flash(
-            "Owner passcode is managed by server environment secrets in this deployment. "
-            "Update OWNER_PANEL_PASS_HASH (recommended) or OWNER_PANEL_PASS in your host settings.",
+            "Owner passcode is managed by environment secrets; update it in your .env/host settings.",
             "error",
         )
         return redirect(url_for("superadmin_dashboard"))
 
     if request.method == "POST":
+        # Rate limiting
+        if not check_rate_limit("owner_passcode_change", max_requests=5, window_seconds=600):
+            log_security_event("owner_passcode_change_failed", "Rate limit exceeded for owner passcode change", "warning")
+            flash("Too many attempts. Please wait 10 minutes and try again.", "error")
+            return redirect(url_for("superadmin_change_passcode"))
+
+        # Get all 4 required inputs
+        admin_password = (request.form.get("admin_password") or "").strip()
         current_code = (request.form.get("current_passcode") or "").strip()
         new_code = (request.form.get("new_passcode") or "").strip()
         confirm_code = (request.form.get("confirm_passcode") or "").strip()
 
-        if not check_password_hash(OWNER_PANEL_PASS_HASH_EFFECTIVE, current_code):
+        # Re-auth check: validate admin password
+        if not admin_password or not current_user.check_password(admin_password):
+            log_security_event("owner_passcode_change_failed", f"Admin password wrong for @{current_user.username}", "warning")
+            flash("Admin password is incorrect.", "error")
+            return redirect(url_for("superadmin_change_passcode"))
+
+        # Current owner passcode check
+        if not current_code or not check_password_hash(OWNER_PANEL_PASS_HASH_EFFECTIVE, current_code):
+            log_security_event("owner_passcode_change_failed", f"Owner passcode wrong for @{current_user.username}", "warning")
             flash("Current owner passcode is incorrect.", "error")
             return redirect(url_for("superadmin_change_passcode"))
 
+        # New passcode validation
         errors = []
         if len(new_code) < 8:
             errors.append("Passcode must be at least 8 characters long.")
@@ -4236,12 +5252,19 @@ def superadmin_change_passcode():
             flash(" ".join(errors), "error")
             return redirect(url_for("superadmin_change_passcode"))
 
+        # Apply change
         new_hash = generate_password_hash(new_code)
         _save_owner_pass_hash_to_instance(new_hash)
         OWNER_PANEL_PASS_HASH_EFFECTIVE = new_hash
 
-        flash("Owner passcode updated and saved securely.", "success")
-        return redirect(url_for("superadmin_dashboard"))
+        # Session hardening: invalidate owner unlock session
+        session.pop(OWNER_UNLOCK_SESSION_KEY, None)
+
+        # Security logging
+        log_security_event("owner_passcode_changed", f"superadmin @{current_user.username} changed owner passcode", "warning")
+
+        flash("Owner passcode updated. Please unlock again with your new passcode.", "success")
+        return redirect(url_for("superadmin_unlock"))
 
     return render_template("superadmin_change_passcode.html")
 
@@ -4252,16 +5275,7 @@ def superadmin_dashboard():
     if not owner_panel_unlocked():
         return redirect(url_for("superadmin_unlock"))
 
-    # Count users who don't have admin role (simpler approach)
-    total_all_users = User.query.count()
-    admin_user_ids = set()
-    # Get users with admin as primary_role
-    admin_primary = User.query.filter(User.primary_role == RoleEnum.admin).all()
-    admin_user_ids.update(u.id for u in admin_primary)
-    # Get users with admin in UserRole
-    admin_in_userrole = UserRole.query.filter(UserRole.role == RoleEnum.admin).all()
-    admin_user_ids.update(ur.user_id for ur in admin_in_userrole)
-    total_users = total_all_users - len(admin_user_ids)
+    total_users = User.query.filter(User.role != RoleEnum.admin).count()
     total_wallets = Wallet.query.count()
     total_beats = Beat.query.count()
     total_orders = Order.query.count()
@@ -4319,9 +5333,7 @@ def superadmin_dashboard():
 @app.route("/dashboard")
 @login_required
 def route_to_dashboard():
-    # Use active_role from session, or fallback to primary_role
-    active_role = current_user.active_role()
-    role = active_role.value
+    role = current_user.role.value
 
     if role == "admin":
         endpoint = "admin_dashboard"
@@ -4436,7 +5448,7 @@ def artist_dashboard():
 
     return render_template(
         "dash_artist.html",
-        role_label=get_role_display(current_user.active_role()),
+        role_label=get_role_display(current_user.role),
         prof=prof,
         portfolio_count=portfolio_count,
 
@@ -4538,7 +5550,7 @@ def provider_dashboard():
     # Bookings as provider
     provider_bookings_count = Booking.query.filter_by(provider_id=current_user.id).count()
     provider_pending_bookings = Booking.query.filter_by(
-        provider_id=current_user.id, status="pending"
+        provider_id=current_user.id, status=BOOKING_STATUS_PENDING
     ).count()
     provider_recent_bookings = (
         Booking.query
@@ -4551,7 +5563,7 @@ def provider_dashboard():
     # Bookings as client
     client_bookings_count = Booking.query.filter_by(client_id=current_user.id).count()
     client_pending_bookings = Booking.query.filter_by(
-        client_id=current_user.id, status="pending"
+        client_id=current_user.id, status=BOOKING_STATUS_PENDING
     ).count()
     client_recent_bookings = (
         Booking.query
@@ -4563,7 +5575,7 @@ def provider_dashboard():
     
     return render_template(
         "dash_provider.html",
-        role_label=get_role_display(current_user.active_role()),
+        role_label=get_role_display(current_user.role),
         prof=prof,
         followers_count=followers_count,
         following_count=following_count,
@@ -4599,7 +5611,7 @@ def studio_dashboard():
     # Bookings as provider
     provider_bookings_count = Booking.query.filter_by(provider_id=current_user.id).count()
     provider_pending_bookings = Booking.query.filter_by(
-        provider_id=current_user.id, status="pending"
+        provider_id=current_user.id, status=BOOKING_STATUS_PENDING
     ).count()
     provider_recent_bookings = (
         Booking.query
@@ -4612,7 +5624,7 @@ def studio_dashboard():
     # Bookings as client
     client_bookings_count = Booking.query.filter_by(client_id=current_user.id).count()
     client_pending_bookings = Booking.query.filter_by(
-        client_id=current_user.id, status="pending"
+        client_id=current_user.id, status=BOOKING_STATUS_PENDING
     ).count()
     client_recent_bookings = (
         Booking.query
@@ -4624,7 +5636,7 @@ def studio_dashboard():
     
     return render_template(
         "dash_studio.html",
-        role_label=get_role_display(current_user.active_role()),
+        role_label=get_role_display(current_user.role),
         prof=prof,
         followers_count=followers_count,
         following_count=following_count,
@@ -4679,11 +5691,11 @@ def provider_toggle_live():
     db.session.commit()
     
     status = "activated" if prof.is_visible else "deactivated"
-    role_name = get_role_display(current_user.active_role())
+    role_name = get_role_display(current_user.role)
     flash(f"Profile {status}. {'Your services are now visible on the marketplace.' if prof.is_visible else 'Your services are hidden from the marketplace, but your profile is still visible for following and portfolio viewing.'}", "success")
     
     # Redirect to appropriate dashboard based on role
-    role = current_user.active_role().value
+    role = current_user.role.value
     if role == "videographer":
         return redirect(url_for("videographer_dashboard"))
     elif role == "designer":
@@ -4722,18 +5734,18 @@ def studio_crm():
     
     # Statistics
     pending_requests = sum(1 for r in all_requests if r.status == BookingStatus.pending)
-    confirmed_bookings = sum(1 for b in all_bookings if b.status == "confirmed")
+    confirmed_bookings = sum(1 for b in all_bookings if b.status == BOOKING_STATUS_CONFIRMED)
     upcoming_bookings = [
         b for b in all_bookings 
-        if b.event_datetime and b.event_datetime > datetime.utcnow() and b.status in ["pending", "confirmed"]
+        if b.event_datetime and b.event_datetime > datetime.utcnow() and b.status in [BOOKING_STATUS_PENDING, BOOKING_STATUS_CONFIRMED]
     ]
     
     # Group bookings by status
     bookings_by_status = {
-        "pending": [b for b in all_bookings if b.status == "pending"],
-        "confirmed": [b for b in all_bookings if b.status == "confirmed"],
-        "completed": [b for b in all_bookings if b.status == "completed"],
-        "cancelled": [b for b in all_bookings if b.status == "cancelled"],
+        BOOKING_STATUS_PENDING: [b for b in all_bookings if b.status == BOOKING_STATUS_PENDING],
+        BOOKING_STATUS_CONFIRMED: [b for b in all_bookings if b.status == BOOKING_STATUS_CONFIRMED],
+        BOOKING_STATUS_COMPLETED: [b for b in all_bookings if b.status == BOOKING_STATUS_COMPLETED],
+        BOOKING_STATUS_CANCELLED: [b for b in all_bookings if b.status == BOOKING_STATUS_CANCELLED],
     }
     
     return render_template(
@@ -4927,7 +5939,7 @@ def videographer_dashboard():
         Booking.query
         .filter_by(provider_id=current_user.id)
         .filter(Booking.event_datetime >= now)
-        .filter(Booking.status.in_(["accepted", "confirmed", "pending"]))
+        .filter(Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED, BOOKING_STATUS_PENDING]))
         .order_by(Booking.event_datetime.asc())
         .limit(10)
         .all()
@@ -4938,7 +5950,7 @@ def videographer_dashboard():
     active_projects = (
         Booking.query
         .filter_by(provider_id=current_user.id)
-        .filter(Booking.status.in_(["accepted", "confirmed"]))
+        .filter(Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED]))
         .filter(Booking.event_datetime >= now)
         .count()
     )
@@ -4946,7 +5958,7 @@ def videographer_dashboard():
     # Bookings as provider
     provider_bookings_count = Booking.query.filter_by(provider_id=current_user.id).count()
     provider_pending_bookings = Booking.query.filter_by(
-        provider_id=current_user.id, status="pending"
+        provider_id=current_user.id, status=BOOKING_STATUS_PENDING
     ).count()
     provider_recent_bookings = (
         Booking.query
@@ -4960,7 +5972,7 @@ def videographer_dashboard():
     accepted_bookings = (
         Booking.query
         .filter_by(provider_id=current_user.id)
-        .filter(Booking.status.in_(["accepted", "confirmed"]))
+        .filter(Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED]))
         .order_by(Booking.event_datetime.asc())
         .limit(20)
         .all()
@@ -4971,7 +5983,7 @@ def videographer_dashboard():
     earnings_this_month_cents = (
         db.session.query(func.coalesce(func.sum(Booking.total_cents), 0))
         .filter(Booking.provider_id == current_user.id)
-        .filter(Booking.status.in_(["accepted", "confirmed", "completed"]))
+        .filter(Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED, BOOKING_STATUS_COMPLETED]))
         .filter(Booking.created_at >= start_of_month)
         .scalar() or 0
     )
@@ -4981,7 +5993,7 @@ def videographer_dashboard():
     total_earnings_cents = (
         db.session.query(func.coalesce(func.sum(Booking.total_cents), 0))
         .filter(Booking.provider_id == current_user.id)
-        .filter(Booking.status.in_(["accepted", "confirmed", "completed"]))
+        .filter(Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED, BOOKING_STATUS_COMPLETED]))
         .scalar() or 0
     )
     total_earnings = total_earnings_cents / 100.0
@@ -5016,7 +6028,7 @@ def videographer_dashboard():
     # Bookings as client
     client_bookings_count = Booking.query.filter_by(client_id=current_user.id).count()
     client_pending_bookings = Booking.query.filter_by(
-        client_id=current_user.id, status="pending"
+        client_id=current_user.id, status=BOOKING_STATUS_PENDING
     ).count()
     client_recent_bookings = (
         Booking.query
@@ -5028,7 +6040,7 @@ def videographer_dashboard():
     
     return render_template(
         "dash_videographer.html",
-        role_label=get_role_display(current_user.active_role()),
+        role_label=get_role_display(current_user.role),
         prof=prof,
         followers_count=followers_count,
         following_count=following_count,
@@ -5095,14 +6107,14 @@ def designer_dashboard():
     active_projects = (
         Booking.query
         .filter_by(provider_id=current_user.id)
-        .filter(Booking.status.in_(["accepted", "confirmed"]))
+        .filter(Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED]))
         .count()
     )
     
     # Bookings as provider
     provider_bookings_count = Booking.query.filter_by(provider_id=current_user.id).count()
     provider_pending_bookings = Booking.query.filter_by(
-        provider_id=current_user.id, status="pending"
+        provider_id=current_user.id, status=BOOKING_STATUS_PENDING
     ).count()
     provider_recent_bookings = (
         Booking.query
@@ -5116,7 +6128,7 @@ def designer_dashboard():
     accepted_bookings = (
         Booking.query
         .filter_by(provider_id=current_user.id)
-        .filter(Booking.status.in_(["accepted", "confirmed"]))
+        .filter(Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED]))
         .order_by(Booking.created_at.desc())
         .limit(20)
         .all()
@@ -5127,7 +6139,7 @@ def designer_dashboard():
     earnings_this_month_cents = (
         db.session.query(func.coalesce(func.sum(Booking.total_cents), 0))
         .filter(Booking.provider_id == current_user.id)
-        .filter(Booking.status.in_(["accepted", "confirmed", "completed"]))
+        .filter(Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED, BOOKING_STATUS_COMPLETED]))
         .filter(Booking.created_at >= start_of_month)
         .scalar() or 0
     )
@@ -5137,7 +6149,7 @@ def designer_dashboard():
     total_earnings_cents = (
         db.session.query(func.coalesce(func.sum(Booking.total_cents), 0))
         .filter(Booking.provider_id == current_user.id)
-        .filter(Booking.status.in_(["accepted", "confirmed", "completed"]))
+        .filter(Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED, BOOKING_STATUS_COMPLETED]))
         .scalar() or 0
     )
     total_earnings = total_earnings_cents / 100.0
@@ -5177,7 +6189,7 @@ def designer_dashboard():
     # Bookings as client
     client_bookings_count = Booking.query.filter_by(client_id=current_user.id).count()
     client_pending_bookings = Booking.query.filter_by(
-        client_id=current_user.id, status="pending"
+        client_id=current_user.id, status=BOOKING_STATUS_PENDING
     ).count()
     client_recent_bookings = (
         Booking.query
@@ -5189,7 +6201,7 @@ def designer_dashboard():
     
     return render_template(
         "dash_designer.html",
-        role_label=get_role_display(current_user.active_role()),
+        role_label=get_role_display(current_user.role),
         prof=prof,
         followers_count=followers_count,
         following_count=following_count,
@@ -5241,7 +6253,7 @@ def photographer_dashboard():
     upcoming_shoots_count = (
         Booking.query
         .filter_by(provider_id=current_user.id)
-        .filter(Booking.status.in_(["accepted", "confirmed"]))
+        .filter(Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED]))
         .filter(Booking.event_datetime >= now)
         .count()
     )
@@ -5249,7 +6261,7 @@ def photographer_dashboard():
     active_projects_count = (
         Booking.query
         .filter_by(provider_id=current_user.id)
-        .filter(Booking.status.in_(["accepted", "confirmed"]))
+        .filter(Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED]))
         .count()
     )
     
@@ -5258,7 +6270,7 @@ def photographer_dashboard():
     monthly_earnings_total_cents = (
         db.session.query(func.coalesce(func.sum(Booking.total_cents), 0))
         .filter(Booking.provider_id == current_user.id)
-        .filter(Booking.status.in_(["accepted", "confirmed", "completed"]))
+        .filter(Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED, BOOKING_STATUS_COMPLETED]))
         .filter(Booking.created_at >= start_of_month)
         .scalar() or 0
     )
@@ -5281,7 +6293,7 @@ def photographer_dashboard():
     active_shoots = (
         Booking.query
         .filter_by(provider_id=current_user.id)
-        .filter(Booking.status.in_(["accepted", "confirmed"]))
+        .filter(Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED]))
         .order_by(Booking.event_datetime.asc())
         .limit(20)
         .all()
@@ -5310,7 +6322,7 @@ def photographer_dashboard():
     total_earnings_cents = (
         db.session.query(func.coalesce(func.sum(Booking.total_cents), 0))
         .filter(Booking.provider_id == current_user.id)
-        .filter(Booking.status.in_(["accepted", "confirmed", "completed"]))
+        .filter(Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED, BOOKING_STATUS_COMPLETED]))
         .scalar() or 0
     )
     total_earnings = total_earnings_cents / 100.0
@@ -5319,7 +6331,7 @@ def photographer_dashboard():
     pending_payouts_cents = (
         db.session.query(func.coalesce(func.sum(Booking.total_cents), 0))
         .filter(Booking.provider_id == current_user.id)
-        .filter(Booking.status.in_(["accepted", "confirmed"]))
+        .filter(Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED]))
         .filter(Booking.total_cents.isnot(None))
         .scalar() or 0
     )
@@ -5329,7 +6341,7 @@ def photographer_dashboard():
     completed_payouts_cents = (
         db.session.query(func.coalesce(func.sum(Booking.total_cents), 0))
         .filter(Booking.provider_id == current_user.id)
-        .filter(Booking.status == "completed")
+        .filter(Booking.status == BOOKING_STATUS_COMPLETED)
         .scalar() or 0
     )
     completed_payouts = completed_payouts_cents / 100.0
@@ -5361,7 +6373,7 @@ def photographer_dashboard():
     
     return render_template(
         "dash_photographer.html",
-        role_label=get_role_display(current_user.active_role()),
+        role_label=get_role_display(current_user.role),
         photographer={
             "display_name": prof.display_name if prof else current_user.display_name or current_user.username,
             "studio_name": prof.display_name if prof else None,
@@ -5421,7 +6433,7 @@ def engineer_dashboard():
     # Bookings as provider
     provider_bookings_count = Booking.query.filter_by(provider_id=current_user.id).count()
     provider_pending_bookings = Booking.query.filter_by(
-        provider_id=current_user.id, status="pending"
+        provider_id=current_user.id, status=BOOKING_STATUS_PENDING
     ).count()
     provider_recent_bookings = (
         Booking.query
@@ -5434,7 +6446,7 @@ def engineer_dashboard():
     # Bookings as client
     client_bookings_count = Booking.query.filter_by(client_id=current_user.id).count()
     client_pending_bookings = Booking.query.filter_by(
-        client_id=current_user.id, status="pending"
+        client_id=current_user.id, status=BOOKING_STATUS_PENDING
     ).count()
     client_recent_bookings = (
         Booking.query
@@ -5446,7 +6458,7 @@ def engineer_dashboard():
     
     return render_template(
         "dash_engineer.html",
-        role_label=get_role_display(current_user.active_role()),
+        role_label=get_role_display(current_user.role),
         prof=prof,
         followers_count=followers_count,
         following_count=following_count,
@@ -5496,7 +6508,7 @@ def manager_dashboard():
     # Active projects (bookings in progress)
     active_projects_count = (
         Booking.query
-        .filter(Booking.status.in_(["accepted", "confirmed", "pending"]))
+        .filter(Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED, BOOKING_STATUS_PENDING]))
         .filter(Booking.event_datetime >= now)
         .count()
     )
@@ -5504,7 +6516,7 @@ def manager_dashboard():
     # Upcoming bookings
     upcoming_bookings_count = (
         Booking.query
-        .filter(Booking.status.in_(["accepted", "confirmed"]))
+        .filter(Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED]))
         .filter(Booking.event_datetime >= now)
         .count()
     )
@@ -5512,7 +6524,7 @@ def manager_dashboard():
     # Total earnings this month (from all bookings)
     total_earnings_this_month_cents = (
         db.session.query(func.coalesce(func.sum(Booking.total_cents), 0))
-        .filter(Booking.status.in_(["accepted", "confirmed", "completed"]))
+        .filter(Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED, BOOKING_STATUS_COMPLETED]))
         .filter(Booking.created_at >= start_of_month)
         .scalar() or 0
     )
@@ -5524,7 +6536,7 @@ def manager_dashboard():
         # Get upcoming bookings count for this artist
         upcoming_count = Booking.query.filter(
             Booking.provider_id == user.id,
-            Booking.status.in_(["accepted", "confirmed"]),
+            Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED]),
             Booking.event_datetime >= now
         ).count()
         
@@ -5533,7 +6545,7 @@ def manager_dashboard():
             db.session.query(func.coalesce(func.sum(Booking.total_cents), 0))
             .filter(
                 Booking.provider_id == user.id,
-                Booking.status.in_(["accepted", "confirmed", "completed"])
+                Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED, BOOKING_STATUS_COMPLETED])
             )
             .scalar() or 0
         )
@@ -5598,7 +6610,7 @@ def manager_dashboard():
             'event_title': proj.event_title,
             'status': proj.status,
             'deliverables_status': 'pending',  # Placeholder
-            'payment_status': 'paid' if proj.total_cents and proj.status in ['accepted', 'confirmed', 'completed'] else 'pending',
+            'payment_status': 'paid' if proj.total_cents and proj.status in [BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED, BOOKING_STATUS_COMPLETED] else 'pending',
             'updated_at': proj.updated_at
         })
     
@@ -5627,7 +6639,7 @@ def manager_dashboard():
     # Total paid (completed bookings)
     total_paid_cents = (
         db.session.query(func.coalesce(func.sum(Booking.total_cents), 0))
-        .filter(Booking.status == "completed")
+        .filter(Booking.status == BOOKING_STATUS_COMPLETED)
         .scalar() or 0
     )
     total_paid = total_paid_cents / 100.0
@@ -5635,7 +6647,7 @@ def manager_dashboard():
     # Total pending (accepted/confirmed but not completed)
     total_pending_cents = (
         db.session.query(func.coalesce(func.sum(Booking.total_cents), 0))
-        .filter(Booking.status.in_(["accepted", "confirmed"]))
+        .filter(Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED]))
         .scalar() or 0
     )
     total_pending = total_pending_cents / 100.0
@@ -5672,7 +6684,7 @@ def manager_dashboard():
             db.session.query(func.coalesce(func.sum(Booking.total_cents), 0))
             .filter(
                 Booking.provider_id == user.id,
-                Booking.status.in_(["accepted", "confirmed", "completed"])
+                Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED, BOOKING_STATUS_COMPLETED])
             )
             .scalar() or 0
         )
@@ -5687,7 +6699,7 @@ def manager_dashboard():
     top_services = []
     service_counts = (
         db.session.query(Booking.provider_role, func.count(Booking.id).label('count'))
-        .filter(Booking.status.in_(["accepted", "confirmed", "completed"]))
+        .filter(Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED, BOOKING_STATUS_COMPLETED]))
         .group_by(Booking.provider_role)
         .order_by(func.count(Booking.id).desc())
         .limit(10)
@@ -5751,7 +6763,7 @@ def manager_dashboard():
     
     return render_template(
         "dash_manager.html",
-        role_label=get_role_display(current_user.active_role()),
+        role_label=get_role_display(current_user.role),
         manager=manager_info,
         stats=stats,
         artists=artists_list,
@@ -5801,7 +6813,7 @@ def dj_dashboard():
         Booking.query
         .filter(
             Booking.provider_id == current_user.id,
-            Booking.status.in_(["accepted", "confirmed"]),
+            Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED]),
             Booking.event_datetime >= now
         )
         .count()
@@ -5819,7 +6831,7 @@ def dj_dashboard():
         Booking.query
         .filter(
             Booking.provider_id == current_user.id,
-            Booking.status.in_(["accepted", "confirmed", "completed"]),
+            Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED, BOOKING_STATUS_COMPLETED]),
             Booking.event_datetime >= start_of_month,
             Booking.event_datetime < now + timedelta(days=31)
         )
@@ -5831,7 +6843,7 @@ def dj_dashboard():
         db.session.query(func.coalesce(func.sum(Booking.total_cents), 0))
         .filter(
             Booking.provider_id == current_user.id,
-            Booking.status.in_(["accepted", "confirmed", "completed"]),
+            Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED, BOOKING_STATUS_COMPLETED]),
             Booking.created_at >= start_of_month
         )
         .scalar() or 0
@@ -5890,7 +6902,7 @@ def dj_dashboard():
         Booking.query
         .filter(
             Booking.provider_id == current_user.id,
-            Booking.status.in_(["accepted", "confirmed"])
+            Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED])
         )
         .order_by(Booking.event_datetime.asc())
         .limit(50)
@@ -5917,7 +6929,7 @@ def dj_dashboard():
             'date': booking.event_datetime,
             'venue': booking.location_text or "TBA",
             'event_type': event_type,
-            'payment_status': 'paid' if booking.total_cents and booking.status == 'completed' else 'pending'
+            'payment_status': 'paid' if booking.total_cents and booking.status == BOOKING_STATUS_COMPLETED else 'pending'
         })
     
     # 4. Setlists (placeholder - no setlist model yet)
@@ -5962,7 +6974,7 @@ def dj_dashboard():
         db.session.query(func.coalesce(func.sum(Booking.total_cents), 0))
         .filter(
             Booking.provider_id == current_user.id,
-            Booking.status.in_(["accepted", "confirmed"])
+            Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED])
         )
         .scalar() or 0
     )
@@ -5990,7 +7002,7 @@ def dj_dashboard():
     
     return render_template(
         "dash_dj.html",
-        role_label=get_role_display(current_user.active_role()),
+        role_label=get_role_display(current_user.role),
         dj=dj_info,
         stats=stats,
         bookings=bookings_list,
@@ -6048,7 +7060,7 @@ def host_dashboard():
         Booking.query
         .filter(
             Booking.provider_id == current_user.id,
-            Booking.status.in_(["accepted", "confirmed"]),
+            Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED]),
             Booking.event_datetime >= now
         )
         .count()
@@ -6059,7 +7071,7 @@ def host_dashboard():
         Booking.query
         .filter(
             Booking.provider_id == current_user.id,
-            Booking.status.in_(["accepted", "confirmed"])
+            Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED])
         )
         .count()
     )
@@ -6069,7 +7081,7 @@ def host_dashboard():
         db.session.query(func.coalesce(func.sum(Booking.total_cents), 0))
         .filter(
             Booking.provider_id == current_user.id,
-            Booking.status.in_(["accepted", "confirmed", "completed"]),
+            Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED, BOOKING_STATUS_COMPLETED]),
             Booking.created_at >= start_of_month
         )
         .scalar() or 0
@@ -6128,7 +7140,7 @@ def host_dashboard():
         Booking.query
         .filter(
             Booking.provider_id == current_user.id,
-            Booking.status.in_(["accepted", "confirmed"])
+            Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED])
         )
         .order_by(Booking.event_datetime.asc())
         .limit(50)
@@ -6143,7 +7155,7 @@ def host_dashboard():
             'location': booking.location_text or "TBA",
             'client_requirements': booking.notes_from_client or "None",
             'run_of_show': booking.notes_from_provider or "None",
-            'payment_status': 'paid' if booking.total_cents and booking.status == 'completed' else 'pending',
+            'payment_status': 'paid' if booking.total_cents and booking.status == BOOKING_STATUS_COMPLETED else 'pending',
             'timing': f"{booking.duration_minutes} minutes" if booking.duration_minutes else "TBA"
         })
     
@@ -6191,7 +7203,7 @@ def host_dashboard():
         db.session.query(func.coalesce(func.sum(Booking.total_cents), 0))
         .filter(
             Booking.provider_id == current_user.id,
-            Booking.status.in_(["accepted", "confirmed"])
+            Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED])
         )
         .scalar() or 0
     )
@@ -6218,7 +7230,7 @@ def host_dashboard():
     
     return render_template(
         "dash_host.html",
-        role_label=get_role_display(current_user.active_role()),
+        role_label=get_role_display(current_user.role),
         host=host_info,
         stats=stats,
         requests=requests_list,
@@ -6269,7 +7281,7 @@ def hair_dashboard():
         Booking.query
         .filter(
             Booking.provider_id == current_user.id,
-            Booking.status.in_(["accepted", "confirmed"]),
+            Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED]),
             Booking.event_datetime >= now
         )
         .count()
@@ -6290,7 +7302,7 @@ def hair_dashboard():
         db.session.query(func.coalesce(func.sum(Booking.total_cents), 0))
         .filter(
             Booking.provider_id == current_user.id,
-            Booking.status.in_(["accepted", "confirmed", "completed"]),
+            Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED, BOOKING_STATUS_COMPLETED]),
             Booking.created_at >= start_of_month
         )
         .scalar() or 0
@@ -6350,7 +7362,7 @@ def hair_dashboard():
         Booking.query
         .filter(
             Booking.provider_id == current_user.id,
-            Booking.status.in_(["accepted", "confirmed"])
+            Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED])
         )
         .order_by(Booking.event_datetime.asc())
         .limit(50)
@@ -6365,7 +7377,7 @@ def hair_dashboard():
             'date_time': booking.event_datetime,
             'duration': f"{booking.duration_minutes} minutes" if booking.duration_minutes else "TBA",
             'notes': booking.notes_from_client or "None",
-            'payment_status': 'paid' if booking.total_cents and booking.status == 'completed' else 'pending',
+            'payment_status': 'paid' if booking.total_cents and booking.status == BOOKING_STATUS_COMPLETED else 'pending',
             'location': booking.location_text or "TBA"
         })
     
@@ -6420,7 +7432,7 @@ def hair_dashboard():
         db.session.query(func.coalesce(func.sum(Booking.total_cents), 0))
         .filter(
             Booking.provider_id == current_user.id,
-            Booking.status.in_(["accepted", "confirmed"])
+            Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED])
         )
         .scalar() or 0
     )
@@ -6447,7 +7459,7 @@ def hair_dashboard():
     
     return render_template(
         "dash_hair.html",
-        role_label=get_role_display(current_user.active_role()),
+        role_label=get_role_display(current_user.role),
         stylist=stylist_info,
         stats=stats,
         requests=requests_list,
@@ -6497,7 +7509,7 @@ def wardrobe_dashboard():
         Booking.query
         .filter(
             Booking.provider_id == current_user.id,
-            Booking.status.in_(["accepted", "confirmed"])
+            Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED])
         )
         .count()
     )
@@ -6509,7 +7521,7 @@ def wardrobe_dashboard():
         db.session.query(func.coalesce(func.sum(Booking.total_cents), 0))
         .filter(
             Booking.provider_id == current_user.id,
-            Booking.status.in_(["accepted", "confirmed", "completed"]),
+            Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED, BOOKING_STATUS_COMPLETED]),
             Booking.created_at >= start_of_month
         )
         .scalar() or 0
@@ -6566,7 +7578,7 @@ def wardrobe_dashboard():
         Booking.query
         .filter(
             Booking.provider_id == current_user.id,
-            Booking.status.in_(["accepted", "confirmed"])
+            Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED])
         )
         .order_by(Booking.event_datetime.asc())
         .limit(50)
@@ -6581,7 +7593,7 @@ def wardrobe_dashboard():
             'timeline': booking.event_datetime.strftime("%b %d - %b %d, %Y") if booking.event_datetime else "TBA",
             'status': booking.status,
             'deliverables': "Looks: TBD",
-            'payment_status': 'paid' if booking.total_cents and booking.status == 'completed' else 'pending'
+            'payment_status': 'paid' if booking.total_cents and booking.status == BOOKING_STATUS_COMPLETED else 'pending'
         })
     
     # 4. Lookboards (placeholder)
@@ -6614,7 +7626,7 @@ def wardrobe_dashboard():
         db.session.query(func.coalesce(func.sum(Booking.total_cents), 0))
         .filter(
             Booking.provider_id == current_user.id,
-            Booking.status.in_(["accepted", "confirmed"])
+            Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED])
         )
         .scalar() or 0
     )
@@ -6641,7 +7653,7 @@ def wardrobe_dashboard():
     
     return render_template(
         "dash_wardrobe.html",
-        role_label=get_role_display(current_user.active_role()),
+        role_label=get_role_display(current_user.role),
         stylist=stylist_info,
         stats=stats,
         requests=requests_list,
@@ -6693,7 +7705,7 @@ def makeup_dashboard():
         Booking.query
         .filter(
             Booking.provider_id == current_user.id,
-            Booking.status.in_(["accepted", "confirmed"]),
+            Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED]),
             Booking.event_datetime >= now
         )
         .count()
@@ -6704,7 +7716,7 @@ def makeup_dashboard():
         db.session.query(func.count(func.distinct(Booking.client_id)))
         .filter(
             Booking.provider_id == current_user.id,
-            Booking.status.in_(["accepted", "confirmed"])
+            Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED])
         )
         .scalar() or 0
     )
@@ -6714,7 +7726,7 @@ def makeup_dashboard():
         db.session.query(func.coalesce(func.sum(Booking.total_cents), 0))
         .filter(
             Booking.provider_id == current_user.id,
-            Booking.status.in_(["accepted", "confirmed", "completed"]),
+            Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED, BOOKING_STATUS_COMPLETED]),
             Booking.created_at >= start_of_month
         )
         .scalar() or 0
@@ -6778,7 +7790,7 @@ def makeup_dashboard():
         Booking.query
         .filter(
             Booking.provider_id == current_user.id,
-            Booking.status.in_(["accepted", "confirmed"])
+            Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED])
         )
         .order_by(Booking.event_datetime.asc())
         .limit(50)
@@ -6793,7 +7805,7 @@ def makeup_dashboard():
             'date_time': booking.event_datetime,
             'time_block': f"{booking.duration_minutes} minutes" if booking.duration_minutes else "TBA",
             'prep_notes': booking.notes_from_client or "None",
-            'payment_status': 'paid' if booking.total_cents and booking.status == 'completed' else 'pending',
+            'payment_status': 'paid' if booking.total_cents and booking.status == BOOKING_STATUS_COMPLETED else 'pending',
             'location': booking.location_text or "TBA"
         })
     
@@ -6848,7 +7860,7 @@ def makeup_dashboard():
         db.session.query(func.coalesce(func.sum(Booking.total_cents), 0))
         .filter(
             Booking.provider_id == current_user.id,
-            Booking.status.in_(["accepted", "confirmed"])
+            Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED])
         )
         .scalar() or 0
     )
@@ -6875,7 +7887,7 @@ def makeup_dashboard():
     
     return render_template(
         "dash_makeup.html",
-        role_label=get_role_display(current_user.active_role()),
+        role_label=get_role_display(current_user.role),
         makeup_artist=makeup_artist_info,
         stats=stats,
         requests=requests_list,
@@ -6909,7 +7921,7 @@ def vendor_dashboard():
     # Orders (bookings as provider)
     total_orders = Booking.query.filter_by(provider_id=current_user.id).count()
     pending_orders = Booking.query.filter_by(
-        provider_id=current_user.id, status="pending"
+        provider_id=current_user.id, status=BOOKING_STATUS_PENDING
     ).count()
     active_orders = Booking.query.filter(
         Booking.provider_id == current_user.id,
@@ -6932,7 +7944,7 @@ def vendor_dashboard():
     monthly_earnings_cents = (
         db.session.query(func.coalesce(func.sum(Booking.total_cents), 0))
         .filter(Booking.provider_id == current_user.id)
-        .filter(Booking.status.in_(["accepted", "confirmed", "completed"]))
+        .filter(Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED, BOOKING_STATUS_COMPLETED]))
         .filter(Booking.created_at >= start_of_month)
         .scalar() or 0
     )
@@ -6941,7 +7953,7 @@ def vendor_dashboard():
     total_earnings_cents = (
         db.session.query(func.coalesce(func.sum(Booking.total_cents), 0))
         .filter(Booking.provider_id == current_user.id)
-        .filter(Booking.status.in_(["accepted", "confirmed", "completed"]))
+        .filter(Booking.status.in_([BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED, BOOKING_STATUS_COMPLETED]))
         .scalar() or 0
     )
     total_earnings = total_earnings_cents / 100.0
@@ -6992,7 +8004,7 @@ def vendor_dashboard():
     
     return render_template(
         "dash_vendor.html",
-        role_label=get_role_display(current_user.active_role()),
+        role_label=get_role_display(current_user.role),
         prof=prof,
         artist_can_take_gigs=artist_can_take_gigs,
         followers_count=followers_count,
@@ -7129,7 +8141,7 @@ def opportunities():
 def whoami():
     return (
         f"id={current_user.id}, username={current_user.username}, "
-        f"role={current_user.active_role().value}, "
+        f"role={current_user.role.value}, "
         f"kyc={current_user.kyc_status.value}, "
         f"active={current_user.is_active_col}"
     )
@@ -7289,6 +8301,117 @@ def admin_transactions():
     )
 
 
+@app.route("/dashboard/admin/audit-access/<int:user_id>", methods=["GET", "POST"], endpoint="admin_audit_access")
+@role_required("admin")
+def admin_audit_access(user_id: int):
+    """Admin audit access form - requires reason before viewing user wallet"""
+    customer = User.query.get_or_404(user_id)
+    
+    # Don't allow admins to audit other admins
+    if customer.role == RoleEnum.admin:
+        flash("Cannot audit admin accounts.", "error")
+        return redirect(url_for("admin_transactions"))
+    
+    if request.method == "POST":
+        reason = (request.form.get("reason") or "").strip()
+        if not reason:
+            flash("Reason is required for audit access.", "error")
+            return render_template("admin_audit_access.html", customer=customer)
+        
+        # Create audit log entry
+        audit_log = AuditLog(
+            admin_id=current_user.id,
+            user_id=customer.id,
+            action="wallet_access",
+            reason=reason
+        )
+        db.session.add(audit_log)
+        db.session.commit()
+        
+        flash(f"Audit log created. Viewing wallet for @{customer.username}.", "success")
+        return redirect(url_for("admin_transactions_user", user_id=customer.id))
+    
+    return render_template("admin_audit_access.html", customer=customer)
+
+
+@app.route("/dashboard/admin/transactions/user/<int:user_id>", endpoint="admin_transactions_user")
+@role_required("admin")
+def admin_transactions_user(user_id: int):
+    """Admin view of a specific user's wallet transactions"""
+    customer = User.query.get_or_404(user_id)
+    
+    # Don't allow admins to view other admins' wallets
+    if customer.role == RoleEnum.admin:
+        flash("Cannot view admin wallet accounts.", "error")
+        return redirect(url_for("admin_transactions"))
+    
+    # Get or create wallet
+    wallet = get_or_create_wallet(customer.id)
+    
+    # Get all ledger entries for this wallet
+    ledger = (
+        LedgerEntry.query
+        .filter_by(wallet_id=wallet.id)
+        .order_by(LedgerEntry.created_at.desc(), LedgerEntry.id.desc())
+        .all()
+    )
+    
+    return render_template(
+        "admin_transactions_user.html",
+        customer=customer,
+        ledger=ledger,
+        EntryType=EntryType,
+    )
+
+
+@app.route("/dashboard/admin/transactions/user/<int:user_id>/export", endpoint="admin_export_wallet_csv")
+@role_required("admin")
+def admin_export_wallet_csv(user_id: int):
+    """Admin export of a user's wallet transactions as CSV"""
+    customer = User.query.get_or_404(user_id)
+    
+    # Don't allow admins to export other admins' wallets
+    if customer.role == RoleEnum.admin:
+        flash("Cannot export admin wallet accounts.", "error")
+        return redirect(url_for("admin_transactions"))
+    
+    # Get or create wallet
+    wallet = get_or_create_wallet(customer.id)
+    
+    # Get all ledger entries for this wallet
+    entries = (
+        LedgerEntry.query
+        .filter_by(wallet_id=wallet.id)
+        .order_by(LedgerEntry.created_at.asc())
+        .all()
+    )
+    
+    # Generate CSV
+    si = StringIO()
+    writer = csv.writer(si)
+    writer.writerow(["created_at", "entry_type", "direction", "amount_dollars", "meta"])
+    
+    credit_types = {
+        EntryType.deposit,
+        EntryType.transfer_in,
+        EntryType.interest,
+        EntryType.adjustment,
+        EntryType.sale_income,
+    }
+    
+    for row in entries:
+        is_credit = row.entry_type in credit_types
+        direction = "credit" if is_credit else "debit"
+        created_str = row.created_at.isoformat(sep=" ") if row.created_at else ""
+        amount_dollars = f"{row.amount_cents / 100.0:.2f}"
+        writer.writerow([created_str, row.entry_type.value, direction, amount_dollars, row.meta or ""])
+    
+    output = si.getvalue()
+    filename = f"beatfund_wallet_{customer.username}_{datetime.utcnow().strftime('%Y%m%d')}.csv"
+    
+    return Response(output, mimetype="text/csv", headers={"Content-Disposition": f"attachment; filename={filename}"})
+
+
 @app.route("/dashboard/admin/tickets", endpoint="admin_tickets")
 @role_required("admin")
 def admin_tickets():
@@ -7329,6 +8452,176 @@ def admin_tickets():
         status=status,
         TicketStatus=TicketStatus,
         TicketType=TicketType,
+    )
+
+
+@app.route("/dashboard/admin/tickets/<int:ticket_id>", methods=["GET", "POST"], endpoint="admin_ticket_detail")
+@role_required("admin")
+def admin_ticket_detail(ticket_id: int):
+    """Admin view and update of a support ticket"""
+    ticket = SupportTicket.query.get_or_404(ticket_id)
+    
+    if request.method == "POST":
+        # Update ticket status
+        new_status = request.form.get("status", "").strip()
+        if new_status:
+            try:
+                ticket.status = TicketStatus(new_status)
+            except ValueError:
+                flash("Invalid status value.", "error")
+        
+        # Update priority
+        new_priority = request.form.get("priority", "").strip()
+        if new_priority in ["low", "normal", "high"]:
+            ticket.priority = new_priority
+        
+        # Add comment if provided
+        comment_body = (request.form.get("comment_body") or "").strip()
+        if comment_body:
+            comment = SupportTicketComment(
+                ticket_id=ticket.id,
+                admin_id=current_user.id,
+                body=comment_body
+            )
+            db.session.add(comment)
+        
+        db.session.commit()
+        flash("Ticket updated successfully.", "success")
+        return redirect(url_for("admin_ticket_detail", ticket_id=ticket.id))
+    
+    # Get comments
+    comments = ticket.comments.order_by(SupportTicketComment.created_at.asc()).all()
+    
+    return render_template(
+        "admin_ticket_detail.html",
+        ticket=ticket,
+        comments=comments,
+        TicketStatus=TicketStatus,
+        TicketType=TicketType,
+    )
+
+
+@app.route("/dashboard/admin/audit", endpoint="admin_audit_log")
+@role_required("admin")
+def admin_audit_log():
+    """Admin audit log view - shows all audit entries"""
+    # Get all audit logs, ordered by most recent first
+    logs = AuditLog.query.order_by(AuditLog.created_at.desc()).limit(200).all()
+    
+    return render_template("admin_audit.html", logs=logs)
+
+
+@app.route("/dashboard/admin/tickets/new", methods=["GET", "POST"], endpoint="admin_ticket_new")
+@role_required("admin")
+def admin_ticket_new():
+    """Admin create new support ticket for a user"""
+    user_id = request.args.get("user_id", type=int) or request.form.get("user_id", type=int)
+    ledger_id = request.args.get("ledger_id", type=int) or request.form.get("ledger_id", type=int)
+    
+    if not user_id:
+        flash("User ID is required.", "error")
+        return redirect(url_for("admin_tickets"))
+    
+    customer = User.query.get_or_404(user_id)
+    
+    # Don't allow creating tickets for other admins
+    if customer.role == RoleEnum.admin:
+        flash("Cannot create tickets for admin accounts.", "error")
+        return redirect(url_for("admin_tickets"))
+    
+    # Get ledger entry if provided
+    ledger = None
+    if ledger_id:
+        ledger = LedgerEntry.query.get(ledger_id)
+        # Verify ledger belongs to the user
+        if ledger:
+            wallet = Wallet.query.get(ledger.wallet_id)
+            if wallet and wallet.user_id != customer.id:
+                ledger = None  # Don't link if it doesn't belong to the user
+    
+    if request.method == "POST":
+        # Get form data
+        ticket_type = request.form.get("type", "").strip()
+        subject = (request.form.get("subject") or "").strip()
+        description = (request.form.get("description") or "").strip()
+        priority = (request.form.get("priority") or "normal").strip()
+        
+        # Validate
+        if not subject:
+            flash("Subject is required.", "error")
+            return render_template(
+                "admin_ticket_new.html",
+                customer=customer,
+                ledger=ledger,
+                TicketType=TicketType,
+                type_value=ticket_type,
+                subject=subject,
+                description=description,
+                priority=priority,
+            )
+        
+        if not description:
+            flash("Description is required.", "error")
+            return render_template(
+                "admin_ticket_new.html",
+                customer=customer,
+                ledger=ledger,
+                TicketType=TicketType,
+                type_value=ticket_type,
+                subject=subject,
+                description=description,
+                priority=priority,
+            )
+        
+        # Validate ticket type
+        try:
+            ticket_type_enum = TicketType(ticket_type) if ticket_type else TicketType.other
+        except ValueError:
+            ticket_type_enum = TicketType.other
+        
+        # Validate priority
+        if priority not in ["low", "normal", "high"]:
+            priority = "normal"
+        
+        # Create ticket
+        ticket = SupportTicket(
+            user_id=customer.id,
+            created_by_admin_id=current_user.id,
+            related_ledger_id=ledger.id if ledger else None,
+            type=ticket_type_enum,
+            status=TicketStatus.open,
+            priority=priority,
+            subject=subject[:200],  # Enforce max length
+            description=description,
+        )
+        
+        db.session.add(ticket)
+        db.session.commit()
+        
+        flash(f"Ticket #{ticket.id} created successfully for @{customer.username}.", "success")
+        return redirect(url_for("admin_ticket_detail", ticket_id=ticket.id))
+    
+    # GET request - show form
+    # Pre-fill type if linked to ledger
+    type_value = None
+    if ledger:
+        # Suggest ticket type based on ledger entry type
+        if ledger.entry_type in [EntryType.withdrawal, EntryType.transfer_out]:
+            type_value = TicketType.refund_request.value
+        elif ledger.entry_type in [EntryType.deposit, EntryType.transfer_in]:
+            type_value = TicketType.charge_dispute.value
+        else:
+            type_value = TicketType.other.value
+    
+    return render_template(
+        "admin_ticket_new.html",
+        customer=customer,
+        ledger=ledger,
+        TicketType=TicketType,
+        type_value=type_value,
+        subject="",
+        description="",
+        priority="normal",
     )
 
 
@@ -7408,6 +8701,110 @@ def admin_reports():
     )
 
 
+@app.route("/dashboard/admin/reports/export/ledger", endpoint="admin_export_system_ledger_csv")
+@role_required("admin")
+def admin_export_system_ledger_csv():
+    """Admin export of all system wallet ledger entries as CSV"""
+    # Get all ledger entries across all wallets
+    entries = (
+        LedgerEntry.query
+        .join(Wallet, LedgerEntry.wallet_id == Wallet.id)
+        .join(User, Wallet.user_id == User.id)
+        .order_by(LedgerEntry.created_at.asc())
+        .all()
+    )
+    
+    # Generate CSV
+    si = StringIO()
+    writer = csv.writer(si)
+    writer.writerow([
+        "created_at",
+        "wallet_id",
+        "user_id",
+        "username",
+        "entry_type",
+        "direction",
+        "amount_dollars",
+        "meta"
+    ])
+    
+    credit_types = {
+        EntryType.deposit,
+        EntryType.transfer_in,
+        EntryType.interest,
+        EntryType.adjustment,
+        EntryType.sale_income,
+    }
+    
+    for row in entries:
+        is_credit = row.entry_type in credit_types
+        direction = "credit" if is_credit else "debit"
+        created_str = row.created_at.isoformat(sep=" ") if row.created_at else ""
+        amount_dollars = f"{row.amount_cents / 100.0:.2f}"
+        
+        # Get wallet and user info
+        wallet = Wallet.query.get(row.wallet_id)
+        user = User.query.get(wallet.user_id) if wallet else None
+        username = user.username if user else "unknown"
+        
+        writer.writerow([
+            created_str,
+            row.wallet_id,
+            wallet.user_id if wallet else "",
+            username,
+            row.entry_type.value,
+            direction,
+            amount_dollars,
+            row.meta or ""
+        ])
+    
+    output = si.getvalue()
+    filename = f"beatfund_system_ledger_{datetime.utcnow().strftime('%Y%m%d')}.csv"
+    
+    return Response(output, mimetype="text/csv", headers={"Content-Disposition": f"attachment; filename={filename}"})
+
+
+@app.route("/dashboard/admin/reports/export/audit", endpoint="admin_export_audit_log_csv")
+@role_required("admin")
+def admin_export_audit_log_csv():
+    """Admin export of all audit log entries as CSV"""
+    # Get all audit log entries
+    logs = AuditLog.query.order_by(AuditLog.created_at.asc()).all()
+    
+    # Generate CSV
+    si = StringIO()
+    writer = csv.writer(si)
+    writer.writerow([
+        "created_at",
+        "admin_id",
+        "admin_username",
+        "user_id",
+        "user_username",
+        "action",
+        "reason"
+    ])
+    
+    for log in logs:
+        created_str = log.created_at.isoformat(sep=" ") if log.created_at else ""
+        admin_username = log.admin.username if log.admin else "unknown"
+        user_username = log.user.username if log.user else ""
+        
+        writer.writerow([
+            created_str,
+            log.admin_id,
+            admin_username,
+            log.user_id or "",
+            user_username,
+            log.action,
+            log.reason
+        ])
+    
+    output = si.getvalue()
+    filename = f"beatfund_audit_log_{datetime.utcnow().strftime('%Y%m%d')}.csv"
+    
+    return Response(output, mimetype="text/csv", headers={"Content-Disposition": f"attachment; filename={filename}"})
+
+
 @app.route("/dashboard/admin/team", methods=["GET", "POST"], endpoint="admin_team")
 @superadmin_required
 def admin_team():
@@ -7480,7 +8877,7 @@ def admin_user_toggle_active(user_id: int):
         return redirect(url_for("admin_team"))
     
     # Only allow toggling admin accounts
-    if not user.has_role(RoleEnum.admin):
+    if user.role != RoleEnum.admin:
         flash("This endpoint is only for admin accounts.", "error")
         return redirect(url_for("admin_team"))
     
@@ -8121,211 +9518,6 @@ def vaults_delete(vault_id):
     
     flash(f"Vault '{vault.name}' deleted successfully.", "success")
     return redirect(url_for("vaults_index"))
-
-
-# =========================================================
-# Role Switching Endpoints
-# =========================================================
-@app.route("/role/switch", methods=["POST"], endpoint="role_switch")
-@login_required
-def role_switch():
-    """Switch active role for the current user"""
-    requested_role_str = request.form.get("role", "").strip()
-    
-    if not requested_role_str:
-        flash("No role specified.", "error")
-        return redirect(request.referrer or url_for("route_to_dashboard"))
-    
-    try:
-        requested_role = RoleEnum(requested_role_str)
-    except (ValueError, TypeError):
-        flash("Invalid role.", "error")
-        return redirect(request.referrer or url_for("route_to_dashboard"))
-    
-    # Verify user has this role
-    if not current_user.has_role(requested_role):
-        flash("You don't have access to that role.", "error")
-        return redirect(request.referrer or url_for("route_to_dashboard"))
-    
-    # Set active role in session
-    from flask import session
-    session["active_role"] = requested_role.value
-    
-    flash(f"Switched to {get_role_display(requested_role)} view.", "success")
-    return redirect(url_for("route_to_dashboard"))
-
-
-@app.route("/role/options", methods=["GET"], endpoint="role_options")
-@login_required
-def role_options():
-    """Get list of roles available to the current user"""
-    user_roles = current_user.get_roles()
-    options = [
-        {
-            "value": role.value,
-            "label": get_role_display(role),
-            "is_primary": role == current_user.primary_role,
-            "is_active": role == current_user.active_role()
-        }
-        for role in sorted(user_roles, key=lambda r: (r != current_user.primary_role, r.value))
-    ]
-    return jsonify({"roles": options})
-
-
-@app.route("/role/add", methods=["POST"], endpoint="role_add")
-@login_required
-def role_add():
-    """Add a role to the current user - only allows Producer ↔ Studio pairing"""
-    role_str = request.form.get("role", "").strip()
-    
-    if not role_str:
-        flash("No role specified.", "error")
-        return redirect(request.referrer or url_for("profile_edit"))
-    
-    try:
-        role = RoleEnum(role_str)
-    except (ValueError, TypeError):
-        flash("Invalid role.", "error")
-        return redirect(request.referrer or url_for("profile_edit"))
-    
-    # Cannot add admin role
-    if role == RoleEnum.admin:
-        flash("Cannot add admin role.", "error")
-        return redirect(request.referrer or url_for("profile_edit"))
-    
-    # Only allow Producer ↔ Studio pairing
-    primary = current_user.primary_role
-    if primary == RoleEnum.producer:
-        if role != RoleEnum.studio:
-            flash("Producers can only add the Studio role.", "error")
-            return redirect(request.referrer or url_for("profile_edit"))
-    elif primary == RoleEnum.studio:
-        if role != RoleEnum.producer:
-            flash("Studios can only add the Producer role.", "error")
-            return redirect(request.referrer or url_for("profile_edit"))
-    else:
-        # For other roles, only allow Producer ↔ Studio pairing if they already have one
-        user_roles = current_user.get_roles()
-        if RoleEnum.producer in user_roles:
-            if role != RoleEnum.studio:
-                flash("You can only add the Studio role.", "error")
-                return redirect(request.referrer or url_for("profile_edit"))
-        elif RoleEnum.studio in user_roles:
-            if role != RoleEnum.producer:
-                flash("You can only add the Producer role.", "error")
-                return redirect(request.referrer or url_for("profile_edit"))
-        else:
-            flash("Only Producer and Studio roles can be paired together.", "error")
-            return redirect(request.referrer or url_for("profile_edit"))
-    
-    # Check if user already has this role
-    if current_user.has_role(role):
-        flash(f"You already have the {get_role_display(role)} role.", "info")
-        return redirect(request.referrer or url_for("profile_edit"))
-    
-    # Add the role
-    if current_user.add_role(role):
-        db.session.commit()
-        flash(f"Added {get_role_display(role)} role successfully!", "success")
-    else:
-        flash("Could not add role.", "error")
-    
-    return redirect(request.referrer or url_for("profile_edit"))
-
-
-@app.route("/role/remove", methods=["POST"], endpoint="role_remove")
-@login_required
-def role_remove():
-    """Remove a role from the current user (cannot remove primary_role)"""
-    role_str = request.form.get("role", "").strip()
-    
-    if not role_str:
-        flash("No role specified.", "error")
-        return redirect(request.referrer or url_for("profile_edit"))
-    
-    try:
-        role = RoleEnum(role_str)
-    except (ValueError, TypeError):
-        flash("Invalid role.", "error")
-        return redirect(request.referrer or url_for("profile_edit"))
-    
-    # Cannot remove primary_role
-    if role == current_user.primary_role:
-        flash("Cannot remove your primary role. Change your primary role first.", "error")
-        return redirect(request.referrer or url_for("profile_edit"))
-    
-    # Remove the role
-    if current_user.remove_role(role):
-        db.session.commit()
-        # Clear active_role from session if it was the removed role
-        from flask import session
-        if session.get("active_role") == role.value:
-            session.pop("active_role", None)
-        flash(f"Removed {get_role_display(role)} role successfully!", "success")
-    else:
-        flash("Could not remove role. You may not have this role.", "error")
-    
-    return redirect(request.referrer or url_for("profile_edit"))
-
-
-@app.route("/role/set-primary", methods=["POST"], endpoint="role_set_primary")
-@login_required
-def role_set_primary():
-    """Change the user's primary role"""
-    role_str = request.form.get("role", "").strip()
-    
-    if not role_str:
-        flash("No role specified.", "error")
-        return redirect(request.referrer or url_for("profile_edit"))
-    
-    try:
-        new_primary = RoleEnum(role_str)
-    except (ValueError, TypeError):
-        flash("Invalid role.", "error")
-        return redirect(request.referrer or url_for("profile_edit"))
-    
-    # User must have this role
-    if not current_user.has_role(new_primary):
-        flash("You don't have this role. Add it first.", "error")
-        return redirect(request.referrer or url_for("profile_edit"))
-    
-    old_primary = current_user.primary_role
-    
-    # Update primary_role
-    current_user.primary_role = new_primary
-    
-    # Move old primary to UserRole if it's not already there
-    if old_primary != new_primary:
-        existing = UserRole.query.filter_by(user_id=current_user.id, role=old_primary).first()
-        if not existing:
-            old_role_entry = UserRole(user_id=current_user.id, role=old_primary)
-            db.session.add(old_role_entry)
-        
-        # Remove new primary from UserRole (since it's now the primary)
-        new_role_entry = UserRole.query.filter_by(user_id=current_user.id, role=new_primary).first()
-        if new_role_entry:
-            db.session.delete(new_role_entry)
-    
-    db.session.commit()
-    
-    # Update active role in session
-    from flask import session
-    session["active_role"] = new_primary.value
-    
-    flash(f"Changed primary role to {get_role_display(new_primary)}.", "success")
-    return redirect(request.referrer or url_for("profile_edit"))
-
-
-# =========================================================
-@app.errorhandler(404)
-def not_found(e):
-    return render_template("404.html"), 404
-
-
-@app.errorhandler(500)
-def server_error(e):
-    db.session.rollback()
-    return render_template("500.html"), 500
 
 
 # =========================================================
