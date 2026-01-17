@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Notifications · BeatFund{% endblock %}
+
+{% block content %}
+<div style="max-width: 800px; margin: 32px auto; padding: 0 16px;">
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
+    <h1 style="margin: 0;">Notifications</h1>
+    <form method="POST" action="{{ url_for('mark_all_notifications_read_route') }}" style="display: inline;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button type="submit" style="background: #4f8bff; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 14px;">Mark all read</button>
+    </form>
+  </div>
+
+  {% if notifications %}
+    <div style="background: white; border: 1px solid #ddd; border-radius: 8px; overflow: hidden;">
+      {% for notif in notifications %}
+        <div class="notification-row" style="padding: 16px; border-bottom: 1px solid #eee; {% if not notif.is_read %}background: #f8f9ff;{% endif %}">
+          <div style="display: flex; justify-content: space-between; align-items: start; gap: 12px;">
+            <div style="flex: 1;">
+              <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                <span class="notification-kind-{{ notif.kind }}" style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; background: {% if notif.kind == 'success' %}#10b981{% elif notif.kind == 'warning' %}#f59e0b{% elif notif.kind == 'error' %}#ef4444{% else %}#3b82f6{% endif %};"></span>
+                <h3 style="margin: 0; font-size: 16px; font-weight: {% if notif.is_read %}normal{% else %}bold{% endif %};">
+                  {% if notif.url %}
+                    <a href="{{ notif.url }}" style="color: inherit; text-decoration: none;">{{ notif.title }}</a>
+                  {% else %}
+                    {{ notif.title }}
+                  {% endif %}
+                </h3>
+              </div>
+              {% if notif.body %}
+                <p style="margin: 0 0 8px 20px; color: #666; font-size: 14px; line-height: 1.5;">{{ notif.body }}</p>
+              {% endif %}
+              <div style="margin-left: 20px; font-size: 12px; color: #999;">
+                {{ notif.created_at.strftime('%B %d, %Y at %I:%M %p') if notif.created_at else '' }}
+              </div>
+            </div>
+            {% if not notif.is_read %}
+              <form method="POST" action="{{ url_for('mark_notification_read_route', notif_id=notif.id) }}" style="display: inline;">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" style="background: #e5e7eb; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; color: #666;">Mark read</button>
+              </form>
+            {% else %}
+              <span style="color: #999; font-size: 12px;">Read</span>
+            {% endif %}
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div style="background: white; border: 1px solid #ddd; border-radius: 8px; padding: 48px; text-align: center;">
+      <div style="font-size: 48px; margin-bottom: 16px;">🔔</div>
+      <h2 style="margin: 0 0 8px; color: #333;">No notifications</h2>
+      <p style="margin: 0; color: #666;">You're all caught up! New notifications will appear here.</p>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}
