@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}BeatFund — Creative Fintech for Creators{% endblock %}
+{% block title %}Join the Waitlist — BeatFund{% endblock %}
 
 {% block extra_head %}
 <style>
@@ -211,6 +211,112 @@
     font-size: 10px;
     text-transform: uppercase;
     letter-spacing: 0.08em;
+  }
+
+  /* WAITLIST FORM SECTION */
+  .waitlist-section {
+    margin-top: 32px;
+    padding: 24px;
+    border-radius: 20px;
+    background:
+      radial-gradient(circle at top left, rgba(59, 130, 246, 0.15), transparent 60%),
+      radial-gradient(circle at bottom right, rgba(168, 85, 247, 0.15), transparent 60%),
+      rgba(15, 23, 42, 0.96);
+    border: 1px solid rgba(148, 163, 184, 0.4);
+    box-shadow:
+      0 20px 40px rgba(15, 23, 42, 0.85),
+      0 0 0 1px rgba(15, 23, 42, 1) inset;
+  }
+
+  .waitlist-section h2 {
+    font-size: 20px;
+    font-weight: 600;
+    margin: 0 0 8px;
+    color: #ffffff;
+  }
+
+  .waitlist-section p {
+    font-size: 13px;
+    color: #9aa4c2;
+    margin: 0 0 20px;
+  }
+
+  .waitlist-count {
+    font-size: 12px;
+    color: #4aa8ff;
+    margin-bottom: 16px;
+  }
+
+  .waitlist-form {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .waitlist-form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .waitlist-form-group label {
+    font-size: 12px;
+    color: #cbd5f5;
+    font-weight: 500;
+  }
+
+  .waitlist-form-group input,
+  .waitlist-form-group select,
+  .waitlist-form-group textarea {
+    padding: 10px 12px;
+    border-radius: 8px;
+    border: 1px solid rgba(148, 163, 184, 0.4);
+    background: rgba(15, 23, 42, 0.8);
+    color: #ffffff;
+    font-size: 13px;
+    font-family: inherit;
+    transition: border-color 0.2s ease, background 0.2s ease;
+  }
+
+  .waitlist-form-group input:focus,
+  .waitlist-form-group select:focus,
+  .waitlist-form-group textarea:focus {
+    outline: none;
+    border-color: #4aa8ff;
+    background: rgba(15, 23, 42, 0.95);
+  }
+
+  .waitlist-form-group textarea {
+    resize: vertical;
+    min-height: 80px;
+  }
+
+  .waitlist-form-group input[required]::after {
+    content: " *";
+    color: #ef4444;
+  }
+
+  .waitlist-submit {
+    padding: 12px 24px;
+    border-radius: 999px;
+    border: none;
+    background: linear-gradient(135deg, #4de3ff, #6366f1);
+    color: #ffffff;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: transform 0.1s ease, box-shadow 0.1s ease;
+    box-shadow: 0 6px 18px rgba(56, 189, 248, 0.45);
+    margin-top: 4px;
+  }
+
+  .waitlist-submit:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 10px 26px rgba(79, 70, 229, 0.55);
+  }
+
+  .waitlist-submit:active {
+    transform: translateY(0);
   }
 
   /* ROLE CARDS SECTION */
@@ -571,14 +677,13 @@
       </p>
 
       <div class="hero-links">
-        <a href="{{ url_for('register') }}">Create your account</a>
+        <a href="#waitlist" onclick="document.getElementById('waitlist').scrollIntoView({ behavior: 'smooth', block: 'start' }); return false;">Join the Waitlist</a>
         <a href="{{ url_for('login') }}">Log in</a>
       </div>
 
       <div class="hero-secondary-links">
         <a href="{{ url_for('market_index') }}">Browse the marketplace →</a>
         <a href="{{ url_for('wallet_home') }}">Open your wallet →</a>
-        <a href="{{ url_for('waitlist_page') }}">Join Waitlist →</a>
       </div>
 
       <div class="hero-tags">
@@ -612,6 +717,53 @@
         </div>
       </div>
     </aside>
+  </section>
+
+  <!-- Waitlist Form Section -->
+  <section id="waitlist" class="waitlist-section">
+    <h2>Join the Waitlist</h2>
+    <p>Be among the first to access BeatFund when we launch. Get early access to features and exclusive updates.</p>
+    {% if waitlist_count is defined and waitlist_count > 0 %}
+    <div class="waitlist-count">Join {{ waitlist_count }} others on the waitlist</div>
+    {% endif %}
+    
+    <form method="POST" action="{{ url_for('waitlist_signup') }}" class="waitlist-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      
+      <div class="waitlist-form-group">
+        <label for="email">Email <span style="color: #ef4444;">*</span></label>
+        <input type="email" id="email" name="email" required placeholder="your@email.com">
+      </div>
+      
+      <div class="waitlist-form-group">
+        <label for="full_name">Full Name</label>
+        <input type="text" id="full_name" name="full_name" placeholder="John Doe">
+      </div>
+      
+      <div class="waitlist-form-group">
+        <label for="role_interest">I'm interested in joining as</label>
+        <select id="role_interest" name="role_interest">
+          <option value="">Select a role...</option>
+          <option value="artist">Artist</option>
+          <option value="producer">Producer</option>
+          <option value="studio">Studio</option>
+          <option value="videographer">Videographer</option>
+          <option value="designer">Designer</option>
+          <option value="engineer">Engineer</option>
+          <option value="manager">Manager</option>
+          <option value="funder">Funder</option>
+          <option value="client">Client</option>
+          <option value="other">Other</option>
+        </select>
+      </div>
+      
+      <div class="waitlist-form-group">
+        <label for="note">Tell us more (optional)</label>
+        <textarea id="note" name="note" placeholder="What are you most excited about? What features would you like to see?" maxlength="300"></textarea>
+      </div>
+      
+      <button type="submit" class="waitlist-submit">Join Waitlist</button>
+    </form>
   </section>
 
   <!-- Roles section: artists / producers / providers -->
@@ -673,7 +825,7 @@
         <div class="home-how-step-num">Step 1</div>
         <div class="home-how-step-title">Create your BeatFund account</div>
         <p class="home-how-step-text">
-          Sign up in minutes. Choose whether you’re here to buy beats, offer services,
+          Sign up in minutes. Choose whether you're here to buy beats, offer services,
           or both — your wallet powers everything.
         </p>
       </article>

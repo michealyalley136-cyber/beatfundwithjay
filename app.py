@@ -37,6 +37,37 @@ import csv
 from io import StringIO
 import re
 import json
+import logging
+from logging.handlers import RotatingFileHandler
+
+# Optional production dependencies (only used if env vars set)
+# These are intentionally optional - install only if needed for production features
+try:
+    import redis  # pyright: ignore[reportMissingImports]
+    REDIS_AVAILABLE = True
+except ImportError:
+    REDIS_AVAILABLE = False
+
+try:
+    import boto3  # pyright: ignore[reportMissingImports]
+    from botocore.exceptions import ClientError  # pyright: ignore[reportMissingImports]
+    BOTO3_AVAILABLE = True
+except ImportError:
+    BOTO3_AVAILABLE = False
+
+try:
+    import sentry_sdk  # pyright: ignore[reportMissingImports]
+    from sentry_sdk.integrations.flask import FlaskIntegration  # pyright: ignore[reportMissingImports]
+    from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration  # pyright: ignore[reportMissingImports]
+    SENTRY_AVAILABLE = True
+except ImportError:
+    SENTRY_AVAILABLE = False
+
+try:
+    import stripe  # pyright: ignore[reportMissingImports]
+    STRIPE_AVAILABLE = True
+except ImportError:
+    STRIPE_AVAILABLE = False
 
 # Load environment variables from .env file (for local development)
 try:
@@ -56,6 +87,12 @@ MAX_PORTFOLIO_ITEMS = 8             # max portfolio items per provider
 
 PASSWORD_MAX_AGE_DAYS = 90          # admins must change password every 90 days
 RESET_TOKEN_MAX_AGE_HOURS = 1       # reset links valid for 1 hour
+
+# Platform service fees
+BEAT_FEE_RATE = 0.12                # 12% of beat price
+BEAT_FEE_MIN_CENTS = 129            # $1.29 minimum
+BEAT_FEE_MAX_CENTS = 517            # $5.17 maximum
+# Note: SERVICE_FEE_RULES and DEFAULT_SERVICE_FEE_RULE are defined after RoleEnum
 
 
 # =========================================================
@@ -108,29 +145,137 @@ app.config["MAX_CONTENT_LENGTH"] = 120 * 1024 * 1024  # 120MB
 csrf = CSRFProtect(app)
 
 # ---------------------------------------------------------
+# ProxyFix (for reverse proxy deployments)
+# ---------------------------------------------------------
+if os.getenv("TRUST_PROXY", "0") == "1":
+    try:
+        from werkzeug.middleware.proxy_fix import ProxyFix
+        app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+    except ImportError:
+        if not IS_DEV:
+            raise RuntimeError("TRUST_PROXY=1 requires werkzeug>=2.0. Install: pip install werkzeug>=2.0")
+
+# ---------------------------------------------------------
+# Request ID Middleware
+# ---------------------------------------------------------
+@app.before_request
+def generate_request_id():
+    """Generate unique request ID for tracing"""
+    g.request_id = str(uuid.uuid4())[:8]
+
+@app.after_request
+def add_request_id_header(response):
+    """Add request ID to response header"""
+    if hasattr(g, 'request_id'):
+        response.headers['X-Request-ID'] = g.request_id
+    return response
+
+# ---------------------------------------------------------
+# Sentry Error Tracking
+# ---------------------------------------------------------
+SENTRY_DSN = os.getenv("SENTRY_DSN", "").strip()
+if SENTRY_DSN and SENTRY_AVAILABLE:
+    sentry_sdk.init(
+        dsn=SENTRY_DSN,
+        integrations=[
+            FlaskIntegration(),
+            SqlalchemyIntegration(),
+        ],
+        traces_sample_rate=0.1 if IS_DEV else 0.05,
+        environment=APP_ENV,
+    )
+
+# ---------------------------------------------------------
+# Structured Logging Setup
+# ---------------------------------------------------------
+def setup_logging():
+    """Configure structured logging"""
+    log_level = logging.DEBUG if IS_DEV else logging.INFO
+    
+    if IS_DEV:
+        # Simple console logging in dev
+        logging.basicConfig(
+            level=log_level,
+            format='%(asctime)s [%(levelname)s] %(name)s: %(message)s'
+        )
+    else:
+        # JSON logging in production
+        import json as json_module
+        class JSONFormatter(logging.Formatter):
+            def format(self, record):
+                log_data = {
+                    'timestamp': datetime.utcnow().isoformat(),
+                    'level': record.levelname,
+                    'logger': record.name,
+                    'message': record.getMessage(),
+                    'request_id': getattr(g, 'request_id', None),
+                    'user_id': current_user.id if current_user.is_authenticated else None,
+                    'route': request.endpoint if request else None,
+                }
+                if record.exc_info:
+                    log_data['exception'] = self.formatException(record.exc_info)
+                return json_module.dumps(log_data)
+        
+        handler = RotatingFileHandler(
+            os.path.join(INSTANCE_DIR, 'app.log'),
+            maxBytes=10*1024*1024,  # 10MB
+            backupCount=5
+        )
+        handler.setFormatter(JSONFormatter())
+        root_logger = logging.getLogger()
+        root_logger.setLevel(log_level)
+        root_logger.addHandler(handler)
+
+setup_logging()
+app.logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------
 # Security Headers Middleware
 # ---------------------------------------------------------
 @app.after_request
 def set_security_headers(response):
     """Add comprehensive security headers to all responses"""
+    # Add request ID if not already added
+    if hasattr(g, 'request_id') and 'X-Request-ID' not in response.headers:
+        response.headers['X-Request-ID'] = g.request_id
+    
     # Prevent XSS attacks
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["X-XSS-Protection"] = "1; mode=block"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     
-    # Content Security Policy - strict policy to prevent XSS
-    csp_policy = (
-        "default-src 'self'; "
-        "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
-        "style-src 'self' 'unsafe-inline'; "
-        "img-src 'self' data: https:; "
-        "font-src 'self' data:; "
-        "connect-src 'self'; "
-        "frame-ancestors 'none'; "
-        "base-uri 'self'; "
-        "form-action 'self';"
-    )
+    # Content Security Policy - use nonce in production if possible
+    if IS_DEV:
+        csp_policy = (
+            "default-src 'self'; "
+            "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+            "style-src 'self' 'unsafe-inline'; "
+            "img-src 'self' data: https:; "
+            "font-src 'self' data:; "
+            "connect-src 'self'; "
+            "frame-ancestors 'none'; "
+            "base-uri 'self'; "
+            "form-action 'self';"
+        )
+    else:
+        # Production: stricter CSP with additional security directives
+        csp_policy = (
+            "default-src 'self'; "
+            "script-src 'self' https://cdn.jsdelivr.net; "
+            "style-src 'self' 'unsafe-inline'; "  # Allow inline styles for compatibility
+            "img-src 'self' data: https:; "
+            "font-src 'self' data: https:; "
+            "connect-src 'self'; "
+            "frame-ancestors 'none'; "
+            "base-uri 'self'; "
+            "form-action 'self'; "
+            "object-src 'none'; "  # Block plugins (Flash, etc.)
+            "media-src 'self'; "  # Allow media from same origin
+            "worker-src 'none'; "  # Block web workers for security
+            "manifest-src 'self'; "  # Allow web app manifests
+            "upgrade-insecure-requests;"  # Upgrade HTTP to HTTPS
+        )
     response.headers["Content-Security-Policy"] = csp_policy
     
     # Strict Transport Security (HSTS) - only in production
@@ -162,13 +307,54 @@ def handle_csrf_error(e):
 # Enhanced Security: Rate Limiting & Input Validation
 # ---------------------------------------------------------
 
-# General rate limiting storage
-RATE_LIMITS: dict[str, list[float]] = {}
+# Redis-based rate limiting (fallback to in-memory for dev)
+_redis_client = None
+_redis_available = False
+
+def _init_redis():
+    """Initialize Redis client if REDIS_URL is available"""
+    global _redis_client, _redis_available
+    if _redis_client is not None:
+        return _redis_available
+    
+    redis_url = os.getenv("REDIS_URL", "").strip()
+    if not redis_url or not REDIS_AVAILABLE:
+        _redis_available = False
+        if IS_DEV:
+            app.logger.debug("Redis not available, using in-memory rate limiting")
+        else:
+            app.logger.warning("Redis not available in production - rate limiting will be per-process only")
+        return False
+    
+    try:
+        _redis_client = redis.from_url(redis_url, decode_responses=True)
+        _redis_client.ping()
+        _redis_available = True
+        app.logger.info("Redis rate limiting enabled")
+        return True
+    except Exception as e:
+        _redis_available = False
+        if IS_DEV:
+            app.logger.debug(f"Redis connection failed, using in-memory rate limiting: {e}")
+        else:
+            app.logger.warning(f"Redis connection failed: {e}")
+        return False
+
+_init_redis()
+
+# Fallback in-memory storage (dev only)
+_RATE_LIMITS_MEMORY: dict[str, list[float]] = {}
+_LOGIN_ATTEMPTS_MEMORY: dict[str, list[float]] = {}
+_OWNER_UNLOCK_ATTEMPTS_MEMORY: dict[str, list[float]] = {}
 
 def get_client_id() -> str:
-    """Get unique client identifier for rate limiting"""
-    # Use IP + User-Agent hash for better tracking
-    ip = request.remote_addr or "unknown"
+    """Get unique client identifier for rate limiting (ProxyFix-aware)"""
+    # Use real client IP (supports ProxyFix if enabled)
+    if hasattr(request, 'access_route') and len(request.access_route) > 0:
+        ip = request.access_route[0]  # First IP in chain (real client)
+    else:
+        ip = request.remote_addr or "unknown"
+    
     ua = request.headers.get("User-Agent", "")[:50] or "unknown"
     import hashlib
     combined = f"{ip}:{ua}"
@@ -176,19 +362,37 @@ def get_client_id() -> str:
 
 
 def check_rate_limit(action: str, max_requests: int = 10, window_seconds: int = 60) -> bool:
-    """Check if client has exceeded rate limit for an action"""
+    """Check if client has exceeded rate limit for an action (Redis or in-memory fallback)"""
     client_id = get_client_id()
-    key = f"{action}:{client_id}"
-    now = time()
+    key = f"rate_limit:{action}:{client_id}"
     
-    attempts = RATE_LIMITS.get(key, [])
+    if _redis_available and _redis_client:
+        try:
+            # Redis sliding window using sorted set
+            now = time()
+            pipe = _redis_client.pipeline()
+            pipe.zremrangebyscore(key, 0, now - window_seconds)  # Remove old entries
+            pipe.zcard(key)  # Count current entries
+            pipe.zadd(key, {str(now): now})  # Add current timestamp
+            pipe.expire(key, window_seconds)  # Auto-expire key
+            results = pipe.execute()
+            current_count = results[1]
+            
+            return current_count < max_requests
+        except Exception as e:
+            app.logger.warning(f"Redis rate limit check failed, falling back to memory: {e}")
+            # Fall through to memory fallback
+    
+    # In-memory fallback (dev or Redis unavailable)
+    now = time()
+    attempts = _RATE_LIMITS_MEMORY.get(key, [])
     attempts = [t for t in attempts if now - t < window_seconds]
     
     if len(attempts) >= max_requests:
         return False
     
     attempts.append(now)
-    RATE_LIMITS[key] = attempts
+    _RATE_LIMITS_MEMORY[key] = attempts
     return True
 
 
@@ -249,14 +453,30 @@ def log_security_event(event_type: str, details: str, severity: str = "info"):
 @app.errorhandler(500)
 def handle_500_error(e):
     """Handle 500 errors without exposing sensitive information"""
-    db.session.rollback()
-    log_security_event("server_error", f"Internal server error: {type(e).__name__}", "error")
+    try:
+        db.session.rollback()
+    except Exception:
+        # db might not be initialized yet, ignore rollback errors
+        pass
+    
+    try:
+        log_security_event("server_error", f"Internal server error: {type(e).__name__}", "error")
+    except Exception:
+        # log_security_event might fail if app not fully initialized
+        pass
+    
     if IS_DEV:
         # In dev, show the actual error
         raise
+    
     # In production, render 500.html if exists, else safe generic message
-    if os.path.exists(os.path.join(BASE_DIR, "templates", "500.html")):
-        return render_template("500.html"), 500
+    try:
+        if os.path.exists(os.path.join(BASE_DIR, "templates", "500.html")):
+            return render_template("500.html"), 500
+    except Exception:
+        # Template rendering might fail, fall back to plain text
+        pass
+    
     return "An error occurred. Our team has been notified.", 500
 
 
@@ -307,6 +527,16 @@ if db_url:
         db_url = db_url.replace("postgresql://", "postgresql+psycopg://", 1)
 
     app.config["SQLALCHEMY_DATABASE_URI"] = db_url
+    # Connection pool settings for production
+    app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
+        "pool_pre_ping": True,  # Verify connections before using
+        "pool_recycle": 300,    # Recycle connections after 5 minutes
+        "pool_size": 5,         # Connection pool size
+        "max_overflow": 10,     # Max overflow connections
+        "connect_args": {
+            "connect_timeout": 10,  # 10 second connection timeout
+        }
+    }
 else:
     app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{os.path.join(INSTANCE_DIR, 'app.db')}"
 
@@ -321,20 +551,39 @@ login_manager.login_view = "login"
 if os.getenv("BOOTSTRAP_DB") == "1":
     with app.app_context():
         db.create_all()
-        print("✅ BOOTSTRAP_DB=1 -> db.create_all() completed")
+        print("[OK] BOOTSTRAP_DB=1 -> db.create_all() completed")
 
 
 # =========================================================
-# Uploads
+# Uploads & Storage Abstraction
 # =========================================================
-# NOTE: Currently using local filesystem storage. Files will be lost on container/instance restart.
-# For production deployment, consider:
-# - AWS S3 / Google Cloud Storage / Azure Blob Storage
-# - Persistent volumes (if using containers)
-# - Database-backed file references with external storage
+# Storage backend: 'local' or 's3' (set STORAGE_BACKEND env var)
+STORAGE_BACKEND = os.getenv("STORAGE_BACKEND", "local").lower()
+
 UPLOAD_ROOT = os.path.join(BASE_DIR, "uploads")
 os.makedirs(UPLOAD_ROOT, exist_ok=True)
 app.config["UPLOAD_FOLDER"] = UPLOAD_ROOT
+
+# S3 configuration (only used if STORAGE_BACKEND=s3)
+S3_BUCKET_NAME = os.getenv("S3_BUCKET_NAME", "").strip()
+S3_REGION = os.getenv("S3_REGION", "us-east-1").strip()
+
+# Initialize S3 client if needed
+S3_CLIENT = None
+if STORAGE_BACKEND == "s3" and BOTO3_AVAILABLE and S3_BUCKET_NAME:
+    try:
+        import boto3
+        S3_CLIENT = boto3.client('s3', region_name=S3_REGION)
+        # Test S3 connection
+        S3_CLIENT.head_bucket(Bucket=S3_BUCKET_NAME)
+        app.logger.info(f"S3 storage backend enabled: bucket={S3_BUCKET_NAME}, region={S3_REGION}")
+    except Exception as e:
+        app.logger.error(f"S3 initialization failed, falling back to local storage: {e}")
+        STORAGE_BACKEND = "local"
+        S3_CLIENT = None
+elif STORAGE_BACKEND == "s3":
+    app.logger.warning("S3 storage requested but not properly configured, falling back to local storage")
+    STORAGE_BACKEND = "local"
 
 ALLOWED_IMAGE = {"png", "jpg", "jpeg"}
 ALLOWED_AUDIO = {"mp3", "wav", "m4a", "ogg"}
@@ -366,8 +615,103 @@ def _ext_ok(filename: str, allowed: set[str]) -> bool:
     return ext in allowed
 
 
+# Storage abstraction classes
+class StorageBackend:
+    """Abstract storage backend interface"""
+    def save_file(self, file_storage, filename: str) -> bool:
+        """Save file and return True on success"""
+        raise NotImplementedError
+    
+    def delete_file(self, filename: str) -> bool:
+        """Delete file and return True on success"""
+        raise NotImplementedError
+    
+    def get_signed_url(self, filename: str, expires: int = 300) -> Optional[str]:
+        """Get signed URL for protected file access (None for public files)"""
+        raise NotImplementedError
+
+
+class LocalStorageBackend(StorageBackend):
+    """Local disk storage backend"""
+    def __init__(self, upload_folder: str):
+        self.upload_folder = upload_folder
+        os.makedirs(upload_folder, exist_ok=True)
+    
+    def save_file(self, file_storage, filename: str) -> bool:
+        filepath = os.path.join(self.upload_folder, filename)
+        real_upload = os.path.realpath(self.upload_folder)
+        real_filepath = os.path.realpath(filepath)
+        if not real_filepath.startswith(real_upload):
+            log_security_event("directory_traversal_attempt", f"Blocked path traversal: {filepath}", "error")
+            return False
+        file_storage.save(filepath)
+        return True
+    
+    def delete_file(self, filename: str) -> bool:
+        filepath = os.path.join(self.upload_folder, filename)
+        try:
+            if os.path.exists(filepath):
+                os.remove(filepath)
+                return True
+        except Exception as e:
+            app.logger.error(f"Failed to delete file {filename}: {e}")
+        return False
+    
+    def get_signed_url(self, filename: str, expires: int = 300) -> Optional[str]:
+        # Local storage: return None (direct file serving via send_from_directory)
+        return None
+
+
+class S3StorageBackend(StorageBackend):
+    """S3 storage backend"""
+    def __init__(self, s3_client, bucket_name: str):
+        self.s3_client = s3_client
+        self.bucket_name = bucket_name
+    
+    def save_file(self, file_storage, filename: str) -> bool:
+        try:
+            file_storage.seek(0)
+            self.s3_client.put_object(
+                Bucket=self.bucket_name,
+                Key=filename,
+                Body=file_storage,
+                ContentType=file_storage.content_type or "application/octet-stream"
+            )
+            return True
+        except Exception as e:
+            app.logger.error(f"S3 upload failed for {filename}: {e}")
+            return False
+    
+    def delete_file(self, filename: str) -> bool:
+        try:
+            self.s3_client.delete_object(Bucket=self.bucket_name, Key=filename)
+            return True
+        except Exception as e:
+            app.logger.error(f"S3 delete failed for {filename}: {e}")
+            return False
+    
+    def get_signed_url(self, filename: str, expires: int = 300) -> Optional[str]:
+        try:
+            url = self.s3_client.generate_presigned_url(
+                "get_object",
+                Params={"Bucket": self.bucket_name, "Key": filename},
+                ExpiresIn=expires
+            )
+            return url
+        except Exception as e:
+            app.logger.error(f"S3 signed URL generation failed for {filename}: {e}")
+            return None
+
+
+# Initialize storage backend
+if STORAGE_BACKEND == "s3" and S3_CLIENT and S3_BUCKET_NAME:
+    storage_backend: StorageBackend = S3StorageBackend(S3_CLIENT, S3_BUCKET_NAME)
+else:
+    storage_backend: StorageBackend = LocalStorageBackend(app.config["UPLOAD_FOLDER"])
+
+
 def _save_file(fs, allowed_set: set[str]) -> Optional[str]:
-    """Save uploaded file with comprehensive security checks"""
+    """Save uploaded file with comprehensive security checks using storage backend"""
     if not fs or fs.filename == "":
         return None
     
@@ -410,28 +754,29 @@ def _save_file(fs, allowed_set: set[str]) -> Optional[str]:
         return None
     
     # Generate secure filename (UUID to prevent enumeration attacks)
-    # ext already extracted above for size checking
     fname = f"{uuid.uuid4().hex}.{ext}"
-    filepath = os.path.join(app.config["UPLOAD_FOLDER"], fname)
     
-    # Security: Ensure file is saved within upload directory (prevent directory traversal)
-    real_upload = os.path.realpath(app.config["UPLOAD_FOLDER"])
-    real_filepath = os.path.realpath(filepath)
-    if not real_filepath.startswith(real_upload):
-        log_security_event("directory_traversal_attempt", f"Blocked path traversal: {filepath}", "error")
+    # Use storage backend to save file
+    if not storage_backend.save_file(fs, fname):
         return None
     
-    fs.save(filepath)
     log_security_event("file_upload_success", f"File uploaded: {fname} ({size} bytes)", "info")
     return fname
 
 
 def _safe_remove(stored_filename: Optional[str]) -> None:
+    """Remove file using storage backend abstraction"""
     if not stored_filename:
         return
     try:
-        pathlib.Path(os.path.join(app.config["UPLOAD_FOLDER"], stored_filename)).unlink(missing_ok=True)
-    except Exception:
+        if STORAGE_BACKEND == "s3" and S3_CLIENT:
+            # Remove from S3
+            S3_CLIENT.delete_object(Bucket=S3_BUCKET_NAME, Key=f"uploads/{stored_filename}")
+        else:
+            # Remove from local filesystem
+            pathlib.Path(os.path.join(app.config["UPLOAD_FOLDER"], stored_filename)).unlink(missing_ok=True)
+    except Exception as e:
+        app.logger.warning(f"Failed to remove file {stored_filename}: {e}")
         pass
 
 
@@ -671,6 +1016,33 @@ ROLE_DISPLAY_NAMES = {
     RoleEnum.security_usher_crowd_control: "Security / Ushers / Crowd Control",
 }
 
+# Tiered service fee rules by provider role (defined after RoleEnum)
+SERVICE_FEE_RULES = {
+    # High-ticket roles: 7% min $4.99 max $49.99
+    RoleEnum.studio: {"rate": Decimal("0.07"), "min": 499, "max": 4999},
+    RoleEnum.videographer: {"rate": Decimal("0.07"), "min": 499, "max": 4999},
+    RoleEnum.photographer: {"rate": Decimal("0.07"), "min": 499, "max": 4999},
+    
+    # Mid-ticket roles: 8% min $3.99 max $39.99
+    RoleEnum.dj: {"rate": Decimal("0.08"), "min": 399, "max": 3999},
+    RoleEnum.emcee_host_hypeman: {"rate": Decimal("0.08"), "min": 399, "max": 3999},
+    RoleEnum.event_planner: {"rate": Decimal("0.08"), "min": 399, "max": 3999},
+    RoleEnum.live_sound_engineer: {"rate": Decimal("0.08"), "min": 399, "max": 3999},
+    RoleEnum.lighting_designer: {"rate": Decimal("0.08"), "min": 399, "max": 3999},
+    
+    # Lower-ticket roles: 10% min $2.99 max $29.99
+    RoleEnum.designer: {"rate": Decimal("0.10"), "min": 299, "max": 2999},
+    RoleEnum.engineer: {"rate": Decimal("0.10"), "min": 299, "max": 2999},
+    RoleEnum.mix_master_engineer: {"rate": Decimal("0.10"), "min": 299, "max": 2999},
+    RoleEnum.makeup_artist: {"rate": Decimal("0.10"), "min": 299, "max": 2999},
+    RoleEnum.hair_stylist_barber: {"rate": Decimal("0.10"), "min": 299, "max": 2999},
+    RoleEnum.wardrobe_stylist: {"rate": Decimal("0.10"), "min": 299, "max": 2999},
+    RoleEnum.dancer_choreographer: {"rate": Decimal("0.10"), "min": 299, "max": 2999},
+}
+
+# Default service fee rule (for roles not in SERVICE_FEE_RULES)
+DEFAULT_SERVICE_FEE_RULE = {"rate": Decimal("0.08"), "min": 399, "max": 3999}
+
 
 def get_role_display(role: RoleEnum | str) -> str:
     if isinstance(role, RoleEnum):
@@ -796,6 +1168,8 @@ class Beat(db.Model):
     stems_path = db.Column(db.String(255), nullable=True)
     is_active = db.Column(db.Boolean, nullable=False, default=True)
     is_featured = db.Column(db.Boolean, nullable=False, default=False)
+    stripe_product_id = db.Column(db.String(255), nullable=True, unique=True, index=True)
+    stripe_price_id = db.Column(db.String(255), nullable=True, unique=True, index=True)
     created_at = db.Column(db.DateTime, server_default=func.now())
     updated_at = db.Column(db.DateTime, server_default=func.now(), onupdate=func.now())
     owner = db.relationship("User")
@@ -831,6 +1205,19 @@ class Order(db.Model):
     beat = db.relationship("Beat")
     buyer = db.relationship("User", foreign_keys=[buyer_id])
     seller = db.relationship("User", foreign_keys=[seller_id])
+
+
+# ------- Transaction Idempotency -------
+class TransactionIdempotency(db.Model):
+    __tablename__ = "transaction_idempotency"
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    key = db.Column(db.String(255), unique=True, nullable=False, index=True)
+    scope = db.Column(db.String(100), nullable=False, index=True)  # e.g., "wallet_transfer", "beat_purchase"
+    result_json = db.Column(db.Text, nullable=True)  # Store result as JSON for replay
+    created_at = db.Column(db.DateTime, server_default=func.now(), nullable=False, index=True)
+    
+    user = db.relationship("User")
 
 
 # ------- Notifications -------
@@ -980,10 +1367,6 @@ class JobApplication(db.Model):
     resume_filename = db.Column(db.String(255), nullable=True)
     status = db.Column(db.String(32), nullable=False, default="new", index=True)
     created_at = db.Column(db.DateTime, server_default=func.now(), index=True)
-
-    provider = db.relationship("User", foreign_keys=[provider_id])
-    client = db.relationship("User", foreign_keys=[client_id])
-    booking = db.relationship("Booking", foreign_keys=[booking_id])
 
 
 # ------- Payments (model kept for future use) -------
@@ -1467,33 +1850,46 @@ class ProjectVault(db.Model):
     def remaining_dollars(self):
         return self.remaining_cents / 100.0
     
-    def is_locked_now(self) -> bool:
-        """Check if vault is currently locked"""
+    def is_locked_now(self) -> tuple[bool, bool]:
+        """
+        Check if vault is currently locked. Returns (is_locked, should_auto_unlock).
+        Side-effect free - does not modify database.
+        """
         if not self.is_locked:
-            return False
+            return False, False
+        
+        should_unlock = False
         
         # Check date-based lock
         if self.lock_until_date:
             if datetime.utcnow() < self.lock_until_date:
-                return True
+                return True, False
             else:
-                # Auto-unlock if date passed
-                self.is_locked = False
-                self.lock_until_date = None
-                db.session.commit()
-                return False
+                # Date passed - should auto-unlock
+                should_unlock = True
+                return False, True
         
         # Check goal-based lock
         if self.lock_until_goal:
             if not self.is_completed:
-                return True
+                return True, False
             else:
-                # Auto-unlock if goal reached
-                self.is_locked = False
-                self.lock_until_goal = False
-                db.session.commit()
-                return False
+                # Goal reached - should auto-unlock
+                should_unlock = True
+                return False, True
         
+        return False, False
+    
+    def check_and_auto_unlock(self) -> bool:
+        """Check lock status and auto-unlock if needed. Call at route level with transaction."""
+        is_locked, should_unlock = self.is_locked_now()
+        if should_unlock:
+            self.is_locked = False
+            if self.lock_until_date:
+                self.lock_until_date = None
+            if self.lock_until_goal:
+                self.lock_until_goal = False
+            return True
         return False
 
 
@@ -1510,6 +1906,21 @@ class VaultTransaction(db.Model):
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     
     vault = db.relationship("ProjectVault", backref=db.backref("transactions", lazy="dynamic"))
+
+
+# =========================================================
+# Waitlist
+# =========================================================
+class WaitlistEntry(db.Model):
+    __tablename__ = "waitlist_entry"
+    id = db.Column(db.Integer, primary_key=True)
+    email = db.Column(db.String(255), nullable=False, unique=True, index=True)
+    full_name = db.Column(db.String(150), nullable=True)
+    role_interest = db.Column(db.String(80), nullable=True)  # artist, producer, studio, funder, etc.
+    note = db.Column(db.String(300), nullable=True)
+    ip = db.Column(db.String(64), nullable=True)
+    user_agent = db.Column(db.String(200), nullable=True)
+    created_at = db.Column(db.DateTime, server_default=func.now(), nullable=False, index=True)
 
 
 # Roles that can use project vaults
@@ -1585,8 +1996,22 @@ def require_kyc_approved():
     return True
 
 
-def get_or_create_wallet(user_id: int, *, commit: bool = True) -> Wallet:
-    w = Wallet.query.filter_by(user_id=user_id).first()
+def get_or_create_wallet(user_id: int, *, commit: bool = True, lock: bool = False) -> Wallet:
+    """
+    Get or create a wallet for a user.
+    
+    Args:
+        user_id: User ID
+        commit: Whether to commit the transaction (if creating)
+        lock: If True and on Postgres, use SELECT ... FOR UPDATE for row-level locking
+    """
+    query = Wallet.query.filter_by(user_id=user_id)
+    
+    # Add row-level locking on Postgres if requested
+    if lock and db.engine.dialect.name == "postgresql":
+        query = query.with_for_update()
+    
+    w = query.first()
     if not w:
         w = Wallet(user_id=user_id)
         db.session.add(w)
@@ -1598,19 +2023,166 @@ def get_or_create_wallet(user_id: int, *, commit: bool = True) -> Wallet:
 
 
 def wallet_balance_cents(wallet: Wallet) -> int:
-    total = 0
-    for e in wallet.entries:
-        if e.entry_type in (
+    """Calculate wallet balance using SQL aggregation for performance"""
+    # Credits: deposit, transfer_in, interest, adjustment, sale_income
+    credits = db.session.query(func.coalesce(func.sum(LedgerEntry.amount_cents), 0)).filter(
+        LedgerEntry.wallet_id == wallet.id,
+        LedgerEntry.entry_type.in_([
             EntryType.deposit,
             EntryType.transfer_in,
             EntryType.interest,
             EntryType.adjustment,
             EntryType.sale_income,
-        ):
-            total += e.amount_cents
-        else:
-            total -= e.amount_cents
-    return total
+        ])
+    ).scalar() or 0
+    
+    # Debits: withdrawal, transfer_out, purchase_spend
+    debits = db.session.query(func.coalesce(func.sum(LedgerEntry.amount_cents), 0)).filter(
+        LedgerEntry.wallet_id == wallet.id,
+        LedgerEntry.entry_type.in_([
+            EntryType.withdrawal,
+            EntryType.transfer_out,
+            EntryType.purchase_spend,
+        ])
+    ).scalar() or 0
+    
+    return int(credits - debits)
+
+
+def cents_to_dollars(cents: int) -> float:
+    """Convert cents to dollars"""
+    return cents / 100.0
+
+
+def format_cents_dollars(cents: int) -> str:
+    """Format cents as dollar string with 2 decimal places"""
+    return f"{cents / 100.0:.2f}"
+
+
+def clamp_cents(x: int, lo: int, hi: int) -> int:
+    """Clamp x between lo and hi (inclusive)"""
+    return max(lo, min(x, hi))
+
+
+def calc_beat_platform_fee_cents(subtotal_cents: int) -> int:
+    """
+    Calculate platform fee for beat purchase: 12% min $1.29 max $5.17
+    
+    Rules:
+    - If subtotal_cents <= 0: return 0
+    - fee = round(subtotal_cents * BEAT_FEE_RATE)
+    - fee = clamp(fee, BEAT_FEE_MIN_CENTS, BEAT_FEE_MAX_CENTS)
+    - Safety: fee cannot exceed subtotal_cents
+    """
+    if subtotal_cents <= 0:
+        return 0
+    
+    # Calculate fee: 12% of subtotal, rounded
+    fee_cents = round(subtotal_cents * BEAT_FEE_RATE)
+    
+    # Apply min/max constraints
+    fee_cents = clamp_cents(fee_cents, BEAT_FEE_MIN_CENTS, BEAT_FEE_MAX_CENTS)
+    
+    # Safety check: fee cannot exceed subtotal
+    fee_cents = min(fee_cents, subtotal_cents)
+    
+    return fee_cents
+
+
+def calc_service_platform_fee_cents(subtotal_cents: int, provider_role: RoleEnum | str) -> int:
+    """
+    Calculate platform fee for service booking based on provider role.
+    Uses tiered fee structure from SERVICE_FEE_RULES, falls back to DEFAULT_SERVICE_FEE_RULE.
+    """
+    if subtotal_cents <= 0:
+        return 0
+    
+    # Convert string role to RoleEnum if needed
+    if isinstance(provider_role, str):
+        try:
+            provider_role = RoleEnum(provider_role)
+        except ValueError:
+            provider_role = None
+    
+    # Get fee rule for this role, or use default
+    rule = SERVICE_FEE_RULES.get(provider_role) if provider_role else None
+    if not rule:
+        rule = DEFAULT_SERVICE_FEE_RULE
+    
+    # Calculate fee: rate * subtotal, rounded to nearest cent
+    fee_cents = round(Decimal(subtotal_cents) * rule["rate"])
+    
+    # Apply min/max constraints
+    fee_cents = clamp_cents(fee_cents, rule["min"], rule["max"])
+    
+    # Safety check: fee cannot exceed subtotal
+    fee_cents = min(fee_cents, subtotal_cents)
+    
+    return fee_cents
+
+
+def estimate_processing_fee_cents(amount_cents: int, method: str = "card") -> int:
+    """Estimate payment processing fee. Returns 0 for now since Stripe is not enabled yet."""
+    return 0  # Stripe not enabled yet
+
+
+def fee_breakdown_for_beat(subtotal_cents: int) -> dict:
+    """
+    Calculate complete fee breakdown for beat purchase.
+    Returns dict with: subtotal_cents, platform_fee_cents, processing_fee_cents, total_cents
+    """
+    platform_fee_cents = calc_beat_platform_fee_cents(subtotal_cents)
+    processing_fee_cents = estimate_processing_fee_cents(subtotal_cents)
+    total_cents = subtotal_cents + platform_fee_cents + processing_fee_cents
+    
+    return {
+        "subtotal_cents": subtotal_cents,
+        "platform_fee_cents": platform_fee_cents,
+        "processing_fee_cents": processing_fee_cents,
+        "total_cents": total_cents,
+    }
+
+
+def fee_breakdown_for_service(subtotal_cents: int, provider_role: RoleEnum | str) -> dict:
+    """
+    Calculate complete fee breakdown for service booking.
+    Returns dict with: subtotal_cents, platform_fee_cents, processing_fee_cents, total_cents
+    """
+    platform_fee_cents = calc_service_platform_fee_cents(subtotal_cents, provider_role)
+    processing_fee_cents = estimate_processing_fee_cents(subtotal_cents)
+    total_cents = subtotal_cents + platform_fee_cents + processing_fee_cents
+    
+    return {
+        "subtotal_cents": subtotal_cents,
+        "platform_fee_cents": platform_fee_cents,
+        "processing_fee_cents": processing_fee_cents,
+        "total_cents": total_cents,
+    }
+
+
+def get_platform_fee_wallet_user_id() -> Optional[int]:
+    """Get user_id for platform fee wallet (superadmin > admin > dev fallback)"""
+    # Try superadmin first
+    superadmin = User.query.filter_by(is_superadmin=True).first()
+    if superadmin:
+        return superadmin.id
+    
+    # Try admin
+    admin = User.query.filter_by(role=RoleEnum.admin).first()
+    if admin:
+        return admin.id
+    
+    # Dev fallback only
+    if IS_DEV and current_user.is_authenticated:
+        return current_user.id
+    
+    return None
+
+
+# Expose fee calculation functions to Jinja templates
+app.jinja_env.globals["calc_beat_platform_fee_cents"] = calc_beat_platform_fee_cents
+app.jinja_env.globals["format_cents_dollars"] = format_cents_dollars
+app.jinja_env.globals["cents_to_dollars"] = cents_to_dollars
 
 
 def fund_vault(vault: ProjectVault, amount_cents: int, transaction_type: str = "manual", notes: str = None) -> bool:
@@ -1717,6 +2289,45 @@ def db_txn():
     except Exception:
         db.session.rollback()
         raise
+
+
+def generate_idempotency_key(scope: str, user_id: int, **kwargs) -> str:
+    """Generate a unique idempotency key for a transaction"""
+    # Include scope, user_id, and key kwargs for uniqueness
+    parts = [scope, str(user_id)]
+    for k, v in sorted(kwargs.items()):
+        parts.append(f"{k}={v}")
+    key_str = ":".join(parts)
+    # Hash for consistent length and security
+    import hashlib
+    return hashlib.sha256(key_str.encode()).hexdigest()
+
+
+def check_idempotency(key: str, scope: str, user_id: int) -> Optional[dict]:
+    """
+    Check if an idempotency key already exists. Returns stored result if found, None otherwise.
+    """
+    existing = TransactionIdempotency.query.filter_by(key=key, scope=scope, user_id=user_id).first()
+    if existing and existing.result_json:
+        try:
+            return json.loads(existing.result_json)
+        except (json.JSONDecodeError, TypeError):
+            return None
+    return None
+
+
+def store_idempotency_result(key: str, scope: str, user_id: int, result: dict, commit: bool = False) -> TransactionIdempotency:
+    """Store idempotency key and result. Returns the TransactionIdempotency record."""
+    idempotency = TransactionIdempotency(
+        user_id=user_id,
+        key=key,
+        scope=scope,
+        result_json=json.dumps(result)
+    )
+    db.session.add(idempotency)
+    if commit:
+        db.session.commit()
+    return idempotency
 
 
 def _user_has_paid_for_beat(user_id: int, beat_id: int) -> bool:
@@ -1851,6 +2462,54 @@ def _ensure_sqlite_notifications_table():
             db.session.commit()
 
 
+def _ensure_sqlite_waitlist_table():
+    """Create waitlist_entry table if missing"""
+    if db.engine.url.get_backend_name() != "sqlite":
+        return
+    
+    # Create waitlist_entry table if missing
+    if not _sqlite_has_table("waitlist_entry"):
+        db.session.execute(text("""
+            CREATE TABLE waitlist_entry (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                email VARCHAR(255) NOT NULL UNIQUE,
+                full_name VARCHAR(150),
+                role_interest VARCHAR(80),
+                note VARCHAR(300),
+                ip VARCHAR(64),
+                user_agent VARCHAR(200),
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL
+            )
+        """))
+        db.session.execute(text("CREATE INDEX IF NOT EXISTS ix_waitlist_entry_email ON waitlist_entry (email)"))
+        db.session.execute(text("CREATE INDEX IF NOT EXISTS ix_waitlist_entry_created_at ON waitlist_entry (created_at)"))
+        db.session.commit()
+
+
+def _ensure_sqlite_beat_stripe_columns():
+    """Add stripe_product_id and stripe_price_id columns to beat table if missing"""
+    if db.engine.url.get_backend_name() != "sqlite":
+        return
+    if not _sqlite_has_table("beat"):
+        return
+    
+    cols = _sqlite_columns("beat")
+    
+    # Add stripe_product_id if missing
+    if "stripe_product_id" not in cols:
+        db.session.execute(text("ALTER TABLE beat ADD COLUMN stripe_product_id VARCHAR(255)"))
+        db.session.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_beat_stripe_product_id ON beat (stripe_product_id)"))
+        db.session.execute(text("CREATE INDEX IF NOT EXISTS ix_beat_stripe_product_id ON beat (stripe_product_id)"))
+        db.session.commit()
+    
+    # Add stripe_price_id if missing
+    if "stripe_price_id" not in cols:
+        db.session.execute(text("ALTER TABLE beat ADD COLUMN stripe_price_id VARCHAR(255)"))
+        db.session.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_beat_stripe_price_id ON beat (stripe_price_id)"))
+        db.session.execute(text("CREATE INDEX IF NOT EXISTS ix_beat_stripe_price_id ON beat (stripe_price_id)"))
+        db.session.commit()
+
+
 def _ensure_sqlite_careers_tables():
     """Create careers tables (job_post and job_application) if missing"""
     if db.engine.url.get_backend_name() != "sqlite":
@@ -1900,20 +2559,37 @@ def _ensure_sqlite_careers_tables():
         db.session.execute(text("CREATE INDEX IF NOT EXISTS ix_job_application_job_id ON job_application (job_id)"))
         db.session.execute(text("CREATE INDEX IF NOT EXISTS ix_job_application_status ON job_application (status)"))
         db.session.execute(text("CREATE INDEX IF NOT EXISTS ix_job_application_created_at ON job_application (created_at)"))
-        db.session.commit()
+    db.session.commit()
 
 
 @app.before_request
 def _bootstrap_schema_once():
+    """Run SQLite auto-migrations only in dev or if explicitly allowed"""
     global _SCHEMA_BOOTSTRAP_DONE
     if _SCHEMA_BOOTSTRAP_DONE:
         return
+    
+    # Disable auto-migrations in production
+    # In production with Postgres, rely on Alembic migrations only
+    is_sqlite = db.engine.url.get_backend_name() == "sqlite"
+    if APP_ENV == "prod" and not is_sqlite:
+        _SCHEMA_BOOTSTRAP_DONE = True
+        return
+    
+    # Only run auto-migrations in dev, or if SQLite is explicitly allowed in non-prod
+    if APP_ENV == "prod" and is_sqlite:
+        app.logger.warning("Production mode with SQLite detected - auto-migrations disabled for safety")
+        _SCHEMA_BOOTSTRAP_DONE = True
+        return
+    
     _SCHEMA_BOOTSTRAP_DONE = True
     try:
         _ensure_sqlite_follow_table_name_and_indexes()
         _ensure_sqlite_booking_request_booking_id()
         _ensure_sqlite_notifications_table()
         _ensure_sqlite_careers_tables()
+        _ensure_sqlite_waitlist_table()
+        _ensure_sqlite_beat_stripe_columns()
     except Exception:
         db.session.rollback()
 
@@ -1921,8 +2597,8 @@ def _bootstrap_schema_once():
 # =========================================================
 # Notifications System
 # =========================================================
-def create_notification(user_id: int, kind: str, title: str, body: str = None, url: str = None, *, commit: bool = True) -> Notification:
-    """Create a notification for a user"""
+def create_notification(user_id: int, kind: str, title: str, body: str = None, url: str = None, *, commit: bool = False) -> Notification:
+    """Create a notification for a user. Never commits by default - must be committed at route level."""
     notif = Notification(
         user_id=user_id,
         kind=kind,
@@ -1931,6 +2607,7 @@ def create_notification(user_id: int, kind: str, title: str, body: str = None, u
         url=url
     )
     db.session.add(notif)
+    # Note: commit=False by default - caller must commit in transaction
     if commit:
         db.session.commit()
     return notif
@@ -2011,25 +2688,37 @@ def send_email(to_email: str, subject: str, text_body: str) -> bool:
         return False
 
 
-def notify_user(user: User, kind: str, title: str, body: str = None, url: str = None, *, email: bool = False) -> None:
-    """Create a notification and optionally send email"""
-    notif = create_notification(user.id, kind, title, body, url, commit=True)
+def notify_user(user: User, kind: str, title: str, body: str = None, url: str = None, *, email: bool = False, commit: bool = False) -> Notification:
+    """Create a notification and optionally send email. Never commits by default - must be committed at route level."""
+    notif = create_notification(user.id, kind, title, body, url, commit=commit)
     
-    if email:
-        email_enabled = getattr(user, "email_notifications_enabled", True)
-        if user.email and email_enabled:
-            app_base_url = os.getenv("APP_BASE_URL", "").strip()
-            email_body = f"{title}\n\n"
-            if body:
-                email_body += f"{body}\n\n"
-            if url and app_base_url:
-                full_url = f"{app_base_url}{url}" if url.startswith("/") else f"{app_base_url}/{url}"
-                email_body += f"View: {full_url}\n"
-            email_body += f"\n---\nBeatFund"
-            
-            if send_email(user.email, title, email_body):
-                notif.emailed_at = datetime.utcnow()
-                db.session.commit()
+    # Email sending should happen AFTER transaction commit, not during
+    # This function only creates the notification row
+    return notif
+
+
+def send_notification_email(notif: Notification, user: User) -> bool:
+    """Send email for a notification. Call this AFTER transaction commit."""
+    if not user.email:
+        return False
+    email_enabled = getattr(user, "email_notifications_enabled", True)
+    if not email_enabled:
+        return False
+    
+    app_base_url = os.getenv("APP_BASE_URL", "").strip()
+    email_body = f"{notif.title}\n\n"
+    if notif.body:
+        email_body += f"{notif.body}\n\n"
+    if notif.url and app_base_url:
+        full_url = f"{app_base_url}{notif.url}" if notif.url.startswith("/") else f"{app_base_url}/{notif.url}"
+        email_body += f"View: {full_url}\n"
+    email_body += f"\n---\nBeatFund"
+    
+    if send_email(user.email, notif.title, email_body):
+        notif.emailed_at = datetime.utcnow()
+        db.session.commit()
+        return True
+    return False
 
 
 # =========================================================
@@ -2040,6 +2729,81 @@ def home():
     if current_user.is_authenticated:
         return redirect(url_for("route_to_dashboard"))
     return render_template("home.html")
+
+
+@app.route("/waitlist", methods=["GET"], endpoint="waitlist_page")
+def waitlist_page():
+    """Waitlist landing page - clone of homepage with waitlist form"""
+    if current_user.is_authenticated:
+        return redirect(url_for("route_to_dashboard"))
+    
+    count = WaitlistEntry.query.count()
+    return render_template("waitlist.html", waitlist_count=count)
+
+
+@app.route("/waitlist", methods=["POST"], endpoint="waitlist_signup")
+def waitlist_signup():
+    """Handle waitlist signup form submission"""
+    if current_user.is_authenticated:
+        # Allow authenticated users to join waitlist if they want
+        pass
+    
+    # Rate limiting
+    if not check_rate_limit("waitlist_signup", max_requests=8, window_seconds=300):
+        flash("Too many requests. Please try again later.", "error")
+        return redirect(url_for("waitlist_page"))
+    
+    # Get and validate form data
+    email = request.form.get("email", "").strip().lower()
+    full_name = request.form.get("full_name", "").strip()
+    role_interest = request.form.get("role_interest", "").strip()
+    note = request.form.get("note", "").strip()
+    
+    # Validate email
+    if not email:
+        flash("Email is required.", "error")
+        return redirect(url_for("waitlist_page"))
+    
+    if not validate_email(email):
+        flash("Please enter a valid email address.", "error")
+        return redirect(url_for("waitlist_page"))
+    
+    # Sanitize inputs
+    email = sanitize_input(email, max_length=255)
+    full_name = sanitize_input(full_name, max_length=150) if full_name else None
+    role_interest = sanitize_input(role_interest, max_length=80) if role_interest else None
+    note = sanitize_input(note, max_length=300) if note else None
+    
+    # Check if email already exists
+    existing = WaitlistEntry.query.filter_by(email=email).first()
+    if existing:
+        flash("You're already on the waitlist!", "info")
+        return redirect(url_for("waitlist_page"))
+    
+    # Create new waitlist entry
+    try:
+        entry = WaitlistEntry(
+            email=email,
+            full_name=full_name,
+            role_interest=role_interest,
+            note=note,
+            ip=request.remote_addr,
+            user_agent=request.headers.get("User-Agent", "")[:200]
+        )
+        db.session.add(entry)
+        db.session.commit()
+        
+        flash("Thanks! You've been added to the waitlist.", "success")
+        log_security_event("waitlist_signup", f"New waitlist entry: {email}", "info")
+    except IntegrityError:
+        db.session.rollback()
+        flash("You're already on the waitlist!", "info")
+    except Exception as e:
+        db.session.rollback()
+        log_security_event("waitlist_signup_error", f"Error adding waitlist entry: {str(e)}", "error")
+        flash("An error occurred. Please try again.", "error")
+    
+    return redirect(url_for("waitlist_page"))
 
 
 # =========================================================
@@ -2543,17 +3307,39 @@ def media_file(filename):
     # Check if this is a deliverable (stems_path) - requires purchase/ownership
     beat_stems = Beat.query.filter_by(stems_path=filename).first()
     if beat_stems:
+        if not current_user.is_authenticated:
+            abort(403)
         if beat_stems.owner_id != current_user.id and not _user_has_paid_for_beat(current_user.id, beat_stems.id):
             abort(403)
+        
+        # For S3 storage, use signed URL; otherwise use direct file serving
+        if STORAGE_BACKEND == "s3" and isinstance(storage_backend, S3StorageBackend):
+            signed_url = storage_backend.get_signed_url(filename, expires=300)
+            if signed_url:
+                return redirect(signed_url)
         return send_from_directory(app.config["UPLOAD_FOLDER"], filename, as_attachment=True)
     
-    # Check if this is a preview (preview_path) - always streamable for logged-in users
+    # Check if this is a preview (preview_path) - streamable for logged-in users
     beat_preview = Beat.query.filter_by(preview_path=filename).first()
     if beat_preview:
-        return send_from_directory(app.config["UPLOAD_FOLDER"], filename, as_attachment=False)
-    
-    # Default: serve other files without attachment
+        if not current_user.is_authenticated:
+            abort(403)
+        # For S3 storage, use signed URL; otherwise use direct file serving
+        if STORAGE_BACKEND == "s3" and isinstance(storage_backend, S3StorageBackend):
+            signed_url = storage_backend.get_signed_url(filename, expires=300)
+            if signed_url:
+                return redirect(signed_url)
     return send_from_directory(app.config["UPLOAD_FOLDER"], filename, as_attachment=False)
+    
+    # Default: serve other files without attachment (only for local storage)
+    if STORAGE_BACKEND == "local":
+        return send_from_directory(app.config["UPLOAD_FOLDER"], filename, as_attachment=False)
+    else:
+        # For S3, generate signed URL
+        signed_url = storage_backend.get_signed_url(filename, expires=300) if hasattr(storage_backend, 'get_signed_url') else None
+        if signed_url:
+            return redirect(signed_url)
+        abort(404)
 
 @app.route("/avatar/<int:user_id>", endpoint="user_avatar")
 def user_avatar(user_id: int):
@@ -2803,6 +3589,21 @@ def wallet_action():
             meta_in += f" | {note}"
 
         with db_txn():
+            # Row-level locking on Postgres for wallet operations
+            if db.engine.dialect.name == "postgresql":
+                w = Wallet.query.filter_by(user_id=current_user.id).with_for_update().first()
+                w_recipient = Wallet.query.filter_by(user_id=recipient.id).with_for_update().first()
+            
+            # Ensure wallets exist
+            if not w:
+                w = Wallet(user_id=current_user.id)
+                db.session.add(w)
+                db.session.flush()
+            if not w_recipient:
+                w_recipient = Wallet(user_id=recipient.id)
+                db.session.add(w_recipient)
+                db.session.flush()
+            
             if wallet_balance_cents(w) < cents:
                 raise ValueError("Insufficient wallet balance.")
 
@@ -2821,6 +3622,16 @@ def wallet_action():
         destination_note = "bank account" if bank_account == "stripe_connected" else "demo"
         
         with db_txn():
+            # Row-level locking on Postgres for wallet operations
+            if db.engine.dialect.name == "postgresql":
+                w = Wallet.query.filter_by(user_id=current_user.id).with_for_update().first()
+            
+            # Ensure wallet exists
+            if not w:
+                w = Wallet(user_id=current_user.id)
+                db.session.add(w)
+                db.session.flush()
+            
             if wallet_balance_cents(w) < cents:
                 raise ValueError("Insufficient wallet balance.")
             meta = f"withdraw to {destination_note}"
@@ -2844,6 +3655,16 @@ def wallet_action():
             destination_note = "debit card (Stripe Instant)"
         
         with db_txn():
+            # Row-level locking on Postgres for wallet operations
+            if db.engine.dialect.name == "postgresql":
+                w = Wallet.query.filter_by(user_id=current_user.id).with_for_update().first()
+            
+            # Ensure wallet exists
+            if not w:
+                w = Wallet(user_id=current_user.id)
+                db.session.add(w)
+                db.session.flush()
+            
             if wallet_balance_cents(w) < cents:
                 raise ValueError("Insufficient wallet balance.")
             meta = f"transfer to {destination_note}"
@@ -3735,7 +4556,7 @@ def bookme_request_status(req_id):
                     url=url_for("bookme_requests"),
                     email=True
                 )
-        
+
         flash("Accepted. Waiting for client to confirm & pay the hold fee.", "success")
         return redirect(url_for("bookme_requests"))
 
@@ -4289,18 +5110,1030 @@ def market_index():
 @app.route("/market/my-purchases")
 @login_required
 def market_my_purchases():
-    orders = Order.query.filter_by(buyer_id=current_user.id, status=OrderStatus.paid).order_by(Order.created_at.desc()).all()
+    # Query all paid orders for the current user
+    from sqlalchemy.orm import joinedload
+    
+    # Get all orders with eager loading of beat relationship
+    # Use explicit filter to ensure we get all paid orders
+    # Expire any cached queries to ensure we get fresh data
+    db.session.expire_all()
+    
+    orders = (
+        Order.query
+        .options(joinedload(Order.beat))
+        .filter(Order.buyer_id == current_user.id)
+        .filter(Order.status == OrderStatus.paid)
+        .order_by(Order.created_at.desc())
+        .all()
+    )
+    
+    # Debug logging - also check raw count
+    raw_count = Order.query.filter_by(buyer_id=current_user.id, status=OrderStatus.paid).count()
+    app.logger.info(f"My Purchases: Found {len(orders)} orders (raw count: {raw_count}) for user {current_user.id}")
+    
     purchases = []
     for o in orders:
-        if o.beat:
-            purchases.append({"order": o, "beat": o.beat, "producer": User.query.get(o.beat.owner_id)})
+        # Only include orders that have a valid beat
+        if o.beat_id:
+            # Try to load beat if not already loaded
+            if not o.beat:
+                o.beat = Beat.query.get(o.beat_id)
+            
+            if o.beat:
+                producer = User.query.get(o.beat.owner_id) if o.beat.owner_id else None
+                purchases.append({"order": o, "beat": o.beat, "producer": producer})
+            else:
+                app.logger.warning(f"Order {o.id} has beat_id {o.beat_id} but beat not found")
+        else:
+            app.logger.warning(f"Order {o.id} has no beat_id")
+    
+    app.logger.info(f"My Purchases: Returning {len(purchases)} purchases for user {current_user.id}")
     return render_template("market_my_purchases.html", purchases=purchases)
+
+
+# =========================================================
+# Stripe Configuration
+# =========================================================
+STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "").strip()
+STRIPE_PUBLISHABLE_KEY = os.getenv("STRIPE_PUBLISHABLE_KEY", "").strip()
+
+# Validate that Stripe keys are set and not placeholders
+if STRIPE_SECRET_KEY and STRIPE_SECRET_KEY.startswith("sk_test_your_secret_key"):
+    STRIPE_SECRET_KEY = ""  # Treat placeholder as not set
+if STRIPE_PUBLISHABLE_KEY and STRIPE_PUBLISHABLE_KEY.startswith("pk_test_your_publishable_key"):
+    STRIPE_PUBLISHABLE_KEY = ""  # Treat placeholder as not set
+
+# Base URL for Stripe checkout success/cancel URLs
+# Use APP_BASE_URL if set (for production), otherwise fall back to request.host_url
+def get_stripe_base_url() -> str:
+    """Get base URL for Stripe checkout redirects - must be publicly accessible"""
+    app_base_url = os.getenv("APP_BASE_URL", "").strip()
+    if app_base_url:
+        return app_base_url.rstrip("/")
+    # Fallback to request.host_url (works in dev, but should set APP_BASE_URL in production)
+    return request.host_url.rstrip("/") if request else ""
+
+if STRIPE_AVAILABLE and STRIPE_SECRET_KEY:
+    stripe.api_key = STRIPE_SECRET_KEY
+    app.logger.info(f"Stripe initialized with API key (key length: {len(STRIPE_SECRET_KEY)})")
+elif STRIPE_SECRET_KEY:
+    app.logger.warning("STRIPE_SECRET_KEY is set but stripe package is not installed. Install with: pip install stripe")
+else:
+    app.logger.warning(f"Stripe not configured: STRIPE_AVAILABLE={STRIPE_AVAILABLE}, STRIPE_SECRET_KEY length={len(STRIPE_SECRET_KEY) if STRIPE_SECRET_KEY else 0}")
+
+
+def sync_beat_to_stripe(beat: Beat, commit: bool = True) -> tuple[Optional[str], Optional[str]]:
+    """
+    Create or update Stripe Product and Price for a beat.
+    Returns (product_id, price_id) tuple.
+    Prices are calculated server-side to include platform and processing fees.
+    """
+    if not STRIPE_AVAILABLE or not STRIPE_SECRET_KEY:
+        app.logger.warning(f"Stripe not available, skipping sync for beat {beat.id}")
+        return (None, None)
+    
+    if beat.price_cents <= 0:
+        # Free beats don't need Stripe products
+        app.logger.debug(f"Beat {beat.id} is free, skipping Stripe sync")
+        return (None, None)
+    
+    try:
+        # Calculate total price (subtotal + platform fee + processing fee)
+        breakdown = fee_breakdown_for_beat(beat.price_cents)
+        total_cents = breakdown["total_cents"]
+        
+        # Build product name and description
+        product_name = beat.title or f"Beat #{beat.id}"
+        product_description = f"Purchase of beat: {product_name}"
+        if beat.genre:
+            product_description += f" ({beat.genre})"
+        if beat.bpm:
+            product_description += f" - {beat.bpm} BPM"
+        if beat.license == "exclusive":
+            product_description += " [EXCLUSIVE LICENSE]"
+        product_description = product_description[:500]  # Stripe limit
+        
+        # Create or update Stripe Product
+        if beat.stripe_product_id:
+            try:
+                # Update existing product
+                product = stripe.Product.retrieve(beat.stripe_product_id)
+                product = stripe.Product.modify(
+                    beat.stripe_product_id,
+                    name=product_name,
+                    description=product_description,
+                    active=beat.is_active,
+                )
+                product_id = product.id
+            except stripe.error.InvalidRequestError:
+                # Product was deleted in Stripe, create new one
+                product_id = None
+        else:
+            product_id = None
+        
+        if not product_id:
+            # Create new product
+            product = stripe.Product.create(
+                name=product_name,
+                description=product_description,
+                metadata={
+                    "beat_id": str(beat.id),
+                    "owner_id": str(beat.owner_id),
+                    "license": beat.license,
+                },
+            )
+            product_id = product.id
+            beat.stripe_product_id = product_id
+        
+        # Create or update Stripe Price
+        # For prices, we need to check if the total amount changed
+        # If it changed, create a new price (Stripe prices are immutable)
+        price_needs_update = False
+        if beat.stripe_price_id:
+            try:
+                existing_price = stripe.Price.retrieve(beat.stripe_price_id)
+                if existing_price.unit_amount != total_cents or not existing_price.active:
+                    price_needs_update = True
+                else:
+                    price_id = existing_price.id
+            except stripe.error.InvalidRequestError:
+                price_needs_update = True
+        else:
+            price_needs_update = True
+        
+        if price_needs_update:
+            # Create new price (prices are immutable in Stripe)
+            price = stripe.Price.create(
+                product=product_id,
+                unit_amount=total_cents,
+                currency="usd",
+                metadata={
+                    "beat_id": str(beat.id),
+                    "subtotal_cents": str(breakdown["subtotal_cents"]),
+                    "platform_fee_cents": str(breakdown["platform_fee_cents"]),
+                    "processing_fee_cents": str(breakdown["processing_fee_cents"]),
+                    "total_cents": str(total_cents),
+                },
+            )
+            price_id = price.id
+            beat.stripe_price_id = price_id
+            
+            # Archive old price if it exists
+            if beat.stripe_price_id and beat.stripe_price_id != price_id:
+                try:
+                    old_price = stripe.Price.retrieve(beat.stripe_price_id)
+                    if old_price.active:
+                        stripe.Price.modify(beat.stripe_price_id, active=False)
+                except stripe.error.InvalidRequestError:
+                    pass  # Price already deleted or doesn't exist
+        
+        if commit:
+            db.session.commit()
+        
+        app.logger.info(f"Synced beat {beat.id} to Stripe: product={product_id}, price={price_id}")
+        return (product_id, price_id)
+        
+    except stripe.error.StripeError as e:
+        app.logger.error(f"Stripe error syncing beat {beat.id}: {str(e)}")
+        return (beat.stripe_product_id, beat.stripe_price_id)
+    except Exception as e:
+        app.logger.error(f"Unexpected error syncing beat {beat.id} to Stripe: {str(e)}")
+        return (beat.stripe_product_id, beat.stripe_price_id)
+
+
+@app.route("/check-stripe-config", methods=["GET"])
+def check_stripe_config():
+    """Debug endpoint to check Stripe configuration"""
+    return jsonify({
+        "STRIPE_AVAILABLE": STRIPE_AVAILABLE,
+        "STRIPE_SECRET_KEY_set": bool(STRIPE_SECRET_KEY),
+        "STRIPE_SECRET_KEY_length": len(STRIPE_SECRET_KEY) if STRIPE_SECRET_KEY else 0,
+        "STRIPE_SECRET_KEY_prefix": STRIPE_SECRET_KEY[:20] + "..." if STRIPE_SECRET_KEY and len(STRIPE_SECRET_KEY) > 20 else (STRIPE_SECRET_KEY if STRIPE_SECRET_KEY else "NOT SET"),
+        "STRIPE_PUBLISHABLE_KEY_set": bool(STRIPE_PUBLISHABLE_KEY),
+        "stripe_api_key_set": bool(stripe.api_key) if STRIPE_AVAILABLE else False
+    }), 200
+
+@app.route("/create-checkout-session", methods=["POST"])
+@login_required
+def create_checkout_session():
+    """Create a Stripe Checkout Session for beat purchase"""
+    if not STRIPE_AVAILABLE:
+        return jsonify({"error": "Stripe is not available. Please install the stripe package."}), 500
+    
+    if not STRIPE_SECRET_KEY:
+        app.logger.error(f"Stripe check failed: STRIPE_AVAILABLE={STRIPE_AVAILABLE}, STRIPE_SECRET_KEY length={len(STRIPE_SECRET_KEY) if STRIPE_SECRET_KEY else 0}")
+        return jsonify({"error": "Stripe is not configured. Please set STRIPE_SECRET_KEY environment variable."}), 500
+    
+    if not require_kyc_approved():
+        return jsonify({"error": "KYC verification required"}), 403
+    
+    # Get beat_id from request
+    beat_id = request.json.get("beat_id") if request.is_json else request.form.get("beat_id")
+    if not beat_id:
+        return jsonify({"error": "beat_id is required"}), 400
+    
+    try:
+        beat_id = int(beat_id)
+    except (ValueError, TypeError):
+        return jsonify({"error": "Invalid beat_id"}), 400
+    
+    # Validate beat
+    beat = Beat.query.get(beat_id)
+    if not beat:
+        return jsonify({"error": "Beat not found"}), 404
+    
+    if hasattr(beat, "is_active") and not beat.is_active:
+        return jsonify({"error": "This beat is not available for purchase"}), 400
+    
+    # Check if exclusive beat has already been sold
+    if beat.license == "exclusive" and not beat.is_active:
+        return jsonify({"error": "This exclusive beat has already been sold"}), 400
+    
+    seller = User.query.get(beat.owner_id)
+    if not seller:
+        return jsonify({"error": "Seller account not found"}), 404
+    
+    if seller.id == current_user.id:
+        return jsonify({"error": "You can't buy your own beat"}), 400
+    
+    if _user_has_paid_for_beat(current_user.id, beat.id):
+        return jsonify({"error": "You already purchased this beat"}), 400
+    
+    # Calculate fees
+    subtotal_cents = int(beat.price_cents or 0)
+    if subtotal_cents <= 0:
+        return jsonify({"error": "Invalid beat price"}), 400
+    
+    breakdown = fee_breakdown_for_beat(subtotal_cents)
+    total_cents = breakdown["total_cents"]
+    
+    # Ensure Stripe product/price exist (sync if needed)
+    if not beat.stripe_product_id or not beat.stripe_price_id:
+        sync_beat_to_stripe(beat, commit=True)
+        # Re-fetch beat to get updated Stripe IDs
+        db.session.refresh(beat)
+    
+    if not beat.stripe_price_id:
+        return jsonify({"error": "Failed to create Stripe product. Please try again."}), 500
+    
+    # Get base URL for success/cancel URLs (must be publicly accessible)
+    base_url = get_stripe_base_url()
+    if not base_url:
+        return jsonify({"error": "Unable to determine base URL. Please set APP_BASE_URL environment variable."}), 500
+    
+    try:
+        # Create Checkout Session using predefined Stripe Price ID
+        # This ensures pricing is controlled server-side and cannot be manipulated by clients
+        # Mode is set to "payment" for one-time payments (not subscription or setup)
+        # Success URL must be publicly accessible so Stripe can redirect customers
+        checkout_session = stripe.checkout.Session.create(
+            payment_method_types=["card"],
+            line_items=[
+                {
+                    "price": beat.stripe_price_id,  # Use predefined price ID
+                    "quantity": 1,
+                }
+            ],
+            mode="payment",  # One-time payment (not subscription or setup)
+            success_url=f"{base_url}/checkout/success?session_id={{CHECKOUT_SESSION_ID}}",
+            cancel_url=f"{base_url}/market/confirm/{beat_id}",
+            client_reference_id=f"beat_{beat_id}_user_{current_user.id}",
+            metadata={
+                "beat_id": str(beat_id),
+                "user_id": str(current_user.id),
+                "seller_id": str(seller.id),
+                "subtotal_cents": str(breakdown["subtotal_cents"]),
+                "platform_fee_cents": str(breakdown["platform_fee_cents"]),
+                "processing_fee_cents": str(breakdown["processing_fee_cents"]),
+                "total_cents": str(total_cents),
+            },
+        )
+        
+        return jsonify({
+            "sessionId": checkout_session.id,
+            "url": checkout_session.url
+        }), 200
+        
+    except stripe.error.StripeError as e:
+        app.logger.error(f"Stripe error creating checkout session: {str(e)}")
+        return jsonify({"error": f"Payment processing error: {str(e)}"}), 500
+    except Exception as e:
+        app.logger.error(f"Unexpected error creating checkout session: {str(e)}")
+        return jsonify({"error": "An unexpected error occurred"}), 500
+
+
+@app.route("/create-checkout-session-hold-fee", methods=["POST"])
+@login_required
+def create_checkout_session_hold_fee():
+    """Create a Stripe Checkout Session for booking hold fee payment"""
+    if not STRIPE_AVAILABLE:
+        return jsonify({"error": "Stripe is not available. Please install the stripe package."}), 500
+    
+    if not STRIPE_SECRET_KEY:
+        app.logger.error(f"Stripe check failed: STRIPE_AVAILABLE={STRIPE_AVAILABLE}, STRIPE_SECRET_KEY length={len(STRIPE_SECRET_KEY) if STRIPE_SECRET_KEY else 0}")
+        return jsonify({"error": "Stripe is not configured. Please set STRIPE_SECRET_KEY environment variable."}), 500
+    
+    if not require_kyc_approved():
+        return jsonify({"error": "KYC verification required"}), 403
+    
+    # Get booking_request_id from request
+    req_id = request.json.get("booking_request_id") if request.is_json else request.form.get("booking_request_id")
+    if not req_id:
+        return jsonify({"error": "booking_request_id is required"}), 400
+    
+    try:
+        req_id = int(req_id)
+    except (ValueError, TypeError):
+        return jsonify({"error": "Invalid booking_request_id"}), 400
+    
+    # Validate booking request
+    req = BookingRequest.query.get(req_id)
+    if not req:
+        return jsonify({"error": "Booking request not found"}), 404
+    
+    if req.client_id != current_user.id:
+        return jsonify({"error": "You can only pay for your own booking requests"}), 403
+    
+    if req.status != BookingStatus.accepted:
+        return jsonify({"error": "Booking request must be accepted before paying hold fee"}), 400
+    
+    if req.booking_id:
+        return jsonify({"error": "Hold fee already paid for this booking request"}), 400
+    
+    # Hold fee amount
+    hold_fee_cents = HOLD_FEE_CENTS
+    
+    # Get base URL for success/cancel URLs (must be publicly accessible)
+    base_url = get_stripe_base_url()
+    if not base_url:
+        return jsonify({"error": "Unable to determine base URL. Please set APP_BASE_URL environment variable."}), 500
+    
+    # Get provider info
+    provider = User.query.get(req.provider_id)
+    if not provider:
+        return jsonify({"error": "Provider not found"}), 404
+    
+    try:
+        # Create Checkout Session for hold fee
+        # Mode is set to "payment" for one-time payment (not subscription or setup)
+        # Hold fees are held in escrow until booking completion
+        # Success URL must be publicly accessible so Stripe can redirect customers
+        checkout_session = stripe.checkout.Session.create(
+            payment_method_types=["card"],
+            line_items=[
+                {
+                    "price_data": {
+                        "currency": "usd",
+                        "product_data": {
+                            "name": f"Booking Hold Fee - Booking Request",
+                            "description": f"Hold fee for booking with @{provider.username} on {req.preferred_time}. This fee will be held in escrow until the booking is completed.",
+                        },
+                        "unit_amount": hold_fee_cents,
+                    },
+                    "quantity": 1,
+                }
+            ],
+            mode="payment",  # One-time payment (not subscription or setup)
+            success_url=f"{base_url}/checkout/hold-fee/success?session_id={{CHECKOUT_SESSION_ID}}",
+            cancel_url=f"{base_url}/bookme/requests",
+            client_reference_id=f"hold_fee_req_{req_id}_user_{current_user.id}",
+            metadata={
+                "booking_request_id": str(req_id),
+                "user_id": str(current_user.id),
+                "provider_id": str(req.provider_id),
+                "hold_fee_cents": str(hold_fee_cents),
+                "purpose": "bookme_hold",
+            },
+        )
+        
+        return jsonify({
+            "sessionId": checkout_session.id,
+            "url": checkout_session.url
+        }), 200
+        
+    except stripe.error.StripeError as e:
+        app.logger.error(f"Stripe error creating hold fee checkout session: {str(e)}")
+        return jsonify({"error": f"Payment processing error: {str(e)}"}), 500
+    except Exception as e:
+        app.logger.error(f"Unexpected error creating hold fee checkout session: {str(e)}")
+        return jsonify({"error": "An unexpected error occurred"}), 500
+
+
+@app.route("/checkout/success", methods=["GET"])
+@login_required
+def checkout_success():
+    """
+    Handle successful Stripe checkout - verify payment and complete purchase.
+    This URL is publicly accessible (Stripe can redirect here), but requires
+    user authentication to process the payment completion.
+    """
+    session_id = request.args.get("session_id")
+    if not session_id:
+        flash("Invalid checkout session.", "error")
+        return redirect(url_for("market_index"))
+    
+    if not STRIPE_AVAILABLE or not STRIPE_SECRET_KEY:
+        flash("Payment processing is not available.", "error")
+        return redirect(url_for("market_index"))
+    
+    try:
+        # Retrieve the checkout session from Stripe
+        checkout_session = stripe.checkout.Session.retrieve(session_id)
+        
+        # Verify the session belongs to the current user
+        if checkout_session.client_reference_id and f"user_{current_user.id}" not in checkout_session.client_reference_id:
+            flash("This checkout session does not belong to you.", "error")
+            return redirect(url_for("market_index"))
+        
+        # Check if payment was successful
+        if checkout_session.payment_status != "paid":
+            flash("Payment was not completed.", "error")
+            return redirect(url_for("market_index"))
+        
+        # Extract metadata
+        metadata = checkout_session.metadata or {}
+        app.logger.info(f"Stripe checkout metadata: {metadata}")
+        
+        beat_id = metadata.get("beat_id")
+        
+        if not beat_id:
+            app.logger.error(f"No beat_id in metadata for session {session_id}")
+            flash("Invalid checkout session metadata.", "error")
+            return redirect(url_for("market_index"))
+        
+        try:
+            beat_id = int(beat_id)
+        except (ValueError, TypeError):
+            flash("Invalid beat ID in checkout session.", "error")
+            return redirect(url_for("market_index"))
+        
+        # Extract amounts from metadata
+        subtotal_cents = int(metadata.get("subtotal_cents", 0))
+        platform_fee_cents = int(metadata.get("platform_fee_cents", 0))
+        processing_fee_cents = int(metadata.get("processing_fee_cents", 0))
+        total_cents = int(metadata.get("total_cents", 0))
+        
+        app.logger.info(f"Extracted amounts for beat {beat_id}: subtotal={subtotal_cents}, platform_fee={platform_fee_cents}, processing_fee={processing_fee_cents}, total={total_cents}")
+        
+        # Check if order already exists (idempotency)
+        existing_order = Order.query.filter_by(
+            beat_id=beat_id,
+            buyer_id=current_user.id,
+            status=OrderStatus.paid
+        ).first()
+        
+        if existing_order:
+            # Order already exists - show success page with download link anyway
+            app.logger.info(f"Order {existing_order.id} already exists for beat {beat_id}, user {current_user.id}")
+            beat = Beat.query.get(beat_id)
+            if not beat:
+                flash("Purchase already completed but beat not found.", "warning")
+                return redirect(url_for("market_my_purchases"))
+            seller = User.query.get(beat.owner_id) if beat.owner_id else None
+            # Show success page with existing order
+            return render_template(
+                "checkout_success.html",
+                order=existing_order,
+                beat=beat,
+                seller=seller or User.query.first(),  # Fallback
+                subtotal_cents=int(metadata.get("subtotal_cents", existing_order.amount_cents or 0)),
+                platform_fee_cents=int(metadata.get("platform_fee_cents", 0)),
+                processing_fee_cents=int(metadata.get("processing_fee_cents", 0)),
+                total_cents=int(metadata.get("total_cents", existing_order.amount_cents or 0)),
+                stripe_session_id=session_id,
+            )
+        
+        # Process the purchase (similar to market_buy but using Stripe payment)
+        beat = Beat.query.get(beat_id)
+        if not beat:
+            flash("Beat not found.", "error")
+            return redirect(url_for("market_index"))
+        
+        seller = User.query.get(beat.owner_id)
+        if not seller:
+            flash("Seller account not found.", "error")
+            return redirect(url_for("market_index"))
+        
+        # Amounts already extracted above, no need to extract again
+        
+        # Generate idempotency key
+        idempotency_key = generate_idempotency_key("stripe_beat_purchase", current_user.id, beat_id=beat_id, session_id=session_id)
+        
+        # Check for existing transaction
+        existing_result = check_idempotency(idempotency_key, "stripe_beat_purchase", current_user.id)
+        if existing_result:
+            # Purchase already processed - try to find the order and show success page
+            app.logger.info(f"Purchase already processed for beat {beat_id}, user {current_user.id}")
+            existing_order = Order.query.filter_by(
+                beat_id=beat_id,
+                buyer_id=current_user.id,
+                status=OrderStatus.paid
+            ).first()
+            if existing_order:
+                # Use metadata values for accurate amounts, fallback to order amount
+                subtotal_from_meta = int(metadata.get("subtotal_cents", existing_order.amount_cents or 0))
+                platform_fee_from_meta = int(metadata.get("platform_fee_cents", 0))
+                processing_fee_from_meta = int(metadata.get("processing_fee_cents", 0))
+                total_from_meta = int(metadata.get("total_cents", subtotal_from_meta + platform_fee_from_meta + processing_fee_from_meta))
+                
+                # Show success page with existing order
+                return render_template(
+                    "checkout_success.html",
+                    order=existing_order,
+                    beat=beat,
+                    seller=seller,
+                    subtotal_cents=subtotal_from_meta,
+                    platform_fee_cents=platform_fee_from_meta,
+                    processing_fee_cents=processing_fee_from_meta,
+                    total_cents=total_from_meta,
+                    stripe_session_id=session_id,
+                )
+            flash("This purchase was already processed.", "info")
+            return redirect(url_for("market_my_purchases"))
+        
+        # Process the purchase with Stripe payment
+        buyer_w = get_or_create_wallet(current_user.id, commit=False, lock=False)
+        seller_w = get_or_create_wallet(seller.id, commit=False, lock=False)
+        
+        order = None  # Initialize order variable - will be set inside transaction
+        try:
+            with db_txn():
+                # Re-check beat status within transaction
+                if db.engine.dialect.name == "postgresql":
+                    beat_check = Beat.query.filter_by(id=beat.id).with_for_update().first()
+                    buyer_w = Wallet.query.filter_by(user_id=current_user.id).with_for_update().first()
+                    seller_w = Wallet.query.filter_by(user_id=seller.id).with_for_update().first()
+                else:
+                    beat_check = Beat.query.filter_by(id=beat.id).first()
+                    buyer_w = Wallet.query.filter_by(user_id=current_user.id).first()
+                    seller_w = Wallet.query.filter_by(user_id=seller.id).first()
+                
+                if not buyer_w:
+                    buyer_w = Wallet(user_id=current_user.id)
+                    db.session.add(buyer_w)
+                    db.session.flush()
+                if not seller_w:
+                    seller_w = Wallet(user_id=seller.id)
+                    db.session.add(seller_w)
+                    db.session.flush()
+                
+                if beat_check.license == "exclusive" and not beat_check.is_active:
+                    raise ValueError("sold_out")
+                
+                if _user_has_paid_for_beat(current_user.id, beat.id):
+                    raise ValueError("already_purchased")
+                
+                # For Stripe payments, we credit the buyer's wallet with the amount they paid
+                # Then deduct it for the purchase (this allows tracking of Stripe payments)
+                # Alternatively, we can directly credit seller and platform without debiting buyer
+                # Since payment was already made via Stripe, we just distribute funds
+                
+                # Seller receives subtotal
+                post_ledger(
+                    seller_w,
+                    EntryType.sale_income,
+                    subtotal_cents,
+                    meta=f"sale beat #{beat.id} to @{current_user.username} (Stripe payment)"
+                )
+                
+                # Platform collects service fee
+                if platform_fee_cents > 0:
+                    platform_user_id = get_platform_fee_wallet_user_id()
+                    if platform_user_id:
+                        if db.engine.dialect.name == "postgresql":
+                            platform_w = Wallet.query.filter_by(user_id=platform_user_id).with_for_update().first()
+                        else:
+                            platform_w = Wallet.query.filter_by(user_id=platform_user_id).first()
+                        
+                        if not platform_w:
+                            platform_w = Wallet(user_id=platform_user_id)
+                            db.session.add(platform_w)
+                            db.session.flush()
+                        
+                        post_ledger(
+                            platform_w,
+                            EntryType.adjustment,
+                            platform_fee_cents,
+                            meta=f"platform fee for beat #{beat.id} order (Stripe)"
+                        )
+                
+                # Create order with Stripe payment reference
+                # Ensure subtotal_cents is not 0 - if it is, use beat price
+                if subtotal_cents <= 0:
+                    app.logger.warning(f"Subtotal is 0, using beat price {beat.price_cents}")
+                    subtotal_cents = int(beat.price_cents or 0)
+                
+                order = Order(
+                    beat_id=beat.id,
+                    buyer_id=current_user.id,
+                    seller_id=seller.id,
+                    amount_cents=subtotal_cents,
+                    status=OrderStatus.paid
+                )
+                db.session.add(order)
+                db.session.flush()  # Flush to get order.id
+                
+                # Log order creation for debugging
+                app.logger.info(f"Created order {order.id} for beat {beat.id}, user {current_user.id}, amount {subtotal_cents} cents, status={order.status}")
+                
+                # Verify order was added
+                if not order.id:
+                    raise ValueError("Order ID not generated after flush")
+                
+                # Mark exclusive beat as inactive
+                if beat_check.license == "exclusive":
+                    beat_check.is_active = False
+                    beat_check.updated_at = datetime.utcnow()
+                
+                # Store idempotency result
+                store_idempotency_result(
+                    idempotency_key,
+                    "stripe_beat_purchase",
+                    current_user.id,
+                    {"status": "success", "order_id": order.id, "beat_id": beat.id, "stripe_session_id": session_id},
+                    commit=False
+                )
+                
+                # Create notification
+                notif = create_notification(
+                    seller.id,
+                    kind="success",
+                    title="Beat sold!",
+                    body=f"@{current_user.username} purchased '{beat_check.title}' (Stripe payment)",
+                    url=url_for("producer_market_mine"),
+                    commit=False
+                )
+        
+        except ValueError as e:
+            error_msg = str(e)
+            if error_msg == "sold_out":
+                flash("This exclusive beat has already been sold.", "error")
+            elif error_msg == "already_purchased":
+                flash("You already purchased this beat.", "info")
+            else:
+                flash("Unable to complete purchase.", "error")
+            return redirect(url_for("market_index"))
+        except IntegrityError as e:
+            app.logger.warning(f"IntegrityError in checkout success: {str(e)}")
+            # Try to find existing order and show success page
+            db.session.rollback()  # Rollback the failed transaction
+            existing_order = Order.query.filter_by(
+                beat_id=beat.id,
+                buyer_id=current_user.id,
+                status=OrderStatus.paid
+            ).first()
+            if existing_order:
+                app.logger.info(f"Found existing order {existing_order.id} after IntegrityError")
+                # Use metadata values for accurate amounts
+                subtotal_from_meta = int(metadata.get("subtotal_cents", existing_order.amount_cents or 0))
+                platform_fee_from_meta = int(metadata.get("platform_fee_cents", 0))
+                processing_fee_from_meta = int(metadata.get("processing_fee_cents", 0))
+                total_from_meta = int(metadata.get("total_cents", subtotal_from_meta + platform_fee_from_meta + processing_fee_from_meta))
+                
+                return render_template(
+                    "checkout_success.html",
+                    order=existing_order,
+                    beat=beat,
+                    seller=seller,
+                    subtotal_cents=subtotal_from_meta,
+                    platform_fee_cents=platform_fee_from_meta,
+                    processing_fee_cents=processing_fee_from_meta,
+                    total_cents=total_from_meta,
+                    stripe_session_id=session_id,
+                )
+            flash("This purchase was already processed.", "info")
+            return redirect(url_for("market_my_purchases"))
+        
+        # After transaction commits, re-query order from database to ensure it's properly persisted
+        # This is important because after transaction commit, the object might be detached
+        # Use a fresh query to ensure we get the committed order
+        db.session.expire_all()  # Expire all objects to force fresh query
+        
+        # Re-query the order that was just created
+        # The order should be committed by db_txn(), but let's ensure it's visible
+        order = None
+        for attempt in range(3):  # Try up to 3 times
+            order = Order.query.filter_by(
+                beat_id=beat.id,
+                buyer_id=current_user.id,
+                status=OrderStatus.paid
+            ).order_by(Order.created_at.desc()).first()
+            
+            if order:
+                app.logger.info(f"Found order {order.id} on attempt {attempt + 1}")
+                break
+            
+            # If not found, wait a bit and try again
+            import time
+            time.sleep(0.2)
+            db.session.expire_all()
+        
+        # Final query attempt
+        if not order:
+            order = Order.query.filter_by(
+                beat_id=beat.id,
+                buyer_id=current_user.id,
+                status=OrderStatus.paid
+            ).order_by(Order.created_at.desc()).first()
+        
+        if not order:
+            # Order should exist, but if it doesn't, try to create it manually
+            app.logger.error(f"Order not found after creation for beat {beat.id}, user {current_user.id}, session_id {session_id}")
+            # Try one more time with a broader query to see what orders exist
+            all_user_orders = Order.query.filter_by(buyer_id=current_user.id, status=OrderStatus.paid).all()
+            app.logger.error(f"User has {len(all_user_orders)} total paid orders")
+            for o in all_user_orders:
+                app.logger.error(f"  - Order {o.id}: beat_id={o.beat_id}, created_at={o.created_at}")
+            
+            # Try to create order directly (transaction might have failed silently)
+            try:
+                app.logger.warning(f"Attempting to create order manually for beat {beat.id}")
+                final_subtotal = subtotal_cents if subtotal_cents > 0 else int(beat.price_cents or 0)
+                order = Order(
+                    beat_id=beat.id,
+                    buyer_id=current_user.id,
+                    seller_id=seller.id,
+                    amount_cents=final_subtotal,
+                    status=OrderStatus.paid
+                )
+                db.session.add(order)
+                db.session.commit()
+                app.logger.info(f"Manually created order {order.id}")
+            except Exception as e:
+                app.logger.error(f"Failed to manually create order: {str(e)}")
+                # Even if order creation fails, show success page with beat info
+                # Payment was successful, so they should have access
+                app.logger.warning(f"Showing success page without order for beat {beat.id} - payment was successful")
+                final_subtotal = subtotal_cents if subtotal_cents > 0 else int(beat.price_cents or 0)
+                final_total = total_cents if total_cents > 0 else final_subtotal
+                return render_template(
+                    "checkout_success.html",
+                    order=None,  # No order object, but we'll handle it in template
+                    beat=beat,
+                    seller=seller,
+                    subtotal_cents=final_subtotal,
+                    platform_fee_cents=platform_fee_cents,
+                    processing_fee_cents=processing_fee_cents,
+                    total_cents=final_total,
+                    stripe_session_id=session_id,
+                )
+        
+        app.logger.info(f"Successfully retrieved order {order.id} after Stripe checkout for user {current_user.id}, beat {beat.id}")
+        
+        # Ensure beat is loaded
+        if not order.beat:
+            beat_check = Beat.query.get(beat.id)
+        else:
+            beat_check = order.beat
+        
+        # Render success page with order details
+        return render_template(
+            "checkout_success.html",
+            order=order,
+            beat=beat_check,
+            seller=seller,
+            subtotal_cents=subtotal_cents,
+            platform_fee_cents=platform_fee_cents,
+            processing_fee_cents=processing_fee_cents,
+            total_cents=total_cents,
+            stripe_session_id=session_id,
+        )
+        
+    except stripe.error.StripeError as e:
+        app.logger.error(f"Stripe error retrieving checkout session: {str(e)}")
+        flash("Error verifying payment. Please contact support if payment was charged.", "error")
+        return redirect(url_for("market_index"))
+    except Exception as e:
+        app.logger.error(f"Unexpected error processing checkout success: {str(e)}", exc_info=True)
+        # Try to extract beat_id from session_id or metadata if possible
+        try:
+            checkout_session = stripe.checkout.Session.retrieve(session_id)
+            metadata = checkout_session.metadata or {}
+            beat_id = metadata.get("beat_id")
+            if beat_id:
+                beat_id = int(beat_id)
+                beat = Beat.query.get(beat_id)
+                if beat:
+                    # Show success page even with error - payment was successful
+                    app.logger.warning(f"Showing success page despite error for beat {beat_id}")
+                    seller = User.query.get(beat.owner_id) if beat.owner_id else None
+                    return render_template(
+                        "checkout_success.html",
+                        order=None,
+                        beat=beat,
+                        seller=seller or User.query.first(),
+                        subtotal_cents=0,
+                        platform_fee_cents=0,
+                        processing_fee_cents=0,
+                        total_cents=0,
+                        stripe_session_id=session_id,
+                    )
+        except Exception as e2:
+            app.logger.error(f"Error trying to show fallback success page: {str(e2)}")
+        flash("An error occurred processing your purchase. Please check My Purchases for your order.", "error")
+        return redirect(url_for("market_my_purchases"))
+
+
+@app.route("/checkout/hold-fee/success", methods=["GET"])
+@login_required
+def checkout_hold_fee_success():
+    """
+    Handle successful Stripe checkout for hold fee payment.
+    This URL is publicly accessible (Stripe can redirect here), but requires
+    user authentication to process the payment completion.
+    """
+    session_id = request.args.get("session_id")
+    if not session_id:
+        flash("Invalid checkout session.", "error")
+        return redirect(url_for("bookme_requests"))
+    
+    if not STRIPE_AVAILABLE or not STRIPE_SECRET_KEY:
+        flash("Payment processing is not available.", "error")
+        return redirect(url_for("bookme_requests"))
+    
+    try:
+        # Retrieve the checkout session from Stripe
+        checkout_session = stripe.checkout.Session.retrieve(session_id)
+        
+        # Verify the session belongs to the current user
+        if checkout_session.client_reference_id and f"user_{current_user.id}" not in checkout_session.client_reference_id:
+            flash("This checkout session does not belong to you.", "error")
+            return redirect(url_for("bookme_requests"))
+        
+        # Check if payment was successful
+        if checkout_session.payment_status != "paid":
+            flash("Payment was not completed.", "error")
+            return redirect(url_for("bookme_requests"))
+        
+        # Extract metadata
+        metadata = checkout_session.metadata or {}
+        req_id = metadata.get("booking_request_id")
+        purpose = metadata.get("purpose")
+        
+        if purpose != "bookme_hold" or not req_id:
+            flash("Invalid checkout session metadata.", "error")
+            return redirect(url_for("bookme_requests"))
+        
+        try:
+            req_id = int(req_id)
+        except (ValueError, TypeError):
+            flash("Invalid booking request ID in checkout session.", "error")
+            return redirect(url_for("bookme_requests"))
+        
+        # Get booking request
+        req = BookingRequest.query.get(req_id)
+        if not req:
+            flash("Booking request not found.", "error")
+            return redirect(url_for("bookme_requests"))
+        
+        if req.client_id != current_user.id:
+            flash("You can only pay for your own booking requests.", "error")
+            return redirect(url_for("bookme_requests"))
+        
+        if req.booking_id:
+            flash("Hold fee already paid for this booking request.", "info")
+            return redirect(url_for("bookme_requests"))
+        
+        hold_fee_cents = int(metadata.get("hold_fee_cents", HOLD_FEE_CENTS))
+        provider = User.query.get(req.provider_id)
+        if not provider:
+            flash("Provider not found.", "error")
+            return redirect(url_for("bookme_requests"))
+        
+        # Generate idempotency key
+        idempotency_key = generate_idempotency_key("stripe_hold_fee", current_user.id, req_id=req_id, session_id=session_id)
+        
+        # Check for existing transaction
+        existing_result = check_idempotency(idempotency_key, "stripe_hold_fee", current_user.id)
+        if existing_result:
+            flash("This hold fee payment was already processed.", "info")
+            return redirect(url_for("bookme_requests"))
+        
+        # Process hold fee payment and create booking
+        client_w = get_or_create_wallet(current_user.id, commit=False, lock=False)
+        
+        try:
+            with db_txn():
+                # Re-check booking request status within transaction
+                if db.engine.dialect.name == "postgresql":
+                    req_check = BookingRequest.query.filter_by(id=req_id).with_for_update().first()
+                    client_w = Wallet.query.filter_by(user_id=current_user.id).with_for_update().first()
+                else:
+                    req_check = BookingRequest.query.filter_by(id=req_id).first()
+                    client_w = Wallet.query.filter_by(user_id=current_user.id).first()
+                
+                if not req_check:
+                    raise ValueError("request_not_found")
+                
+                if req_check.booking_id:
+                    raise ValueError("already_paid")
+                
+                if req_check.status != BookingStatus.accepted:
+                    raise ValueError("not_accepted")
+                
+                if not client_w:
+                    client_w = Wallet(user_id=current_user.id)
+                    db.session.add(client_w)
+                    db.session.flush()
+                
+                # Create Booking from BookingRequest
+                # Parse preferred_time to get event_datetime
+                event_datetime = None
+                try:
+                    if " " in req_check.preferred_time:
+                        event_datetime = datetime.strptime(req_check.preferred_time, "%Y-%m-%d %H:%M")
+                    else:
+                        event_datetime = datetime.strptime(req_check.preferred_time, "%Y-%m-%d")
+                except ValueError:
+                    # Fallback to current time if parsing fails
+                    event_datetime = datetime.utcnow()
+                
+                booking = Booking(
+                    provider_id=req_check.provider_id,
+                    provider_role=provider.role,
+                    client_id=current_user.id,
+                    event_title=f"Booking with @{provider.username}",
+                    event_datetime=event_datetime,
+                    total_cents=None,  # Full payment amount set later
+                    status=BOOKING_STATUS_CONFIRMED,  # Confirmed after hold fee payment
+                    notes_from_client=req_check.message,
+                )
+                db.session.add(booking)
+                db.session.flush()
+                
+                # Link booking request to booking
+                req_check.booking_id = booking.id
+                req_check.status = BookingStatus.confirmed
+                
+                # Hold fee is held in escrow (deducted from client wallet)
+                # This will be released/refunded based on booking completion
+                post_ledger(
+                    client_w,
+                    EntryType.purchase_spend,
+                    hold_fee_cents,
+                    meta=f"hold fee for booking #{booking.id} with @{provider.username} (Stripe payment - held in escrow)"
+                )
+                
+                # Store idempotency result
+                store_idempotency_result(
+                    idempotency_key,
+                    "stripe_hold_fee",
+                    current_user.id,
+                    {"status": "success", "booking_id": booking.id, "req_id": req_id, "stripe_session_id": session_id},
+                    commit=False
+                )
+                
+                # Create notification for provider
+                notify_user(
+                    provider,
+                    kind="success",
+                    title="Hold fee paid - Booking confirmed!",
+                    body=f"@{current_user.username} paid the hold fee. Booking is now confirmed for {req_check.preferred_time}",
+                    url=url_for("booking_detail", booking_id=booking.id),
+                    commit=False
+                )
+        
+        except ValueError as e:
+            error_msg = str(e)
+            if error_msg == "already_paid":
+                flash("Hold fee already paid for this booking request.", "info")
+            elif error_msg == "not_accepted":
+                flash("Booking request must be accepted before paying hold fee.", "error")
+            else:
+                flash("Unable to process hold fee payment.", "error")
+            return redirect(url_for("bookme_requests"))
+        except IntegrityError:
+            flash("This hold fee payment was already processed.", "info")
+            return redirect(url_for("bookme_requests"))
+        
+        # Refresh booking from database to ensure it's accessible
+        db.session.refresh(booking)
+        db.session.refresh(req_check)
+        
+        # Render success page with booking details
+        return render_template(
+            "checkout_hold_fee_success.html",
+            booking=booking,
+            booking_request=req_check,
+            provider=provider,
+            hold_fee_cents=hold_fee_cents,
+            stripe_session_id=session_id,
+        )
+        
+    except stripe.error.StripeError as e:
+        app.logger.error(f"Stripe error retrieving checkout session: {str(e)}")
+        flash("Error verifying payment. Please contact support if payment was charged.", "error")
+        return redirect(url_for("bookme_requests"))
+    except Exception as e:
+        app.logger.error(f"Unexpected error processing hold fee checkout success: {str(e)}")
+        flash("An error occurred processing your payment.", "error")
+        return redirect(url_for("bookme_requests"))
 
 
 @app.route("/market/confirm/<int:beat_id>", methods=["GET"])
 @login_required
 def market_confirm(beat_id):
-    """Purchase confirmation page - shows purchase details before processing"""
+    """Order preview page - shows order details before proceeding to checkout"""
     if not require_kyc_approved():
         return redirect(url_for("kyc"))
 
@@ -4328,23 +6161,40 @@ def market_confirm(beat_id):
         flash("You already purchased this beat. Check \"My purchases\".", "info")
         return redirect(url_for("market_my_purchases"))
 
-    price_cents = int(beat.price_cents or 0)
-    price_dollars = price_cents / 100.0
+    subtotal_cents = int(beat.price_cents or 0)
+    breakdown = fee_breakdown_for_beat(subtotal_cents)
+    
+    # Convert to dollars for template
+    subtotal_dollars = cents_to_dollars(breakdown["subtotal_cents"])
+    platform_fee_dollars = cents_to_dollars(breakdown["platform_fee_cents"])
+    processing_fee_dollars = cents_to_dollars(breakdown["processing_fee_cents"])
+    total_dollars = cents_to_dollars(breakdown["total_cents"])
+    
+    # Extract for wallet check
+    total_cents = breakdown["total_cents"]
+    platform_fee_cents = breakdown["platform_fee_cents"]
+    processing_fee_cents = breakdown["processing_fee_cents"]
     
     # Get wallet balance
     buyer_w = get_or_create_wallet(current_user.id, commit=False)
     balance_cents = wallet_balance_cents(buyer_w)
-    balance_dollars = balance_cents / 100.0
+    balance_dollars = cents_to_dollars(balance_cents)
     
-    # Check if sufficient funds
-    has_sufficient_funds = balance_cents >= price_cents
+    # Check if sufficient funds (must cover total, not just subtotal)
+    has_sufficient_funds = balance_cents >= total_cents
     
     return render_template(
         "market_confirm.html",
         beat=beat,
         seller=seller,
-        price_cents=price_cents,
-        price_dollars=price_dollars,
+        subtotal_cents=subtotal_cents,
+        subtotal_dollars=subtotal_dollars,
+        platform_fee_cents=platform_fee_cents,
+        platform_fee_dollars=platform_fee_dollars,
+        processing_fee_cents=processing_fee_cents,
+        processing_fee_dollars=processing_fee_dollars,
+        total_cents=total_cents,
+        total_dollars=total_dollars,
         balance_dollars=balance_dollars,
         has_sufficient_funds=has_sufficient_funds,
         is_exclusive=(beat.license == "exclusive"),
@@ -4388,18 +6238,44 @@ def market_buy(beat_id):
         flash("You already purchased this beat. Check \"My purchases\".", "info")
         return redirect(url_for("market_my_purchases"))
 
-    price_cents = int(beat.price_cents or 0)
-    if price_cents < 0:
+    subtotal_cents = int(beat.price_cents or 0)
+    if subtotal_cents < 0:
         flash("Invalid beat price.", "error")
         return redirect(url_for("market_index"))
 
-    if price_cents == 0:
+    # Calculate fees using breakdown helper
+    breakdown = fee_breakdown_for_beat(subtotal_cents)
+    platform_fee_cents = breakdown["platform_fee_cents"]
+    processing_fee_cents = breakdown["processing_fee_cents"]
+    total_cents = breakdown["total_cents"]
+    
+    # Generate idempotency key (for paid purchases)
+    if subtotal_cents > 0:
+        idempotency_key = generate_idempotency_key("beat_purchase", current_user.id, beat_id=beat.id)
+        # Check for existing transaction
+        existing_result = check_idempotency(idempotency_key, "beat_purchase", current_user.id)
+        if existing_result:
+            flash("This purchase was already processed.", "info")
+            return redirect(url_for("market_my_purchases"))
+
+    if subtotal_cents == 0:
         try:
             with db_txn():
-                # Re-check exclusive beat status within transaction
-                beat_check = Beat.query.filter_by(id=beat.id).with_for_update().first()
+                # Row-level locking on Postgres for beat (prevents duplicate free purchases)
+                if db.engine.dialect.name == "postgresql":
+                    beat_check = Beat.query.filter_by(id=beat.id).with_for_update().first()
+                else:
+                    beat_check = Beat.query.filter_by(id=beat.id).first()
+                
+                if not beat_check:
+                    raise ValueError("beat_not_found")
+                
                 if beat_check.license == "exclusive" and not beat_check.is_active:
                     raise ValueError("sold_out")
+                
+                # Check for duplicate purchase
+                if _user_has_paid_for_beat(current_user.id, beat.id):
+                    raise ValueError("already_purchased")
                 
                 order = Order(beat_id=beat.id, buyer_id=current_user.id, seller_id=seller.id, amount_cents=0, status=OrderStatus.paid)
                 db.session.add(order)
@@ -4421,40 +6297,108 @@ def market_buy(beat_id):
         flash("Added to your purchases!", "success")
         return redirect(url_for("market_my_purchases"))
 
-    buyer_w = get_or_create_wallet(current_user.id, commit=False)
-    seller_w = get_or_create_wallet(seller.id, commit=False)
+    # Get wallets with row-level locking on Postgres (inside transaction)
+    buyer_w = get_or_create_wallet(current_user.id, commit=False, lock=False)
+    seller_w = get_or_create_wallet(seller.id, commit=False, lock=False)
 
     try:
         with db_txn():
-            # Re-check beat status within transaction (with lock)
-            beat_check = Beat.query.filter_by(id=beat.id).with_for_update().first()
+            # Re-check beat status within transaction (with lock on Postgres)
+            if db.engine.dialect.name == "postgresql":
+                beat_check = Beat.query.filter_by(id=beat.id).with_for_update().first()
+                # Re-fetch wallets with locks inside transaction
+                buyer_w = Wallet.query.filter_by(user_id=current_user.id).with_for_update().first()
+                seller_w = Wallet.query.filter_by(user_id=seller.id).with_for_update().first()
+            else:
+                # SQLite: best-effort (no with_for_update support, rely on idempotency + constraints)
+                beat_check = Beat.query.filter_by(id=beat.id).first()
+                buyer_w = Wallet.query.filter_by(user_id=current_user.id).first()
+                seller_w = Wallet.query.filter_by(user_id=seller.id).first()
+            
+            # Ensure wallets exist (create if missing)
+            if not buyer_w:
+                buyer_w = Wallet(user_id=current_user.id)
+                db.session.add(buyer_w)
+                db.session.flush()
+            if not seller_w:
+                seller_w = Wallet(user_id=seller.id)
+                db.session.add(seller_w)
+                db.session.flush()
+            
             if beat_check.license == "exclusive" and not beat_check.is_active:
                 raise ValueError("sold_out")
             
             if _user_has_paid_for_beat(current_user.id, beat.id):
                 raise ValueError("already_purchased")
-            if wallet_balance_cents(buyer_w) < price_cents:
+            if wallet_balance_cents(buyer_w) < total_cents:
                 raise ValueError("insufficient_funds")
 
-            post_ledger(buyer_w, EntryType.purchase_spend, price_cents, meta=f"buy beat #{beat.id} '{(beat.title or '')[:80]}'")
-            post_ledger(seller_w, EntryType.sale_income, price_cents, meta=f"sale beat #{beat.id} to @{current_user.username}")
+            # Buyer pays total (subtotal + platform fee + processing fee)
+            # Meta includes breakdown for transparency
+            post_ledger(
+                buyer_w, 
+                EntryType.purchase_spend, 
+                total_cents, 
+                meta=f"buy beat #{beat.id} '{(beat.title or '')[:80]}' | subtotal=${format_cents_dollars(subtotal_cents)} fee=${format_cents_dollars(platform_fee_cents)} proc=${format_cents_dollars(processing_fee_cents)}"
+            )
+            
+            # Seller receives subtotal only
+            post_ledger(
+                seller_w, 
+                EntryType.sale_income, 
+                subtotal_cents, 
+                meta=f"sale beat #{beat.id} to @{current_user.username}"
+            )
+            
+            # Platform collects service fee into platform wallet
+            if platform_fee_cents > 0:
+                platform_user_id = get_platform_fee_wallet_user_id()
+                if platform_user_id:
+                    # Lock platform wallet on Postgres
+                    if db.engine.dialect.name == "postgresql":
+                        platform_w = Wallet.query.filter_by(user_id=platform_user_id).with_for_update().first()
+                    else:
+                        platform_w = Wallet.query.filter_by(user_id=platform_user_id).first()
+                    
+                    if not platform_w:
+                        platform_w = Wallet(user_id=platform_user_id)
+                        db.session.add(platform_w)
+                        db.session.flush()
+                    
+                    post_ledger(
+                        platform_w,
+                        EntryType.adjustment,
+                        platform_fee_cents,
+                        meta=f"platform fee for beat #{beat.id} order"
+                    )
 
-            order = Order(beat_id=beat.id, buyer_id=current_user.id, seller_id=seller.id, amount_cents=price_cents, status=OrderStatus.paid)
+            # Order.amount_cents stores subtotal (beat price) only
+            order = Order(beat_id=beat.id, buyer_id=current_user.id, seller_id=seller.id, amount_cents=subtotal_cents, status=OrderStatus.paid)
             db.session.add(order)
+            db.session.flush()  # Flush to get order.id before commit
             
             # Mark exclusive beat as inactive after purchase
             if beat_check.license == "exclusive":
                 beat_check.is_active = False
                 beat_check.updated_at = datetime.utcnow()
             
-            # Notify seller
-            notify_user(
-                seller,
+            # Store idempotency result
+            store_idempotency_result(
+                idempotency_key,
+                "beat_purchase",
+                current_user.id,
+                {"status": "success", "order_id": order.id, "beat_id": beat.id, "amount_cents": total_cents},
+                commit=False
+            )
+            
+            # Create notification (but don't commit - will commit after transaction)
+            notif = create_notification(
+                seller.id,
                 kind="success",
                 title="Beat sold!",
                 body=f"@{current_user.username} purchased '{beat_check.title}'",
                 url=url_for("producer_market_mine"),
-                email=True
+                commit=False
             )
 
     except ValueError as e:
@@ -4474,15 +6418,12 @@ def market_buy(beat_id):
         flash("This purchase was already processed.", "info")
         return redirect(url_for("market_my_purchases"))
 
-    # Notify seller
-    notify_user(
-        seller,
-        kind="success",
-        title="Beat sold!",
-        body=f"@{current_user.username} purchased '{beat.title}'",
-        url=url_for("producer_market_mine"),
-        email=True
-    )
+    # Send notification email (after transaction commit)
+    try:
+        send_notification_email(notif, seller)
+    except Exception:
+        # Email failure should not block the purchase
+        pass
 
     flash("Purchase complete! You now have download access.", "success")
     return redirect(url_for("market_my_purchases"))
@@ -4742,6 +6683,22 @@ def producer_market_delete(beat_id):
     if beat.stems_path:
         _safe_remove(beat.stems_path)
     
+    # Archive Stripe product and price if they exist
+    if STRIPE_AVAILABLE and STRIPE_SECRET_KEY:
+        try:
+            if beat.stripe_price_id:
+                try:
+                    stripe.Price.modify(beat.stripe_price_id, active=False)
+                except stripe.error.InvalidRequestError:
+                    pass  # Price already deleted
+            if beat.stripe_product_id:
+                try:
+                    stripe.Product.modify(beat.stripe_product_id, active=False)
+                except stripe.error.InvalidRequestError:
+                    pass  # Product already deleted
+        except Exception as e:
+            app.logger.warning(f"Error archiving Stripe product/price for beat {beat.id}: {str(e)}")
+    
     db.session.delete(beat)
     db.session.commit()
     flash("Beat deleted from marketplace.", "success")
@@ -4829,14 +6786,14 @@ def market_upload():
                 beat.cover_path = cover_path
             else:
                 flash("Invalid cover image format. Please use PNG, JPG, or JPEG.", "error")
+                return render_template("market_upload.html")
         
-        # Save preview audio file
+        # Save preview audio file (required)
         audio_path = _save_file(audio_file, ALLOWED_AUDIO)
-        if audio_path:
-            beat.preview_path = audio_path
-        else:
+        if not audio_path:
             flash("Invalid audio file format. Please use MP3, WAV, M4A, or OGG.", "error")
             return render_template("market_upload.html")
+        beat.preview_path = audio_path
         
         # Save deliverable file (stems/deliverable)
         if deliverable_file and deliverable_file.filename:
@@ -4857,6 +6814,12 @@ def market_upload():
                 return render_template("market_upload.html")
         
         db.session.add(beat)
+        db.session.flush()  # Flush to get beat.id before Stripe sync
+        
+        # Sync to Stripe (create Product and Price)
+        if beat.price_cents > 0:
+            sync_beat_to_stripe(beat, commit=False)
+        
         db.session.commit()
         
         flash("Beat uploaded successfully to the marketplace!", "success")
@@ -5144,6 +7107,46 @@ def admin_job_applications_for_job(job_id):
     job = JobPost.query.get_or_404(job_id)
     applications = JobApplication.query.filter_by(job_id=job_id).order_by(JobApplication.created_at.desc()).all()
     return render_template("admin/jobs/applications.html", job=job, applications=applications)
+
+
+@app.route("/dashboard/admin/waitlist", endpoint="admin_waitlist")
+@role_required("admin")
+def admin_waitlist():
+    """View waitlist entries (last 200)"""
+    entries = WaitlistEntry.query.order_by(WaitlistEntry.created_at.desc()).limit(200).all()
+    total_count = WaitlistEntry.query.count()
+    return render_template("admin/waitlist.html", entries=entries, total_count=total_count)
+
+
+@app.route("/dashboard/admin/waitlist/export", endpoint="admin_waitlist_export")
+@role_required("admin")
+def admin_waitlist_export():
+    """Export waitlist entries as CSV"""
+    entries = WaitlistEntry.query.order_by(WaitlistEntry.created_at.desc()).all()
+    
+    output = StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["ID", "Email", "Full Name", "Role Interest", "Note", "IP", "User Agent", "Created At"])
+    
+    for entry in entries:
+        writer.writerow([
+            entry.id,
+            entry.email,
+            entry.full_name or "",
+            entry.role_interest or "",
+            entry.note or "",
+            entry.ip or "",
+            entry.user_agent or "",
+            entry.created_at.isoformat() if entry.created_at else ""
+        ])
+    
+    output.seek(0)
+    response = Response(
+        output.getvalue(),
+        mimetype="text/csv",
+        headers={"Content-Disposition": "attachment; filename=waitlist_export.csv"}
+    )
+    return response
 
 
 @app.route("/dashboard/admin/applications/<int:app_id>/status", methods=["POST"], endpoint="admin_job_application_status")
