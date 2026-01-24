@@ -1,41 +1,25 @@
-# Python
+# Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
 *$py.class
-*.so
-.Python
-venv/
-env/
-ENV/
-.venv
 
-# Flask
+# Virtual environments
+venv/
+.env
+.env.*
+.venv/
+
+# SQLite / local data
 instance/
 *.db
-*.sqlite
-*.sqlite3
 
-# Environment variables
-.env
-.env.local
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-
-# OS
-.DS_Store
-Thumbs.db
+# Flask uploads
+uploads/
 
 # Logs
 *.log
 
-# Uploads (local development only - use cloud storage in production)
-uploads/*
-!uploads/.gitkeep
-
-# Migration files (keep SQL files, ignore temp Python migration scripts if needed)
-# migrate_*.py  # Uncomment if you don't want to commit migration scripts
+# OS / editor junk
+.DS_Store
+Thumbs.db
+.vscode/

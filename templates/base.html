@@ -7,6 +7,12 @@
 
   <title>{% block title %}BeatFund{% endblock %}</title>
 
+  {# Favicon - BeatFund BF Logo (gradient with bf symbol) #}
+  <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='favicon.png') }}">
+  <link rel="icon" type="image/png" sizes="16x16" href="{{ url_for('static', filename='favicon.png') }}">
+  <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}">
+  <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='favicon.png') }}">
+
   <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
   {% block extra_head %}{% endblock %}
 </head>
@@ -14,16 +20,18 @@
 <body>
 <header class="top-nav">
   <div class="nav-left">
-    <div class="brand-text">
-      <div class="brand-main">BEATFUND</div>
-      <div class="brand-sub">
-        {% if current_user.is_authenticated and current_user.role == RoleEnum.admin %}
-          Admin
-        {% else %}
-          Fintech for Creators
-        {% endif %}
+    <a href="{% if current_user.is_authenticated %}{{ url_for('route_to_dashboard') }}{% else %}{{ url_for('home') }}{% endif %}" style="text-decoration: none; color: inherit; display: block; cursor: pointer; transition: opacity 0.2s;" onmouseover="this.style.opacity='0.8'" onmouseout="this.style.opacity='1'">
+      <div class="brand-text">
+        <div class="brand-main">BEATFUND</div>
+        <div class="brand-sub">
+          {% if current_user.is_authenticated and current_user.role == RoleEnum.admin %}
+            Admin
+          {% else %}
+            Fintech for Creators
+          {% endif %}
+        </div>
       </div>
-    </div>
+    </a>
   </div>
 
   {# Desktop admin nav (hidden on mobile by CSS) #}
@@ -35,6 +43,8 @@
       <a href="{{ url_for('admin_transactions') }}">Transactions</a>
       <a href="{{ url_for('admin_tickets') }}">Tickets</a>
       <a href="{{ url_for('admin_reports') }}">Reports</a>
+      <a href="{{ url_for('admin_waitlist') }}">Waitlist</a>
+      <a href="{{ url_for('opportunities') }}">Opportunities</a>
       {% if current_user.is_superadmin %}
         <a href="{{ url_for('admin_team') }}">Admin Team</a>
       {% endif %}
@@ -45,11 +55,37 @@
   <div class="nav-right">
     {% if current_user.is_authenticated %}
       <span class="nav-username">@{{ current_user.username }}</span>
-      <a href="{{ url_for('route_to_dashboard') }}">Dashboard</a>
-      <a href="{{ url_for('market_index') }}">Market</a>
-      <a href="{{ url_for('bookme_search') }}">BookMe</a>
-            <a href="{{ url_for('wallet_home') }}">Wallet</a>
-      <a href="{{ url_for('opportunities') }}">Opportunities</a>
+      {% if current_user.role != RoleEnum.admin %}
+        <a href="{{ url_for('route_to_dashboard') }}">Dashboard</a>
+        <a href="{{ url_for('market_index') }}">Market</a>
+        <a href="{{ url_for('market_my_purchases') }}">My Purchases</a>
+        <a href="{{ url_for('bookme_search') }}">BookMe</a>
+        <a href="{{ url_for('wallet_home') }}">Wallet</a>
+        <a href="{{ url_for('opportunities') }}">Opportunities</a>
+      {% endif %}
+
+      {# Notifications bell #}
+      <div class="notifications-bell-container" style="position: relative; display: inline-block;">
+        <button id="notificationsBell" class="notifications-bell" type="button" aria-label="Notifications" style="background: none; border: none; cursor: pointer; padding: 8px; position: relative;">
+          <span style="font-size: 20px;">🔔</span>
+          <span id="notificationsBadge" class="notifications-badge" style="display: none; position: absolute; top: 4px; right: 4px; background: #ef4444; color: white; border-radius: 50%; width: 18px; height: 18px; font-size: 11px; font-weight: bold; align-items: center; justify-content: center; line-height: 1;">0</span>
+        </button>
+        <div id="notificationsDropdown" class="notifications-dropdown" style="display: none; position: absolute; right: 0; top: 100%; margin-top: 8px; background: white; border: 1px solid #ddd; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); min-width: 320px; max-width: 400px; max-height: 500px; overflow-y: auto; z-index: 1000;">
+          <div style="padding: 12px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center;">
+            <strong>Notifications</strong>
+            <form method="POST" action="{{ url_for('mark_all_notifications_read_route') }}" style="display: inline; margin: 0;">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button type="submit" style="background: none; border: none; color: #4f8bff; cursor: pointer; font-size: 12px; padding: 0;">Mark all read</button>
+            </form>
+          </div>
+          <div id="notificationsList" style="max-height: 400px; overflow-y: auto;">
+            <div style="padding: 20px; text-align: center; color: #999;">Loading...</div>
+          </div>
+          <div style="padding: 8px; border-top: 1px solid #eee; text-align: center;">
+            <a href="{{ url_for('notifications_page') }}" style="color: #4f8bff; text-decoration: none; font-size: 13px;">View all notifications</a>
+          </div>
+        </div>
+      </div>
 
       <form method="get" action="{{ url_for('logout_get') }}" class="logout-form">
         <button type="submit" class="nav-link-button">Logout</button>
@@ -78,13 +114,16 @@
       <button class="mobile-close" type="button" aria-label="Close menu">✕</button>
     </div>
 
-    <div class="mobile-menu-section">
-      <a href="{{ url_for('route_to_dashboard') }}">Dashboard</a>
-      <a href="{{ url_for('market_index') }}">Market</a>
-      <a href="{{ url_for('bookme_search') }}">BookMe</a>
-            <a href="{{ url_for('wallet_home') }}">Wallet</a>
-      <a href="{{ url_for('opportunities') }}">Opportunities</a>
-    </div>
+    {% if current_user.role != RoleEnum.admin %}
+      <div class="mobile-menu-section">
+        <a href="{{ url_for('route_to_dashboard') }}">Dashboard</a>
+        <a href="{{ url_for('market_index') }}">Market</a>
+        <a href="{{ url_for('market_my_purchases') }}">My Purchases</a>
+        <a href="{{ url_for('bookme_search') }}">BookMe</a>
+        <a href="{{ url_for('wallet_home') }}">Wallet</a>
+        <a href="{{ url_for('opportunities') }}">Opportunities</a>
+      </div>
+    {% endif %}
 
     {% if current_user.role == RoleEnum.admin %}
       <div class="mobile-menu-divider"></div>
@@ -95,6 +134,8 @@
         <a href="{{ url_for('admin_transactions') }}">Transactions</a>
         <a href="{{ url_for('admin_tickets') }}">Tickets</a>
         <a href="{{ url_for('admin_reports') }}">Reports</a>
+        <a href="{{ url_for('admin_waitlist') }}">Waitlist</a>
+        <a href="{{ url_for('opportunities') }}">Opportunities</a>
         {% if current_user.is_superadmin %}
           <a href="{{ url_for('admin_team') }}">Admin Team</a>
         {% endif %}
@@ -133,6 +174,35 @@
 
   {% block content %}{% endblock %}
 </main>
+
+<footer class="site-footer">
+  <div class="footer-content">
+    <div class="footer-section">
+      <h3>Legal</h3>
+      <a href="{{ url_for('terms') }}">Terms of Service</a>
+      <a href="{{ url_for('privacy') }}">Privacy Policy</a>
+      <a href="{{ url_for('cookies') }}">Cookie Policy</a>
+      <a href="{{ url_for('aup') }}">Acceptable Use Policy</a>
+    </div>
+    <div class="footer-section">
+      <h3>Policies</h3>
+      <a href="{{ url_for('fees') }}">Fees & Pricing</a>
+      <a href="{{ url_for('refunds') }}">Refund & Cancellation Policy</a>
+      <a href="{{ url_for('payouts') }}">Payout & Withdrawal Policy</a>
+      <a href="{{ url_for('disputes') }}">Dispute Resolution Policy</a>
+    </div>
+    <div class="footer-section">
+      <h3>Compliance</h3>
+      <a href="{{ url_for('kyc_policy') }}">KYC & Identity Verification</a>
+      <a href="{{ url_for('aml') }}">AML & Fraud Prevention</a>
+      <a href="{{ url_for('risk') }}">Risk Disclosure</a>
+    </div>
+    <div class="footer-section">
+      <h3>Company</h3>
+      <a href="{{ url_for('careers') }}">Careers</a>
+    </div>
+  </div>
+</footer>
 
 <script>
   (function () {
@@ -179,6 +249,199 @@
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') closeMenu();
     });
+  })();
+
+  // Notifications bell polling and dropdown (secure version)
+  (function() {
+    const bell = document.getElementById('notificationsBell');
+    const badge = document.getElementById('notificationsBadge');
+    const dropdown = document.getElementById('notificationsDropdown');
+    const list = document.getElementById('notificationsList');
+    
+    if (!bell || !badge || !dropdown || !list) return;
+    
+    let unreadCount = 0;
+    
+    // Update unread count badge
+    function updateUnreadCount() {
+      fetch('/api/notifications/unread-count')
+        .then(r => r.json())
+        .then(data => {
+          unreadCount = data.count || 0;
+          if (unreadCount > 0) {
+            badge.textContent = unreadCount > 99 ? '99+' : String(unreadCount);
+            badge.style.display = 'flex';
+          } else {
+            badge.style.display = 'none';
+          }
+        })
+        .catch(() => {});
+    }
+    
+    // Get kind color safely
+    function getKindColor(kind) {
+      switch (kind) {
+        case 'success': return '#10b981';
+        case 'warning': return '#f59e0b';
+        case 'error': return '#ef4444';
+        default: return '#3b82f6';
+      }
+    }
+    
+    // Render notifications using DOM manipulation (no innerHTML with untrusted data)
+    function renderNotifications(notifications) {
+      // Clear list
+      while (list.firstChild) {
+        list.removeChild(list.firstChild);
+      }
+      
+      if (!notifications || notifications.length === 0) {
+        const emptyDiv = document.createElement('div');
+        emptyDiv.style.cssText = 'padding: 20px; text-align: center; color: #999;';
+        emptyDiv.textContent = 'No notifications';
+        list.appendChild(emptyDiv);
+        return;
+      }
+      
+      notifications.forEach(n => {
+        const row = document.createElement('div');
+        row.style.cssText = 'padding: 12px; border-bottom: 1px solid #eee; cursor: pointer;';
+        if (!n.is_read) {
+          row.style.background = '#f8f9ff';
+        }
+        
+        const contentDiv = document.createElement('div');
+        contentDiv.style.cssText = 'display: flex; justify-content: space-between; align-items: start;';
+        
+        const leftDiv = document.createElement('div');
+        leftDiv.style.flex = '1';
+        
+        const titleDiv = document.createElement('div');
+        titleDiv.style.cssText = 'font-weight: ' + (n.is_read ? 'normal' : 'bold') + '; margin-bottom: 4px;';
+        titleDiv.textContent = n.title || '';
+        
+        const timeDiv = document.createElement('div');
+        timeDiv.style.cssText = 'font-size: 12px; color: #666;';
+        if (n.created_at) {
+          try {
+            timeDiv.textContent = new Date(n.created_at).toLocaleString();
+          } catch (e) {
+            timeDiv.textContent = '';
+          }
+        }
+        
+        leftDiv.appendChild(titleDiv);
+        leftDiv.appendChild(timeDiv);
+        
+        const dotSpan = document.createElement('span');
+        dotSpan.style.cssText = 'display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-left: 8px;';
+        dotSpan.style.backgroundColor = getKindColor(n.kind || 'info');
+        
+        contentDiv.appendChild(leftDiv);
+        contentDiv.appendChild(dotSpan);
+        row.appendChild(contentDiv);
+        
+        // Click handler - mark as read and navigate
+        row.addEventListener('click', function() {
+          const safeUrl = (n.url && n.url.startsWith('/')) ? n.url : null;
+          
+          // Mark as read if unread
+          if (!n.is_read && n.id) {
+            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
+            if (csrfToken) {
+              const formData = new FormData();
+              formData.append('csrf_token', csrfToken);
+              
+              fetch(`/notifications/${n.id}/read`, {
+                method: 'POST',
+                body: formData,
+                credentials: 'same-origin'
+              })
+              .then(response => {
+                if (response.ok) {
+                  // Update UI
+                  row.style.background = '';
+                  titleDiv.style.fontWeight = 'normal';
+                  n.is_read = true;
+                  
+                  // Decrement badge count
+                  unreadCount = Math.max(0, unreadCount - 1);
+                  if (unreadCount > 0) {
+                    badge.textContent = unreadCount > 99 ? '99+' : String(unreadCount);
+                    badge.style.display = 'flex';
+                  } else {
+                    badge.style.display = 'none';
+                  }
+                }
+              })
+              .catch(() => {
+                // Best effort - continue navigation
+              });
+            }
+          }
+          
+          // Navigate
+          if (safeUrl) {
+            window.location.href = safeUrl;
+          } else {
+            window.location.href = '/notifications';
+          }
+        });
+        
+        list.appendChild(row);
+      });
+    }
+    
+    // Load recent notifications (only when dropdown is open)
+    function loadRecentNotifications() {
+      // Show loading state
+      while (list.firstChild) {
+        list.removeChild(list.firstChild);
+      }
+      const loadingDiv = document.createElement('div');
+      loadingDiv.style.cssText = 'padding: 20px; text-align: center; color: #999;';
+      loadingDiv.textContent = 'Loading...';
+      list.appendChild(loadingDiv);
+      
+      fetch('/api/notifications/recent')
+        .then(r => r.json())
+        .then(data => {
+          renderNotifications(data);
+        })
+        .catch(() => {
+          const errorDiv = document.createElement('div');
+          errorDiv.style.cssText = 'padding: 20px; text-align: center; color: #999;';
+          errorDiv.textContent = 'Error loading notifications';
+          while (list.firstChild) {
+            list.removeChild(list.firstChild);
+          }
+          list.appendChild(errorDiv);
+        });
+    }
+    
+    // Toggle dropdown
+    bell.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const isOpen = dropdown.style.display === 'block';
+      dropdown.style.display = isOpen ? 'none' : 'block';
+      
+      if (!isOpen) {
+        // Opening dropdown - refresh count and load recent
+        updateUnreadCount();
+        loadRecentNotifications();
+      }
+    });
+    
+    // Close dropdown when clicking outside
+    document.addEventListener('click', (e) => {
+      if (!dropdown.contains(e.target) && !bell.contains(e.target)) {
+        dropdown.style.display = 'none';
+      }
+    });
+    
+    // Poll unread count every 20 seconds
+    updateUnreadCount();
+    setInterval(updateUnreadCount, 20000);
   })();
 </script>
 

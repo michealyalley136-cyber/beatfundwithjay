@@ -1,0 +1,258 @@
+{% extends "base.html" %}
+{% block title %}Payment Successful · BeatFund{% endblock %}
+
+{% block extra_head %}
+<style>
+  .success-page {
+    max-width: 600px;
+    margin: 40px auto;
+    padding: 0 16px;
+  }
+
+  .success-card {
+    background: rgba(255,255,255,.06);
+    border: 1px solid rgba(255,255,255,.12);
+    border-radius: 18px;
+    padding: 32px;
+    text-align: center;
+  }
+
+  .success-icon {
+    width: 80px;
+    height: 80px;
+    margin: 0 auto 24px;
+    background: linear-gradient(135deg, rgba(34,197,94,.2), rgba(6,182,212,.2));
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 2px solid rgba(34,197,94,.4);
+  }
+
+  .success-icon svg {
+    width: 48px;
+    height: 48px;
+    color: #22c55e;
+  }
+
+  .success-title {
+    font-size: 1.75rem;
+    font-weight: 800;
+    margin: 0 0 8px;
+    background: linear-gradient(135deg, #4de3ff, #a855f7);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  .success-subtitle {
+    opacity: .8;
+    font-size: .95rem;
+    margin-bottom: 32px;
+  }
+
+  .order-info {
+    background: rgba(0,0,0,.2);
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 24px;
+    border: 1px solid rgba(255,255,255,.08);
+    text-align: left;
+  }
+
+  .info-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 0;
+    border-bottom: 1px solid rgba(255,255,255,.08);
+  }
+
+  .info-row:last-child {
+    border-bottom: none;
+    margin-top: 8px;
+    padding-top: 16px;
+    border-top: 2px solid rgba(255,255,255,.15);
+  }
+
+  .info-label {
+    opacity: .8;
+    font-size: .95rem;
+  }
+
+  .info-value {
+    font-weight: 700;
+    font-size: 1.1rem;
+  }
+
+  .info-total {
+    font-size: 1.5rem;
+    background: linear-gradient(135deg, #4de3ff, #a855f7);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  .beat-preview {
+    display: flex;
+    gap: 20px;
+    align-items: center;
+    padding: 20px;
+    background: rgba(0,0,0,.2);
+    border-radius: 12px;
+    margin-bottom: 24px;
+    border: 1px solid rgba(255,255,255,.08);
+  }
+
+  .beat-cover {
+    width: 100px;
+    height: 100px;
+    border-radius: 12px;
+    object-fit: cover;
+    border: 1px solid rgba(255,255,255,.15);
+  }
+
+  .beat-details {
+    flex: 1;
+    text-align: left;
+  }
+
+  .beat-title {
+    font-size: 1.2rem;
+    font-weight: 700;
+    margin: 0 0 6px;
+  }
+
+  .beat-artist {
+    opacity: .8;
+    font-size: .9rem;
+    margin-bottom: 4px;
+  }
+
+  .beat-meta {
+    opacity: .7;
+    font-size: .85rem;
+  }
+
+  .action-buttons {
+    display: flex;
+    gap: 12px;
+    flex-direction: column;
+    margin-top: 32px;
+  }
+
+  .btn {
+    padding: 14px 24px;
+    border-radius: 12px;
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 1rem;
+    text-align: center;
+    transition: all 0.2s ease;
+    border: none;
+    cursor: pointer;
+    display: block;
+  }
+
+  .btn-primary {
+    background: linear-gradient(135deg, rgba(6,182,212,.4), rgba(34,197,94,.3));
+    border: 1px solid rgba(6,182,212,.5);
+    color: #fff;
+  }
+
+  .btn-primary:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(6,182,212,.3);
+  }
+
+  .btn-secondary {
+    background: rgba(255,255,255,.08);
+    border: 1px solid rgba(255,255,255,.12);
+    color: #cbd5f5;
+  }
+
+  .btn-secondary:hover {
+    background: rgba(255,255,255,.12);
+  }
+
+  .order-id {
+    font-size: 0.85rem;
+    opacity: 0.6;
+    margin-top: 16px;
+    padding-top: 16px;
+    border-top: 1px solid rgba(255,255,255,.08);
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="success-page">
+  <div class="success-card">
+    <div class="success-icon">
+      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+      </svg>
+    </div>
+
+    <h1 class="success-title">Payment Successful!</h1>
+    <p class="success-subtitle">Your purchase has been completed successfully and logged in your account</p>
+
+    <div class="beat-preview">
+      <img 
+        class="beat-cover" 
+        src="{{ beat.cover_url or url_for('static', filename='img/beat-placeholder.jpg') }}" 
+        alt="{{ beat.title }}"
+      >
+      <div class="beat-details">
+        <div class="beat-title">{{ beat.title }}</div>
+        <div class="beat-artist">by @{{ seller.username }}</div>
+        <div class="beat-meta">
+          {% if beat.genre %}{{ beat.genre }}{% endif %}
+          {% if beat.genre and beat.bpm %} · {% endif %}
+          {% if beat.bpm %}{{ beat.bpm }} BPM{% endif %}
+        </div>
+      </div>
+    </div>
+
+    <div class="order-info">
+      <div class="info-row">
+        <span class="info-label">Subtotal</span>
+        <span class="info-value">${{ '%.2f'|format(subtotal_cents / 100.0) }}</span>
+      </div>
+      <div class="info-row">
+        <span class="info-label">Service Fee</span>
+        <span class="info-value">${{ '%.2f'|format(platform_fee_cents / 100.0) }}</span>
+      </div>
+      <div class="info-row">
+        <span class="info-label">Processing Fee</span>
+        <span class="info-value">${{ '%.2f'|format(processing_fee_cents / 100.0) }}</span>
+      </div>
+      <div class="info-row">
+        <span class="info-label">Total Paid</span>
+        <span class="info-value info-total">${{ '%.2f'|format(total_cents / 100.0) }}</span>
+      </div>
+    </div>
+
+    <div class="action-buttons">
+      {% if beat.stems_path %}
+        <a href="{{ url_for('market_download', beat_id=beat.id) }}" class="btn btn-primary">
+          ⬇ Download Beat Files
+        </a>
+      {% endif %}
+      <a href="{{ url_for('market_my_purchases') }}" class="btn btn-primary">
+        View My Purchases
+      </a>
+      <a href="{{ url_for('market_index') }}" class="btn btn-secondary">
+        Continue Shopping
+      </a>
+    </div>
+
+    <div class="order-id">
+      {% if order %}
+        Order ID: #{{ order.id }} | 
+      {% endif %}
+      Stripe Session: {{ stripe_session_id[:20] if stripe_session_id else 'N/A' }}...
+    </div>
+  </div>
+</div>
+{% endblock %}

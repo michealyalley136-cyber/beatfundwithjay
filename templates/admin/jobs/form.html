@@ -1,0 +1,180 @@
+{% extends "base.html" %}
+{% block title %}{% if job %}Edit{% else %}New{% endif %} Job Post · BeatFund Admin{% endblock %}
+
+{% block extra_head %}
+<style>
+  .admin-page-title {
+    font-size: 22px;
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+  
+  .form-card {
+    background: linear-gradient(135deg, #0b1220, #020617);
+    border-radius: 16px;
+    border: 1px solid #20263b;
+    padding: 24px;
+    max-width: 800px;
+  }
+  
+  .form-group {
+    margin-bottom: 20px;
+  }
+  
+  .form-label {
+    display: block;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: #9aa4c2;
+    margin-bottom: 6px;
+  }
+  
+  .form-label.required::after {
+    content: " *";
+    color: #ef4444;
+  }
+  
+  .form-input,
+  .form-textarea {
+    width: 100%;
+    padding: 10px 12px;
+    background: #020617;
+    border: 1px solid #1f2937;
+    border-radius: 8px;
+    color: #e5e7eb;
+    font-size: 13px;
+    font-family: inherit;
+  }
+  
+  .form-input:focus,
+  .form-textarea:focus {
+    outline: none;
+    border-color: #4f8bff;
+  }
+  
+  .form-textarea {
+    min-height: 150px;
+    resize: vertical;
+  }
+  
+  .form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+  
+  .form-checkbox {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  
+  .form-checkbox input {
+    width: auto;
+  }
+  
+  .form-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 24px;
+  }
+  
+  .btn-primary {
+    background: linear-gradient(135deg, #4de3ff, #6366f1);
+    color: white;
+    padding: 10px 20px;
+    border-radius: 8px;
+    border: none;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+  }
+  
+  .btn-secondary {
+    background: transparent;
+    color: #9aa4c2;
+    padding: 10px 20px;
+    border-radius: 8px;
+    border: 1px solid #1f2937;
+    font-size: 13px;
+    text-decoration: none;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div style="max-width: 1200px; margin: 32px auto; padding: 0 16px;">
+  <h1 class="admin-page-title">{% if job %}Edit{% else %}New{% endif %} Job Post</h1>
+  
+  <form method="POST" class="form-card">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    
+    <div class="form-group">
+      <label class="form-label required" for="title">Title</label>
+      <input type="text" id="title" name="title" class="form-input" value="{{ job.title if job else '' }}" required maxlength="200">
+    </div>
+    
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label" for="department">Department</label>
+        <input type="text" id="department" name="department" class="form-input" value="{{ job.department if job else '' }}" maxlength="120">
+      </div>
+      
+      <div class="form-group">
+        <label class="form-label" for="location">Location</label>
+        <input type="text" id="location" name="location" class="form-input" value="{{ job.location if job else '' }}" maxlength="120" placeholder="e.g., Remote, Sevierville, TN">
+      </div>
+    </div>
+    
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label" for="employment_type">Employment Type</label>
+        <input type="text" id="employment_type" name="employment_type" class="form-input" value="{{ job.employment_type if job else '' }}" maxlength="80" placeholder="e.g., Full-time, Contract">
+      </div>
+      
+      <div class="form-group">
+        <label class="form-label" for="level">Level</label>
+        <input type="text" id="level" name="level" class="form-input" value="{{ job.level if job else '' }}" maxlength="80" placeholder="e.g., Junior, Senior">
+      </div>
+    </div>
+    
+    <div class="form-group">
+      <label class="form-label required" for="description">Description</label>
+      <textarea id="description" name="description" class="form-textarea" required>{{ job.description if job else '' }}</textarea>
+    </div>
+    
+    <div class="form-group">
+      <label class="form-label" for="responsibilities">Responsibilities</label>
+      <textarea id="responsibilities" name="responsibilities" class="form-textarea">{{ job.responsibilities if job else '' }}</textarea>
+    </div>
+    
+    <div class="form-group">
+      <label class="form-label" for="requirements">Requirements</label>
+      <textarea id="requirements" name="requirements" class="form-textarea">{{ job.requirements if job else '' }}</textarea>
+    </div>
+    
+    <div class="form-group">
+      <label class="form-label" for="nice_to_have">Nice to Have</label>
+      <textarea id="nice_to_have" name="nice_to_have" class="form-textarea">{{ job.nice_to_have if job else '' }}</textarea>
+    </div>
+    
+    <div class="form-group">
+      <label class="form-label" for="how_to_apply">How to Apply (Optional Override)</label>
+      <textarea id="how_to_apply" name="how_to_apply" class="form-textarea">{{ job.how_to_apply if job else '' }}</textarea>
+    </div>
+    
+    <div class="form-group">
+      <div class="form-checkbox">
+        <input type="checkbox" id="is_active" name="is_active" {% if job and job.is_active %}checked{% elif not job %}checked{% endif %}>
+        <label class="form-label" for="is_active" style="margin: 0; text-transform: none;">Active (visible on careers page)</label>
+      </div>
+    </div>
+    
+    <div class="form-actions">
+      <button type="submit" class="btn-primary">{% if job %}Update{% else %}Create{% endif %} Job Post</button>
+      <a href="{{ url_for('admin_jobs') }}" class="btn-secondary">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

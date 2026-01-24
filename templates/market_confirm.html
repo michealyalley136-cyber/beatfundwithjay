@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Confirm Purchase · BeatFund{% endblock %}
+{% block title %}Order Preview · BeatFund{% endblock %}
 
 {% block extra_head %}
 <style>
@@ -182,14 +182,31 @@
   }
 
   .btn-primary:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(6,182,212,.3);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(6,182,212,.4);
   }
 
   .btn-primary:disabled {
     opacity: .5;
     cursor: not-allowed;
     transform: none;
+  }
+
+  .checkout-button {
+    background: linear-gradient(135deg, rgba(6,182,212,.5), rgba(34,197,94,.4));
+    border: 2px solid rgba(6,182,212,.6);
+    box-shadow: 0 4px 15px rgba(6,182,212,.2);
+    position: relative;
+  }
+
+  .checkout-button:hover:not(:disabled) {
+    background: linear-gradient(135deg, rgba(6,182,212,.6), rgba(34,197,94,.5));
+    border-color: rgba(6,182,212,.8);
+    box-shadow: 0 6px 25px rgba(6,182,212,.3);
+  }
+
+  .checkout-button:active:not(:disabled) {
+    transform: translateY(0);
   }
 
   .btn-secondary {
@@ -208,8 +225,23 @@
 <div class="confirm-page">
   <div class="confirm-card">
     <div class="confirm-header">
-      <h1 class="confirm-title">Confirm Purchase</h1>
-      <p class="confirm-subtitle">Review your purchase details before confirming</p>
+      <h1 class="confirm-title">Order Preview</h1>
+      <p class="confirm-subtitle">Review your order details before proceeding to checkout</p>
+    </div>
+
+    <div style="margin-bottom: 24px; padding: 16px; background: rgba(251,191,36,.1); border: 1px solid rgba(251,191,36,.3); border-radius: 12px;">
+      <div style="display: flex; align-items: start; gap: 12px;">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: #fbbf24; flex-shrink: 0; margin-top: 2px;">
+          <path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+        </svg>
+        <div>
+          <div style="font-weight: 600; margin-bottom: 4px; color: #fbbf24;">Important: Order Finalization</div>
+          <div style="font-size: 0.9rem; opacity: 0.9; line-height: 1.5;">
+            Once you proceed to checkout, this order will be finalized and cannot be modified. 
+            You'll need to create a new order if you want to make changes. Please review all details carefully.
+          </div>
+        </div>
+      </div>
     </div>
 
     <div class="beat-info">
@@ -231,12 +263,23 @@
 
     <div class="purchase-summary">
       <div class="summary-row">
-        <span class="summary-label">Beat Price</span>
-        <span class="summary-value">${{ '%.2f'|format(price_dollars) }}</span>
+        <span class="summary-label">Subtotal</span>
+        <span class="summary-value">${{ '%.2f'|format(subtotal_dollars) }}</span>
       </div>
       <div class="summary-row">
-        <span class="summary-label">Total Amount</span>
-        <span class="summary-value summary-total">${{ '%.2f'|format(price_dollars) }}</span>
+        <span class="summary-label">BeatFund service fee</span>
+        <span class="summary-value">${{ '%.2f'|format(platform_fee_dollars) }}</span>
+      </div>
+      <div class="summary-row">
+        <span class="summary-label">Payment processing (estimated)</span>
+        <span class="summary-value">${{ '%.2f'|format(processing_fee_dollars) }}</span>
+      </div>
+      <div class="summary-row">
+        <span class="summary-label">Total due today</span>
+        <span class="summary-value summary-total">${{ '%.2f'|format(total_dollars) }}</span>
+      </div>
+      <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,.08); font-size: 0.85rem; opacity: 0.7; color: #9aa4c2;">
+        <p style="margin: 0;">Note: Stripe payment processing is not enabled yet. The payment processing fee shown is $0.00 for transparency.</p>
       </div>
     </div>
 
@@ -256,27 +299,153 @@
       {% endif %}
     </div>
 
+    <div class="order-summary-section" style="margin-bottom: 24px; padding: 20px; background: rgba(0,0,0,.2); border-radius: 12px; border: 1px solid rgba(255,255,255,.08);">
+      <h3 style="margin: 0 0 16px; font-size: 1.1rem; font-weight: 700;">Order Summary</h3>
+      
+      <div style="margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid rgba(255,255,255,.08);">
+        <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+          <span style="opacity: .8; font-size: .95rem;">Item</span>
+          <span style="font-weight: 600;">{{ beat.title }}</span>
+        </div>
+        <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+          <span style="opacity: .8; font-size: .95rem;">Seller</span>
+          <span style="opacity: .9;">@{{ seller.username }}</span>
+        </div>
+        {% if beat.license == "exclusive" %}
+        <div style="display: flex; justify-content: space-between;">
+          <span style="opacity: .8; font-size: .95rem;">License Type</span>
+          <span style="color: #fbbf24; font-weight: 600;">Exclusive</span>
+        </div>
+        {% endif %}
+      </div>
+
+      <div style="margin-top: 16px; padding-top: 16px; border-top: 2px solid rgba(255,255,255,.15);">
+        <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+          <span style="opacity: .8; font-size: .95rem;">Subtotal</span>
+          <span style="font-weight: 600;">${{ '%.2f'|format(subtotal_dollars) }}</span>
+        </div>
+        <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+          <span style="opacity: .8; font-size: .95rem;">Service Fee</span>
+          <span style="font-weight: 600;">${{ '%.2f'|format(platform_fee_dollars) }}</span>
+        </div>
+        <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+          <span style="opacity: .8; font-size: .95rem;">Processing Fee</span>
+          <span style="font-weight: 600;">${{ '%.2f'|format(processing_fee_dollars) }}</span>
+        </div>
+        <div style="display: flex; justify-content: space-between; margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,.15);">
+          <span style="font-weight: 700; font-size: 1.1rem;">Total</span>
+          <span style="font-size: 1.5rem; font-weight: 800; background: linear-gradient(135deg, #4de3ff, #a855f7); -webkit-background-clip: text; background-clip: text; color: transparent;">
+            ${{ '%.2f'|format(total_dollars) }}
+          </span>
+        </div>
+      </div>
+    </div>
+
     <div class="confirm-actions">
-      <form method="POST" action="{{ url_for('market_buy', beat_id=beat.id) }}">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <input type="hidden" name="confirmed" value="true">
-        <button 
-          type="submit" 
-          class="btn btn-primary"
-          {% if not has_sufficient_funds %}disabled{% endif %}
-        >
-          {% if has_sufficient_funds %}
-            Confirm Purchase
-          {% else %}
-            Insufficient Funds
-          {% endif %}
-        </button>
-      </form>
-      <a href="{{ url_for('market_index') }}" class="btn btn-secondary">Cancel</a>
-      {% if not has_sufficient_funds %}
-        <a href="{{ url_for('wallet_home') }}" class="btn btn-secondary">Add Funds to Wallet</a>
+      <div style="margin-bottom: 20px; padding: 16px; background: rgba(0,0,0,.2); border-radius: 12px; border: 1px solid rgba(255,255,255,.1); text-align: center;">
+        <div style="font-size: 0.9rem; opacity: 0.8; margin-bottom: 8px;">Total Amount</div>
+        <div style="font-size: 2rem; font-weight: 800; background: linear-gradient(135deg, #4de3ff, #a855f7); -webkit-background-clip: text; background-clip: text; color: transparent; margin-bottom: 8px;">
+          ${{ '%.2f'|format(total_dollars) }}
+        </div>
+        <div style="font-size: 0.85rem; opacity: 0.7;">
+          Secure payment powered by Stripe
+        </div>
+      </div>
+      
+      <button 
+        type="button" 
+        class="btn btn-primary checkout-button"
+        id="checkout-button"
+        data-beat-id="{{ beat.id }}"
+        style="font-size: 1.1rem; padding: 16px 32px; font-weight: 700; position: relative; overflow: hidden;"
+      >
+        <span style="position: relative; z-index: 1;">Proceed to Stripe Checkout</span>
+        <svg style="width: 20px; height: 20px; margin-left: 8px; display: inline-block; vertical-align: middle; position: relative; z-index: 1;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"></path>
+        </svg>
+      </button>
+      
+      <a href="{{ url_for('market_index') }}" class="btn btn-secondary" style="text-align: center;">Back to Marketplace</a>
+      
+      {% if has_sufficient_funds %}
+        <div style="margin-top: 12px; padding: 12px; background: rgba(6,182,212,.1); border-radius: 8px; border: 1px solid rgba(6,182,212,.3);">
+          <p style="margin: 0; font-size: 0.85rem; opacity: 0.9;">
+            💡 You have sufficient wallet balance (${{ '%.2f'|format(balance_dollars) }}). 
+            You can also purchase using wallet funds via the legacy flow.
+          </p>
+        </div>
       {% endif %}
     </div>
+
+    <script>
+      // Redirect to Stripe Checkout
+      document.addEventListener('DOMContentLoaded', function() {
+        const checkoutButton = document.getElementById('checkout-button');
+        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || 
+                         document.querySelector('input[name="csrf_token"]')?.value;
+        
+        if (checkoutButton) {
+          checkoutButton.addEventListener('click', async function() {
+            const beatId = this.getAttribute('data-beat-id');
+            
+            if (!beatId) {
+              alert('Error: Beat ID not found');
+              return;
+            }
+            
+              // Confirm before proceeding (order is final)
+              const confirmed = confirm(
+                'Are you sure you want to proceed to checkout?\n\n' +
+                'Once you proceed, this order will be finalized and cannot be modified.\n\n' +
+                'Total: ${{ '%.2f'|format(total_dollars) }}\n\n' +
+                'Click OK to continue to Stripe Checkout.'
+              );
+              
+              if (!confirmed) {
+                return;
+              }
+              
+              // Disable button and show loading state
+              this.disabled = true;
+              this.innerHTML = '<span style="position: relative; z-index: 1;">Redirecting to Stripe Checkout...</span>';
+              this.style.cursor = 'wait';
+              
+              try {
+                // Create checkout session (order is now final)
+                const response = await fetch('/create-checkout-session', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'X-CSRFToken': csrfToken
+                },
+                body: JSON.stringify({
+                  beat_id: parseInt(beatId)
+                })
+              });
+              
+              const data = await response.json();
+              
+              if (!response.ok) {
+                throw new Error(data.error || 'Failed to create checkout session');
+              }
+              
+              if (data.url) {
+                // Redirect to Stripe Checkout
+                window.location.href = data.url;
+              } else {
+                throw new Error('No checkout URL received');
+              }
+            } catch (error) {
+              console.error('Checkout error:', error);
+              alert('Error: ' + error.message + '\n\nPlease try again or contact support.');
+              this.disabled = false;
+              this.innerHTML = '<span style="position: relative; z-index: 1;">Proceed to Stripe Checkout</span><svg style="width: 20px; height: 20px; margin-left: 8px; display: inline-block; vertical-align: middle; position: relative; z-index: 1;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"></path></svg>';
+              this.style.cursor = 'pointer';
+            }
+          });
+        }
+      });
+    </script>
   </div>
 </div>
 {% endblock %}

@@ -338,12 +338,226 @@
     font-size: 12px;
     color: #cbd5f5;
   }
+
+  /* ANIMATED BACKGROUND ELEMENTS */
+  .animated-background {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 0;
+    overflow: hidden;
+  }
+
+  .home-page {
+    position: relative;
+    z-index: 1;
+    background: rgba(15, 23, 42, 0.85);
+    backdrop-filter: blur(1px);
+  }
+
+  .music-note {
+    position: absolute;
+    font-size: 20px;
+    opacity: 0.08;
+    color: #4f8bff;
+    animation: floatNote 20s infinite linear;
+  }
+
+  .music-note:nth-child(2n) {
+    color: #a855f7;
+    animation-duration: 22s;
+    animation-delay: -5s;
+  }
+
+  .music-note:nth-child(3n) {
+    color: #4de3ff;
+    animation-duration: 25s;
+    animation-delay: -10s;
+  }
+
+  .music-note:nth-child(4n) {
+    color: #10b981;
+    animation-duration: 18s;
+    animation-delay: -15s;
+  }
+
+  @keyframes floatNote {
+    0% {
+      transform: translateY(100vh) rotate(0deg);
+      opacity: 0;
+    }
+    10% {
+      opacity: 0.08;
+    }
+    90% {
+      opacity: 0.08;
+    }
+    100% {
+      transform: translateY(-100px) rotate(360deg);
+      opacity: 0;
+    }
+  }
+
+  .drum-element {
+    position: absolute;
+    width: 35px;
+    height: 35px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(79, 139, 255, 0.15), rgba(79, 139, 255, 0.05));
+    border: 2px solid rgba(79, 139, 255, 0.2);
+    animation: pulseDrum 4s infinite ease-in-out;
+    box-shadow: 0 0 15px rgba(79, 139, 255, 0.1);
+  }
+
+  .drum-element:nth-child(2n) {
+    background: radial-gradient(circle, rgba(168, 85, 247, 0.15), rgba(168, 85, 247, 0.05));
+    border-color: rgba(168, 85, 247, 0.2);
+    box-shadow: 0 0 15px rgba(168, 85, 247, 0.1);
+    animation-delay: -1.5s;
+  }
+
+  .drum-element:nth-child(3n) {
+    background: radial-gradient(circle, rgba(77, 227, 255, 0.15), rgba(77, 227, 255, 0.05));
+    border-color: rgba(77, 227, 255, 0.2);
+    box-shadow: 0 0 15px rgba(77, 227, 255, 0.1);
+    animation-delay: -3s;
+  }
+
+  @keyframes pulseDrum {
+    0%, 100% {
+      transform: scale(1);
+      opacity: 0.15;
+    }
+    50% {
+      transform: scale(1.15);
+      opacity: 0.25;
+    }
+  }
+
+  .sound-wave {
+    position: absolute;
+    width: 50px;
+    height: 50px;
+    border: 2px solid rgba(79, 139, 255, 0.12);
+    border-radius: 50%;
+    animation: rippleWave 3s infinite;
+  }
+
+  .sound-wave:nth-child(2) {
+    animation-delay: 1s;
+    border-color: rgba(168, 85, 247, 0.12);
+  }
+
+  .sound-wave:nth-child(3) {
+    animation-delay: 2s;
+    border-color: rgba(77, 227, 255, 0.12);
+  }
+
+  @keyframes rippleWave {
+    0% {
+      transform: scale(0.8);
+      opacity: 0.2;
+    }
+    100% {
+      transform: scale(2);
+      opacity: 0;
+    }
+  }
+
+  .vinyl-record {
+    position: absolute;
+    width: 45px;
+    height: 45px;
+    border-radius: 50%;
+    background: 
+      radial-gradient(circle at center, rgba(15, 23, 42, 0.9) 30%, transparent 31%),
+      repeating-conic-gradient(
+        from 0deg,
+        rgba(79, 139, 255, 0.06) 0deg 10deg,
+        rgba(168, 85, 247, 0.06) 10deg 20deg
+      );
+    border: 2px solid rgba(79, 139, 255, 0.15);
+    animation: spinVinyl 10s linear infinite;
+    box-shadow: 0 0 10px rgba(79, 139, 255, 0.1);
+  }
+
+  @keyframes spinVinyl {
+    0% {
+      transform: rotate(0deg);
+    }
+    100% {
+      transform: rotate(360deg);
+    }
+  }
+
+  .beat-line {
+    position: absolute;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, rgba(79, 139, 255, 0.3), transparent);
+    border-radius: 2px;
+    animation: beatPulse 2s infinite ease-in-out;
+    box-shadow: 0 0 8px rgba(79, 139, 255, 0.15);
+  }
+
+  @keyframes beatPulse {
+    0%, 100% {
+      width: 15px;
+      opacity: 0.1;
+    }
+    50% {
+      width: 60px;
+      opacity: 0.25;
+    }
+  }
+
+  /* Hero section with animated elements */
+  .hero {
+    position: relative;
+  }
+
+  .hero-animated-container {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    pointer-events: none;
+    overflow: hidden;
+    border-radius: 12px;
+  }
+
+  /* Responsive: reduce animations on mobile */
+  @media (max-width: 768px) {
+    .music-note,
+    .drum-element,
+    .sound-wave,
+    .vinyl-record,
+    .beat-line {
+      display: none;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .music-note,
+    .drum-element,
+    .sound-wave,
+    .vinyl-record,
+    .beat-line {
+      animation: none;
+      opacity: 0.1;
+    }
+  }
 </style>
 {% endblock %}
 
 {% block content %}
+<div class="animated-background" id="animatedBackground"></div>
 <div class="home-page">
   <section class="hero">
+    <div class="hero-animated-container" id="heroAnimated"></div>
     <div>
       <div class="hero-heading-kicker">Creative fintech</div>
       <h1 class="hero-heading">
@@ -364,6 +578,7 @@
       <div class="hero-secondary-links">
         <a href="{{ url_for('market_index') }}">Browse the marketplace →</a>
         <a href="{{ url_for('wallet_home') }}">Open your wallet →</a>
+        <a href="{{ url_for('waitlist_page') }}">Join Waitlist →</a>
       </div>
 
       <div class="hero-tags">
@@ -492,4 +707,87 @@
     </div>
   </section>
 </div>
+
+<script>
+  // Create animated music elements
+  (function() {
+    const animatedBg = document.getElementById('animatedBackground');
+    const heroAnimated = document.getElementById('heroAnimated');
+    
+    if (!animatedBg || !heroAnimated) return;
+
+    // Music notes - floating up (reduced from 12 to 6)
+    const musicNotes = ['♪', '♫', '♬', '♩'];
+    for (let i = 0; i < 6; i++) {
+      const note = document.createElement('div');
+      note.className = 'music-note';
+      note.textContent = musicNotes[Math.floor(Math.random() * musicNotes.length)];
+      note.style.left = Math.random() * 100 + '%';
+      note.style.animationDelay = Math.random() * 8 + 's';
+      animatedBg.appendChild(note);
+    }
+
+    // Drum elements - pulsing (reduced from 6 to 3)
+    for (let i = 0; i < 3; i++) {
+      const drum = document.createElement('div');
+      drum.className = 'drum-element';
+      drum.style.left = (20 + i * 30) + '%';
+      drum.style.top = (40 + Math.random() * 30) + '%';
+      animatedBg.appendChild(drum);
+    }
+
+    // Sound waves - rippling (reduced from 4 to 2)
+    for (let i = 0; i < 2; i++) {
+      const waveContainer = document.createElement('div');
+      waveContainer.style.position = 'absolute';
+      waveContainer.style.left = (30 + i * 40) + '%';
+      waveContainer.style.top = (50 + i * 20) + '%';
+      
+      for (let j = 0; j < 2; j++) {
+        const wave = document.createElement('div');
+        wave.className = 'sound-wave';
+        wave.style.position = 'absolute';
+        wave.style.left = '50%';
+        wave.style.top = '50%';
+        wave.style.transform = 'translate(-50%, -50%)';
+        waveContainer.appendChild(wave);
+      }
+      
+      animatedBg.appendChild(waveContainer);
+    }
+
+    // Vinyl records - spinning (reduced from 3 to 2)
+    for (let i = 0; i < 2; i++) {
+      const vinyl = document.createElement('div');
+      vinyl.className = 'vinyl-record';
+      vinyl.style.left = (25 + i * 50) + '%';
+      vinyl.style.top = (65 + Math.random() * 15) + '%';
+      animatedBg.appendChild(vinyl);
+    }
+
+    // Beat lines - pulsing (reduced from 8 to 4)
+    for (let i = 0; i < 4; i++) {
+      const beat = document.createElement('div');
+      beat.className = 'beat-line';
+      beat.style.left = (15 + i * 25) + '%';
+      beat.style.top = (25 + Math.random() * 50) + '%';
+      beat.style.animationDelay = (i * 0.4) + 's';
+      animatedBg.appendChild(beat);
+    }
+
+    // Hero section specific animations (very subtle)
+    const heroNotes = ['♪', '♫'];
+    for (let i = 0; i < 2; i++) {
+      const note = document.createElement('div');
+      note.className = 'music-note';
+      note.textContent = heroNotes[Math.floor(Math.random() * heroNotes.length)];
+      note.style.fontSize = '16px';
+      note.style.opacity = '0.06';
+      note.style.left = (30 + i * 40) + '%';
+      note.style.animationDuration = (15 + Math.random() * 5) + 's';
+      note.style.animationDelay = Math.random() * 5 + 's';
+      heroAnimated.appendChild(note);
+    }
+  })();
+</script>
 {% endblock %}

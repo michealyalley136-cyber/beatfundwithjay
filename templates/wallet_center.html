@@ -1,32 +1,697 @@
 {% extends "base.html" %}
 {% block title %}Wallet · BeatFund{% endblock %}
 
+{% block extra_head %}
+<style>
+  .wallet-shell{
+    max-width: 1120px;
+    margin: 24px auto 40px;
+    padding-inline: 16px;
+  }
+
+  .wallet-tabs {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin: 10px 0 18px;
+  }
+
+  .wallet-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    border-radius: 999px;
+    padding: 7px 12px;
+    font-size: 12px;
+    border: 1px solid rgba(51, 65, 85, 0.9);
+    background: rgba(15, 23, 42, 0.92);
+    color: #c7d2fe;
+    text-decoration: none;
+    transition: transform 0.08s ease, box-shadow 0.12s ease, background 0.12s ease;
+  }
+
+  .wallet-tab:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 10px 22px rgba(15, 23, 42, 0.65);
+  }
+
+  .wallet-tab.active {
+    background: linear-gradient(135deg, #4de3ff, #6366f1);
+    color: #ffffff;
+    border-color: rgba(99, 102, 241, 0.8);
+    box-shadow: 0 10px 24px rgba(79, 70, 229, 0.55);
+  }
+
+  /* Balance Hero Card */
+  .wallet-balance-hero {
+    border-radius: 22px;
+    border: 1px solid rgba(37, 99, 235, 0.9);
+    background:
+      radial-gradient(circle at 0% 0%, rgba(56, 189, 248, 0.22), transparent 60%),
+      radial-gradient(circle at 100% 100%, rgba(129, 140, 248, 0.28), transparent 60%),
+      rgba(15, 23, 42, 0.98);
+    box-shadow:
+      0 28px 48px rgba(15, 23, 42, 0.95),
+      0 0 0 1px rgba(15, 23, 42, 1) inset;
+    padding: 24px 22px;
+    position: relative;
+    overflow: hidden;
+    margin-bottom: 24px;
+  }
+
+  .wallet-balance-hero::before {
+    content: "";
+    position: absolute;
+    inset: -40%;
+    background:
+      radial-gradient(circle at 15% 0%, rgba(59, 130, 246, 0.25), transparent 60%),
+      radial-gradient(circle at 85% 100%, rgba(45, 212, 191, 0.25), transparent 60%);
+    opacity: 0.3;
+    pointer-events: none;
+  }
+
+  .wallet-balance-hero-inner {
+    position: relative;
+    z-index: 1;
+  }
+
+  .wallet-balance-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+  }
+
+  .wallet-balance-title {
+    font-size: 14px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: #8f9bc6;
+  }
+
+  .wallet-status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    font-size: 11px;
+    border-radius: 999px;
+    border: 1px solid rgba(148, 163, 184, 0.45);
+    background: radial-gradient(circle at top, rgba(15, 23, 42, 0.95), rgba(15, 23, 42, 1));
+    color: #e5e7eb;
+  }
+
+  .wallet-status-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 999px;
+    background: #4ade80;
+  }
+
+  .wallet-balance-value {
+    font-size: 42px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    margin-bottom: 8px;
+    background: linear-gradient(135deg, #4de3ff, #a855f7);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  .wallet-balance-sub {
+    font-size: 12px;
+    color: #9ca3c8;
+  }
+
+  /* Unified Action Card */
+  .wallet-action-unified {
+    border-radius: 22px;
+    border: 1px solid rgba(51, 65, 85, 0.7);
+    background:
+      radial-gradient(circle at 0% 0%, rgba(30, 64, 175, 0.15), transparent 60%),
+      radial-gradient(circle at 100% 100%, rgba(15, 23, 42, 1), rgba(15, 23, 42, 1));
+    box-shadow:
+      0 18px 32px rgba(15, 23, 42, 0.85),
+      0 0 0 1px rgba(15, 23, 42, 1) inset;
+    padding: 20px;
+    margin-bottom: 24px;
+  }
+
+  .wallet-action-header {
+    margin-bottom: 20px;
+  }
+
+  .wallet-action-title {
+    font-size: 18px;
+    font-weight: 700;
+    margin: 0 0 6px 0;
+  }
+
+  .wallet-action-subtitle {
+    font-size: 12px;
+    color: #9ca3c8;
+    line-height: 1.5;
+  }
+
+  /* Action Selector Pills */
+  .wallet-action-selector {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 20px;
+    padding: 4px;
+    background: rgba(15, 23, 42, 0.6);
+    border: 1px solid rgba(51, 65, 85, 0.5);
+    border-radius: 14px;
+  }
+
+  .wallet-action-pill {
+    flex: 1;
+    min-width: 120px;
+    padding: 10px 14px;
+    border-radius: 10px;
+    border: none;
+    background: transparent;
+    color: #9ca3c8;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+  }
+
+  .wallet-action-pill:hover {
+    background: rgba(59, 130, 246, 0.1);
+    color: #60a5fa;
+  }
+
+  .wallet-action-pill.active {
+    background: linear-gradient(135deg, #4de3ff, #6366f1);
+    color: #ffffff;
+    box-shadow: 0 4px 12px rgba(79, 70, 229, 0.4);
+  }
+
+  .wallet-action-pill-icon {
+    font-size: 16px;
+  }
+
+  /* Unified Form */
+  .wallet-form-container {
+    background: rgba(15, 23, 42, 0.4);
+    border: 1px solid rgba(51, 65, 85, 0.5);
+    border-radius: 16px;
+    padding: 20px;
+  }
+
+  .wallet-form-panel {
+    display: none;
+  }
+
+  .wallet-form-panel.active {
+    display: block;
+    animation: fadeIn 0.2s ease;
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .wallet-form-description {
+    font-size: 12px;
+    color: #9ca3c8;
+    margin-bottom: 16px;
+    padding: 12px;
+    background: rgba(59, 130, 246, 0.08);
+    border: 1px solid rgba(59, 130, 246, 0.2);
+    border-radius: 10px;
+    line-height: 1.5;
+  }
+
+  .wallet-form-description strong {
+    color: #60a5fa;
+  }
+
+  .wallet-field {
+    margin-bottom: 16px;
+  }
+
+  .wallet-field-label {
+    display: block;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: #8f9bc6;
+    margin-bottom: 6px;
+    font-weight: 700;
+  }
+
+  .wallet-input,
+  .wallet-select {
+    width: 100%;
+    border-radius: 12px;
+    border: 1px solid #303a5c;
+    background: radial-gradient(circle at top, rgba(15, 23, 42, 0.95), rgba(15, 23, 42, 1));
+    color: #e3e9ff;
+    padding: 12px 14px;
+    font-size: 14px;
+    outline: none;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    box-sizing: border-box;
+  }
+
+  .wallet-input::placeholder {
+    color: #6f7aa4;
+  }
+
+  .wallet-input:focus,
+  .wallet-select:focus {
+    border-color: #4f8bff;
+    box-shadow: 0 0 0 3px rgba(79, 139, 255, 0.15);
+  }
+
+  .wallet-field-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+
+  @media (max-width: 640px) {
+    .wallet-field-row {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .wallet-btn {
+    width: 100%;
+    border-radius: 12px;
+    padding: 14px 20px;
+    font-size: 14px;
+    font-weight: 700;
+    border: none;
+    cursor: pointer;
+    background: linear-gradient(135deg, #4de3ff, #6366f1);
+    color: #ffffff;
+    box-shadow: 0 6px 18px rgba(56, 189, 248, 0.45);
+    transition: transform 0.1s ease, box-shadow 0.1s ease;
+    margin-top: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+  }
+
+  .wallet-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 24px rgba(79, 70, 229, 0.55);
+  }
+
+  .wallet-btn:active {
+    transform: translateY(0);
+  }
+
+  .wallet-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .wallet-btn-icon {
+    font-size: 16px;
+  }
+
+  .wallet-form-note {
+    font-size: 11px;
+    color: #9ca3c8;
+    margin-top: 12px;
+    line-height: 1.5;
+    text-align: center;
+  }
+
+  .wallet-form-note .stripe-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 9px;
+    font-weight: 700;
+    background: rgba(99, 102, 241, 0.15);
+    color: #818cf8;
+    border: 1px solid rgba(99, 102, 241, 0.3);
+    margin-left: 4px;
+  }
+
+  /* Payment Methods Section */
+  .wallet-methods-card {
+    border-radius: 18px;
+    border: 1px solid rgba(51, 65, 85, 0.7);
+    background: rgba(15, 23, 42, 0.6);
+    padding: 18px;
+    margin-bottom: 24px;
+  }
+
+  .wallet-methods-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 14px;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .wallet-methods-title {
+    font-size: 14px;
+    font-weight: 700;
+    margin: 0;
+  }
+
+  .wallet-methods-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .wallet-method-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px;
+    border-radius: 12px;
+    border: 1px solid rgba(51, 65, 85, 0.5);
+    background: rgba(15, 23, 42, 0.4);
+  }
+
+  .wallet-method-info {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .wallet-method-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    background: rgba(59, 130, 246, 0.15);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+  }
+
+  .wallet-method-details {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .wallet-method-name {
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  .wallet-method-meta {
+    font-size: 11px;
+    color: #9ca3c8;
+  }
+
+  .wallet-method-badge {
+    padding: 4px 8px;
+    border-radius: 6px;
+    font-size: 10px;
+    font-weight: 700;
+    background: rgba(34, 197, 94, 0.15);
+    color: #4ade80;
+    border: 1px solid rgba(34, 197, 94, 0.3);
+  }
+
+  .wallet-method-add {
+    padding: 8px 14px;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 600;
+    background: rgba(59, 130, 246, 0.15);
+    color: #60a5fa;
+    border: 1px solid rgba(59, 130, 246, 0.3);
+    cursor: pointer;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transition: all 0.12s ease;
+  }
+
+  .wallet-method-add:hover {
+    background: rgba(59, 130, 246, 0.25);
+    border-color: rgba(59, 130, 246, 0.5);
+  }
+
+  /* Activity Card */
+  .wallet-activity-card {
+    border-radius: 18px;
+    border: 1px solid rgba(51, 65, 85, 0.7);
+    background:
+      radial-gradient(circle at 0% 0%, rgba(30, 64, 175, 0.15), transparent 60%),
+      radial-gradient(circle at 100% 100%, rgba(15, 23, 42, 1), rgba(15, 23, 42, 1));
+    box-shadow:
+      0 18px 32px rgba(15, 23, 42, 0.85),
+      0 0 0 1px rgba(15, 23, 42, 1) inset;
+    padding: 18px;
+  }
+
+  .wallet-activity-title {
+    font-size: 15px;
+    font-weight: 700;
+    margin: 0 0 4px 0;
+  }
+
+  .wallet-activity-sub {
+    font-size: 11px;
+    color: #9ca3c8;
+    margin-bottom: 14px;
+  }
+
+  .wallet-activity-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .wallet-activity-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 12px;
+    border-radius: 12px;
+    border: 1px solid rgba(51, 65, 85, 0.5);
+    background: rgba(15, 23, 42, 0.4);
+  }
+
+  .wallet-activity-left {
+    min-width: 0;
+    flex: 1;
+  }
+
+  .wallet-activity-main {
+    font-size: 13px;
+    font-weight: 600;
+    margin-bottom: 2px;
+  }
+
+  .wallet-activity-meta {
+    font-size: 11px;
+    color: #9ca3c8;
+    margin-top: 2px;
+  }
+
+  .wallet-activity-amount {
+    font-size: 14px;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+
+  .wallet-activity-amount.credit {
+    color: #4ade80;
+  }
+
+  .wallet-activity-amount.debit {
+    color: #f97373;
+  }
+
+  .wallet-empty-state {
+    text-align: center;
+    padding: 24px;
+    color: #9ca3c8;
+    font-size: 13px;
+  }
+
+  /* Transactions Table */
+  .wallet-ledger-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    border-radius: 16px;
+    border: 1px solid rgba(51, 65, 85, 0.7);
+    background: rgba(15, 23, 42, 0.75);
+    margin-top: 14px;
+  }
+
+  .wallet-ledger-table {
+    width: 100%;
+    border-collapse: collapse;
+    min-width: 760px;
+  }
+
+  .wallet-ledger-table th,
+  .wallet-ledger-table td {
+    padding: 12px;
+    border-bottom: 1px solid rgba(51, 65, 85, 0.55);
+    vertical-align: top;
+  }
+
+  .wallet-ledger-table th {
+    text-align: left;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.10em;
+    color: #a5b4fc;
+    background: rgba(15, 23, 42, 0.92);
+    position: sticky;
+    top: 0;
+    z-index: 2;
+  }
+
+  .wallet-ledger-type {
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  .wallet-ledger-meta {
+    font-size: 11px;
+    color: #9ca3c8;
+    margin-top: 4px;
+  }
+
+  .wallet-ledger-date {
+    font-size: 12px;
+    color: #94a3b8;
+    white-space: nowrap;
+  }
+
+  .wallet-ledger-amt {
+    font-size: 14px;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+
+  .wallet-ledger-amt.credit {
+    color: #4ade80;
+  }
+
+  .wallet-ledger-amt.debit {
+    color: #f97373;
+  }
+
+  /* Mobile Responsive */
+  @media (max-width: 768px) {
+    .wallet-balance-value {
+      font-size: 36px;
+    }
+
+    .wallet-action-selector {
+      flex-direction: column;
+    }
+
+    .wallet-action-pill {
+      width: 100%;
+    }
+
+    .wallet-methods-header {
+      flex-direction: column;
+      align-items: flex-start;
+    }
+  }
+</style>
+
+<script>
+  document.addEventListener('DOMContentLoaded', function() {
+    const actionPills = document.querySelectorAll('.wallet-action-pill');
+    const formPanels = document.querySelectorAll('.wallet-form-panel');
+    
+    // Action descriptions
+    const descriptions = {
+      'add': 'Top up your BeatFund wallet using a card or bank account. Funds are available immediately after payment.',
+      'send': 'Transfer funds instantly to another BeatFund user by their username. No fees, instant delivery.',
+      'withdraw': 'Move funds from your wallet to your connected bank account. Processing time: 2-5 business days.',
+      'transfer_out': 'Transfer funds to your primary bank account or debit card. Instant options available for cards.'
+    };
+
+    actionPills.forEach(pill => {
+      pill.addEventListener('click', function() {
+        const action = this.dataset.action;
+        
+        // Update active states
+        actionPills.forEach(p => p.classList.remove('active'));
+        this.classList.add('active');
+        
+        // Show/hide form panels
+        formPanels.forEach(panel => {
+          panel.classList.remove('active');
+          if (panel.dataset.action === action) {
+            panel.classList.add('active');
+          }
+        });
+        
+        // Update description
+        const descEl = document.getElementById('wallet-action-description');
+        if (descEl && descriptions[action]) {
+          descEl.textContent = descriptions[action];
+        }
+      });
+    });
+
+    // Form validation
+    const forms = document.querySelectorAll('.wallet-form-panel form');
+    forms.forEach(form => {
+      form.addEventListener('submit', function(e) {
+        const amountInput = form.querySelector('input[name="amount"]');
+        if (amountInput) {
+          const amount = parseFloat(amountInput.value);
+          if (isNaN(amount) || amount <= 0) {
+            e.preventDefault();
+            alert('Please enter a valid amount greater than zero.');
+            return false;
+          }
+        }
+      });
+    });
+  });
+</script>
+{% endblock %}
+
 {% block content %}
-<div class="page">
+{% set active_tab = (tab if tab is defined and tab else (request.args.get('tab', 'overview') if request is defined else 'overview')) %}
 
-  <div class="page-header">
-    <div>
-      <h1 style="margin:0;">Wallet</h1>
-      <div class="muted">Balance + transaction history</div>
-    </div>
-  </div>
-
-  <div class="card" style="margin-top:14px;">
-    <div class="muted">Current balance</div>
-    <div style="font-size:32px; font-weight:800;">${{ "%.2f"|format(balance) }}</div>
-  </div>
-
-  <div style="display:flex; gap:10px; margin-top:14px; flex-wrap:wrap;">
-    <a class="btn {% if tab == 'overview' %}btn-primary{% else %}btn-outline{% endif %}"
-       href="{{ url_for('wallet_home', tab='overview') }}">
+<div class="wallet-shell">
+  <div class="wallet-tabs">
+    <a class="wallet-tab {{ 'active' if active_tab != 'transactions' else '' }}"
+       href="{{ url_for('wallet_home') }}">
       Overview
     </a>
-    <a class="btn {% if tab == 'transactions' %}btn-primary{% else %}btn-outline{% endif %}"
+    <a class="wallet-tab {{ 'active' if active_tab == 'transactions' else '' }}"
        href="{{ url_for('wallet_home', tab='transactions') }}">
       Transactions
     </a>
-
-    <a class="btn btn-outline" href="{{ url_for('wallet_statement') }}">Download statement (CSV)</a>
   </div>
 
   {% set credit_types = [
@@ -37,51 +702,400 @@
     EntryType.sale_income
   ] %}
 
-  <div class="card" style="margin-top:14px;">
-    <h3 style="margin:0 0 10px 0;">Transaction History</h3>
+  {% if active_tab == 'transactions' %}
+    {# =========================
+       TRANSACTIONS TAB
+       ========================= #}
+    <section class="wallet-activity-card">
+      <div class="wallet-activity-title">Transaction History</div>
+      <div class="wallet-activity-sub">
+        Complete ledger of all wallet movements and transactions.
+      </div>
 
-    <div style="overflow:auto;">
-      <table class="table" style="min-width:760px; width:100%;">
-        <thead>
-          <tr>
-            <th>Date</th>
-            <th>Type</th>
-            <th>Note</th>
-            <th style="text-align:right;">Amount</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% if txns and txns|length > 0 %}
-            {% for t in txns %}
-              {% set is_credit = (t.entry_type in credit_types) %}
-              {% set amt = (t.amount_cents or 0) / 100.0 %}
+      {% set txns = (transactions if transactions is defined and transactions else (txns if txns is defined and txns else [])) %}
+
+      {% if txns and txns|length > 0 %}
+        <div class="wallet-ledger-wrap">
+          <table class="wallet-ledger-table">
+            <thead>
               <tr>
-                <td>{{ t.created_at.strftime("%b %d, %Y %I:%M %p") if t.created_at else "-" }}</td>
-                <td>{{ t.entry_type.value.replace("_"," ").title() }}</td>
-                <td>{{ t.meta or "-" }}</td>
-                <td style="text-align:right; font-weight:700;">
-                  {% if is_credit %}
-                    +${{ "%.2f"|format(amt) }}
-                  {% else %}
-                    -${{ "%.2f"|format(amt) }}
-                  {% endif %}
-                </td>
+                <th style="width: 180px;">Date</th>
+                <th>Type / Details</th>
+                <th style="width: 140px; text-align:right;">Amount</th>
               </tr>
-            {% endfor %}
-          {% else %}
-            <tr><td colspan="4" class="muted" style="padding:14px;">No transactions yet.</td></tr>
-          {% endif %}
-        </tbody>
-      </table>
+            </thead>
+            <tbody>
+              {% for entry in txns %}
+                {% set is_credit = entry.entry_type in credit_types %}
+                <tr>
+                  <td class="wallet-ledger-date">
+                    {{ entry.created_at.strftime("%b %d, %Y · %I:%M %p") if entry.created_at else "" }}
+                  </td>
+                  <td>
+                    <div class="wallet-ledger-type">
+                      {% if entry.entry_type == EntryType.deposit %}
+                        Deposit
+                      {% elif entry.entry_type == EntryType.withdrawal %}
+                        Withdrawal
+                      {% elif entry.entry_type == EntryType.transfer_in %}
+                        Transfer in
+                      {% elif entry.entry_type == EntryType.transfer_out %}
+                        Transfer out
+                      {% elif entry.entry_type == EntryType.sale_income %}
+                        Sale income
+                      {% elif entry.entry_type == EntryType.purchase_spend %}
+                        Purchase
+                      {% else %}
+                        {{ entry.entry_type.value|replace("_", " ")|title }}
+                      {% endif %}
+                    </div>
+                    {% if entry.meta %}
+                      <div class="wallet-ledger-meta">{{ entry.meta }}</div>
+                    {% endif %}
+                  </td>
+                  <td style="text-align:right;">
+                    <span class="wallet-ledger-amt {{ 'credit' if is_credit else 'debit' }}">
+                      {% if is_credit %}+{% else %}-{% endif %}${{ "%.2f"|format(entry.amount_cents / 100.0) }}
+                    </span>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <div class="wallet-empty-state">
+          No transactions yet. Add funds or make a transfer to see activity here.
+        </div>
+      {% endif %}
+    </section>
+
+  {% else %}
+    {# =========================
+       OVERVIEW TAB
+       ========================= #}
+
+    {# Balance Hero #}
+    <div class="wallet-balance-hero">
+      <div class="wallet-balance-hero-inner">
+        <div class="wallet-balance-header">
+          <div class="wallet-balance-title">Available Balance</div>
+          <div class="wallet-status-pill">
+            <span class="wallet-status-dot"></span>
+            <span>Active</span>
+          </div>
+        </div>
+        <div class="wallet-balance-value">
+          ${{ "%.2f"|format(balance or 0.0) }}
+        </div>
+        <div class="wallet-balance-sub">
+          Funds ready for beats, bookings, and transfers
+        </div>
+      </div>
     </div>
-  </div>
 
-  {% if tab == 'overview' %}
-  <div class="card" style="margin-top:14px;">
-    <h3 style="margin:0 0 8px 0;">Quick Actions</h3>
-    <div class="muted">Use the existing wallet actions form on your wallet page (or keep it where it already is).</div>
-  </div>
+    {# Payment Methods Section #}
+    <div class="wallet-methods-card">
+      <div class="wallet-methods-header">
+        <div class="wallet-methods-title">Payment Methods</div>
+        <button class="wallet-method-add" onclick="alert('Stripe Connect: Add payment method flow will be integrated here')">
+          + Add Method
+        </button>
+      </div>
+      <div class="wallet-methods-list">
+        <div class="wallet-method-item">
+          <div class="wallet-method-info">
+            <div class="wallet-method-icon">💳</div>
+            <div class="wallet-method-details">
+              <div class="wallet-method-name">No payment methods</div>
+              <div class="wallet-method-meta">Add a card or bank account to get started</div>
+            </div>
+          </div>
+          <span class="wallet-method-badge">Stripe Ready</span>
+        </div>
+      </div>
+      <div class="wallet-form-note" style="margin-top: 12px;">
+        <strong>Stripe Integration:</strong> When connected, payment methods will appear here. 
+        Users can add cards via Stripe Checkout and bank accounts via Stripe Connect.
+      </div>
+    </div>
+
+    {# Unified Action Card #}
+    <div class="wallet-action-unified">
+      <div class="wallet-action-header">
+        <h2 class="wallet-action-title">Wallet Actions</h2>
+        <p class="wallet-action-subtitle" id="wallet-action-description">
+          Select an action below to manage your wallet funds
+        </p>
+      </div>
+
+      {# Action Selector #}
+      <div class="wallet-action-selector">
+        <button type="button" class="wallet-action-pill active" data-action="add">
+          <span class="wallet-action-pill-icon">💰</span>
+          <span>Add Money</span>
+        </button>
+        <button type="button" class="wallet-action-pill" data-action="send">
+          <span class="wallet-action-pill-icon">👤</span>
+          <span>Send to User</span>
+        </button>
+        <button type="button" class="wallet-action-pill" data-action="withdraw">
+          <span class="wallet-action-pill-icon">🏦</span>
+          <span>Withdraw</span>
+        </button>
+        <button type="button" class="wallet-action-pill" data-action="transfer_out">
+          <span class="wallet-action-pill-icon">💸</span>
+          <span>Transfer Out</span>
+        </button>
+      </div>
+
+      {# Unified Form Container #}
+      <div class="wallet-form-container">
+        
+        {# Add Money Form #}
+        <div class="wallet-form-panel active" data-action="add">
+          <div class="wallet-form-description">
+            <strong>Add Money:</strong> Top up your BeatFund wallet using a card or bank account. 
+            <span class="stripe-badge">Stripe Ready</span>
+          </div>
+          <form method="POST" action="{{ url_for('wallet_action') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="action" value="add">
+            
+            <div class="wallet-field-row">
+              <div class="wallet-field">
+                <label class="wallet-field-label">Amount (USD)</label>
+                <input
+                  type="number"
+                  name="amount"
+                  class="wallet-input"
+                  placeholder="50.00"
+                  step="0.01"
+                  min="1"
+                  required
+                >
+              </div>
+              <div class="wallet-field">
+                <label class="wallet-field-label">Payment Method</label>
+                <select name="method" class="wallet-select" required>
+                  <option value="">Select method...</option>
+                  <option value="stripe_card">💳 Credit/Debit Card</option>
+                  <option value="stripe_bank">🏦 Bank Transfer (ACH)</option>
+                  <option value="demo">Demo Mode</option>
+                </select>
+              </div>
+            </div>
+
+            <button type="submit" class="wallet-btn">
+              <span class="wallet-btn-icon">💰</span>
+              <span>Continue to Payment</span>
+            </button>
+            
+            <div class="wallet-form-note">
+              <span class="stripe-badge">Stripe</span> Integration: This will redirect to Stripe Checkout 
+              for card payments or initiate Stripe ACH for bank transfers.
+            </div>
+          </form>
+        </div>
+
+        {# Send to User Form #}
+        <div class="wallet-form-panel" data-action="send">
+          <div class="wallet-form-description">
+            <strong>Send to User:</strong> Transfer funds instantly to another BeatFund user by their username. 
+            Peer-to-peer wallet transfers with no fees.
+          </div>
+          <form method="POST" action="{{ url_for('wallet_action') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="action" value="send">
+            
+            <div class="wallet-field-row">
+              <div class="wallet-field">
+                <label class="wallet-field-label">Recipient Username</label>
+                <input
+                  type="text"
+                  name="handle"
+                  class="wallet-input"
+                  placeholder="@username"
+                  required
+                >
+              </div>
+              <div class="wallet-field">
+                <label class="wallet-field-label">Amount (USD)</label>
+                <input
+                  type="number"
+                  name="amount"
+                  class="wallet-input"
+                  placeholder="25.00"
+                  step="0.01"
+                  min="0.01"
+                  required
+                >
+              </div>
+            </div>
+
+            <div class="wallet-field">
+              <label class="wallet-field-label">Note (Optional)</label>
+              <input
+                type="text"
+                name="note"
+                class="wallet-input"
+                placeholder="e.g. Beat split, session fee"
+                maxlength="180"
+              >
+            </div>
+
+            <button type="submit" class="wallet-btn">
+              <span class="wallet-btn-icon">👤</span>
+              <span>Send Payment</span>
+            </button>
+            
+            <div class="wallet-form-note">
+              Instant wallet-to-wallet transfer. No fees. Funds are available immediately to the recipient.
+            </div>
+          </form>
+        </div>
+
+        {# Withdraw Form #}
+        <div class="wallet-form-panel" data-action="withdraw">
+          <div class="wallet-form-description">
+            <strong>Withdraw to Bank:</strong> Transfer funds from your wallet to your connected bank account. 
+            <span class="stripe-badge">Stripe Connect</span>
+          </div>
+          <form method="POST" action="{{ url_for('wallet_action') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="action" value="withdraw">
+            
+            <div class="wallet-field-row">
+              <div class="wallet-field">
+                <label class="wallet-field-label">Bank Account</label>
+                <select name="bank_account" class="wallet-select" required>
+                  <option value="">Select account...</option>
+                  <option value="stripe_connected">🏦 Connected Bank Account</option>
+                  <option value="demo">Demo Mode</option>
+                </select>
+              </div>
+              <div class="wallet-field">
+                <label class="wallet-field-label">Amount (USD)</label>
+                <input
+                  type="number"
+                  name="amount"
+                  class="wallet-input"
+                  placeholder="100.00"
+                  step="0.01"
+                  min="1"
+                  required
+                >
+              </div>
+            </div>
+
+            <button type="submit" class="wallet-btn">
+              <span class="wallet-btn-icon">🏦</span>
+              <span>Initiate Withdrawal</span>
+            </button>
+            
+            <div class="wallet-form-note">
+              <span class="stripe-badge">Stripe Connect</span> Integration: Uses Stripe Connect to transfer 
+              funds to your connected bank account. Processing time: 2-5 business days.
+            </div>
+          </form>
+        </div>
+
+        {# Transfer Out Form #}
+        <div class="wallet-form-panel" data-action="transfer_out">
+          <div class="wallet-form-description">
+            <strong>Transfer to Main Account:</strong> Move funds from your BeatFund wallet to your primary 
+            bank account or debit card. <span class="stripe-badge">Stripe Ready</span>
+          </div>
+          <form method="POST" action="{{ url_for('wallet_action') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="action" value="transfer_out">
+            
+            <div class="wallet-field-row">
+              <div class="wallet-field">
+                <label class="wallet-field-label">Destination</label>
+                <select name="destination" class="wallet-select" required>
+                  <option value="">Select destination...</option>
+                  <option value="stripe_bank">🏦 Bank Account (ACH)</option>
+                  <option value="stripe_card">💳 Debit Card (Instant)</option>
+                  <option value="demo">Demo Mode</option>
+                </select>
+              </div>
+              <div class="wallet-field">
+                <label class="wallet-field-label">Amount (USD)</label>
+                <input
+                  type="number"
+                  name="amount"
+                  class="wallet-input"
+                  placeholder="50.00"
+                  step="0.01"
+                  min="1"
+                  required
+                >
+              </div>
+            </div>
+
+            <button type="submit" class="wallet-btn">
+              <span class="wallet-btn-icon">💸</span>
+              <span>Transfer Funds</span>
+            </button>
+            
+            <div class="wallet-form-note">
+              <span class="stripe-badge">Stripe</span> Integration: Bank transfers use Stripe ACH (2-5 days). 
+              Card transfers use Stripe Instant Payouts (minutes). Fees may apply for instant transfers.
+            </div>
+          </form>
+        </div>
+
+      </div>
+    </div>
+
+    {# Recent Activity #}
+    <section class="wallet-activity-card">
+      <div class="wallet-activity-title">Recent Activity</div>
+      <div class="wallet-activity-sub">
+        Last 10 wallet movements and transactions.
+      </div>
+
+      {% if recent is defined and recent and recent|length > 0 %}
+        <ul class="wallet-activity-list">
+          {% for entry in recent %}
+            {% set is_credit = entry.entry_type in credit_types %}
+            <li class="wallet-activity-item">
+              <div class="wallet-activity-left">
+                <div class="wallet-activity-main">
+                  {% if entry.entry_type == EntryType.deposit %}
+                    Deposit
+                  {% elif entry.entry_type == EntryType.withdrawal %}
+                    Withdrawal
+                  {% elif entry.entry_type == EntryType.transfer_in %}
+                    Transfer in
+                  {% elif entry.entry_type == EntryType.transfer_out %}
+                    Transfer out
+                  {% elif entry.entry_type == EntryType.sale_income %}
+                    Sale income
+                  {% elif entry.entry_type == EntryType.purchase_spend %}
+                    Purchase
+                  {% else %}
+                    {{ entry.entry_type.value|replace("_", " ")|title }}
+                  {% endif %}
+                </div>
+                {% if entry.meta %}
+                  <div class="wallet-activity-meta">{{ entry.meta }}</div>
+                {% endif %}
+              </div>
+              <div class="wallet-activity-amount {{ 'credit' if is_credit else 'debit' }}">
+                {% if is_credit %}+{% else %}-{% endif %}${{ "%.2f"|format(entry.amount_cents / 100.0) }}
+              </div>
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <div class="wallet-empty-state">
+          No wallet activity yet. Add funds or make a transfer to see movements here.
+        </div>
+      {% endif %}
+    </section>
+
   {% endif %}
-
 </div>
 {% endblock %}

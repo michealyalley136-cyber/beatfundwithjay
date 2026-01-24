@@ -1,0 +1,164 @@
+{% extends "base.html" %}
+{% block title %}Job Posts · BeatFund Admin{% endblock %}
+
+{% block extra_head %}
+<style>
+  .admin-page-title {
+    font-size: 22px;
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+  .admin-page-subtitle {
+    font-size: 13px;
+    color: #9aa4c2;
+    margin-bottom: 18px;
+  }
+  
+  .admin-actions {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 18px;
+  }
+  
+  .btn-primary {
+    background: linear-gradient(135deg, #4de3ff, #6366f1);
+    color: white;
+    padding: 8px 16px;
+    border-radius: 8px;
+    text-decoration: none;
+    font-size: 13px;
+    font-weight: 500;
+    border: none;
+    cursor: pointer;
+  }
+  
+  .jobs-table {
+    background: linear-gradient(135deg, #0b1220, #020617);
+    border-radius: 16px;
+    border: 1px solid #20263b;
+    padding: 16px;
+    overflow-x: auto;
+  }
+  
+  table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  
+  th {
+    text-align: left;
+    padding: 10px;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: #9aa4c2;
+    border-bottom: 1px solid #1f2937;
+  }
+  
+  td {
+    padding: 12px 10px;
+    border-bottom: 1px solid #1f2937;
+    color: #e5e7eb;
+    font-size: 13px;
+  }
+  
+  .status-badge {
+    display: inline-block;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 500;
+  }
+  
+  .status-active {
+    background: rgba(16, 185, 129, 0.2);
+    color: #10b981;
+  }
+  
+  .status-inactive {
+    background: rgba(107, 114, 128, 0.2);
+    color: #9ca3af;
+  }
+  
+  .btn-small {
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    text-decoration: none;
+    margin-right: 4px;
+  }
+  
+  .btn-edit {
+    background: rgba(79, 139, 255, 0.2);
+    color: #4f8bff;
+  }
+  
+  .btn-applications {
+    background: rgba(16, 185, 129, 0.2);
+    color: #10b981;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div style="max-width: 1200px; margin: 32px auto; padding: 0 16px;">
+  <h1 class="admin-page-title">Job Posts</h1>
+  <p class="admin-page-subtitle">Manage job postings and view applications</p>
+  
+  <div class="admin-actions">
+    <a href="{{ url_for('admin_jobs_new') }}" class="btn-primary">+ New Job Post</a>
+  </div>
+  
+  <div class="jobs-table">
+    <table>
+      <thead>
+        <tr>
+          <th>Title</th>
+          <th>Department</th>
+          <th>Location</th>
+          <th>Status</th>
+          <th>Applications</th>
+          <th>Created</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for job in jobs %}
+          <tr>
+            <td><strong>{{ job.title }}</strong></td>
+            <td>{{ job.department or '-' }}</td>
+            <td>{{ job.location or '-' }}</td>
+            <td>
+              <span class="status-badge {% if job.is_active %}status-active{% else %}status-inactive{% endif %}">
+                {% if job.is_active %}Active{% else %}Archived{% endif %}
+              </span>
+            </td>
+            <td>
+              <a href="{{ url_for('admin_job_applications_for_job', job_id=job.id) }}">
+                {{ job.applications.count() }}
+              </a>
+            </td>
+            <td>{{ job.created_at.strftime('%Y-%m-%d') if job.created_at else '-' }}</td>
+            <td>
+              <a href="{{ url_for('admin_jobs_edit', job_id=job.id) }}" class="btn-small btn-edit">Edit</a>
+              <form method="POST" action="{{ url_for('admin_jobs_toggle', job_id=job.id) }}" style="display: inline;">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="btn-small" style="background: rgba(168, 85, 247, 0.2); color: #a855f7; border: none; cursor: pointer;">
+                  {% if job.is_active %}Archive{% else %}Activate{% endif %}
+                </button>
+              </form>
+              <a href="{{ url_for('admin_job_applications_for_job', job_id=job.id) }}" class="btn-small btn-applications">Applications</a>
+            </td>
+          </tr>
+        {% else %}
+          <tr>
+            <td colspan="7" style="text-align: center; color: #9aa4c2; padding: 32px;">
+              No job posts yet. <a href="{{ url_for('admin_jobs_new') }}" style="color: #4f8bff;">Create one</a>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

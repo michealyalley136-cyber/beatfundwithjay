@@ -1,0 +1,224 @@
+{% extends "base.html" %}
+{% block title %}Hold Fee Paid · BeatFund{% endblock %}
+
+{% block extra_head %}
+<style>
+  .success-page {
+    max-width: 600px;
+    margin: 40px auto;
+    padding: 0 16px;
+  }
+
+  .success-card {
+    background: rgba(255,255,255,.06);
+    border: 1px solid rgba(255,255,255,.12);
+    border-radius: 18px;
+    padding: 32px;
+    text-align: center;
+  }
+
+  .success-icon {
+    width: 80px;
+    height: 80px;
+    margin: 0 auto 24px;
+    background: linear-gradient(135deg, rgba(34,197,94,.2), rgba(6,182,212,.2));
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 2px solid rgba(34,197,94,.4);
+  }
+
+  .success-icon svg {
+    width: 48px;
+    height: 48px;
+    color: #22c55e;
+  }
+
+  .success-title {
+    font-size: 1.75rem;
+    font-weight: 800;
+    margin: 0 0 8px;
+    background: linear-gradient(135deg, #4de3ff, #a855f7);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  .success-subtitle {
+    opacity: .8;
+    font-size: .95rem;
+    margin-bottom: 32px;
+  }
+
+  .booking-info {
+    background: rgba(0,0,0,.2);
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 24px;
+    border: 1px solid rgba(255,255,255,.08);
+    text-align: left;
+  }
+
+  .info-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 0;
+    border-bottom: 1px solid rgba(255,255,255,.08);
+  }
+
+  .info-row:last-child {
+    border-bottom: none;
+  }
+
+  .info-label {
+    opacity: .8;
+    font-size: .95rem;
+  }
+
+  .info-value {
+    font-weight: 700;
+    font-size: 1.1rem;
+  }
+
+  .info-total {
+    font-size: 1.5rem;
+    background: linear-gradient(135deg, #4de3ff, #a855f7);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  .escrow-notice {
+    background: rgba(6,182,212,.1);
+    border: 1px solid rgba(6,182,212,.3);
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 24px;
+    text-align: left;
+  }
+
+  .escrow-notice-title {
+    font-weight: 700;
+    margin-bottom: 8px;
+    color: #06b6d4;
+  }
+
+  .escrow-notice-text {
+    font-size: 0.9rem;
+    opacity: 0.9;
+    line-height: 1.5;
+  }
+
+  .action-buttons {
+    display: flex;
+    gap: 12px;
+    flex-direction: column;
+    margin-top: 32px;
+  }
+
+  .btn {
+    padding: 14px 24px;
+    border-radius: 12px;
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 1rem;
+    text-align: center;
+    transition: all 0.2s ease;
+    border: none;
+    cursor: pointer;
+    display: block;
+  }
+
+  .btn-primary {
+    background: linear-gradient(135deg, rgba(6,182,212,.4), rgba(34,197,94,.3));
+    border: 1px solid rgba(6,182,212,.5);
+    color: #fff;
+  }
+
+  .btn-primary:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(6,182,212,.3);
+  }
+
+  .btn-secondary {
+    background: rgba(255,255,255,.08);
+    border: 1px solid rgba(255,255,255,.12);
+    color: #cbd5f5;
+  }
+
+  .btn-secondary:hover {
+    background: rgba(255,255,255,.12);
+  }
+
+  .booking-id {
+    font-size: 0.85rem;
+    opacity: 0.6;
+    margin-top: 16px;
+    padding-top: 16px;
+    border-top: 1px solid rgba(255,255,255,.08);
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="success-page">
+  <div class="success-card">
+    <div class="success-icon">
+      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+      </svg>
+    </div>
+
+    <h1 class="success-title">Hold Fee Paid!</h1>
+    <p class="success-subtitle">Your booking is now confirmed</p>
+
+    <div class="escrow-notice">
+      <div class="escrow-notice-title">💰 Hold Fee in Escrow</div>
+      <div class="escrow-notice-text">
+        Your hold fee of ${{ '%.2f'|format(hold_fee_cents / 100.0) }} has been paid and is being held in escrow. 
+        This fee will be released to the provider when the booking is completed, or refunded to you if the booking is cancelled.
+      </div>
+    </div>
+
+    <div class="booking-info">
+      <div class="info-row">
+        <span class="info-label">Provider</span>
+        <span class="info-value">@{{ provider.username }}</span>
+      </div>
+      <div class="info-row">
+        <span class="info-label">Event</span>
+        <span class="info-value">{{ booking.event_title }}</span>
+      </div>
+      <div class="info-row">
+        <span class="info-label">Date & Time</span>
+        <span class="info-value">
+          {% if booking.event_datetime %}
+            {{ booking.event_datetime.strftime("%B %d, %Y at %I:%M %p") }}
+          {% else %}
+            {{ booking_request.preferred_time }}
+          {% endif %}
+        </span>
+      </div>
+      <div class="info-row">
+        <span class="info-label">Hold Fee Paid</span>
+        <span class="info-value info-total">${{ '%.2f'|format(hold_fee_cents / 100.0) }}</span>
+      </div>
+    </div>
+
+    <div class="action-buttons">
+      <a href="{{ url_for('booking_detail', booking_id=booking.id) }}" class="btn btn-primary">
+        View Booking Details
+      </a>
+      <a href="{{ url_for('bookme_requests') }}" class="btn btn-secondary">
+        Back to Requests
+      </a>
+    </div>
+
+    <div class="booking-id">
+      Booking ID: #{{ booking.id }} | Stripe Session: {{ stripe_session_id[:20] }}...
+    </div>
+  </div>
+</div>
+{% endblock %}

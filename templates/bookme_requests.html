@@ -161,7 +161,26 @@
               </div>
 
               <div class="req-actions">
-                {% if req.status in [BookingStatus.pending, BookingStatus.accepted] %}
+                {% if req.status == BookingStatus.accepted and not req.booking_id %}
+                  {# Client needs to pay hold fee #}
+                  <button 
+                    type="button" 
+                    class="btn btn-primary btn-sm pay-hold-fee-btn"
+                    data-request-id="{{ req.id }}"
+                  >
+                    Pay Hold Fee (${{ '%.2f'|format(HOLD_FEE_CENTS / 100.0) }})
+                  </button>
+                  <form
+                    method="post"
+                    action="{{ url_for('bookme_request_status', req_id=req.id) }}"
+                    style="display:inline; margin-left: 8px;"
+                  >
+                    <input type="hidden" name="action" value="cancel">
+                    <button type="submit" class="btn btn-secondary btn-sm">
+                      Cancel
+                    </button>
+                  </form>
+                {% elif req.status in [BookingStatus.pending] %}
                   <form
                     method="post"
                     action="{{ url_for('bookme_request_status', req_id=req.id) }}"
@@ -576,4 +595,61 @@
     }
   }
 </style>
+
+<script>
+  // Pay hold fee with Stripe Checkout
+  document.addEventListener('DOMContentLoaded', function() {
+    const payButtons = document.querySelectorAll('.pay-hold-fee-btn');
+    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || 
+                     document.querySelector('input[name="csrf_token"]')?.value;
+    
+    payButtons.forEach(button => {
+      button.addEventListener('click', async function() {
+        const requestId = this.getAttribute('data-request-id');
+        
+        if (!requestId) {
+          alert('Error: Request ID not found');
+          return;
+        }
+        
+        // Disable button and show loading state
+        this.disabled = true;
+        const originalText = this.textContent;
+        this.textContent = 'Processing...';
+        
+        try {
+          // Create checkout session for hold fee
+          const response = await fetch('/create-checkout-session-hold-fee', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-CSRFToken': csrfToken
+            },
+            body: JSON.stringify({
+              booking_request_id: parseInt(requestId)
+            })
+          });
+          
+          const data = await response.json();
+          
+          if (!response.ok) {
+            throw new Error(data.error || 'Failed to create checkout session');
+          }
+          
+          if (data.url) {
+            // Redirect to Stripe Checkout
+            window.location.href = data.url;
+          } else {
+            throw new Error('No checkout URL received');
+          }
+        } catch (error) {
+          console.error('Checkout error:', error);
+          alert('Error: ' + error.message + '\n\nPlease try again or contact support.');
+          this.disabled = false;
+          this.textContent = originalText;
+        }
+      });
+    });
+  });
+</script>
 {% endblock %}

@@ -4,14 +4,10 @@
 {% block extra_head %}
 <link
   rel="stylesheet"
-  href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-  integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
-  crossorigin=""
+  href="{{ url_for('static', filename='leaflet/leaflet.css') }}"
 />
 <script
-  src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-  integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
-  crossorigin=""
+  src="{{ url_for('static', filename='leaflet/leaflet.js') }}"
 ></script>
 
 <style>
@@ -213,9 +209,25 @@
   #provider-map {
     width: 100%;
     height: 260px;
+    min-height: 260px;
     border-radius: 16px;
     overflow: hidden;
     margin-bottom: 14px;
+    background: #0f172a;
+    position: relative;
+    z-index: 1;
+  }
+
+  #provider-map .leaflet-container {
+    background: #0f172a;
+    border-radius: 16px;
+    height: 100%;
+    width: 100%;
+  }
+
+  /* Ensure Leaflet tiles and markers are visible */
+  .leaflet-tile-container img {
+    max-width: none !important;
   }
 
   .bookme-results-header {
@@ -358,50 +370,122 @@
 </style>
 
 <script>
-  document.addEventListener('DOMContentLoaded', function () {
-    const mapEl = document.getElementById('provider-map');
-    if (!mapEl || !window.L) return;
-
-    const providers = {{ providers_json | safe }};
-
-    const map = L.map('provider-map', {
-      scrollWheelZoom: false
-    });
-
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '&copy; OpenStreetMap contributors'
-    }).addTo(map);
-
-    if (providers.length) {
-      const markers = [];
-
-      providers.forEach(function (p) {
-        if (p.lat == null || p.lng == null) return;
-
-        const marker = L.marker([p.lat, p.lng]).addTo(map);
-        const role = (p.role || '').replace(/_/g, ' ');
-        const cityState = [p.city || '', p.state || ''].filter(Boolean).join(', ');
-
-        marker.bindPopup(
-          '<strong>' + (p.display_name || '') + '</strong><br>' +
-          (p.username ? '@' + p.username + '<br>' : '') +
-          (role ? role + '<br>' : '') +
-          (cityState || '')
-        );
-
-        markers.push(marker);
+  (function() {
+    // Configure Leaflet default icon path (if needed)
+    if (typeof L !== 'undefined') {
+      delete L.Icon.Default.prototype._getIconUrl;
+      L.Icon.Default.mergeOptions({
+        iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png',
+        iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png',
+        shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
       });
-
-      if (markers.length) {
-        const group = L.featureGroup(markers);
-        map.fitBounds(group.getBounds().pad(0.35));
-      } else {
-        map.setView([0, 0], 2);
-      }
-    } else {
-      map.setView([0, 0], 2);
     }
-  });
+
+    function initMap() {
+      const mapEl = document.getElementById('provider-map');
+      if (!mapEl) {
+        console.error('Map container not found');
+        return;
+      }
+
+      // Check if Leaflet is loaded
+      if (typeof L === 'undefined') {
+        console.log('Waiting for Leaflet to load...');
+        setTimeout(initMap, 200);
+        return;
+      }
+
+      // Clear loading message
+      mapEl.innerHTML = '';
+
+      try {
+        const providers = {{ providers_json | safe }};
+        console.log('Initializing map with', providers ? providers.length : 0, 'providers');
+
+        // Initialize map
+        const map = L.map('provider-map', {
+          scrollWheelZoom: false,
+          zoomControl: true,
+          attributionControl: true
+        });
+
+        // Add tile layer
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+          maxZoom: 19
+        }).addTo(map);
+
+        // Add markers for providers with coordinates
+        const markers = [];
+        
+        if (providers && Array.isArray(providers) && providers.length > 0) {
+          providers.forEach(function (p) {
+            if (!p || p.lat == null || p.lng == null) {
+              return;
+            }
+
+            const lat = parseFloat(p.lat);
+            const lng = parseFloat(p.lng);
+
+            if (isNaN(lat) || isNaN(lng)) {
+              console.warn('Invalid coordinates for provider:', p);
+              return;
+            }
+
+            try {
+              const marker = L.marker([lat, lng]).addTo(map);
+              const role = (p.role || '').replace(/_/g, ' ');
+              const cityState = [p.city || '', p.state || ''].filter(Boolean).join(', ');
+
+              const popupContent = 
+                '<div style="min-width: 150px;">' +
+                '<strong>' + (p.display_name || 'Unknown') + '</strong><br>' +
+                (p.username ? '@' + p.username + '<br>' : '') +
+                (role ? role + '<br>' : '') +
+                (cityState || 'No location') +
+                '</div>';
+
+              marker.bindPopup(popupContent);
+              markers.push(marker);
+            } catch (e) {
+              console.error('Error adding marker:', e, p);
+            }
+          });
+        }
+
+        // Set map view
+        if (markers.length > 0) {
+          const group = L.featureGroup(markers);
+          map.fitBounds(group.getBounds().pad(0.35));
+          console.log('Map initialized with', markers.length, 'markers');
+        } else {
+          // Default view (center of USA)
+          map.setView([39.8283, -98.5795], 4);
+          console.log('Map initialized with default view (no markers)');
+        }
+
+        // Force map to invalidate size after a short delay (handles any layout issues)
+        setTimeout(function() {
+          map.invalidateSize();
+        }, 200);
+
+      } catch (error) {
+        console.error('Error initializing map:', error);
+        mapEl.innerHTML = '<div style="padding: 20px; text-align: center; color: #ef4444;">Error loading map: ' + error.message + '</div>';
+      }
+    }
+
+    // Start initialization when DOM is ready
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', function() {
+        // Wait for Leaflet to load
+        setTimeout(initMap, 300);
+      });
+    } else {
+      // DOM already loaded, wait for Leaflet
+      setTimeout(initMap, 300);
+    }
+  })();
 </script>
 {% endblock %}
 
@@ -501,7 +585,11 @@
 
     <!-- Map + provider list -->
     <section class="bookme-main-card">
-      <div id="provider-map"></div>
+      <div id="provider-map">
+        <div style="padding: 100px 20px; text-align: center; color: #9ca3c8;">
+          Loading map...
+        </div>
+      </div>
 
       <div class="bookme-results">
         <div class="bookme-results-header">

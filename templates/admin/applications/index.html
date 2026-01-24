@@ -1,0 +1,202 @@
+{% extends "base.html" %}
+{% block title %}Applications · BeatFund Admin{% endblock %}
+
+{% block extra_head %}
+<style>
+  .admin-page-title {
+    font-size: 22px;
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+  .admin-page-subtitle {
+    font-size: 13px;
+    color: #9aa4c2;
+    margin-bottom: 18px;
+  }
+  
+  .filter-bar {
+    background: linear-gradient(135deg, #020617, #020617);
+    border-radius: 16px;
+    border: 1px solid #20263b;
+    padding: 16px 18px;
+    margin-bottom: 18px;
+  }
+  
+  .filter-form {
+    display: grid;
+    grid-template-columns: 2fr 1.5fr 1.5fr auto;
+    gap: 10px;
+    align-items: end;
+  }
+  
+  @media (max-width: 900px) {
+    .filter-form {
+      grid-template-columns: 1fr;
+    }
+  }
+  
+  .filter-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: #64748b;
+    margin-bottom: 4px;
+  }
+  
+  .filter-input,
+  .filter-select {
+    width: 100%;
+    padding: 7px 11px;
+    border-radius: 8px;
+    border: 1px solid #111827;
+    background: #020617;
+    color: #e5e7eb;
+    font-size: 13px;
+  }
+  
+  .btn-filter {
+    padding: 7px 16px;
+    border-radius: 8px;
+    border: none;
+    font-size: 13px;
+    background: linear-gradient(135deg, #4de3ff, #6366f1);
+    color: white;
+    font-weight: 500;
+    cursor: pointer;
+  }
+  
+  .applications-table {
+    background: linear-gradient(135deg, #0b1220, #020617);
+    border-radius: 16px;
+    border: 1px solid #20263b;
+    padding: 16px;
+    overflow-x: auto;
+  }
+  
+  table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  
+  th {
+    text-align: left;
+    padding: 10px;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: #9aa4c2;
+    border-bottom: 1px solid #1f2937;
+  }
+  
+  td {
+    padding: 12px 10px;
+    border-bottom: 1px solid #1f2937;
+    color: #e5e7eb;
+    font-size: 13px;
+  }
+  
+  .status-select {
+    background: #020617;
+    border: 1px solid #1f2937;
+    border-radius: 4px;
+    color: #e5e7eb;
+    padding: 4px 8px;
+    font-size: 12px;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div style="max-width: 1200px; margin: 32px auto; padding: 0 16px;">
+  <h1 class="admin-page-title">Job Applications</h1>
+  <p class="admin-page-subtitle">Global inbox for all applications</p>
+  
+  <div class="filter-bar">
+    <form method="GET" class="filter-form">
+      <div>
+        <div class="filter-label">Search (Name/Email)</div>
+        <input type="text" name="q" class="filter-input" value="{{ search_q }}" placeholder="Search...">
+      </div>
+      <div>
+        <div class="filter-label">Status</div>
+        <select name="status" class="filter-select">
+          <option value="">All</option>
+          <option value="new" {% if status_filter == 'new' %}selected{% endif %}>New</option>
+          <option value="reviewed" {% if status_filter == 'reviewed' %}selected{% endif %}>Reviewed</option>
+          <option value="interviewing" {% if status_filter == 'interviewing' %}selected{% endif %}>Interviewing</option>
+          <option value="rejected" {% if status_filter == 'rejected' %}selected{% endif %}>Rejected</option>
+          <option value="hired" {% if status_filter == 'hired' %}selected{% endif %}>Hired</option>
+        </select>
+      </div>
+      <div>
+        <div class="filter-label">Job</div>
+        <select name="job_id" class="filter-select">
+          <option value="">All Jobs</option>
+          {% for job in jobs %}
+            <option value="{{ job.id }}" {% if job_id_filter|string == job.id|string %}selected{% endif %}>{{ job.title }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <button type="submit" class="btn-filter">Filter</button>
+      </div>
+    </form>
+  </div>
+  
+  <div class="applications-table">
+    {% if applications %}
+      <table>
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Email</th>
+            <th>Job</th>
+            <th>Resume</th>
+            <th>Status</th>
+            <th>Applied</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for app in applications %}
+            <tr>
+              <td><strong>{{ app.full_name }}</strong></td>
+              <td>{{ app.email }}</td>
+              <td>
+                {% if app.job %}
+                  <a href="{{ url_for('admin_job_applications_for_job', job_id=app.job.id) }}" style="color: #4f8bff;">{{ app.job.title }}</a>
+                {% else %}
+                  <span style="color: #9ca3af;">General Application</span>
+                {% endif %}
+              </td>
+              <td>
+                {% if app.resume_filename %}
+                  <a href="{{ url_for('media_file', filename=app.resume_filename) }}" target="_blank" style="color: #4f8bff;">View</a>
+                {% else %}
+                  -
+                {% endif %}
+              </td>
+              <td>
+                <form method="POST" action="{{ url_for('admin_job_application_status', app_id=app.id) }}" style="display: inline;">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <select name="status" class="status-select" onchange="this.form.submit()">
+                    <option value="new" {% if app.status == 'new' %}selected{% endif %}>New</option>
+                    <option value="reviewed" {% if app.status == 'reviewed' %}selected{% endif %}>Reviewed</option>
+                    <option value="interviewing" {% if app.status == 'interviewing' %}selected{% endif %}>Interviewing</option>
+                    <option value="rejected" {% if app.status == 'rejected' %}selected{% endif %}>Rejected</option>
+                    <option value="hired" {% if app.status == 'hired' %}selected{% endif %}>Hired</option>
+                  </select>
+                </form>
+              </td>
+              <td>{{ app.created_at.strftime('%Y-%m-%d %H:%M') if app.created_at else '-' }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <div style="text-align: center; color: #9aa4c2; padding: 32px;">
+        No applications found.
+      </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
