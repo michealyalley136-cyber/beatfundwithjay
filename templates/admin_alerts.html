@@ -1,0 +1,72 @@
+{% extends "base_admin.html" %}
+{% block title %}BeatFund · Admin · Alerts{% endblock %}
+
+{% block admin_content %}
+<div class="admin-page-header">
+  <h1>Alerts</h1>
+  <p>Rules-based monitoring (webhook failures, payment failures, disputes, suspicious activity).</p>
+</div>
+
+<div class="card">
+  <h2>Filters</h2>
+  <form method="get" action="{{ url_for('admin_alerts') }}" style="display:flex; gap:10px; flex-wrap:wrap; align-items:end;">
+    <div>
+      <label class="stat-label">Severity</label>
+      <select class="form-control" name="severity">
+        <option value="" {% if not filters.severity %}selected{% endif %}>All</option>
+        <option value="LOW" {% if filters.severity=='LOW' %}selected{% endif %}>LOW</option>
+        <option value="MED" {% if filters.severity=='MED' %}selected{% endif %}>MED</option>
+        <option value="HIGH" {% if filters.severity=='HIGH' %}selected{% endif %}>HIGH</option>
+      </select>
+    </div>
+    <div>
+      <label class="stat-label">Status</label>
+      <select class="form-control" name="status">
+        <option value="" {% if not filters.status %}selected{% endif %}>All</option>
+        <option value="open" {% if filters.status=='open' %}selected{% endif %}>Open</option>
+        <option value="resolved" {% if filters.status=='resolved' %}selected{% endif %}>Resolved</option>
+      </select>
+    </div>
+    <button class="btn btn-primary" type="submit">Apply</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>Recent</h2>
+  <div style="overflow:auto;">
+    <table style="width:100%; border-collapse:collapse;">
+      <thead>
+        <tr>
+          <th style="text-align:left; padding:8px; border-bottom:1px solid rgba(148,163,184,0.2);">Time (UTC)</th>
+          <th style="text-align:left; padding:8px; border-bottom:1px solid rgba(148,163,184,0.2);">Severity</th>
+          <th style="text-align:left; padding:8px; border-bottom:1px solid rgba(148,163,184,0.2);">Type</th>
+          <th style="text-align:left; padding:8px; border-bottom:1px solid rgba(148,163,184,0.2);">Message</th>
+          <th style="text-align:left; padding:8px; border-bottom:1px solid rgba(148,163,184,0.2);">Status</th>
+          <th style="text-align:left; padding:8px; border-bottom:1px solid rgba(148,163,184,0.2);">Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for a in rows %}
+        <tr style="border-top:1px solid rgba(148,163,184,0.10);">
+          <td style="padding:8px; white-space:nowrap;">{{ a.created_at.strftime("%Y-%m-%d %H:%M:%S") if a.created_at else "-" }}</td>
+          <td style="padding:8px;">{{ a.severity.value if a.severity else "-" }}</td>
+          <td style="padding:8px;">{{ a.type }}</td>
+          <td style="padding:8px;">{{ a.message }}</td>
+          <td style="padding:8px;">{% if a.resolved_at %}Resolved{% else %}Open{% endif %}</td>
+          <td style="padding:8px;">
+            {% if not a.resolved_at %}
+            <form method="post" action="{{ url_for('admin_alert_resolve', alert_id=a.id) }}" style="display:inline;">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button class="btn" type="submit">Resolve</button>
+            </form>
+            {% else %}
+              -
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

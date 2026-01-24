@@ -223,10 +223,11 @@
                 {% endif %}
               </div>
               <div class="purchase-amount">
-                Paid: ${{ format_cents_dollars((order.amount_cents or 0) + calc_beat_platform_fee_cents(order.amount_cents or 0)) }}
+                Paid: ${{ format_cents_dollars(order.total_cents if order.total_cents is not none else ((order.amount_cents or 0) + calc_beat_platform_fee_cents(order.amount_cents or 0))) }}
               </div>
               <div style="font-size: 10px; color: #64748b; margin-top: 2px;">
-                Subtotal: ${{ format_cents_dollars(order.amount_cents or 0) }} + Fee: ${{ format_cents_dollars(calc_beat_platform_fee_cents(order.amount_cents or 0)) }}
+                Subtotal: ${{ format_cents_dollars(order.amount_cents or 0) }}
+                + Fee: ${{ format_cents_dollars(order.platform_fee_cents if order.platform_fee_cents is not none else calc_beat_platform_fee_cents(order.amount_cents or 0)) }}
               </div>
             </div>
 

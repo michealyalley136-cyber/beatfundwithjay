@@ -78,6 +78,19 @@
             padding-bottom: 0.25rem;
         }
 
+        .admin-badge {
+            display: none;
+            margin-left: 0.4rem;
+            background: var(--admin-accent);
+            color: #fff;
+            border-radius: 999px;
+            padding: 0.05rem 0.45rem;
+            font-size: 0.7rem;
+            line-height: 1.4;
+            font-weight: 700;
+            vertical-align: middle;
+        }
+
         .admin-nav a:hover {
             color: var(--admin-text);
         }
@@ -310,6 +323,15 @@
 
     <nav class="admin-nav">
         <a href="{{ url_for('admin_dashboard') }}">Admin Dashboard</a>
+        <a href="{{ url_for('admin_notifications') }}">
+            Notifications <span id="adminNotifBadge" class="admin-badge">0</span>
+        </a>
+        <a href="{{ url_for('admin_finance_events') }}">Finance Events</a>
+        <a href="{{ url_for('admin_audit') }}">Audit</a>
+        <a href="{{ url_for('admin_stripe_webhooks') }}">Stripe Webhooks</a>
+        <a href="{{ url_for('admin_alerts') }}">Alerts</a>
+        <a href="{{ url_for('admin_uploads') }}">Uploads</a>
+        <a href="{{ url_for('admin_fees') }}">Fees</a>
         <a href="{{ url_for('admin_users') }}">Users</a>
         <a href="{{ url_for('admin_kyc') }}">KYC Queue</a>
         <a href="{{ url_for('admin_transactions') }}">Transactions</a>
@@ -344,5 +366,30 @@
 
     {% block admin_content %}{% endblock %}
 </main>
+
+<script>
+  (function() {
+    const badge = document.getElementById('adminNotifBadge');
+    if (!badge) return;
+
+    function refreshAdminNotifCount() {
+      fetch('{{ url_for("admin_notifications_unread_count") }}', { credentials: 'same-origin' })
+        .then(r => r.json())
+        .then(data => {
+          const c = (data && data.count) ? Number(data.count) : 0;
+          if (c > 0) {
+            badge.textContent = c > 99 ? '99+' : String(c);
+            badge.style.display = 'inline-flex';
+          } else {
+            badge.style.display = 'none';
+          }
+        })
+        .catch(() => {});
+    }
+
+    refreshAdminNotifCount();
+    setInterval(refreshAdminNotifCount, 20000);
+  })();
+</script>
 </body>
 </html>

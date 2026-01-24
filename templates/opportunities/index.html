@@ -1,0 +1,378 @@
+{% extends "base.html" %}
+{% block title %}Opportunities Marketplace · BeatFund{% endblock %}
+
+{% block extra_head %}
+<style>
+  /* Page shell */
+  .opps-page {
+    max-width: 1120px;
+    margin: 32px auto 40px;
+    padding-inline: 16px;
+  }
+
+  .opps-page-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 24px;
+    margin-bottom: 24px;
+  }
+  @media (max-width: 900px) {
+    .opps-page-header {
+      flex-direction: column;
+      align-items: flex-start;
+    }
+  }
+
+  .opps-kicker {
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: #6b8bff;
+    margin-bottom: 4px;
+  }
+
+  .opps-page-title {
+    font-size: 26px;
+    font-weight: 650;
+    letter-spacing: 0.01em;
+    margin: 0 0 4px;
+  }
+
+  .opps-page-sub {
+    font-size: 13px;
+    color: #9aa4c2;
+    margin: 0;
+  }
+
+  .opps-filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: center;
+    margin-bottom: 24px;
+  }
+
+  .opps-filter-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .opps-filter-label {
+    font-size: 13px;
+    font-weight: 500;
+    color: #6b8bff;
+  }
+
+  .opps-filter-select {
+    padding: 6px 12px;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    font-size: 13px;
+    background: white;
+    min-width: 120px;
+  }
+
+  .opps-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 24px;
+    margin-bottom: 32px;
+  }
+
+  .opps-card {
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    overflow: hidden;
+    background: white;
+    transition: all 0.2s ease;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  }
+
+  .opps-card:hover {
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    transform: translateY(-2px);
+  }
+
+  .opps-card-featured {
+    border-color: #6b8bff;
+    box-shadow: 0 0 0 2px rgba(107, 139, 255, 0.1);
+  }
+
+  .opps-card-header {
+    padding: 20px;
+    border-bottom: 1px solid #f1f5f9;
+  }
+
+  .opps-card-title {
+    font-size: 18px;
+    font-weight: 600;
+    margin: 0 0 8px;
+    color: #1e293b;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .opps-card-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    font-size: 13px;
+    color: #64748b;
+    margin-bottom: 12px;
+  }
+
+  .opps-card-price {
+    font-size: 20px;
+    font-weight: 700;
+    color: #6b8bff;
+    margin-bottom: 12px;
+  }
+
+  .opps-card-price-free {
+    color: #10b981;
+  }
+
+  .opps-card-description {
+    font-size: 14px;
+    color: #64748b;
+    line-height: 1.5;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    margin-bottom: 16px;
+  }
+
+  .opps-card-footer {
+    padding: 16px 20px;
+    background: #f8fafc;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .opps-card-host {
+    font-size: 13px;
+    color: #64748b;
+    font-weight: 500;
+  }
+
+  .opps-card-cta {
+    padding: 8px 16px;
+    background: #6b8bff;
+    color: white;
+    text-decoration: none;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 500;
+    transition: background 0.2s ease;
+  }
+
+  .opps-card-cta:hover {
+    background: #5a6fd8;
+    color: white;
+  }
+
+  .opps-pagination {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+    margin-top: 32px;
+  }
+
+  .opps-page-link {
+    padding: 8px 12px;
+    border: 1px solid #e2e8f0;
+    background: white;
+    color: #64748b;
+    text-decoration: none;
+    border-radius: 6px;
+    font-size: 14px;
+    transition: all 0.2s ease;
+  }
+
+  .opps-page-link:hover,
+  .opps-page-link.active {
+    background: #6b8bff;
+    color: white;
+    border-color: #6b8bff;
+  }
+
+  .opps-empty {
+    text-align: center;
+    padding: 64px 20px;
+    color: #64748b;
+  }
+
+  .opps-empty-title {
+    font-size: 20px;
+    font-weight: 600;
+    margin-bottom: 8px;
+    color: #1e293b;
+  }
+
+  .opps-empty-text {
+    font-size: 16px;
+    margin-bottom: 24px;
+  }
+
+  .opps-apply-host {
+    display: inline-block;
+    padding: 12px 24px;
+    background: #10b981;
+    color: white;
+    text-decoration: none;
+    border-radius: 8px;
+    font-weight: 500;
+    transition: background 0.2s ease;
+  }
+
+  .opps-apply-host:hover {
+    background: #059669;
+    color: white;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="opps-page">
+  <div class="opps-page-header">
+    <div>
+      <div class="opps-kicker">Opportunities</div>
+      <h1 class="opps-page-title">Find Your Next Opportunity</h1>
+      <p class="opps-page-sub">Discover programs, courses, and opportunities from coaches and institutions</p>
+    </div>
+    <a href="{{ url_for('host_apply_to_post') }}" class="opps-apply-host">
+      Post an Opportunity
+    </a>
+  </div>
+
+  <form method="GET" class="opps-filters">
+    <div class="opps-filter-group">
+      <label class="opps-filter-label">Category:</label>
+      <select name="category" class="opps-filter-select" onchange="this.form.submit()">
+        <option value="">All Categories</option>
+        {% for category in categories %}
+        <option value="{{ category }}" {% if current_filters.category == category %}selected{% endif %}>
+          {{ category.replace('_', ' ').title() }}
+        </option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="opps-filter-group">
+      <label class="opps-filter-label">Format:</label>
+      <select name="format" class="opps-filter-select" onchange="this.form.submit()">
+        <option value="">All Formats</option>
+        <option value="online" {% if current_filters.format == 'online' %}selected{% endif %}>Online</option>
+        <option value="in_person" {% if current_filters.format == 'in_person' %}selected{% endif %}>In Person</option>
+      </select>
+    </div>
+
+    <div class="opps-filter-group">
+      <label class="opps-filter-label">Location:</label>
+      <select name="location" class="opps-filter-select" onchange="this.form.submit()">
+        <option value="">All Locations</option>
+        {% for location in locations %}
+        <option value="{{ location }}" {% if current_filters.location == location %}selected{% endif %}>
+          {{ location }}
+        </option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="opps-filter-group">
+      <label class="opps-filter-label">Sort:</label>
+      <select name="sort" class="opps-filter-select" onchange="this.form.submit()">
+        <option value="newest" {% if current_filters.sort == 'newest' %}selected{% endif %}>Newest</option>
+        <option value="price_low" {% if current_filters.sort == 'price_low' %}selected{% endif %}>Price: Low to High</option>
+        <option value="price_high" {% if current_filters.sort == 'price_high' %}selected{% endif %}>Price: High to Low</option>
+        <option value="popular" {% if current_filters.sort == 'popular' %}selected{% endif %}>Most Popular</option>
+      </select>
+    </div>
+  </form>
+
+  {% if opportunities.items %}
+  <div class="opps-grid">
+    {% for opportunity in opportunities.items %}
+    <div class="opps-card {% if opportunity.is_featured %}opps-card-featured{% endif %}">
+      <div class="opps-card-header">
+        <h3 class="opps-card-title">
+          <a href="{{ url_for('opportunities_detail', opportunity_id=opportunity.id) }}" style="color: inherit; text-decoration: none;">
+            {{ opportunity.title }}
+          </a>
+        </h3>
+
+        <div class="opps-card-meta">
+          <span>{{ opportunity.category.replace('_', ' ').title() }}</span>
+          <span>{{ 'Online' if opportunity.format == 'online' else 'In Person' }}</span>
+          {% if opportunity.location_text %}
+          <span>{{ opportunity.location_text }}</span>
+          {% endif %}
+          {% if opportunity.start_date %}
+          <span>{{ opportunity.start_date.strftime('%b %d, %Y') }}</span>
+          {% endif %}
+        </div>
+
+        <div class="opps-card-price {% if opportunity.price_cents == 0 %}opps-card-price-free{% endif %}">
+          {% if opportunity.price_cents == 0 %}
+          Free
+          {% else %}
+          ${{ "%.0f"|format(opportunity.price_cents / 100) }}
+          {% endif %}
+        </div>
+
+        {% if opportunity.description %}
+        <div class="opps-card-description">
+          {{ opportunity.description }}
+        </div>
+        {% endif %}
+      </div>
+
+      <div class="opps-card-footer">
+        <div class="opps-card-host">
+          by {{ opportunity.host_profile.host_name }}
+        </div>
+        <a href="{{ url_for('opportunities_detail', opportunity_id=opportunity.id) }}" class="opps-card-cta">
+          View Details
+        </a>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <!-- Pagination -->
+  {% if opportunities.pages > 1 %}
+  <div class="opps-pagination">
+    {% if opportunities.has_prev %}
+    <a href="{{ url_for('opportunities_index', page=opportunities.prev_num, **current_filters) }}" class="opps-page-link">« Previous</a>
+    {% endif %}
+
+    {% for page_num in opportunities.iter_pages() %}
+    {% if page_num %}
+    <a href="{{ url_for('opportunities_index', page=page_num, **current_filters) }}" class="opps-page-link {% if page_num == opportunities.page %}active{% endif %}">
+      {{ page_num }}
+    </a>
+    {% else %}
+    <span class="opps-page-link">…</span>
+    {% endif %}
+    {% endfor %}
+
+    {% if opportunities.has_next %}
+    <a href="{{ url_for('opportunities_index', page=opportunities.next_num, **current_filters) }}" class="opps-page-link">Next »</a>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {% else %}
+  <div class="opps-empty">
+    <h2 class="opps-empty-title">No opportunities found</h2>
+    <p class="opps-empty-text">Try adjusting your filters or check back later for new opportunities.</p>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

@@ -590,8 +590,8 @@ def get_database_config():
     Configure database connection with proper SSL for Neon Postgres.
     Returns tuple: (database_url, engine_options)
     """
-    db_url = os.getenv("DATABASE_URL", "").strip()
-    
+db_url = os.getenv("DATABASE_URL", "").strip()
+
     if not db_url:
         # Fallback to SQLite for local development
         sqlite_path = os.path.join(INSTANCE_DIR, 'app.db')

@@ -358,30 +358,50 @@
     backdrop-filter: blur(1px);
   }
 
+  :root {
+    --bf-gold-1: #fbbf24; /* amber-400 */
+    --bf-gold-2: #f59e0b; /* amber-500 */
+    --bf-gold-3: #fde68a; /* amber-200 */
+  }
+
   .music-note {
     position: absolute;
     font-size: 20px;
-    opacity: 0.08;
-    color: #4f8bff;
-    animation: floatNote 20s infinite linear;
+    opacity: 0.12;
+    color: var(--bf-gold-1);
+    text-shadow:
+      0 0 10px rgba(251, 191, 36, 0.35),
+      0 0 18px rgba(245, 158, 11, 0.22);
+    animation:
+      floatNote 20s infinite linear,
+      goldShine 2.8s infinite ease-in-out;
   }
 
   .music-note:nth-child(2n) {
-    color: #a855f7;
+    color: var(--bf-gold-2);
     animation-duration: 22s;
     animation-delay: -5s;
   }
 
   .music-note:nth-child(3n) {
-    color: #4de3ff;
+    color: var(--bf-gold-3);
     animation-duration: 25s;
     animation-delay: -10s;
   }
 
   .music-note:nth-child(4n) {
-    color: #10b981;
+    color: var(--bf-gold-1);
     animation-duration: 18s;
     animation-delay: -15s;
+  }
+
+  @keyframes goldShine {
+    0%, 100% {
+      filter: drop-shadow(0 0 6px rgba(251, 191, 36, 0.20)) brightness(0.95);
+    }
+    50% {
+      filter: drop-shadow(0 0 14px rgba(251, 191, 36, 0.42)) brightness(1.15);
+    }
   }
 
   @keyframes floatNote {
@@ -406,24 +426,33 @@
     width: 35px;
     height: 35px;
     border-radius: 50%;
-    background: radial-gradient(circle, rgba(79, 139, 255, 0.15), rgba(79, 139, 255, 0.05));
-    border: 2px solid rgba(79, 139, 255, 0.2);
-    animation: pulseDrum 4s infinite ease-in-out;
-    box-shadow: 0 0 15px rgba(79, 139, 255, 0.1);
+    background: radial-gradient(circle, rgba(251, 191, 36, 0.16), rgba(245, 158, 11, 0.05));
+    border: 2px solid rgba(251, 191, 36, 0.22);
+    animation: pulseDrum 4s infinite ease-in-out, goldCircleShine 2.4s infinite ease-in-out;
+    box-shadow: 0 0 18px rgba(251, 191, 36, 0.14);
   }
 
   .drum-element:nth-child(2n) {
-    background: radial-gradient(circle, rgba(168, 85, 247, 0.15), rgba(168, 85, 247, 0.05));
-    border-color: rgba(168, 85, 247, 0.2);
-    box-shadow: 0 0 15px rgba(168, 85, 247, 0.1);
+    background: radial-gradient(circle, rgba(253, 230, 138, 0.18), rgba(245, 158, 11, 0.05));
+    border-color: rgba(253, 230, 138, 0.22);
+    box-shadow: 0 0 18px rgba(253, 230, 138, 0.12);
     animation-delay: -1.5s;
   }
 
   .drum-element:nth-child(3n) {
-    background: radial-gradient(circle, rgba(77, 227, 255, 0.15), rgba(77, 227, 255, 0.05));
-    border-color: rgba(77, 227, 255, 0.2);
-    box-shadow: 0 0 15px rgba(77, 227, 255, 0.1);
+    background: radial-gradient(circle, rgba(245, 158, 11, 0.18), rgba(251, 191, 36, 0.05));
+    border-color: rgba(245, 158, 11, 0.22);
+    box-shadow: 0 0 18px rgba(245, 158, 11, 0.12);
     animation-delay: -3s;
+  }
+
+  @keyframes goldCircleShine {
+    0%, 100% {
+      filter: drop-shadow(0 0 8px rgba(251, 191, 36, 0.18));
+    }
+    50% {
+      filter: drop-shadow(0 0 18px rgba(251, 191, 36, 0.38));
+    }
   }
 
   @keyframes pulseDrum {
@@ -441,19 +470,29 @@
     position: absolute;
     width: 50px;
     height: 50px;
-    border: 2px solid rgba(79, 139, 255, 0.12);
+    border: 2px solid rgba(251, 191, 36, 0.14);
     border-radius: 50%;
-    animation: rippleWave 3s infinite;
+    animation: rippleWave 3s infinite, goldWaveGlow 2.2s infinite ease-in-out;
+    filter: drop-shadow(0 0 10px rgba(251, 191, 36, 0.12));
   }
 
   .sound-wave:nth-child(2) {
     animation-delay: 1s;
-    border-color: rgba(168, 85, 247, 0.12);
+    border-color: rgba(253, 230, 138, 0.14);
   }
 
   .sound-wave:nth-child(3) {
     animation-delay: 2s;
-    border-color: rgba(77, 227, 255, 0.12);
+    border-color: rgba(245, 158, 11, 0.14);
+  }
+
+  @keyframes goldWaveGlow {
+    0%, 100% {
+      filter: drop-shadow(0 0 8px rgba(251, 191, 36, 0.10));
+    }
+    50% {
+      filter: drop-shadow(0 0 16px rgba(251, 191, 36, 0.22));
+    }
   }
 
   @keyframes rippleWave {
@@ -496,10 +535,10 @@
   .beat-line {
     position: absolute;
     height: 2px;
-    background: linear-gradient(90deg, transparent, rgba(79, 139, 255, 0.3), transparent);
+    background: linear-gradient(90deg, transparent, rgba(251, 191, 36, 0.35), transparent);
     border-radius: 2px;
     animation: beatPulse 2s infinite ease-in-out;
-    box-shadow: 0 0 8px rgba(79, 139, 255, 0.15);
+    box-shadow: 0 0 10px rgba(251, 191, 36, 0.14);
   }
 
   @keyframes beatPulse {
