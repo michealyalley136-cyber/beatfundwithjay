@@ -2831,23 +2831,30 @@ def _migrate_role_enum_to_string():
             with db.engine.begin() as conn:
                 # Check if we need to migrate (role column is still ENUM)
                 result = conn.execute(text("""
-                    SELECT data_type FROM information_schema.columns 
+                    SELECT data_type, udt_name
+                    FROM information_schema.columns 
                     WHERE table_name = 'user' AND column_name = 'role'
                 """))
                 row = result.first()
-                if row and "enum" in str(row[0]).lower():
-                    app.logger.info("Migrating role column from ENUM to VARCHAR...")
-                    # Convert ENUM to varchar explicitly via USING to avoid datatype mismatch
-                    conn.execute(text(
-                        "ALTER TABLE \"user\" ALTER COLUMN role TYPE varchar(40) USING role::text"
-                    ))
-                    conn.execute(text(
-                        "ALTER TABLE booking ALTER COLUMN provider_role TYPE varchar(40) USING provider_role::text"
-                    ))
-                    conn.execute(text(
-                        "ALTER TABLE \"user\" ALTER COLUMN kyc_status TYPE varchar(40) USING kyc_status::text"
-                    ))
-                    app.logger.info("Successfully migrated role columns to VARCHAR")
+                if row:
+                    data_type = str(row[0] or "").lower()
+                    udt_name = str(row[1] or "").lower()
+                    is_enum = (data_type == "user-defined") or ("enum" in data_type) or ("roleenum" in udt_name)
+                    if is_enum:
+                        app.logger.info(
+                            f"Migrating role column from ENUM to VARCHAR (data_type={data_type}, udt_name={udt_name})..."
+                        )
+                        # Convert ENUM to varchar explicitly via USING to avoid datatype mismatch
+                        conn.execute(text(
+                            "ALTER TABLE \"user\" ALTER COLUMN role TYPE varchar(40) USING role::text"
+                        ))
+                        conn.execute(text(
+                            "ALTER TABLE booking ALTER COLUMN provider_role TYPE varchar(40) USING provider_role::text"
+                        ))
+                        conn.execute(text(
+                            "ALTER TABLE \"user\" ALTER COLUMN kyc_status TYPE varchar(40) USING kyc_status::text"
+                        ))
+                        app.logger.info("Successfully migrated role columns to VARCHAR")
     except Exception as e:
         app.logger.warning(f"Could not migrate ENUM to VARCHAR: {type(e).__name__}: {str(e)}")
 
