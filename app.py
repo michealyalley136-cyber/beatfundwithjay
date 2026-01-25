@@ -590,61 +590,33 @@ def get_database_config():
     Configure database connection with proper SSL for Neon Postgres.
     Returns tuple: (database_url, engine_options)
     """
-db_url = os.getenv("DATABASE_URL", "").strip()
+    db_url = os.getenv("DATABASE_URL", "").strip()
 
-<<<<<<< HEAD
-if db_url:
-    if db_url.startswith("postgres://"):
-        db_url = db_url.replace("postgres://", "postgresql://", 1)
-
-    # Prefer psycopg (psycopg3) if available, otherwise fall back to psycopg2
-    preferred_driver = None
-    try:
-        import psycopg  # psycopg3
-        preferred_driver = "psycopg"
-    except Exception:
-        try:
-            import psycopg2  # psycopg2
-            preferred_driver = "psycopg2"
-        except Exception:
-            preferred_driver = None
-
-    if db_url.startswith("postgresql://") and preferred_driver:
-        db_url = db_url.replace("postgresql://", f"postgresql+{preferred_driver}://", 1)
-
-    app.config["SQLALCHEMY_DATABASE_URI"] = db_url
-    # Connection pool settings for production
-    app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
-=======
     if not db_url:
         # Fallback to SQLite for local development
-        sqlite_path = os.path.join(INSTANCE_DIR, 'app.db')
+        sqlite_path = os.path.join(INSTANCE_DIR, "app.db")
         return f"sqlite:///{sqlite_path}", {}
-    
+
     # Normalize URL format
     db_url = normalize_database_url(db_url)
-    
-    # Determine if this is a Neon database (check for neon.tech in hostname)
-    is_neon = "neon.tech" in db_url or "neon.tech" in db_url.lower()
-    
-    # Engine options for PostgreSQL
+
+    # Determine if this is a Neon database
+    is_neon = "neon.tech" in db_url.lower()
+
     engine_options = {
->>>>>>> 3c985bedfa16159bcf6ec7f3e1384c00e11d0f98
         "pool_pre_ping": True,  # Verify connections before using
         "pool_recycle": 300,    # Recycle connections after 5 minutes
         "pool_size": 5,         # Connection pool size
         "max_overflow": 10,     # Max overflow connections
         "connect_args": {
-            "connect_timeout": 10,  # 10 second connection timeout
-        }
+            "connect_timeout": 10,
+        },
     }
-    
-    # Neon requires SSL connections
+
+    # Neon requires SSL
     if is_neon:
         engine_options["connect_args"]["sslmode"] = "require"
-        # Optionally, you can use 'verify-full' for stricter SSL verification
-        # engine_options["connect_args"]["sslmode"] = "verify-full"
-    
+
     return db_url, engine_options
 
 
@@ -678,8 +650,6 @@ app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
 db = SQLAlchemy(app)
 
-<<<<<<< HEAD
-=======
 
 def test_database_connection() -> tuple[bool, str]:
     """
@@ -727,13 +697,12 @@ if IS_DEV and os.getenv("DATABASE_URL"):
         with app.app_context():
             success, message = test_database_connection()
             if success:
-                app.logger.info(f"✅ {message}")
+                app.logger.info(f"[DB] {message}")
             else:
-                app.logger.warning(f"⚠️  {message}")
+                app.logger.warning(f"[DB] {message}")
     except Exception as e:
         app.logger.warning(f"Could not test database connection: {e}")
 
->>>>>>> 3c985bedfa16159bcf6ec7f3e1384c00e11d0f98
 def _early_sqlite_bootstrap_columns() -> None:
     """
     Ensure critical SQLite columns exist BEFORE Flask-Login loads current_user.
@@ -4318,14 +4287,14 @@ def send_email(to_email: str, subject: str, text_body: str) -> bool:
         from email.message import EmailMessage
         
         smtp_host = os.getenv("SMTP_HOST", "").strip()
+        smtp_from = os.getenv("SMTP_FROM", "").strip()
+        smtp_port = int(os.getenv("SMTP_PORT", "587"))
+        smtp_tls = os.getenv("SMTP_TLS", "true").lower() == "true"
+        smtp_user = os.getenv("SMTP_USER", "").strip()
+        smtp_pass = os.getenv("SMTP_PASS", "").strip()
         if not smtp_host:
             if IS_DEV:
                 print(f"[DEV] Email not sent - SMTP_HOST not configured")
-            return False
-        
-        if not smtp_host:
-            if IS_DEV:
-                app.logger.warning("Email not sent - SMTP_HOST not configured")
             return False
         
         
