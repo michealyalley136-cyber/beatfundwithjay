@@ -1494,8 +1494,8 @@ class User(UserMixin, db.Model):
     artist_name = db.Column(db.String(150), nullable=True)
 
     password_hash = db.Column(db.String(255), nullable=False)
-    role = db.Column(db.Enum(RoleEnum), nullable=False, default=RoleEnum.artist)
-    kyc_status = db.Column(db.Enum(KYCStatus), nullable=False, default=KYCStatus.not_started)
+    role = db.Column(db.String(40), nullable=False, default=RoleEnum.artist.value)  # String for flexibility with new roles
+    kyc_status = db.Column(db.String(40), nullable=False, default=KYCStatus.not_started.value)  # String for flexibility
     is_active_col = db.Column("is_active", db.Boolean, nullable=False, default=True)
 
     is_superadmin = db.Column(db.Boolean, nullable=False, default=False)
@@ -1754,7 +1754,7 @@ class Booking(db.Model):
     provider_id = db.Column("artist_id", db.Integer, db.ForeignKey("user.id"), nullable=False)
     client_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
 
-    provider_role = db.Column(db.Enum(RoleEnum), nullable=False)
+    provider_role = db.Column(db.String(40), nullable=False)  # String for flexibility
 
     event_title = db.Column(db.String(160), nullable=False)
     event_datetime = db.Column(db.DateTime, nullable=False)
@@ -2789,7 +2789,33 @@ def _cleanup_missing_avatars():
     except Exception as e:
         app.logger.warning(f"Could not cleanup missing avatars: {e}")
 
+
+def _migrate_role_enum_to_string():
+    """Migrate role and kyc_status columns from ENUM to STRING if PostgreSQL"""
+    try:
+        is_postgres = db.engine.url.get_backend_name() == "postgresql"
+        if not is_postgres:
+            return
+        
+        with db.engine.begin() as conn:
+            # Check if we need to migrate (role column is still ENUM)
+            result = conn.execute(text("""
+                SELECT data_type FROM information_schema.columns 
+                WHERE table_name = 'user' AND column_name = 'role'
+            """))
+            row = result.first()
+            if row and "enum" in str(row[0]).lower():
+                app.logger.info("Migrating role column from ENUM to VARCHAR...")
+                # Drop enum type constraint and convert to varchar
+                conn.execute(text("ALTER TABLE \"user\" ALTER COLUMN role TYPE varchar(40)"))
+                conn.execute(text("ALTER TABLE booking ALTER COLUMN provider_role TYPE varchar(40)"))
+                conn.execute(text("ALTER TABLE \"user\" ALTER COLUMN kyc_status TYPE varchar(40)"))
+                app.logger.info("Successfully migrated role columns to VARCHAR")
+    except Exception as e:
+        app.logger.warning(f"Could not migrate ENUM to VARCHAR: {type(e).__name__}: {str(e)}")
+
 _cleanup_missing_avatars()
+_migrate_role_enum_to_string()
 
 if os.getenv("BOOTSTRAP_DB") == "1":
     with app.app_context():
