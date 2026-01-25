@@ -605,7 +605,7 @@ def get_database_config():
     
     if not db_url:
         # Fallback to SQLite for local development
-        sqlite_path = os.path.join(INSTANCE_DIR, 'app.db')
+        sqlite_path = os.path.join(INSTANCE_DIR, "app.db")
         return f"sqlite:///{sqlite_path}", {}
     
     # Normalize URL format for Railway or any Postgres provider
@@ -618,8 +618,8 @@ def get_database_config():
         "pool_size": 5,         # Connection pool size
         "max_overflow": 10,     # Max overflow connections
         "connect_args": {
-            "connect_timeout": 10,  # 10 second connection timeout
-        }
+            "connect_timeout": 10,
+        },
     }
     
     return db_url, engine_options
@@ -647,6 +647,61 @@ except Exception as e:
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
 db = SQLAlchemy(app)
+
+
+def test_database_connection() -> tuple[bool, str]:
+    """
+    Test database connection and return (success, message).
+    Provides helpful error messages for common issues.
+    """
+    try:
+        with db.engine.connect() as conn:
+            result = conn.execute(text("SELECT 1"))
+            result.fetchone()
+        return True, "Database connection successful"
+    except ProgrammingError as e:
+        error_msg = str(e).lower()
+        if "does not exist" in error_msg or "database" in error_msg:
+            return False, f"Database does not exist. Error: {e}"
+        elif "schema" in error_msg or "relation" in error_msg:
+            return False, f"Schema/table issue. Error: {e}"
+        elif "permission" in error_msg or "access" in error_msg:
+            return False, f"Permission denied. Check user privileges. Error: {e}"
+        else:
+            return False, f"SQL error: {e}"
+    except OperationalError as e:
+        error_msg = str(e).lower()
+        if "could not connect" in error_msg or "connection refused" in error_msg:
+            return False, f"Cannot connect to database server. Check DATABASE_URL and network. Error: {e}"
+        elif "ssl" in error_msg or "certificate" in error_msg:
+            return False, f"SSL connection error. Error: {e}"
+        elif "timeout" in error_msg:
+            return False, f"Connection timeout. Error: {e}"
+        elif "authentication" in error_msg or "password" in error_msg:
+            return False, f"Authentication failed. Check username/password in DATABASE_URL. Error: {e}"
+        else:
+            return False, f"Connection error: {e}"
+    except DatabaseError as e:
+        return False, f"Database error: {e}"
+    except SQLAlchemyError as e:
+        return False, f"SQLAlchemy error: {e}"
+    except Exception as e:
+        return False, f"Unexpected error: {type(e).__name__}: {e}"
+
+
+# Test database connection on startup (only in dev mode)
+if IS_DEV and os.getenv("DATABASE_URL"):
+    try:
+        with app.app_context():
+            success, message = test_database_connection()
+            if success:
+                app.logger.info(f"[DB] {message}")
+            else:
+                app.logger.warning(f"[DB] {message}")
+    except Exception as e:
+        app.logger.warning(f"Could not test database connection: {e}")
+
+
 def _early_sqlite_bootstrap_columns() -> None:
     """
     Ensure critical SQLite columns exist BEFORE Flask-Login loads current_user.
@@ -4231,14 +4286,14 @@ def send_email(to_email: str, subject: str, text_body: str) -> bool:
         from email.message import EmailMessage
         
         smtp_host = os.getenv("SMTP_HOST", "").strip()
+        smtp_from = os.getenv("SMTP_FROM", "").strip()
+        smtp_port = int(os.getenv("SMTP_PORT", "587"))
+        smtp_tls = os.getenv("SMTP_TLS", "true").lower() == "true"
+        smtp_user = os.getenv("SMTP_USER", "").strip()
+        smtp_pass = os.getenv("SMTP_PASS", "").strip()
         if not smtp_host:
             if IS_DEV:
                 print(f"[DEV] Email not sent - SMTP_HOST not configured")
-            return False
-        
-        if not smtp_host:
-            if IS_DEV:
-                app.logger.warning("Email not sent - SMTP_HOST not configured")
             return False
         
         
