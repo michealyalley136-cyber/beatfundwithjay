@@ -2926,7 +2926,7 @@ def load_user(user_id):
 
 
 def is_password_expired(user: User) -> bool:
-    if user.role != RoleEnum.admin:
+    if user.role != "admin":
         return False
     if not user.password_changed_at:
         return True
@@ -3309,7 +3309,7 @@ def _user_has_paid_for_beat(user_id: int, beat_id: int) -> bool:
 
 
 def _is_admin() -> bool:
-    return current_user.is_authenticated and current_user.role == RoleEnum.admin
+    return current_user.is_authenticated and current_user.role == "admin"
 
 
 def get_social_counts(user_id: int) -> tuple[int, int]:
@@ -4228,7 +4228,7 @@ def log_admin_action(
     db.session.add(ev)
     db.session.flush()
 
-    q = db.session.query(User.id).filter(User.role == RoleEnum.admin)
+    q = db.session.query(User.id).filter(User.role == "admin")
     if not include_actor:
         q = q.filter(User.id != int(actor_admin_id))
     admin_ids = [row[0] for row in q.all()]
@@ -4276,11 +4276,7 @@ def broadcast_event(
     aud = (audience or "ALL").strip().upper()
     if aud.startswith("ROLE:"):
         role_raw = aud.split(":", 1)[1].strip().lower()
-        try:
-            q = q.filter(User.role == RoleEnum(role_raw))
-        except Exception:
-            # Unknown role -> no recipients
-            q = q.filter(text("1=0"))
+        q = q.filter(User.role == role_raw)
 
     if exclude_actor:
         q = q.filter(User.id != int(actor_user_id))
@@ -5906,8 +5902,7 @@ def update_avatar():
 @login_required
 def toggle_follow(user_id: int):
     target = User.query.get_or_404(user_id)
-
-    if target.role == RoleEnum.admin:
+    if target.role == "admin":
         return jsonify({"ok": False, "error": "You can't follow an admin account."}), 403
     if target.id == current_user.id:
         return jsonify({"ok": False, "error": "You can't follow yourself."}), 400
@@ -5952,7 +5947,7 @@ def toggle_follow(user_id: int):
 def user_profile(username):
     profile_user = User.query.filter(func.lower(User.username) == username.lower()).first_or_404()
 
-    if profile_user.role == RoleEnum.producer:
+    if profile_user.role == "producer":
         return redirect(url_for("producer_catalog_detail", username=profile_user.username))
 
     if is_service_provider(profile_user):
@@ -6088,10 +6083,7 @@ def bookme_search():
     )
 
     if role:
-        try:
-            query = query.filter(User.role == RoleEnum(role))
-        except ValueError:
-            pass
+        query = query.filter(User.role == role)
 
     if zip_code:
         query = query.filter(BookMeProfile.zip.ilike(f"{zip_code}%"))
@@ -6155,10 +6147,7 @@ def bookme_data():
     )
 
     if role:
-        try:
-            query = query.filter(User.role == RoleEnum(role))
-        except ValueError:
-            pass
+        query = query.filter(User.role == role)
 
     if zip_code:
         query = query.filter(BookMeProfile.zip.ilike(f"{zip_code}%"))
@@ -6469,7 +6458,7 @@ def bookme_request_confirm(provider_id):
         
         # Check if the requested time is blocked (for studios)
         time_blocked = False
-        if provider.role == RoleEnum.studio:
+        if provider.role == "studio":
             try:
                 if " " in pref:
                     date_part = pref.split(" ", 1)[0]
