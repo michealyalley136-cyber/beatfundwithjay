@@ -135,6 +135,43 @@
     color: rgba(34,197,94,1);
     margin-bottom: 16px;
   }
+
+  .beat-price-edit {
+    margin-bottom: 14px;
+    padding: 10px;
+    border-radius: 12px;
+    border: 1px solid rgba(255,255,255,.10);
+    background: rgba(0,0,0,.18);
+  }
+  .beat-price-edit-label {
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: .02em;
+    opacity: .85;
+    margin-bottom: 8px;
+    text-align: left;
+  }
+  .beat-price-edit-row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 10px;
+    align-items: center;
+  }
+  .beat-price-edit-row input {
+    min-width: 0;
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid rgba(124,58,237,.45);
+    background: rgba(124,58,237,.12);
+    color: inherit;
+    font-weight: 700;
+  }
+  .beat-price-edit-row .btn.primary {
+    padding: 10px 12px;
+    border-radius: 10px;
+    font-size: 0.95rem;
+    line-height: 1;
+  }
   
   .beat-audio {
     width: 100%;
@@ -146,6 +183,36 @@
     display: flex;
     gap: 8px;
   }
+
+  /* Button styles (this template uses class="btn primary"/"btn danger") */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 10px 12px;
+    border-radius: 12px;
+    border: 1px solid rgba(255,255,255,.12);
+    background: rgba(255,255,255,.08);
+    color: inherit;
+    text-decoration: none;
+    font-weight: 800;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .btn:hover { background: rgba(255,255,255,.12); transform: translateY(-1px); }
+  .btn.primary {
+    background: linear-gradient(135deg, rgba(124,58,237,.45), rgba(236,72,153,.25));
+    border-color: rgba(124,58,237,.55);
+  }
+  .btn.primary:hover {
+    background: linear-gradient(135deg, rgba(124,58,237,.55), rgba(236,72,153,.35));
+  }
+  .btn.danger {
+    background: rgba(239,68,68,.15);
+    border-color: rgba(239,68,68,.35);
+    color: #ef4444;
+  }
+  .btn.danger:hover { background: rgba(239,68,68,.22); }
   
   .btn-carousel {
     position: absolute;
@@ -303,7 +370,28 @@
               {% if b.bpm %}<span>⚡ {{ b.bpm }} BPM</span>{% endif %}
             </div>
             
-            <div class="beat-price">${{ '%.2f'|format(b.price_cents/100.0) }}</div>
+            <div class="beat-price">${{ '%.2f'|format((b.price_cents or 0)/100.0) }}</div>
+
+            <form method="post" action="{{ url_for('producer_beat_update_price', beat_id=b.id) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="next" value="{{ url_for('producer_market_mine') }}">
+              <div class="beat-price-edit">
+                <div class="beat-price-edit-label">Edit price (USD)</div>
+                <div class="beat-price-edit-row">
+                  <input
+                    name="price_dollars"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    inputmode="decimal"
+                    autocomplete="off"
+                    value="{{ '%.2f'|format((b.price_cents or 0)/100.0) }}"
+                    aria-label="Update price in USD"
+                  >
+                  <button class="btn primary" type="submit">Update</button>
+                </div>
+              </div>
+            </form>
             
             {% if b.preview_path %}
               <audio controls class="beat-audio">
@@ -317,6 +405,14 @@
             {% endif %}
             
             <div class="beat-actions">
+              <button
+                type="button"
+                class="btn primary"
+                style="flex: 1; width: 100%;"
+                onclick="openPricePrompt({{ b.id }}, '{{ '%.2f'|format((b.price_cents or 0)/100.0) }}')"
+              >
+                Edit Price
+              </button>
               <form method="post" action="{{ url_for('producer_market_delete', beat_id=b.id) }}" onsubmit="return confirm('Are you sure you want to delete \"{{ b.title }}\"? This action cannot be undone.');" style="flex: 1;">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <button class="btn danger" type="submit" style="width: 100%;">Delete</button>
@@ -346,6 +442,23 @@
 </div>
 
 <script>
+  function openPricePrompt(beatId, currentPrice) {
+    const newPrice = prompt('Set new price in USD (e.g. 19.99):', currentPrice || '0.00');
+    if (newPrice === null) return;
+    const v = String(newPrice).trim();
+    if (!v) return;
+
+    const form = document.getElementById('bf-price-form');
+    const input = document.getElementById('bf-price-value');
+    form.action = `/producer/beats/${beatId}/price`;
+    input.value = v;
+    form.submit();
+  }
+
+  // Hidden form used by "Edit Price" button (normal POST so flashes render)
+  // NOTE: CSRF token comes from server and is valid for this page.
+  // (Form element is appended below via HTML, not JS.)
+
   let currentIndex = 0;
   const items = {{ items|length }};
   let cardsPerView = window.innerWidth > 1200 ? 3 : window.innerWidth > 768 ? 2 : 1;
@@ -435,4 +548,10 @@
     }
   });
 </script>
+
+<form id="bf-price-form" method="post" style="display:none;">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="next" value="{{ url_for('producer_market_mine') }}">
+  <input type="hidden" id="bf-price-value" name="price_dollars" value="">
+</form>
 {% endblock %}

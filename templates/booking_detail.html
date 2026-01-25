@@ -235,6 +235,13 @@
     margin-top: 12px;
     flex-wrap: wrap;
   }
+  .bf-chat-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 10px;
+    text-decoration: none;
+  }
 </style>
 
 <div class="bf-page">
@@ -256,6 +263,13 @@
         {% endif %}
         </span>
       </div>
+
+      {% set chat_ok = booking.status in ['pending','accepted','confirmed','completed'] %}
+      {% if chat_ok %}
+        <a class="bf-btn bf-btn-primary bf-chat-link" href="{{ url_for('booking_chat', booking_id=booking.id) }}">
+          Open Chat
+        </a>
+      {% endif %}
     </div>
 
     <div style="display: flex; align-items: center; gap: 10px;">

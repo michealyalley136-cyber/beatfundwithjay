@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Wallet Disclosure · BeatFund{% endblock %}
+
+{% block content %}
+<div class="policy-page">
+  <h1>Wallet Disclosure</h1>
+
+  <p>
+    BeatFund is a software platform that provides tools for creator marketplaces, bookings, and payment workflows.
+    <strong>BeatFund is not a bank.</strong>
+  </p>
+
+  <h2>Payments & payouts</h2>
+  <ul>
+    <li><strong>Payments are processed by third-party providers</strong> (e.g., Stripe) when enabled.</li>
+    <li>BeatFund does not store full card numbers or full bank account details.</li>
+    <li>Wallet balances are platform balances for using BeatFund features.</li>
+  </ul>
+
+  <h2>No FDIC insurance</h2>
+  <p>
+    Unless explicitly stated otherwise for a specific payment product and program, <strong>wallet balances are not FDIC insured</strong>
+    and are not deposits in a bank account.
+  </p>
+
+  <h2>Use within BeatFund</h2>
+  <p>
+    Keep communication and payments inside BeatFund. Do not share contact or payment information to move transactions
+    off-platform. This helps prevent fraud and supports dispute handling.
+  </p>
+
+  <h2>Disputes & refunds</h2>
+  <p>
+    See our dispute and refund policies for how chargebacks, refunds, and booking disputes are handled.
+  </p>
+  <ul>
+    <li><a href="{{ url_for('disputes') }}">Dispute Resolution Policy</a></li>
+    <li><a href="{{ url_for('refunds') }}">Refund & Cancellation Policy</a></li>
+  </ul>
+</div>
+{% endblock %}
+

@@ -696,6 +696,7 @@
 
   {% set credit_types = [
     EntryType.deposit,
+    EntryType.external_payment,
     EntryType.transfer_in,
     EntryType.interest,
     EntryType.adjustment,
@@ -745,6 +746,8 @@
                         Sale income
                       {% elif entry.entry_type == EntryType.purchase_spend %}
                         Purchase
+                      {% elif entry.entry_type == EntryType.external_payment %}
+                        External payment
                       {% else %}
                         {{ entry.entry_type.value|replace("_", " ")|title }}
                       {% endif %}
@@ -878,10 +881,7 @@
               <div class="wallet-field">
                 <label class="wallet-field-label">Payment Method</label>
                 <select name="method" class="wallet-select" required>
-                  <option value="">Select method...</option>
-                  <option value="stripe_card">💳 Credit/Debit Card</option>
-                  <option value="stripe_bank">🏦 Bank Transfer (ACH)</option>
-                  <option value="demo">Demo Mode</option>
+                  <option value="stripe_card" selected>💳 Credit/Debit Card (Stripe)</option>
                 </select>
               </div>
             </div>
@@ -892,8 +892,7 @@
             </button>
             
             <div class="wallet-form-note">
-              <span class="stripe-badge">Stripe</span> Integration: This will redirect to Stripe Checkout 
-              for card payments or initiate Stripe ACH for bank transfers.
+              <span class="stripe-badge">Stripe</span> You’ll be redirected to Stripe Checkout to complete your top-up.
             </div>
           </form>
         </div>
@@ -960,6 +959,11 @@
           <div class="wallet-form-description">
             <strong>Withdraw to Bank:</strong> Transfer funds from your wallet to your connected bank account. 
             <span class="stripe-badge">Stripe Connect</span>
+            <div style="margin-top:10px;">
+              <a href="{{ url_for('stripe_connect_start') }}" class="wallet-method-add" style="text-decoration:none;">
+                Connect / Manage Bank (Stripe)
+              </a>
+            </div>
           </div>
           <form method="POST" action="{{ url_for('wallet_action') }}">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -1075,6 +1079,8 @@
                     Sale income
                   {% elif entry.entry_type == EntryType.purchase_spend %}
                     Purchase
+                  {% elif entry.entry_type == EntryType.external_payment %}
+                    External payment
                   {% else %}
                     {{ entry.entry_type.value|replace("_", " ")|title }}
                   {% endif %}

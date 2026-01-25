@@ -194,8 +194,20 @@
       </svg>
     </div>
 
-    <h1 class="success-title">Payment Successful!</h1>
-    <p class="success-subtitle">Your purchase has been completed successfully and logged in your account</p>
+    <h1 class="success-title">
+      {% if is_paid %}
+        Payment Confirmed!
+      {% else %}
+        Processing…
+      {% endif %}
+    </h1>
+    <p class="success-subtitle">
+      {% if is_paid %}
+        Your purchase is confirmed and attached to your account.
+      {% else %}
+        We’re confirming your payment and finalizing your purchase (this can take a few seconds). If it doesn’t update, refresh this page or check “My Purchases”.
+      {% endif %}
+    </p>
 
     <div class="beat-preview">
       <img 
@@ -234,17 +246,21 @@
     </div>
 
     <div class="action-buttons">
-      {% if beat.stems_path %}
+      {% if is_paid and beat.stems_path %}
         <a href="{{ url_for('market_download', beat_id=beat.id) }}" class="btn btn-primary">
           ⬇ Download Beat Files
         </a>
+      {% elif not is_paid %}
+        <div style="opacity:.8; font-size:.95rem;">
+          Confirming payment… this usually takes a few seconds.
+        </div>
+        <div style="opacity:.6; font-size:.85rem;">
+          If it doesn’t update automatically, <a href="{{ url_for('checkout_success') }}?session_id={{ stripe_session_id }}">refresh</a>.
+        </div>
       {% endif %}
-      <a href="{{ url_for('market_my_purchases') }}" class="btn btn-primary">
-        View My Purchases
-      </a>
-      <a href="{{ url_for('market_index') }}" class="btn btn-secondary">
-        Continue Shopping
-      </a>
+
+      <a href="{{ url_for('market_my_purchases') }}" class="btn btn-primary">View My Purchases</a>
+      <a href="{{ url_for('market_index') }}" class="btn btn-secondary">Continue Shopping</a>
     </div>
 
     <div class="order-id">
@@ -255,4 +271,64 @@
     </div>
   </div>
 </div>
+
+{% if not is_paid and order_id %}
+<script>
+  (function () {
+    const orderId = {{ order_id|int }};
+    const stripeSessionId = {{ (stripe_session_id or "")|tojson }};
+    const deadlineMs = 30 * 1000;
+    const start = Date.now();
+
+    async function trySyncSession() {
+      try {
+        if (!stripeSessionId) return;
+        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
+        if (!csrfToken) return;
+
+        const formData = new FormData();
+        formData.append('csrf_token', csrfToken);
+        formData.append('session_id', stripeSessionId);
+
+        const resp = await fetch('/stripe/sync-session', {
+          method: 'POST',
+          body: formData,
+          credentials: 'same-origin'
+        });
+        if (resp.ok) {
+          const data = await resp.json().catch(() => null);
+          if (data && data.status === 'paid') {
+            window.location.reload();
+          }
+        }
+      } catch (e) {
+        // ignore transient errors; polling will continue
+      }
+    }
+
+    async function poll() {
+      try {
+        const resp = await fetch(`/checkout/status/${orderId}`, { credentials: 'same-origin' });
+        if (resp.ok) {
+          const data = await resp.json();
+          if (data && data.is_paid) {
+            window.location.reload();
+            return;
+          }
+        }
+      } catch (e) {
+        // ignore transient errors; keep polling
+      }
+      if (Date.now() - start < deadlineMs) {
+        setTimeout(poll, 2000);
+      }
+    }
+
+    // First attempt: ask server to verify session and finalize (dev fallback).
+    // Then fall back to status polling (webhook-driven path).
+    setTimeout(trySyncSession, 800);
+    setTimeout(poll, 1500);
+  })();
+</script>
+{% endif %}
 {% endblock %}

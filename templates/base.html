@@ -196,6 +196,7 @@
       <a href="{{ url_for('kyc_policy') }}">KYC & Identity Verification</a>
       <a href="{{ url_for('aml') }}">AML & Fraud Prevention</a>
       <a href="{{ url_for('risk') }}">Risk Disclosure</a>
+      <a href="{{ url_for('wallet_disclosure') }}">Wallet Disclosure</a>
     </div>
     <div class="footer-section">
       <h3>Company</h3>
@@ -319,6 +320,15 @@
         const titleDiv = document.createElement('div');
         titleDiv.style.cssText = 'font-weight: ' + (n.is_read ? 'normal' : 'bold') + '; margin-bottom: 4px;';
         titleDiv.textContent = n.title || '';
+
+        // Subtitle (show who did it / short message)
+        const subtitleDiv = document.createElement('div');
+        subtitleDiv.style.cssText = 'font-size: 12px; color: #666; margin-bottom: 4px;';
+        const rawSubtitle = (n.body || '') || (n.actor_name ? (n.actor_name + ' posted an update.') : '');
+        if (rawSubtitle) {
+          const maxLen = 90;
+          subtitleDiv.textContent = rawSubtitle.length > maxLen ? (rawSubtitle.slice(0, maxLen - 1) + '…') : rawSubtitle;
+        }
         
         const timeDiv = document.createElement('div');
         timeDiv.style.cssText = 'font-size: 12px; color: #666;';
@@ -331,6 +341,9 @@
         }
         
         leftDiv.appendChild(titleDiv);
+        if (subtitleDiv.textContent) {
+          leftDiv.appendChild(subtitleDiv);
+        }
         leftDiv.appendChild(timeDiv);
         
         const dotSpan = document.createElement('span');

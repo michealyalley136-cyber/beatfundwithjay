@@ -434,8 +434,8 @@ code{
   .page-main,
   .page{
     max-width: 100%;
-    margin: 64px auto 40px;
-    padding: 0 14px 48px;
+    margin: 56px auto 40px;
+    padding: 0 12px 40px;
   }
 
   .dash-identity{ min-width: 0; width: 100%; }
@@ -526,8 +526,13 @@ code{
   opacity: 0;
   transition: opacity .16s ease;
   z-index: 50;
+  /* Safety: never block clicks unless open */
+  pointer-events: none;
 }
-.mobile-menu-backdrop.open{ opacity: 1; }
+.mobile-menu-backdrop.open{
+  opacity: 1;
+  pointer-events: auto;
+}
 
 .mobile-menu{
   position: fixed;
@@ -543,10 +548,13 @@ code{
   transform: translateY(-10px);
   opacity: 0;
   transition: transform .16s ease, opacity .16s ease;
+  /* Safety: never block clicks unless open */
+  pointer-events: none;
 }
 .mobile-menu.open{
   transform: translateY(0);
   opacity: 1;
+  pointer-events: auto;
 }
 
 .mobile-menu-head{

@@ -244,6 +244,12 @@
                   {% endif %}
                 </h3>
               </div>
+              {% if notif.event_type %}
+                <div class="notification-time" style="margin-top: -6px;">
+                  {{ notif.event_type.replace('_', ' ') }}
+                  {% if notif.actor_name %} · {{ notif.actor_name }}{% endif %}
+                </div>
+              {% endif %}
               {% if notif.body %}
                 <p class="notification-body">{{ notif.body }}</p>
               {% endif %}
