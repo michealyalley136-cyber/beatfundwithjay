@@ -607,7 +607,7 @@ def get_database_config():
     # Normalize URL format for Railway or any Postgres provider
     db_url = normalize_database_url(db_url)
     
-    # Engine options for PostgreSQL connections
+    # Engine options for PostgreSQL connections with psycopg v3
     engine_options = {
         "pool_pre_ping": True,  # Verify connections before using
         "pool_recycle": 300,    # Recycle connections after 5 minutes
@@ -616,6 +616,10 @@ def get_database_config():
         "connect_args": {
             "connect_timeout": 10,
             "sslmode": "require",  # Required for Railway Postgres
+        },
+        # Use psycopg3's default statement cache settings
+        "execution_options": {
+            "isolation_level": "READ_COMMITTED",  # Standard transaction level
         },
     }
     
