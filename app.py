@@ -2821,26 +2821,33 @@ def _cleanup_missing_avatars():
 
 
 def _migrate_role_enum_to_string():
-    """Migrate role and kyc_status columns from ENUM to STRING if PostgreSQL"""
+    """Migrate role and kyc_status columns from ENUM to STRING if PostgreSQL."""
     try:
-        is_postgres = db.engine.url.get_backend_name() == "postgresql"
-        if not is_postgres:
-            return
-        
-        with db.engine.begin() as conn:
-            # Check if we need to migrate (role column is still ENUM)
-            result = conn.execute(text("""
-                SELECT data_type FROM information_schema.columns 
-                WHERE table_name = 'user' AND column_name = 'role'
-            """))
-            row = result.first()
-            if row and "enum" in str(row[0]).lower():
-                app.logger.info("Migrating role column from ENUM to VARCHAR...")
-                # Drop enum type constraint and convert to varchar
-                conn.execute(text("ALTER TABLE \"user\" ALTER COLUMN role TYPE varchar(40)"))
-                conn.execute(text("ALTER TABLE booking ALTER COLUMN provider_role TYPE varchar(40)"))
-                conn.execute(text("ALTER TABLE \"user\" ALTER COLUMN kyc_status TYPE varchar(40)"))
-                app.logger.info("Successfully migrated role columns to VARCHAR")
+        with app.app_context():
+            is_postgres = db.engine.url.get_backend_name() == "postgresql"
+            if not is_postgres:
+                return
+
+            with db.engine.begin() as conn:
+                # Check if we need to migrate (role column is still ENUM)
+                result = conn.execute(text("""
+                    SELECT data_type FROM information_schema.columns 
+                    WHERE table_name = 'user' AND column_name = 'role'
+                """))
+                row = result.first()
+                if row and "enum" in str(row[0]).lower():
+                    app.logger.info("Migrating role column from ENUM to VARCHAR...")
+                    # Convert ENUM to varchar explicitly via USING to avoid datatype mismatch
+                    conn.execute(text(
+                        "ALTER TABLE \"user\" ALTER COLUMN role TYPE varchar(40) USING role::text"
+                    ))
+                    conn.execute(text(
+                        "ALTER TABLE booking ALTER COLUMN provider_role TYPE varchar(40) USING provider_role::text"
+                    ))
+                    conn.execute(text(
+                        "ALTER TABLE \"user\" ALTER COLUMN kyc_status TYPE varchar(40) USING kyc_status::text"
+                    ))
+                    app.logger.info("Successfully migrated role columns to VARCHAR")
     except Exception as e:
         app.logger.warning(f"Could not migrate ENUM to VARCHAR: {type(e).__name__}: {str(e)}")
 
@@ -4864,22 +4871,36 @@ def register():
             flash("Invalid account type. Please pick a role from the list.", "error")
             return redirect(url_for("register"))
 
-        user = User(
-            username=username,
-            email=email,
-            full_name=full_name or None,
-            artist_name=artist_name or None,
-            role=chosen_role,
-        )
+        try:
+            user = User(
+                username=username,
+                email=email,
+                full_name=full_name or None,
+                artist_name=artist_name or None,
+                role=chosen_role.value,
+            )
 
-        if IS_DEV:
-            user.kyc_status = KYCStatus.approved
+            if IS_DEV:
+                user.kyc_status = KYCStatus.approved.value
 
-        user.set_password(password)
-        db.session.add(user)
-        db.session.commit()
+            user.set_password(password)
+            db.session.add(user)
+            db.session.flush()
 
-        get_or_create_wallet(user.id)
+            get_or_create_wallet(user.id, commit=False)
+            db.session.commit()
+        except IntegrityError:
+            db.session.rollback()
+            flash("That email or username is already registered.", "error")
+            return redirect(url_for("register"))
+        except Exception as e:
+            db.session.rollback()
+            app.logger.error(
+                f"Register failed for {email or 'unknown'}: {type(e).__name__}: {e}",
+                exc_info=True,
+            )
+            flash("We couldn't create your account. Please try again.", "error")
+            return redirect(url_for("register"))
 
         login_user(user)
         flash("Account created!", "success")
@@ -5557,6 +5578,24 @@ def wallet_action():
             app.logger.info(
                 f"Wallet add-money: Stripe Checkout session created id={getattr(checkout_session,'id',None)} has_url={bool(getattr(checkout_session,'url',None))}"
             )
+            
+            # Validate that the session was created successfully with a checkout URL
+            if not checkout_session.id:
+                app.logger.error(f"Stripe checkout session created but has no ID: {checkout_session}")
+                flash("Stripe session creation failed. Please contact support.", "error")
+                return redirect(url_for("wallet_home"))
+            
+            if not checkout_session.url:
+                app.logger.error(
+                    f"Stripe checkout session created but has no URL. "
+                    f"Session ID: {checkout_session.id}, "
+                    f"Status: {getattr(checkout_session, 'status', 'unknown')}, "
+                    f"Payment Status: {getattr(checkout_session, 'payment_status', 'unknown')}, "
+                    f"Session data: {checkout_session}"
+                )
+                flash("Stripe checkout URL is missing. This may be a configuration issue. Please contact support.", "error")
+                return redirect(url_for("wallet_home"))
+            
             # Some browsers/extensions can be weird about POST -> 3rd-party redirects.
             # Render an interstitial that both auto-redirects and provides a click-through link.
             return render_template("redirect_to_stripe.html", stripe_url=checkout_session.url)
@@ -7915,9 +7954,32 @@ def create_checkout_session():
             },
         )
 
+        # Validate that the session was created successfully with a checkout URL
+        if not checkout_session.id:
+            app.logger.error(f"Stripe checkout session created but has no ID: {checkout_session}")
+            db.session.rollback()
+            return jsonify({"error": "Stripe session creation failed: no session ID. Please contact support."}), 500
+        
+        if not checkout_session.url:
+            app.logger.error(
+                f"Stripe checkout session created but has no URL. "
+                f"Session ID: {checkout_session.id}, "
+                f"Status: {getattr(checkout_session, 'status', 'unknown')}, "
+                f"Payment Status: {getattr(checkout_session, 'payment_status', 'unknown')}, "
+                f"Session data: {checkout_session}"
+            )
+            db.session.rollback()
+            return jsonify(
+                {"error": "Stripe session created but checkout URL is missing. "
+                 "This may indicate a configuration issue with your Stripe account. "
+                 "Please contact support if the problem persists."}
+            ), 500
+        
         # Persist the Stripe session id on the pending order for webhook lookup.
         order.stripe_session_id = checkout_session.id
         db.session.commit()
+        
+        app.logger.info(f"Beat purchase checkout session created: session_id={checkout_session.id}, order_id={order.id}, beat_id={beat_id}")
         
         return jsonify({
             "sessionId": checkout_session.id,
@@ -7928,7 +7990,9 @@ def create_checkout_session():
         req_id = getattr(e, "request_id", None)
         app.logger.error(f"Stripe error creating checkout session: {str(e)} (request_id={req_id})")
         db.session.rollback()
-        return jsonify({"error": "Payment processing error. Please try again in a moment."}), 500
+        return jsonify({
+            "error": f"Payment processing error: {str(e) if 'invalid' in str(e).lower() or 'missing' in str(e).lower() else 'Please try again in a moment.'}"
+        }), 500
     except Exception as e:
         app.logger.error(f"Unexpected error creating checkout session: {str(e)}")
         db.session.rollback()
@@ -8019,6 +8083,27 @@ def create_checkout_session_hold_fee():
             },
         )
         
+        # Validate that the session was created successfully with a checkout URL
+        if not checkout_session.id:
+            app.logger.error(f"Stripe checkout session created but has no ID: {checkout_session}")
+            return jsonify({"error": "Stripe session creation failed: no session ID. Please contact support."}), 500
+        
+        if not checkout_session.url:
+            app.logger.error(
+                f"Stripe checkout session created but has no URL. "
+                f"Session ID: {checkout_session.id}, "
+                f"Status: {getattr(checkout_session, 'status', 'unknown')}, "
+                f"Payment Status: {getattr(checkout_session, 'payment_status', 'unknown')}, "
+                f"Session data: {checkout_session}"
+            )
+            return jsonify(
+                {"error": "Stripe session created but checkout URL is missing. "
+                 "This may indicate a configuration issue with your Stripe account. "
+                 "Please contact support if the problem persists."}
+            ), 500
+        
+        app.logger.info(f"Hold fee checkout session created: session_id={checkout_session.id}, booking_request_id={req_id}")
+        
         return jsonify({
             "sessionId": checkout_session.id,
             "url": checkout_session.url
@@ -8026,7 +8111,7 @@ def create_checkout_session_hold_fee():
         
     except stripe.error.StripeError as e:
         app.logger.error(f"Stripe error creating hold fee checkout session: {str(e)}")
-        return jsonify({"error": f"Payment processing error: {str(e)}"}), 500
+        return jsonify({"error": f"Payment processing error: {str(e) if 'invalid' in str(e).lower() or 'missing' in str(e).lower() else 'Please try again in a moment.'}"}), 500
     except Exception as e:
         app.logger.error(f"Unexpected error creating hold fee checkout session: {str(e)}")
         return jsonify({"error": "An unexpected error occurred"}), 500
@@ -9851,7 +9936,7 @@ def notifications_page():
         .filter_by(user_id=current_user.id)
         .join(ActivityEvent, NotificationRecipient.event_id == ActivityEvent.id)
         .join(User, ActivityEvent.actor_user_id == User.id)
-        .filter(User.role != RoleEnum.admin)
+        .filter(User.role != RoleEnum.admin.value)
         .filter(ActivityEvent.audience != "ADMINS")
         .order_by(ActivityEvent.created_at.desc(), NotificationRecipient.id.desc())
         .limit(limit)
@@ -9962,7 +10047,7 @@ def api_notifications_unread_count():
         )
         .join(ActivityEvent, NotificationRecipient.event_id == ActivityEvent.id)
         .join(User, ActivityEvent.actor_user_id == User.id)
-        .filter(User.role != RoleEnum.admin)
+        .filter(User.role != RoleEnum.admin.value)
         .filter(ActivityEvent.audience != "ADMINS")
         .count()
     )
@@ -9981,7 +10066,7 @@ def api_notifications_recent():
         .filter_by(user_id=current_user.id)
         .join(ActivityEvent, NotificationRecipient.event_id == ActivityEvent.id)
         .join(User, ActivityEvent.actor_user_id == User.id)
-        .filter(User.role != RoleEnum.admin)
+        .filter(User.role != RoleEnum.admin.value)
         .filter(ActivityEvent.audience != "ADMINS")
         .order_by(ActivityEvent.created_at.desc(), NotificationRecipient.id.desc())
         .limit(limit)
@@ -10040,7 +10125,7 @@ def notifications_unread_count_alias():
         )
         .join(ActivityEvent, NotificationRecipient.event_id == ActivityEvent.id)
         .join(User, ActivityEvent.actor_user_id == User.id)
-        .filter(User.role != RoleEnum.admin)
+        .filter(User.role != RoleEnum.admin.value)
         .filter(ActivityEvent.audience != "ADMINS")
         .count()
     )
@@ -10165,7 +10250,7 @@ def my_ticket_detail(ticket_id):
 @app.route("/dashboard/admin", endpoint="admin_dashboard")
 @role_required("admin")
 def admin_dashboard():
-    total_users = User.query.filter(User.role != RoleEnum.admin).count()
+    total_users = User.query.filter(User.role != RoleEnum.admin.value).count()
     total_wallets = Wallet.query.count()
     total_beats = Beat.query.count()
     total_orders = Order.query.count()
@@ -10601,7 +10686,7 @@ def superadmin_dashboard():
     if not owner_panel_unlocked():
         return redirect(url_for("superadmin_unlock"))
 
-    total_users = User.query.filter(User.role != RoleEnum.admin).count()
+    total_users = User.query.filter(User.role != RoleEnum.admin.value).count()
     total_wallets = Wallet.query.count()
     total_beats = Beat.query.count()
     total_orders = Order.query.count()
@@ -13545,7 +13630,7 @@ def admin_users():
 
     if role:
         try:
-            query = query.filter(User.role == RoleEnum(role))
+            query = query.filter(User.role == RoleEnum(role).value)
         except Exception:
             pass
 
@@ -14650,7 +14735,7 @@ def admin_reports():
             User.role,
             func.count(User.id).label('count')
         )
-        .filter(User.role != RoleEnum.admin)
+        .filter(User.role != RoleEnum.admin.value)
         .group_by(User.role)
         .order_by(User.role)
         .all()
