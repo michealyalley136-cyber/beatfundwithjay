@@ -982,6 +982,83 @@ def _is_production_mode() -> bool:
     return env_mode == "production"
 
 
+def _parse_coord(raw: str) -> float:
+    """
+    Parse a latitude/longitude string.
+    Accepts decimal degrees, optional N/S/E/W suffix, or DMS-style values.
+    """
+    if raw is None:
+        raise ValueError("empty coordinate")
+
+    s = raw.strip().upper()
+    if not s:
+        raise ValueError("empty coordinate")
+
+    direction = None
+    for d in ("N", "S", "E", "W"):
+        if d in s:
+            direction = d
+            s = s.replace(d, "")
+
+    # If decimal uses comma (e.g., 35,868145), normalize to dot.
+    if "," in s and "." not in s:
+        s = s.replace(",", ".")
+
+    nums = re.findall(r"[-+]?\d+(?:\.\d+)?", s)
+    if not nums:
+        raise ValueError("no numeric coordinate")
+
+    if len(nums) >= 3:
+        deg = float(nums[0])
+        minutes = float(nums[1])
+        seconds = float(nums[2])
+        val = abs(deg) + minutes / 60.0 + seconds / 3600.0
+        if deg < 0:
+            val = -val
+    elif len(nums) == 2:
+        deg = float(nums[0])
+        minutes = float(nums[1])
+        val = abs(deg) + minutes / 60.0
+        if deg < 0:
+            val = -val
+    else:
+        val = float(nums[0])
+
+    if direction:
+        if direction in ("S", "W"):
+            val = -abs(val)
+        else:
+            val = abs(val)
+
+    return val
+
+
+def _parse_lat_lng(lat_raw: str, lng_raw: str) -> tuple[float, float]:
+    """
+    Parse latitude/longitude pair with basic validation.
+    Allows "lat, lng" in a single field if the other is blank.
+    """
+    lat_raw = (lat_raw or "").strip()
+    lng_raw = (lng_raw or "").strip()
+
+    if lat_raw and not lng_raw:
+        parts = [p.strip() for p in re.split(r"[;,]", lat_raw) if p.strip()]
+        if len(parts) == 2:
+            lat_raw, lng_raw = parts[0], parts[1]
+
+    lat = _parse_coord(lat_raw)
+    lng = _parse_coord(lng_raw)
+
+    # If user swapped lat/lng, attempt to fix.
+    if abs(lat) > 90 and abs(lng) <= 90:
+        lat, lng = lng, lat
+
+    if abs(lat) > 90 or abs(lng) > 180:
+        raise ValueError("coordinate out of range")
+
+    return lat, lng
+
+
 def _scan_file_local(path: str) -> tuple[ScanStatus, str | None]:
     """
     Scan a local file using ClamAV if enabled.
@@ -6380,12 +6457,11 @@ def bookme_profile():
         if lat_raw or lng_raw:
             try:
                 if lat_raw != "" and lng_raw != "":
-                    lat = float(lat_raw)
-                    lng = float(lng_raw)
+                    lat, lng = _parse_lat_lng(lat_raw, lng_raw)
                 else:
                     raise ValueError()
             except Exception:
-                flash("Latitude/Longitude must be numbers (or leave both blank).", "error")
+                flash("Latitude/Longitude must be valid coordinates (e.g., 35.868145 and -83.561523).", "error")
                 return redirect(url_for("bookme_profile"))
 
         if not prof:
