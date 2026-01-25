@@ -1123,9 +1123,14 @@ def _save_file(
             except Exception:
                 pass
     else:
-        saved_ok = bool(storage_backend.save_file(fs, fname))
+        try:
+            saved_ok = bool(storage_backend.save_file(fs, fname))
+        except Exception as save_err:
+            app.logger.error(f"Storage backend failed to save {fname}: {type(save_err).__name__}: {str(save_err)}", exc_info=True)
+            saved_ok = False
 
     if not saved_ok:
+        app.logger.error(f"File save failed for {fname} (saved_ok={saved_ok}, storage_backend={STORAGE_BACKEND})")
         return None
 
     # Create UploadedFile record + scan status (best-effort).
@@ -1178,8 +1183,11 @@ def _save_file(
         if scan_status == ScanStatus.infected:
             log_security_event("upload_infected", f"Infected upload blocked: {fname}", "error")
             return None
-    except Exception:
+    except Exception as db_err:
         db.session.rollback()
+        app.logger.error(f"Failed to create UploadedFile record for {fname}: {type(db_err).__name__}: {str(db_err)}", exc_info=True)
+        # Don't return None here - the file was already saved successfully, just log the metadata error
+        # Return the filename so the upload is considered successful even if the metadata record fails
     
     log_security_event("file_upload_success", f"File uploaded: {fname} ({size} bytes)", "info")
     return fname
