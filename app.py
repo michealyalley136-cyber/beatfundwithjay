@@ -792,11 +792,18 @@ login_manager.login_view = "login"
 if os.getenv("BOOTSTRAP_DB") == "1":
     with app.app_context():
         try:
-            # Create all tables using SQLAlchemy metadata
-            # This uses the db.engine which has proper connection settings
-            db.create_all()
+            # Use raw connection with explicit autocommit to ensure DDL is persisted
+            with db.engine.raw_connection() as conn:
+                # Enable autocommit for DDL statements
+                conn.autocommit = True
+                
+                # Create all tables using SQLAlchemy metadata
+                # Get the metadata from db.Model
+                db.metadata.create_all(bind=conn)
+                
+                app.logger.info("DDL statements executed with autocommit=True")
             
-            print("[OK] BOOTSTRAP_DB=1 -> db.create_all() completed")
+            print("[OK] BOOTSTRAP_DB=1 -> db.create_all() completed with autocommit")
             app.logger.info("Database tables creation attempted")
             
             # Verification: count tables created
@@ -814,12 +821,11 @@ if os.getenv("BOOTSTRAP_DB") == "1":
                     app.logger.info(f"✓ Database has {count} tables created")
                     
                     if count > 0:
-                        # List some key tables
+                        # List the tables
                         result2 = conn.execute(text("""
-                            SELECT string_agg(table_name, ', ')
+                            SELECT string_agg(table_name, ', ' ORDER BY table_name)
                             FROM information_schema.tables 
                             WHERE table_schema = 'public'
-                            LIMIT 10
                         """))
                         tables = result2.scalar()
                         app.logger.info(f"Tables: {tables}")
