@@ -788,50 +788,6 @@ _early_sqlite_bootstrap_columns()
 login_manager = LoginManager(app)
 login_manager.login_view = "login"
 
-# One-time DB bootstrap (only when explicitly enabled)
-if os.getenv("BOOTSTRAP_DB") == "1":
-    with app.app_context():
-        try:
-            # Use engine.begin() which properly supports context manager
-            # This ensures DDL statements are committed
-            with db.engine.begin() as conn:
-                db.metadata.create_all(bind=conn)
-                app.logger.info("All table DDL statements executed")
-            
-            print("[OK] BOOTSTRAP_DB=1 -> db.create_all() completed")
-            app.logger.info("Database tables creation attempted")
-            
-            # Verification: count tables created
-            from time import sleep as time_sleep
-            time_sleep(0.5)
-            
-            try:
-                with db.engine.begin() as conn:
-                    result = conn.execute(text("""
-                        SELECT COUNT(*) as table_count
-                        FROM information_schema.tables 
-                        WHERE table_schema = 'public'
-                    """))
-                    count = result.scalar()
-                    app.logger.info(f"✓ Database has {count} tables created")
-                    
-                    if count > 0:
-                        # List the tables
-                        result2 = conn.execute(text("""
-                            SELECT string_agg(table_name, ', ' ORDER BY table_name)
-                            FROM information_schema.tables 
-                            WHERE table_schema = 'public'
-                        """))
-                        tables = result2.scalar()
-                        app.logger.info(f"Tables: {tables}")
-                    
-            except Exception as verify_err:
-                app.logger.warning(f"Could not verify tables: {verify_err}")
-                
-        except Exception as bootstrap_err:
-            print(f"[ERROR] BOOTSTRAP_DB=1 failed: {bootstrap_err}")
-            app.logger.error(f"Database bootstrap failed: {bootstrap_err}", exc_info=True)
-
 
 
 
@@ -2796,6 +2752,54 @@ class WaitlistEntry(db.Model):
     ip = db.Column(db.String(64), nullable=True)
     user_agent = db.Column(db.String(200), nullable=True)
     created_at = db.Column(db.DateTime, server_default=func.now(), nullable=False, index=True)
+
+
+# =========================================================
+# One-time DB Bootstrap (AFTER all models are defined)
+# =========================================================
+# This must run AFTER all model classes are defined so they're in db.metadata
+if os.getenv("BOOTSTRAP_DB") == "1":
+    with app.app_context():
+        try:
+            # Use engine.begin() which properly supports context manager
+            # This ensures DDL statements are committed
+            with db.engine.begin() as conn:
+                db.metadata.create_all(bind=conn)
+                app.logger.info("All table DDL statements executed")
+            
+            print("[OK] BOOTSTRAP_DB=1 -> db.create_all() completed")
+            app.logger.info("Database tables creation attempted")
+            
+            # Verification: count tables created
+            from time import sleep as time_sleep
+            time_sleep(0.5)
+            
+            try:
+                with db.engine.begin() as conn:
+                    result = conn.execute(text("""
+                        SELECT COUNT(*) as table_count
+                        FROM information_schema.tables 
+                        WHERE table_schema = 'public'
+                    """))
+                    count = result.scalar()
+                    app.logger.info(f"✓ Database has {count} tables created")
+                    
+                    if count > 0:
+                        # List the tables
+                        result2 = conn.execute(text("""
+                            SELECT string_agg(table_name, ', ' ORDER BY table_name)
+                            FROM information_schema.tables 
+                            WHERE table_schema = 'public'
+                        """))
+                        tables = result2.scalar()
+                        app.logger.info(f"Tables: {tables}")
+                    
+            except Exception as verify_err:
+                app.logger.warning(f"Could not verify tables: {verify_err}")
+                
+        except Exception as bootstrap_err:
+            print(f"[ERROR] BOOTSTRAP_DB=1 failed: {bootstrap_err}")
+            app.logger.error(f"Database bootstrap failed: {bootstrap_err}", exc_info=True)
 
 
 # Roles that can use project vaults
