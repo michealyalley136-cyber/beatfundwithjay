@@ -333,7 +333,7 @@ def set_security_headers(response):
     
     # Permissions Policy (Feature Policy)
     response.headers["Permissions-Policy"] = (
-        "geolocation=(), microphone=(), camera=(), payment=(), usb=()"
+        "geolocation=(self), microphone=(), camera=(), payment=(), usb=()"
     )
     
     return response
