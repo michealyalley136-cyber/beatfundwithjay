@@ -590,36 +590,33 @@ def get_database_config():
     Configure database connection with proper SSL for Neon Postgres.
     Returns tuple: (database_url, engine_options)
     """
-db_url = os.getenv("DATABASE_URL", "").strip()
+    db_url = os.getenv("DATABASE_URL", "").strip()
 
     if not db_url:
         # Fallback to SQLite for local development
-        sqlite_path = os.path.join(INSTANCE_DIR, 'app.db')
+        sqlite_path = os.path.join(INSTANCE_DIR, "app.db")
         return f"sqlite:///{sqlite_path}", {}
-    
+
     # Normalize URL format
     db_url = normalize_database_url(db_url)
-    
-    # Determine if this is a Neon database (check for neon.tech in hostname)
-    is_neon = "neon.tech" in db_url or "neon.tech" in db_url.lower()
-    
-    # Engine options for PostgreSQL
+
+    # Determine if this is a Neon database
+    is_neon = "neon.tech" in db_url.lower()
+
     engine_options = {
-        "pool_pre_ping": True,  # Verify connections before using
-        "pool_recycle": 300,    # Recycle connections after 5 minutes
-        "pool_size": 5,         # Connection pool size
-        "max_overflow": 10,     # Max overflow connections
+        "pool_pre_ping": True,
+        "pool_recycle": 300,
+        "pool_size": 5,
+        "max_overflow": 10,
         "connect_args": {
-            "connect_timeout": 10,  # 10 second connection timeout
-        }
+            "connect_timeout": 10,
+        },
     }
-    
-    # Neon requires SSL connections
+
+    # Neon requires SSL
     if is_neon:
         engine_options["connect_args"]["sslmode"] = "require"
-        # Optionally, you can use 'verify-full' for stricter SSL verification
-        # engine_options["connect_args"]["sslmode"] = "verify-full"
-    
+
     return db_url, engine_options
 
 
