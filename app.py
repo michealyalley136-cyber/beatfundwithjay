@@ -190,6 +190,18 @@ def ensure_session():
     if not session:
         session['_initialized'] = True
 
+
+@app.before_request
+def test_db_connection_before_request():
+    """Test database connection at the start of each request"""
+    try:
+        # Simple test query to ensure DB is responsive
+        db.session.execute(text("SELECT 1"))
+    except Exception as e:
+        app.logger.error(f"DB connection test failed at start of request {request.path}: {type(e).__name__}: {str(e)}")
+        # Don't block the request, let it fail naturally so we can see the real error
+        pass
+
 @app.after_request
 def add_request_id_header(response):
     """Add request ID to response header"""
@@ -503,7 +515,11 @@ def log_security_event(event_type: str, details: str, severity: str = "info"):
 def handle_500_error(e):
     """Handle 500 errors without exposing sensitive information"""
     # Log full error with traceback for debugging
-    app.logger.error(f"500 ERROR: {type(e).__name__}: {str(e)}", exc_info=True)
+    import traceback
+    tb_str = traceback.format_exc()
+    app.logger.error(f"500 ERROR FULL TRACEBACK:\n{tb_str}")
+    app.logger.error(f"500 ERROR TYPE: {type(e).__name__}")
+    app.logger.error(f"500 ERROR STR: {str(e)}")
     
     try:
         db.session.rollback()
