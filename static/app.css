@@ -434,8 +434,8 @@ code{
   .page-main,
   .page{
     max-width: 100%;
-    margin: 64px auto 40px;
-    padding: 0 14px 48px;
+    margin: 56px auto 40px;
+    padding: 0 12px 40px;
   }
 
   .dash-identity{ min-width: 0; width: 100%; }
