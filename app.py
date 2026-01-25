@@ -18,7 +18,10 @@ from werkzeug.exceptions import RequestEntityTooLarge
 
 from sqlalchemy import UniqueConstraint, inspect, text, or_
 from sqlalchemy.sql import func
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import (
+    IntegrityError, ProgrammingError, OperationalError,
+    DatabaseError, SQLAlchemyError
+)
 
 from functools import wraps
 from contextlib import contextmanager
@@ -141,7 +144,10 @@ app.config.update(
     REMEMBER_COOKIE_NAME="__Secure-remember_token" if not IS_DEV else "remember_token",
     PERMANENT_SESSION_LIFETIME=timedelta(minutes=60),
 )
+# CSRF Configuration
 app.config.setdefault("WTF_CSRF_TIME_LIMIT", None)
+app.config.setdefault("WTF_CSRF_ENABLED", True)
+app.config.setdefault("WTF_CSRF_CHECK_DEFAULT", True)
 
 # Maximum request size (prevents large uploads from consuming too much memory)
 # 120MB = 120 * 1024 * 1024 bytes
@@ -167,6 +173,22 @@ if os.getenv("TRUST_PROXY", "0") == "1":
 def generate_request_id():
     """Generate unique request ID for tracing"""
     g.request_id = str(uuid.uuid4())[:8]
+
+
+@app.before_request
+def ensure_session():
+    """
+    Ensure session is initialized before CSRF token generation.
+    This fixes 'CSRF session token is missing' errors.
+    Flask-WTF requires a valid session to store CSRF tokens.
+    """
+    # Ensure session is marked as permanent (required for CSRF)
+    if '_permanent' not in session:
+        session.permanent = True
+    
+    # Initialize session if it's empty (helps with CSRF token generation)
+    if not session:
+        session['_initialized'] = True
 
 @app.after_request
 def add_request_id_header(response):
@@ -303,8 +325,24 @@ def inject_csrf_token():
 
 @app.errorhandler(CSRFError)
 def handle_csrf_error(e):
-    msg = e.description or "Security error: please refresh the page and try again."
+    """Handle CSRF errors with helpful messages"""
+    error_msg = str(e.description) if e.description else "Security error: CSRF token missing or invalid."
+    
+    # Log the error for debugging
+    if IS_DEV:
+        app.logger.warning(f"CSRF Error: {error_msg}. Referrer: {request.referrer}, Method: {request.method}, Path: {request.path}")
+        app.logger.debug(f"Session keys: {list(session.keys()) if session else 'No session'}")
+        app.logger.debug(f"SECRET_KEY set: {bool(app.config.get('SECRET_KEY'))}")
+    
+    # Provide more helpful error message
+    if "session" in error_msg.lower() or "missing" in error_msg.lower():
+        msg = "Session expired or invalid. Please refresh the page and try again."
+    else:
+        msg = error_msg
+    
     flash(msg, "error")
+    
+    # Redirect to the page they came from, or home
     return redirect(request.referrer or url_for("home"))
 
 
@@ -446,10 +484,16 @@ def log_security_event(event_type: str, details: str, severity: str = "info"):
     
     # In production, write to secure log file or security monitoring system
     if not IS_DEV:
-        # TODO: Implement proper security logging to file/DB/monitoring service
+        # Security logging to file/DB not implemented yet - add proper logging service
         pass
     else:
-        print(f"[SECURITY {severity.upper()}] {timestamp} | {event_type} | User: {username or 'anonymous'} | {details} | Client: {client_id[:8]}")
+        sev = (severity or "info").lower()
+        if sev == "warning":
+            app.logger.warning(f"[SECURITY] {timestamp} | {event_type} | User: {username or 'anonymous'} | {details} | Client: {client_id[:8]}")
+        elif sev == "error":
+            app.logger.error(f"[SECURITY] {timestamp} | {event_type} | User: {username or 'anonymous'} | {details} | Client: {client_id[:8]}")
+        else:
+            app.logger.info(f"[SECURITY] {timestamp} | {event_type} | User: {username or 'anonymous'} | {details} | Client: {client_id[:8]}")
 
 
 # ---------------------------------------------------------
@@ -520,10 +564,35 @@ def jinja_is_None(value):
 
 
 # =========================================================
-# Database (Render Postgres in prod, SQLite locally)
+# Database (Neon Postgres in prod, SQLite locally)
 # =========================================================
+def normalize_database_url(url: str) -> str:
+    """
+    Normalize database URL to use postgresql+psycopg2:// format.
+    Handles postgres:// and postgresql:// formats.
+    """
+    if not url:
+        return url
+    
+    # Convert postgres:// to postgresql://
+    if url.startswith("postgres://"):
+        url = url.replace("postgres://", "postgresql://", 1)
+    
+    # Ensure we're using psycopg2 driver
+    if url.startswith("postgresql://") and not url.startswith("postgresql+psycopg2://"):
+        url = url.replace("postgresql://", "postgresql+psycopg2://", 1)
+    
+    return url
+
+
+def get_database_config():
+    """
+    Configure database connection with proper SSL for Neon Postgres.
+    Returns tuple: (database_url, engine_options)
+    """
 db_url = os.getenv("DATABASE_URL", "").strip()
 
+<<<<<<< HEAD
 if db_url:
     if db_url.startswith("postgres://"):
         db_url = db_url.replace("postgres://", "postgresql://", 1)
@@ -546,6 +615,21 @@ if db_url:
     app.config["SQLALCHEMY_DATABASE_URI"] = db_url
     # Connection pool settings for production
     app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
+=======
+    if not db_url:
+        # Fallback to SQLite for local development
+        sqlite_path = os.path.join(INSTANCE_DIR, 'app.db')
+        return f"sqlite:///{sqlite_path}", {}
+    
+    # Normalize URL format
+    db_url = normalize_database_url(db_url)
+    
+    # Determine if this is a Neon database (check for neon.tech in hostname)
+    is_neon = "neon.tech" in db_url or "neon.tech" in db_url.lower()
+    
+    # Engine options for PostgreSQL
+    engine_options = {
+>>>>>>> 3c985bedfa16159bcf6ec7f3e1384c00e11d0f98
         "pool_pre_ping": True,  # Verify connections before using
         "pool_recycle": 300,    # Recycle connections after 5 minutes
         "pool_size": 5,         # Connection pool size
@@ -554,13 +638,102 @@ if db_url:
             "connect_timeout": 10,  # 10 second connection timeout
         }
     }
-else:
+    
+    # Neon requires SSL connections
+    if is_neon:
+        engine_options["connect_args"]["sslmode"] = "require"
+        # Optionally, you can use 'verify-full' for stricter SSL verification
+        # engine_options["connect_args"]["sslmode"] = "verify-full"
+    
+    return db_url, engine_options
+
+
+# Configure database
+try:
+    db_url, engine_options = get_database_config()
+    app.config["SQLALCHEMY_DATABASE_URI"] = db_url
+    app.config["SQLALCHEMY_ENGINE_OPTIONS"] = engine_options
+    
+    # Log database configuration (safely, without exposing credentials)
+    if IS_DEV:
+        # Mask password in URL for logging
+        safe_url = db_url
+        try:
+            from urllib.parse import urlparse, urlunparse
+            parsed = urlparse(db_url)
+            if parsed.password:
+                safe_url = urlunparse(parsed._replace(password="***"))
+        except Exception:
+            pass
+        app.logger.info(f"Database configured: {safe_url}")
+        if "neon.tech" in db_url.lower():
+            app.logger.info("Neon Postgres detected - SSL enabled")
+except Exception as e:
+    app.logger.error(f"Failed to configure database: {e}", exc_info=True)
+    # Fallback to SQLite on configuration error
     app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{os.path.join(INSTANCE_DIR, 'app.db')}"
+    app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {}
 
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
 db = SQLAlchemy(app)
 
+<<<<<<< HEAD
+=======
+
+def test_database_connection() -> tuple[bool, str]:
+    """
+    Test database connection and return (success, message).
+    Provides helpful error messages for common issues.
+    """
+    try:
+        with db.engine.connect() as conn:
+            result = conn.execute(text("SELECT 1"))
+            result.fetchone()
+        return True, "Database connection successful"
+    except ProgrammingError as e:
+        error_msg = str(e).lower()
+        if "does not exist" in error_msg or "database" in error_msg:
+            return False, f"Database does not exist. Error: {e}"
+        elif "schema" in error_msg or "relation" in error_msg:
+            return False, f"Schema/table issue. Error: {e}"
+        elif "permission" in error_msg or "access" in error_msg:
+            return False, f"Permission denied. Check user privileges. Error: {e}"
+        else:
+            return False, f"SQL error: {e}"
+    except OperationalError as e:
+        error_msg = str(e).lower()
+        if "could not connect" in error_msg or "connection refused" in error_msg:
+            return False, f"Cannot connect to database server. Check DATABASE_URL and network. Error: {e}"
+        elif "ssl" in error_msg or "certificate" in error_msg:
+            return False, f"SSL connection error. Error: {e}"
+        elif "timeout" in error_msg:
+            return False, f"Connection timeout. Error: {e}"
+        elif "authentication" in error_msg or "password" in error_msg:
+            return False, f"Authentication failed. Check username/password in DATABASE_URL. Error: {e}"
+        else:
+            return False, f"Connection error: {e}"
+    except DatabaseError as e:
+        return False, f"Database error: {e}"
+    except SQLAlchemyError as e:
+        return False, f"SQLAlchemy error: {e}"
+    except Exception as e:
+        return False, f"Unexpected error: {type(e).__name__}: {e}"
+
+
+# Test database connection on startup (only in dev mode)
+if IS_DEV and os.getenv("DATABASE_URL"):
+    try:
+        with app.app_context():
+            success, message = test_database_connection()
+            if success:
+                app.logger.info(f"✅ {message}")
+            else:
+                app.logger.warning(f"⚠️  {message}")
+    except Exception as e:
+        app.logger.warning(f"Could not test database connection: {e}")
+
+>>>>>>> 3c985bedfa16159bcf6ec7f3e1384c00e11d0f98
 def _early_sqlite_bootstrap_columns() -> None:
     """
     Ensure critical SQLite columns exist BEFORE Flask-Login loads current_user.
@@ -1213,7 +1386,6 @@ class RoleEnum(str, enum.Enum):
     engineer = "engineer"
     manager = "manager"
     vendor = "vendor"
-    funder = "funder"
     client = "client"
 
     dancer_choreographer = "dancer_choreographer"
@@ -1252,7 +1424,6 @@ ROLE_DISPLAY_NAMES = {
     RoleEnum.engineer: "Engineer",
     RoleEnum.manager: "Artist / Talent Manager",
     RoleEnum.vendor: "Service Provider",
-    RoleEnum.funder: "Funder / Investor",
     RoleEnum.client: "Client",
 
     RoleEnum.dancer_choreographer: "Dancer / Choreographer",
@@ -4138,13 +4309,8 @@ def can_send_message(user_id: int, conversation_id: int) -> tuple[bool, str]:
 def send_email(to_email: str, subject: str, text_body: str) -> bool:
     """Send email via SMTP or print to console in dev"""
     if IS_DEV and not os.getenv("SMTP_HOST"):
-        print(f"\n{'='*60}")
-        print(f"EMAIL (dev mode - SMTP not configured)")
-        print(f"To: {to_email}")
-        print(f"Subject: {subject}")
-        print(f"{'='*60}")
-        print(text_body)
-        print(f"{'='*60}\n")
+        app.logger.info("EMAIL (dev mode - SMTP not configured) To: %s Subject: %s", to_email, subject)
+        app.logger.debug(text_body)
         return True
     
     try:
@@ -4157,11 +4323,11 @@ def send_email(to_email: str, subject: str, text_body: str) -> bool:
                 print(f"[DEV] Email not sent - SMTP_HOST not configured")
             return False
         
-        smtp_port = int(os.getenv("SMTP_PORT", "587"))
-        smtp_user = os.getenv("SMTP_USER", "").strip()
-        smtp_pass = os.getenv("SMTP_PASS", "").strip()
-        smtp_from = os.getenv("SMTP_FROM", smtp_user).strip()
-        smtp_tls = os.getenv("SMTP_TLS", "1").strip() == "1"
+        if not smtp_host:
+            if IS_DEV:
+                app.logger.warning("Email not sent - SMTP_HOST not configured")
+            return False
+        
         
         msg = EmailMessage()
         msg["From"] = smtp_from
@@ -4179,7 +4345,7 @@ def send_email(to_email: str, subject: str, text_body: str) -> bool:
         return True
     except Exception as e:
         if IS_DEV:
-            print(f"[DEV] Email send failed: {e}")
+            app.logger.exception("Email send failed (dev): %s", e)
         return False
 
 
@@ -4642,12 +4808,29 @@ def login():
 
         if "@" in identifier and "." in identifier:
             user = User.query.filter(func.lower(User.email) == identifier).first()
+            lookup_type = "email"
         else:
             handle = identifier.lstrip("@")
             user = User.query.filter(func.lower(User.username) == handle).first()
+            lookup_type = "username"
 
-        if not user or not user.check_password(password):
+        # Debug logging for login attempts
+        if IS_DEV:
+            app.logger.debug(f"Login attempt: identifier='{identifier}' (type={lookup_type}), user_found={user is not None}")
+            if user:
+                app.logger.debug(f"User found: id={user.id}, username={user.username}, email={user.email}, has_password_hash={bool(user.password_hash)}")
+
+        if not user:
             _register_failed_login(remote_addr)
+            if IS_DEV:
+                app.logger.warning(f"Login failed: User not found for identifier '{identifier}' (type={lookup_type})")
+            flash("Invalid credentials.", "error")
+            return redirect(url_for("login"))
+        
+        if not user.check_password(password):
+            _register_failed_login(remote_addr)
+            if IS_DEV:
+                app.logger.warning(f"Login failed: Password mismatch for user '{user.username}' (ID: {user.id})")
             flash("Invalid credentials.", "error")
             return redirect(url_for("login"))
 
@@ -4706,7 +4889,8 @@ def forgot_password():
             user.password_reset_sent_at = datetime.utcnow()
             db.session.commit()
             reset_link = url_for("reset_password", token=token, _external=True)
-            print("\n[BeatFund] Password reset link:", reset_link, "\n")
+            if IS_DEV:
+                app.logger.info("Password reset link (dev): %s", reset_link)
 
         flash(
             "If an account with that email or username exists, a password reset link "
@@ -11794,9 +11978,9 @@ def dj_dashboard():
     
     # Management status (placeholder - check if DJ is managed)
     # For now, we'll check if there are any bookings where the DJ is managed
-    # This is a placeholder that can be updated with actual management relationship
-    is_managed = False  # TODO: Implement actual management relationship check
-    manager_name = None  # TODO: Get actual manager name if managed
+    # Management relationship check (placeholder - implement when management model is added)
+    is_managed = False  # No management relationships implemented yet
+    manager_name = None
     
     dj_info = {
         'id': current_user.id,
@@ -12029,9 +12213,9 @@ def host_dashboard():
     # Host profile info
     prof = BookMeProfile.query.filter_by(user_id=current_user.id).first()
     
-    # Management status (placeholder)
-    is_managed = False  # TODO: Implement actual management relationship check
-    manager_name = None  # TODO: Get actual manager name if managed
+    # Management status (placeholder - implement when management model is added)
+    is_managed = False  # No management relationships implemented yet
+    manager_name = None
     
     host_info = {
         'id': current_user.id,
@@ -12039,10 +12223,10 @@ def host_dashboard():
         'avatar_url': current_user.avatar_url,
         'is_managed': is_managed,
         'manager_name': manager_name,
-        'hosting_style': None,  # TODO: Add to BookMeProfile or separate model
+        'hosting_style': None,  # Not implemented yet
         'genres': prof.service_types if prof else None,
-        'languages': None,  # TODO: Add to profile
-        'travel_radius': None,  # TODO: Add to profile
+        'languages': None,  # Not implemented yet
+        'travel_radius': None,  # Not implemented yet
         'rates': prof.rate_notes if prof else None,
     }
     
@@ -12513,8 +12697,8 @@ def wardrobe_dashboard():
         .count()
     )
     
-    upcoming_fittings = 0  # TODO: Implement fittings
-    pending_approvals = 0  # TODO: Implement approval system
+    upcoming_fittings = 0  # Fittings not implemented yet
+    pending_approvals = 0  # Approval system not implemented yet
     
     earnings_this_month_cents = (
         db.session.query(func.coalesce(func.sum(Booking.total_cents), 0))
@@ -13085,7 +13269,7 @@ def opportunities():
 
         if not interest_type:
             flash("Please choose whether you're interested in Loans or Scholarships.", "error")
-            return redirect(url_for("opportunities"))
+            return redirect(url_for("opportunities_interest"))
 
         if interest_type == "loan":
             subject = f"[OPPORTUNITIES] Creative loan interest from @{current_user.username}"
