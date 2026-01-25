@@ -792,82 +792,40 @@ login_manager.login_view = "login"
 if os.getenv("BOOTSTRAP_DB") == "1":
     with app.app_context():
         try:
-            # First try SQLAlchemy's create_all
+            # Create all tables using SQLAlchemy metadata
+            # This uses the db.engine which has proper connection settings
             db.create_all()
-            db.session.commit()
             
-            # Then verify and create any missing tables using raw SQL
-            with db.engine.begin() as conn:
-                # Check if 'user' table exists
-                result = conn.execute(text("""
-                    SELECT EXISTS (
-                        SELECT 1 FROM information_schema.tables 
-                        WHERE table_schema = 'public' AND table_name = 'user'
-                    )
-                """))
-                user_table_exists = result.scalar()
-                
-                if not user_table_exists:
-                    app.logger.warning("User table not found, creating tables with raw SQL...")
-                    
-                    # Create enum types first
-                    try:
-                        conn.execute(text('CREATE TYPE "RoleEnum" AS ENUM (\'artist\', \'admin\', \'superadmin\')'))
-                    except:
-                        pass  # Type might already exist
-                    
-                    try:
-                        conn.execute(text('CREATE TYPE "KYCStatus" AS ENUM (\'not_started\', \'pending\', \'approved\', \'rejected\')'))
-                    except:
-                        pass  # Type might already exist
-                    
-                    # Create user table
-                    conn.execute(text("""
-                        CREATE TABLE IF NOT EXISTS "user" (
-                            id SERIAL PRIMARY KEY,
-                            username VARCHAR(150) NOT NULL UNIQUE,
-                            email VARCHAR(255) UNIQUE,
-                            full_name VARCHAR(150),
-                            artist_name VARCHAR(150),
-                            password_hash VARCHAR(255) NOT NULL,
-                            role "RoleEnum" NOT NULL DEFAULT 'artist',
-                            kyc_status "KYCStatus" NOT NULL DEFAULT 'not_started',
-                            is_active BOOLEAN NOT NULL DEFAULT true,
-                            is_superadmin BOOLEAN NOT NULL DEFAULT false,
-                            password_changed_at TIMESTAMP,
-                            password_reset_token VARCHAR(255),
-                            password_reset_sent_at TIMESTAMP,
-                            avatar_path VARCHAR(255),
-                            email_notifications_enabled BOOLEAN NOT NULL DEFAULT true,
-                            stripe_account_id VARCHAR(255)
-                        )
+            print("[OK] BOOTSTRAP_DB=1 -> db.create_all() completed")
+            app.logger.info("Database tables creation attempted")
+            
+            # Verification: count tables created
+            from time import sleep as time_sleep
+            time_sleep(0.5)
+            
+            try:
+                with db.engine.begin() as conn:
+                    result = conn.execute(text("""
+                        SELECT COUNT(*) as table_count
+                        FROM information_schema.tables 
+                        WHERE table_schema = 'public'
                     """))
+                    count = result.scalar()
+                    app.logger.info(f"✓ Database has {count} tables created")
                     
-                    # Create indexes
-                    conn.execute(text('CREATE INDEX IF NOT EXISTS ix_user_username ON "user" (username)'))
-                    conn.execute(text('CREATE INDEX IF NOT EXISTS ix_user_email ON "user" (email)'))
-                    conn.execute(text('CREATE INDEX IF NOT EXISTS ix_user_stripe_account_id ON "user" (stripe_account_id)'))
+                    if count > 0:
+                        # List some key tables
+                        result2 = conn.execute(text("""
+                            SELECT string_agg(table_name, ', ')
+                            FROM information_schema.tables 
+                            WHERE table_schema = 'public'
+                            LIMIT 10
+                        """))
+                        tables = result2.scalar()
+                        app.logger.info(f"Tables: {tables}")
                     
-                    app.logger.info("Raw SQL tables created successfully")
-            
-            print("[OK] BOOTSTRAP_DB=1 -> Database tables ensured")
-            app.logger.info("Database bootstrap completed")
-            
-            # Final verification
-            import time
-            time.sleep(0.5)
-            
-            with db.engine.begin() as conn:
-                result = conn.execute(text("""
-                    SELECT EXISTS (
-                        SELECT 1 FROM information_schema.tables 
-                        WHERE table_schema = 'public' AND table_name = 'user'
-                    )
-                """))
-                if result.scalar():
-                    app.logger.info("✓ User table verified in PostgreSQL")
-                else:
-                    app.logger.error("✗ User table still not found")
+            except Exception as verify_err:
+                app.logger.warning(f"Could not verify tables: {verify_err}")
                 
         except Exception as bootstrap_err:
             print(f"[ERROR] BOOTSTRAP_DB=1 failed: {bootstrap_err}")
