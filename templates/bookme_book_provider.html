@@ -29,7 +29,7 @@
   .pb-footer{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:14px;}
 </style>
 
-{% set role_val = (provider.role.value if provider.role and provider.role.value is defined else (provider.role|string))|lower %}
+{% set role_val = (provider.role if provider.role is defined else (provider.role|string))|lower %}
 
 <div class="pb-page">
   <div class="pb-card">

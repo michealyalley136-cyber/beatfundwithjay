@@ -10,8 +10,8 @@
     <h3>Profile</h3>
     <p><strong>User ID:</strong> {{ target.id }}</p>
     <p><strong>Username:</strong> @{{ target.username }}</p>
-    <p><strong>Role:</strong> {{ target.role.value }}</p>
-    <p><strong>KYC:</strong> {{ target.kyc_status.value }}</p>
+    <p><strong>Role:</strong> {{ target.role }}</p>
+    <p><strong>KYC:</strong> {{ target.kyc_status }}</p>
     <p><strong>Active:</strong> {{ 'Yes' if target.is_active_col else 'No' }}</p>
 
     <h4 style="margin-top:16px">Actions</h4>

@@ -23,7 +23,7 @@
   {% endif %}
 
   {# Show these links ONLY to admins #}
-  {% if current_user.is_authenticated and current_user.role.value == 'admin' %}
+  {% if current_user.is_authenticated and current_user.role == 'admin' %}
     <hr>
     <p><em>Admin demo:</em>
       <a href="{{ url_for('admin_kyc_action', user_id=current_user.id, action='approve') }}">Approve</a> |

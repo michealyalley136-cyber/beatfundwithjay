@@ -5,8 +5,8 @@
 <h2>Support · User Detail</h2>
 <p>
   <strong>User:</strong> @{{ user.username }} ·
-  <strong>Role:</strong> {{ user.role.value }} ·
-  <strong>KYC:</strong> {{ user.kyc_status.value }} ·
+  <strong>Role:</strong> {{ user.role }} ·
+  <strong>KYC:</strong> {{ user.kyc_status }} ·
   <strong>Active:</strong> {{ 'Yes' if user.is_active_col else 'No' }}
 </p>
 

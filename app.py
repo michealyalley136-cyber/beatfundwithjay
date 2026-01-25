@@ -1534,6 +1534,36 @@ class User(UserMixin, db.Model):
     @property
     def display_name(self) -> str:
         return self.artist_name or self.full_name or self.username
+    
+    # Make role and kyc_status properties that support .value for backward compatibility
+    # since they're now stored as strings instead of enums
+    class _StringEnumProxy:
+        """Helper to make string fields behave like enum objects with .value property"""
+        def __init__(self, value: str):
+            self.value = value
+        
+        def __str__(self):
+            return self.value
+        
+        def __eq__(self, other):
+            if isinstance(other, str):
+                return self.value == other
+            elif hasattr(other, 'value'):
+                return self.value == other.value
+            return False
+        
+        def __hash__(self):
+            return hash(self.value)
+    
+    @property 
+    def role_obj(self):
+        """Get role as object with .value property for backward compatibility"""
+        return self._StringEnumProxy(self.role) if isinstance(self.role, str) else self.role
+    
+    @property
+    def kyc_status_obj(self):
+        """Get kyc_status as object with .value property for backward compatibility"""
+        return self._StringEnumProxy(self.kyc_status) if isinstance(self.kyc_status, str) else self.kyc_status
 
 
 # ------- Follows -------
@@ -2378,7 +2408,7 @@ def audit_log_event(
     actor_id = getattr(actor_user, "id", None) if actor_user else None
     actor_role = None
     try:
-        actor_role = actor_user.role.value if actor_user and getattr(actor_user, "role", None) else ("system" if actor_user is None else None)
+        actor_role = actor_user.role if actor_user and getattr(actor_user, "role", None) else ("system" if actor_user is None else None)
     except Exception:
         actor_role = "system" if actor_user is None else None
 
@@ -2908,7 +2938,7 @@ def role_required(*roles):
         @wraps(f)
         @login_required
         def wrapper(*args, **kwargs):
-            if current_user.role.value not in roles:
+            if current_user.role not in roles:
                 flash("You don't have access to that page.", "error")
                 return redirect(url_for("home"))
             return f(*args, **kwargs)
@@ -4130,7 +4160,7 @@ def notify_chat_message(
         "conversation_id": int(conversation_id),
         "message_id": int(message_id),
         "sender_name": (getattr(sender, "display_name", None) or getattr(sender, "username", None) or "Someone") if sender else "Someone",
-        "sender_role": (sender.role.value if sender and getattr(sender, "role", None) else None),
+        "sender_role": (sender.role if sender and getattr(sender, "role", None) else None),
         "preview": _chat_message_preview(message_text, max_len=80),
         "url": url_for("booking_chat", booking_id=int(booking_id)),
     }
@@ -4374,7 +4404,7 @@ def get_or_create_booking_conversation(booking_id: int) -> Conversation:
             db.session.add(ConversationParticipant(
                 conversation_id=conv.id,
                 user_id=uid,
-                role_at_time=(u.role.value if u and getattr(u, "role", None) else None),
+                role_at_time=(u.role if u and getattr(u, "role", None) else None),
             ))
 
     db.session.commit()
@@ -5971,7 +6001,7 @@ def api_followers(user_id):
                 "username": user.username,
                 "display_name": user.display_name or user.username,
                 "avatar_url": user.avatar_url,
-                "role": user.role.value if user.role else None,
+                "role": user.role if user.role else None,
             })
     
     return jsonify({"followers": result})
@@ -6000,7 +6030,7 @@ def api_following(user_id):
                 "username": user.username,
                 "display_name": user.display_name or user.username,
                 "avatar_url": user.avatar_url,
-                "role": user.role.value if user.role else None,
+                "role": user.role if user.role else None,
             })
     
     return jsonify({"following": result})
@@ -6089,7 +6119,7 @@ def bookme_search():
         providers_payload.append({
             "username": p.user.username if p.user else None,
             "display_name": p.display_name,
-            "role": p.user.role.value if getattr(p.user, "role", None) else "",
+            "role": p.user.role if getattr(p.user, "role", None) else "",
             "city": p.city or "",
             "state": p.state or "",
             "lat": p.lat,
@@ -7152,7 +7182,7 @@ def bookme_book_provider(username):
             )
         
         # Build comprehensive message from role-specific fields
-        role_val = (provider.role.value if provider.role and hasattr(provider.role, 'value') else str(provider.role)).lower()
+        role_val = (provider.role if provider.role else str(provider.role)).lower()
         message_parts = []
         
         if budget:
@@ -9387,7 +9417,7 @@ def market_providers_json():
         payload.append({
             "username": p.user.username,
             "display_name": p.display_name,
-            "role": p.user.role.value if p.user.role else "",
+            "role": p.user.role if p.user.role else "",
             "city": p.city or "",
             "state": p.state or "",
             "lat": float(p.lat),
@@ -10640,7 +10670,7 @@ def superadmin_dashboard():
 @app.route("/dashboard")
 @login_required
 def route_to_dashboard():
-    role = current_user.role.value
+    role = current_user.role
 
     if role == "admin":
         endpoint = "admin_dashboard"
@@ -11042,7 +11072,7 @@ def provider_toggle_live():
     flash(f"Profile {status}. {'Your services are now visible on the marketplace.' if prof.is_visible else 'Your services are hidden from the marketplace, but your profile is still visible for following and portfolio viewing.'}", "success")
     
     # Redirect to appropriate dashboard based on role
-    role = current_user.role.value
+    role = current_user.role
     if role == "videographer":
         return redirect(url_for("videographer_dashboard"))
     elif role == "designer":
@@ -11727,7 +11757,7 @@ def photographer_dashboard():
             "profile_image_url": current_user.avatar_url,
             "specialties": specialties,
             "location": f"{prof.city}, {prof.state}" if prof and (prof.city or prof.state) else "Remote",
-            "kyc_status": current_user.kyc_status.value
+            "kyc_status": current_user.kyc_status
         },
         stats={
             "new_requests_count": new_requests_count,
@@ -13488,8 +13518,8 @@ def opportunities():
 def whoami():
     return (
         f"id={current_user.id}, username={current_user.username}, "
-        f"role={current_user.role.value}, "
-        f"kyc={current_user.kyc_status.value}, "
+        f"role={current_user.role}, "
+        f"kyc={current_user.kyc_status}, "
         f"active={current_user.is_active_col}"
     )
 

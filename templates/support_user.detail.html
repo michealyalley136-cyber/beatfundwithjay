@@ -4,8 +4,8 @@
 
 <h2>Support · User Detail</h2>
 <p>
-  <strong>User:</strong> @{{ target.username }} · <strong>Role:</strong> {{ target.role.value }} ·
-  <strong>KYC:</strong> {{ target.kyc_status.value }} ·
+  <strong>User:</strong> @{{ target.username }} · <strong>Role:</strong> {{ target.role }} ·
+  <strong>KYC:</strong> {{ target.kyc_status }} ·
   <strong>Active:</strong> {{ 'Yes' if target.is_active_col else 'No' }}
 </p>
 

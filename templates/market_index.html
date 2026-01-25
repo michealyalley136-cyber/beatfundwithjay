@@ -1130,7 +1130,7 @@
               data-provider-card="1"
               data-city="{{ p.city|default('', true)|lower }}"
               data-state="{{ p.state|default('', true)|lower }}"
-              data-category="{{ (p.user.role.value|default('', true))|lower if p.user and p.user.role else '' }}"
+              data-category="{{ (p.user.role|default('', true))|lower if p.user and p.user.role else '' }}"
               data-search="{{ (p.display_name ~ ' ' ~ (p.user.username if p.user else '') ~ ' ' ~ (p.service_types or '') ~ ' ' ~ (p.city or '') ~ ' ' ~ (p.state or ''))|lower }}"
             >
               <div class="mk-beat-cover">
@@ -1154,7 +1154,7 @@
                 </div>
 
                 <div class="mk-beat-meta">
-                  {% if p.user and p.user.role %}{{ p.user.role.value.replace('_', ' ')|title }}{% endif %}
+                  {% if p.user and p.user.role %}{{ p.user.role.replace('_', ' ')|title }}{% endif %}
                   {% if (p.city or p.state) and (p.user and p.user.role) %} · {% endif %}
                   {% if p.city and p.state %}{{ p.city }}, {{ p.state }}{% elif p.city %}{{ p.city }}{% endif %}
                 </div>

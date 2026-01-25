@@ -179,7 +179,7 @@
     <div class="bf-kicker" style="margin-bottom:14px;">
       <strong>KYC:</strong>
       <span class="bf-muted">
-        {{ current_user.kyc_status.value.replace('_',' ').title() if current_user.kyc_status is defined else 'Unknown' }}
+        {{ current_user.kyc_status.replace('_',' ').title() if current_user.kyc_status is defined else 'Unknown' }}
       </span>
     </div>
 

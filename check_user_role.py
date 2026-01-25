@@ -7,7 +7,7 @@ with app.app_context():
     
     if user:
         print(f"User: @{user.username}")
-        print(f"Role: {user.role.value}")
+        print(f"Role: {user.role}")
         print(f"Display Name: {get_role_display(user.role)}")
         print(f"Is Studio: {user.role == RoleEnum.studio}")
     else:
