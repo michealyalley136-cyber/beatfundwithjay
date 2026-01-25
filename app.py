@@ -3780,8 +3780,29 @@ def _bootstrap_schema_once():
     
     # Disable auto-migrations in production
     # In production with Postgres, rely on Alembic migrations only
-    is_sqlite = db.engine.url.get_backend_name() == "sqlite"
+    try:
+        is_sqlite = db.engine.url.get_backend_name() == "sqlite"
+    except Exception as e:
+        app.logger.warning(f"Could not determine database backend: {e}")
+        is_sqlite = False
+    
     if APP_ENV == "prod" and not is_sqlite:
+        # Production Postgres: check if tables exist, create if not (safety check)
+        try:
+            with db.engine.begin() as conn:
+                result = conn.execute(text("""
+                    SELECT COUNT(*) as table_count
+                    FROM information_schema.tables 
+                    WHERE table_schema = 'public'
+                """))
+                count = result.scalar() or 0
+                if count == 0:
+                    app.logger.warning("No tables found in Postgres - creating all tables now")
+                    db.metadata.create_all(bind=conn)
+                    app.logger.info("✓ Database tables created successfully in production")
+        except Exception as e:
+            app.logger.warning(f"Could not auto-create tables in production: {type(e).__name__}: {str(e)}")
+        
         _SCHEMA_BOOTSTRAP_DONE = True
         return
     
@@ -3807,8 +3828,12 @@ def _bootstrap_schema_once():
         _ensure_sqlite_waitlist_table()
         _ensure_sqlite_beat_stripe_columns()
         _ensure_sqlite_order_payment_columns()
-    except Exception:
-        db.session.rollback()
+    except Exception as e:
+        app.logger.error(f"SQLite auto-migration failed: {type(e).__name__}: {str(e)}", exc_info=True)
+        try:
+            db.session.rollback()
+        except Exception:
+            pass
 
 
 # =========================================================
