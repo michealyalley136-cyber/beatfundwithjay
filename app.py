@@ -502,11 +502,14 @@ def log_security_event(event_type: str, details: str, severity: str = "info"):
 @app.errorhandler(500)
 def handle_500_error(e):
     """Handle 500 errors without exposing sensitive information"""
+    # Log full error with traceback for debugging
+    app.logger.error(f"500 ERROR: {type(e).__name__}: {str(e)}", exc_info=True)
+    
     try:
         db.session.rollback()
-    except Exception:
+    except Exception as rollback_err:
         # db might not be initialized yet, ignore rollback errors
-        pass
+        app.logger.warning(f"Could not rollback DB session: {rollback_err}")
     
     try:
         log_security_event("server_error", f"Internal server error: {type(e).__name__}", "error")
