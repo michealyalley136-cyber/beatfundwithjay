@@ -592,6 +592,30 @@ def get_database_config():
     """
 db_url = os.getenv("DATABASE_URL", "").strip()
 
+<<<<<<< HEAD
+if db_url:
+    if db_url.startswith("postgres://"):
+        db_url = db_url.replace("postgres://", "postgresql://", 1)
+
+    # Prefer psycopg (psycopg3) if available, otherwise fall back to psycopg2
+    preferred_driver = None
+    try:
+        import psycopg  # psycopg3
+        preferred_driver = "psycopg"
+    except Exception:
+        try:
+            import psycopg2  # psycopg2
+            preferred_driver = "psycopg2"
+        except Exception:
+            preferred_driver = None
+
+    if db_url.startswith("postgresql://") and preferred_driver:
+        db_url = db_url.replace("postgresql://", f"postgresql+{preferred_driver}://", 1)
+
+    app.config["SQLALCHEMY_DATABASE_URI"] = db_url
+    # Connection pool settings for production
+    app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
+=======
     if not db_url:
         # Fallback to SQLite for local development
         sqlite_path = os.path.join(INSTANCE_DIR, 'app.db')
@@ -605,6 +629,7 @@ db_url = os.getenv("DATABASE_URL", "").strip()
     
     # Engine options for PostgreSQL
     engine_options = {
+>>>>>>> 3c985bedfa16159bcf6ec7f3e1384c00e11d0f98
         "pool_pre_ping": True,  # Verify connections before using
         "pool_recycle": 300,    # Recycle connections after 5 minutes
         "pool_size": 5,         # Connection pool size
@@ -653,6 +678,8 @@ app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
 db = SQLAlchemy(app)
 
+<<<<<<< HEAD
+=======
 
 def test_database_connection() -> tuple[bool, str]:
     """
@@ -706,6 +733,7 @@ if IS_DEV and os.getenv("DATABASE_URL"):
     except Exception as e:
         app.logger.warning(f"Could not test database connection: {e}")
 
+>>>>>>> 3c985bedfa16159bcf6ec7f3e1384c00e11d0f98
 def _early_sqlite_bootstrap_columns() -> None:
     """
     Ensure critical SQLite columns exist BEFORE Flask-Login loads current_user.
