@@ -3231,8 +3231,14 @@ def get_social_counts(user_id: int) -> tuple[int, int]:
 
 @app.before_request
 def _load_my_social_counts():
+    """Load social counts for current user, gracefully handle missing tables during bootstrap"""
     if current_user.is_authenticated:
-        g.my_followers_count, g.my_following_count = get_social_counts(current_user.id)
+        try:
+            g.my_followers_count, g.my_following_count = get_social_counts(current_user.id)
+        except Exception as e:
+            # If table doesn't exist yet (during bootstrap), use defaults
+            app.logger.warning(f"Could not load social counts (table might not exist yet): {type(e).__name__}")
+            g.my_followers_count, g.my_following_count = 0, 0
     else:
         g.my_followers_count, g.my_following_count = 0, 0
 
