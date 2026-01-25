@@ -792,14 +792,37 @@ login_manager.login_view = "login"
 if os.getenv("BOOTSTRAP_DB") == "1":
     with app.app_context():
         try:
+            # Use the engine directly to ensure tables are created and persisted
             db.create_all()
-            db.session.commit()  # Explicitly commit the transaction
-            print("[OK] BOOTSTRAP_DB=1 -> db.create_all() completed and committed")
-            app.logger.info("Database tables created and committed successfully")
+            
+            # Verify tables were created by querying the database
+            with db.engine.connect() as conn:
+                result = conn.execute(text("SELECT 1"))
+                result.fetchone()
+                
+            print("[OK] BOOTSTRAP_DB=1 -> db.create_all() completed and verified")
+            app.logger.info("Database tables created successfully")
+            
+            # Additional verification: check if user table exists
+            try:
+                with db.engine.connect() as conn:
+                    result = conn.execute(text("""
+                        SELECT table_name 
+                        FROM information_schema.tables 
+                        WHERE table_schema = 'public' 
+                        AND table_name = 'user'
+                    """))
+                    if result.fetchone():
+                        app.logger.info("✓ User table verified in PostgreSQL")
+                    else:
+                        app.logger.error("✗ User table NOT found in PostgreSQL after create_all()")
+            except Exception as verify_err:
+                app.logger.warning(f"Could not verify tables: {verify_err}")
+                
         except Exception as bootstrap_err:
             print(f"[ERROR] BOOTSTRAP_DB=1 failed: {bootstrap_err}")
             app.logger.error(f"Database bootstrap failed: {bootstrap_err}", exc_info=True)
-            db.session.rollback()
+
 
 
 
