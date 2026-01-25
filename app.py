@@ -792,18 +792,13 @@ login_manager.login_view = "login"
 if os.getenv("BOOTSTRAP_DB") == "1":
     with app.app_context():
         try:
-            # Use raw connection with explicit autocommit to ensure DDL is persisted
-            with db.engine.raw_connection() as conn:
-                # Enable autocommit for DDL statements
-                conn.autocommit = True
-                
-                # Create all tables using SQLAlchemy metadata
-                # Get the metadata from db.Model
+            # Use engine.begin() which properly supports context manager
+            # This ensures DDL statements are committed
+            with db.engine.begin() as conn:
                 db.metadata.create_all(bind=conn)
-                
-                app.logger.info("DDL statements executed with autocommit=True")
+                app.logger.info("All table DDL statements executed")
             
-            print("[OK] BOOTSTRAP_DB=1 -> db.create_all() completed with autocommit")
+            print("[OK] BOOTSTRAP_DB=1 -> db.create_all() completed")
             app.logger.info("Database tables creation attempted")
             
             # Verification: count tables created
