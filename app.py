@@ -4287,14 +4287,14 @@ def send_email(to_email: str, subject: str, text_body: str) -> bool:
         from email.message import EmailMessage
         
         smtp_host = os.getenv("SMTP_HOST", "").strip()
+        smtp_from = os.getenv("SMTP_FROM", "").strip()
+        smtp_port = int(os.getenv("SMTP_PORT", "587"))
+        smtp_tls = os.getenv("SMTP_TLS", "true").lower() == "true"
+        smtp_user = os.getenv("SMTP_USER", "").strip()
+        smtp_pass = os.getenv("SMTP_PASS", "").strip()
         if not smtp_host:
             if IS_DEV:
                 print(f"[DEV] Email not sent - SMTP_HOST not configured")
-            return False
-        
-        if not smtp_host:
-            if IS_DEV:
-                app.logger.warning("Email not sent - SMTP_HOST not configured")
             return False
         
         
