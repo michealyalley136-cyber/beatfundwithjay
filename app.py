@@ -564,72 +564,55 @@ def jinja_is_None(value):
 
 
 # =========================================================
-# Database (Neon Postgres in prod, SQLite locally)
+# Database (Railway Postgres in prod, SQLite locally)
 # =========================================================
 def normalize_database_url(url: str) -> str:
     """
-    Normalize database URL to use postgresql+psycopg2:// format.
-    Handles postgres:// and postgresql:// formats.
+    Normalize database URL to use postgresql+psycopg:// format (psycopg v3).
+    Handles postgres:// and postgresql:// formats from Railway.
+    Railway provides DATABASE_URL like:
+      - postgres://... or postgresql://...
+    We convert to postgresql+psycopg:// for SQLAlchemy + psycopg3.
     """
     if not url:
         return url
     
-    # Convert postgres:// to postgresql://
+    # Step 1: Convert postgres:// to postgresql://
     if url.startswith("postgres://"):
         url = url.replace("postgres://", "postgresql://", 1)
     
-    # Ensure we're using psycopg2 driver
-    if url.startswith("postgresql://") and not url.startswith("postgresql+psycopg2://"):
-        url = url.replace("postgresql://", "postgresql+psycopg2://", 1)
+    # Step 2: Replace postgresql:// with postgresql+psycopg:// (psycopg v3)
+    if url.startswith("postgresql://"):
+        url = url.replace("postgresql://", "postgresql+psycopg://", 1)
+    
+    # Step 3: Ensure SSL is set if not already present
+    # Add sslmode=require if no query params, or &sslmode=require if query params exist
+    if "postgresql+psycopg://" in url and "sslmode" not in url:
+        if "?" in url:
+            url += "&sslmode=require"
+        else:
+            url += "?sslmode=require"
     
     return url
 
 
 def get_database_config():
     """
-    Configure database connection with proper SSL for Neon Postgres.
+    Configure database connection for Railway Postgres or local SQLite.
     Returns tuple: (database_url, engine_options)
     """
-db_url = os.getenv("DATABASE_URL", "").strip()
-
-<<<<<<< HEAD
-if db_url:
-    if db_url.startswith("postgres://"):
-        db_url = db_url.replace("postgres://", "postgresql://", 1)
-
-    # Prefer psycopg (psycopg3) if available, otherwise fall back to psycopg2
-    preferred_driver = None
-    try:
-        import psycopg  # psycopg3
-        preferred_driver = "psycopg"
-    except Exception:
-        try:
-            import psycopg2  # psycopg2
-            preferred_driver = "psycopg2"
-        except Exception:
-            preferred_driver = None
-
-    if db_url.startswith("postgresql://") and preferred_driver:
-        db_url = db_url.replace("postgresql://", f"postgresql+{preferred_driver}://", 1)
-
-    app.config["SQLALCHEMY_DATABASE_URI"] = db_url
-    # Connection pool settings for production
-    app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
-=======
+    db_url = os.getenv("DATABASE_URL", "").strip()
+    
     if not db_url:
         # Fallback to SQLite for local development
         sqlite_path = os.path.join(INSTANCE_DIR, 'app.db')
         return f"sqlite:///{sqlite_path}", {}
     
-    # Normalize URL format
+    # Normalize URL format for Railway or any Postgres provider
     db_url = normalize_database_url(db_url)
     
-    # Determine if this is a Neon database (check for neon.tech in hostname)
-    is_neon = "neon.tech" in db_url or "neon.tech" in db_url.lower()
-    
-    # Engine options for PostgreSQL
+    # Engine options for PostgreSQL connections
     engine_options = {
->>>>>>> 3c985bedfa16159bcf6ec7f3e1384c00e11d0f98
         "pool_pre_ping": True,  # Verify connections before using
         "pool_recycle": 300,    # Recycle connections after 5 minutes
         "pool_size": 5,         # Connection pool size
@@ -638,12 +621,6 @@ if db_url:
             "connect_timeout": 10,  # 10 second connection timeout
         }
     }
-    
-    # Neon requires SSL connections
-    if is_neon:
-        engine_options["connect_args"]["sslmode"] = "require"
-        # Optionally, you can use 'verify-full' for stricter SSL verification
-        # engine_options["connect_args"]["sslmode"] = "verify-full"
     
     return db_url, engine_options
 
@@ -654,86 +631,22 @@ try:
     app.config["SQLALCHEMY_DATABASE_URI"] = db_url
     app.config["SQLALCHEMY_ENGINE_OPTIONS"] = engine_options
     
-    # Log database configuration (safely, without exposing credentials)
-    if IS_DEV:
-        # Mask password in URL for logging
-        safe_url = db_url
-        try:
-            from urllib.parse import urlparse, urlunparse
-            parsed = urlparse(db_url)
-            if parsed.password:
-                safe_url = urlunparse(parsed._replace(password="***"))
-        except Exception:
-            pass
-        app.logger.info(f"Database configured: {safe_url}")
-        if "neon.tech" in db_url.lower():
-            app.logger.info("Neon Postgres detected - SSL enabled")
+    # Log database backend info (safe, no credentials exposed)
+    if "postgresql+psycopg://" in db_url:
+        app.logger.info("DB: postgres (Railway/Postgres with psycopg v3)")
+    else:
+        app.logger.info("DB: sqlite (local development)")
+        
 except Exception as e:
     app.logger.error(f"Failed to configure database: {e}", exc_info=True)
     # Fallback to SQLite on configuration error
     app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{os.path.join(INSTANCE_DIR, 'app.db')}"
     app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {}
+    app.logger.warning("DB: sqlite (fallback after configuration error)")
 
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
 db = SQLAlchemy(app)
-
-<<<<<<< HEAD
-=======
-
-def test_database_connection() -> tuple[bool, str]:
-    """
-    Test database connection and return (success, message).
-    Provides helpful error messages for common issues.
-    """
-    try:
-        with db.engine.connect() as conn:
-            result = conn.execute(text("SELECT 1"))
-            result.fetchone()
-        return True, "Database connection successful"
-    except ProgrammingError as e:
-        error_msg = str(e).lower()
-        if "does not exist" in error_msg or "database" in error_msg:
-            return False, f"Database does not exist. Error: {e}"
-        elif "schema" in error_msg or "relation" in error_msg:
-            return False, f"Schema/table issue. Error: {e}"
-        elif "permission" in error_msg or "access" in error_msg:
-            return False, f"Permission denied. Check user privileges. Error: {e}"
-        else:
-            return False, f"SQL error: {e}"
-    except OperationalError as e:
-        error_msg = str(e).lower()
-        if "could not connect" in error_msg or "connection refused" in error_msg:
-            return False, f"Cannot connect to database server. Check DATABASE_URL and network. Error: {e}"
-        elif "ssl" in error_msg or "certificate" in error_msg:
-            return False, f"SSL connection error. Error: {e}"
-        elif "timeout" in error_msg:
-            return False, f"Connection timeout. Error: {e}"
-        elif "authentication" in error_msg or "password" in error_msg:
-            return False, f"Authentication failed. Check username/password in DATABASE_URL. Error: {e}"
-        else:
-            return False, f"Connection error: {e}"
-    except DatabaseError as e:
-        return False, f"Database error: {e}"
-    except SQLAlchemyError as e:
-        return False, f"SQLAlchemy error: {e}"
-    except Exception as e:
-        return False, f"Unexpected error: {type(e).__name__}: {e}"
-
-
-# Test database connection on startup (only in dev mode)
-if IS_DEV and os.getenv("DATABASE_URL"):
-    try:
-        with app.app_context():
-            success, message = test_database_connection()
-            if success:
-                app.logger.info(f"✅ {message}")
-            else:
-                app.logger.warning(f"⚠️  {message}")
-    except Exception as e:
-        app.logger.warning(f"Could not test database connection: {e}")
-
->>>>>>> 3c985bedfa16159bcf6ec7f3e1384c00e11d0f98
 def _early_sqlite_bootstrap_columns() -> None:
     """
     Ensure critical SQLite columns exist BEFORE Flask-Login loads current_user.
