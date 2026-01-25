@@ -6,11 +6,11 @@ const PRECACHE_URLS = [
   "/static/app.css",
   "/static/style.css",
   "/static/pwa.js",
-  "/static/icons/icon-192.png",
-  "/static/icons/icon-512.png",
-  "/static/icons/icon-180.png",
-  "/static/icons/favicon-32.png",
-  "/static/icons/favicon-16.png"
+  "/static/img/favicon/icon-192.png",
+  "/static/img/favicon/icon-512.png",
+  "/static/img/favicon/icon-180.png",
+  "/static/img/favicon/icon-32.png",
+  "/static/img/favicon/icon-16.png"
 ];
 
 const NAV_TIMEOUT_MS = 4000;

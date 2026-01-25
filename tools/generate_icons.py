@@ -5,7 +5,7 @@ import sys
 
 
 SVG_PATH = Path("static/brand/BeatFund_IconOnly_TightRounded.svg")
-OUTPUT_DIR = Path("static/icons")
+OUTPUT_DIR = Path("static/img/favicon")
 
 ICON_SIZES = {
     "icon-192.png": 192,

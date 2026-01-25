@@ -8,11 +8,11 @@ python tools/generate_icons.py
 ```
 
 This reads `static/brand/BeatFund_IconOnly_TightRounded.svg` and writes PNGs to:
-- `static/icons/icon-192.png`
-- `static/icons/icon-512.png`
-- `static/icons/icon-180.png`
-- `static/icons/favicon-32.png`
-- `static/icons/favicon-16.png`
+- `static/img/favicon/icon-192.png`
+- `static/img/favicon/icon-512.png`
+- `static/img/favicon/icon-180.png`
+- `static/img/favicon/icon-32.png`
+- `static/img/favicon/icon-16.png`
 
 ## Local testing (Chrome)
 1) Run the Flask app.
