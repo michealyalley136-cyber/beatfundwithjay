@@ -4763,74 +4763,90 @@ def login():
         return redirect(url_for("route_to_dashboard"))
     
     if request.method == "POST":
-        remote_addr = request.remote_addr or "unknown"
+        try:
+            remote_addr = request.remote_addr or "unknown"
 
-        if _too_many_failed_logins(remote_addr):
-            flash("Too many failed login attempts. Please wait a few minutes and try again.", "error")
-            return redirect(url_for("login"))
+            if _too_many_failed_logins(remote_addr):
+                flash("Too many failed login attempts. Please wait a few minutes and try again.", "error")
+                return redirect(url_for("login"))
 
-        raw_identifier = (
-            (request.form.get("identifier") or "").strip()
-            or (request.form.get("username") or "").strip()
-        )
-        password = (request.form.get("password") or "").strip()
+            raw_identifier = (
+                (request.form.get("identifier") or "").strip()
+                or (request.form.get("username") or "").strip()
+            )
+            password = (request.form.get("password") or "").strip()
 
-        # Security: Sanitize input
-        raw_identifier = sanitize_input(raw_identifier, max_length=255)
-        password = sanitize_input(password, max_length=500)
+            # Security: Sanitize input
+            raw_identifier = sanitize_input(raw_identifier, max_length=255)
+            password = sanitize_input(password, max_length=500)
 
-        if not raw_identifier or not password:
-            flash("Please enter your email/username and password.", "error")
-            return redirect(url_for("login"))
-        
-        # Security: Additional rate limiting on login attempts
-        if not check_rate_limit("login", max_requests=5, window_seconds=300):
-            log_security_event("login_rate_limit", f"Rate limited login attempt from {remote_addr}", "warning")
-            flash("Too many login attempts. Please wait a few minutes and try again.", "error")
-            return redirect(url_for("login"))
+            if not raw_identifier or not password:
+                flash("Please enter your email/username and password.", "error")
+                return redirect(url_for("login"))
+            
+            # Security: Additional rate limiting on login attempts
+            if not check_rate_limit("login", max_requests=5, window_seconds=300):
+                log_security_event("login_rate_limit", f"Rate limited login attempt from {remote_addr}", "warning")
+                flash("Too many login attempts. Please wait a few minutes and try again.", "error")
+                return redirect(url_for("login"))
 
-        identifier = raw_identifier.lower().strip()
+            identifier = raw_identifier.lower().strip()
 
-        if "@" in identifier and "." in identifier:
-            user = User.query.filter(func.lower(User.email) == identifier).first()
-            lookup_type = "email"
-        else:
-            handle = identifier.lstrip("@")
-            user = User.query.filter(func.lower(User.username) == handle).first()
-            lookup_type = "username"
+            app.logger.info(f"[LOGIN] Starting login attempt for identifier: {identifier}")
+            
+            if "@" in identifier and "." in identifier:
+                app.logger.info(f"[LOGIN] Looking up by email: {identifier}")
+                user = User.query.filter(func.lower(User.email) == identifier).first()
+                lookup_type = "email"
+            else:
+                handle = identifier.lstrip("@")
+                app.logger.info(f"[LOGIN] Looking up by username: {handle}")
+                user = User.query.filter(func.lower(User.username) == handle).first()
+                lookup_type = "username"
 
-        # Debug logging for login attempts
-        if IS_DEV:
-            app.logger.debug(f"Login attempt: identifier='{identifier}' (type={lookup_type}), user_found={user is not None}")
-            if user:
-                app.logger.debug(f"User found: id={user.id}, username={user.username}, email={user.email}, has_password_hash={bool(user.password_hash)}")
-
-        if not user:
-            _register_failed_login(remote_addr)
+            app.logger.info(f"[LOGIN] User query completed. User found: {user is not None}")
+            
+            # Debug logging for login attempts
             if IS_DEV:
-                app.logger.warning(f"Login failed: User not found for identifier '{identifier}' (type={lookup_type})")
-            flash("Invalid credentials.", "error")
+                app.logger.debug(f"Login attempt: identifier='{identifier}' (type={lookup_type}), user_found={user is not None}")
+                if user:
+                    app.logger.debug(f"User found: id={user.id}, username={user.username}, email={user.email}, has_password_hash={bool(user.password_hash)}")
+
+            if not user:
+                _register_failed_login(remote_addr)
+                if IS_DEV:
+                    app.logger.warning(f"Login failed: User not found for identifier '{identifier}' (type={lookup_type})")
+                flash("Invalid credentials.", "error")
+                return redirect(url_for("login"))
+            
+            app.logger.info(f"[LOGIN] Checking password for user: {user.username}")
+            if not user.check_password(password):
+                _register_failed_login(remote_addr)
+                if IS_DEV:
+                    app.logger.warning(f"Login failed: Password mismatch for user '{user.username}' (ID: {user.id})")
+                flash("Invalid credentials.", "error")
+                return redirect(url_for("login"))
+
+            app.logger.info(f"[LOGIN] Password matched. Checking if account is active")
+            if not user.is_active_col:
+                flash("This account is disabled.", "error")
+                return redirect(url_for("login"))
+
+            _clear_failed_logins(remote_addr)
+            app.logger.info(f"[LOGIN] Logging in user: {user.username}")
+            login_user(user)
+
+            if is_password_expired(user):
+                flash("For security, your admin password must be updated before continuing.", "error")
+                return redirect(url_for("force_password_reset"))
+
+            app.logger.info(f"[LOGIN] Login successful for user: {user.username}")
+            return redirect(url_for("route_to_dashboard"))
+            
+        except Exception as login_error:
+            app.logger.error(f"[LOGIN] EXCEPTION during login: {type(login_error).__name__}: {str(login_error)}", exc_info=True)
+            flash("An error occurred during login. Please try again.", "error")
             return redirect(url_for("login"))
-        
-        if not user.check_password(password):
-            _register_failed_login(remote_addr)
-            if IS_DEV:
-                app.logger.warning(f"Login failed: Password mismatch for user '{user.username}' (ID: {user.id})")
-            flash("Invalid credentials.", "error")
-            return redirect(url_for("login"))
-
-        if not user.is_active_col:
-            flash("This account is disabled.", "error")
-            return redirect(url_for("login"))
-
-        _clear_failed_logins(remote_addr)
-        login_user(user)
-
-        if is_password_expired(user):
-            flash("For security, your admin password must be updated before continuing.", "error")
-            return redirect(url_for("force_password_reset"))
-
-        return redirect(url_for("route_to_dashboard"))
 
     return render_template("login.html")
 
