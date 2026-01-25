@@ -1,0 +1,72 @@
+{% extends "base_admin.html" %}
+{% block title %}BeatFund · Admin · Uploads{% endblock %}
+
+{% block admin_content %}
+<div class="admin-page-header">
+  <h1>Uploads</h1>
+  <p>Uploaded files tracked for storage provider + scan status.</p>
+</div>
+
+<div class="card">
+  <h2>Filters</h2>
+  <form method="get" action="{{ url_for('admin_uploads') }}" style="display:flex; gap:10px; flex-wrap:wrap; align-items:end;">
+    <div>
+      <label class="stat-label">Scan status</label>
+      <select class="form-control" name="scan_status">
+        <option value="" {% if not filters.scan_status %}selected{% endif %}>All</option>
+        <option value="PENDING" {% if filters.scan_status=='PENDING' %}selected{% endif %}>PENDING</option>
+        <option value="CLEAN" {% if filters.scan_status=='CLEAN' %}selected{% endif %}>CLEAN</option>
+        <option value="INFECTED" {% if filters.scan_status=='INFECTED' %}selected{% endif %}>INFECTED</option>
+        <option value="FAILED" {% if filters.scan_status=='FAILED' %}selected{% endif %}>FAILED</option>
+      </select>
+    </div>
+    <div>
+      <label class="stat-label">Storage</label>
+      <select class="form-control" name="provider">
+        <option value="" {% if not filters.provider %}selected{% endif %}>All</option>
+        <option value="local" {% if filters.provider=='local' %}selected{% endif %}>local</option>
+        <option value="s3" {% if filters.provider=='s3' %}selected{% endif %}>s3</option>
+      </select>
+    </div>
+    <button class="btn btn-primary" type="submit">Apply</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>Recent uploads</h2>
+  <div style="overflow:auto;">
+    <table style="width:100%; border-collapse:collapse;">
+      <thead>
+        <tr>
+          <th style="text-align:left; padding:8px; border-bottom:1px solid rgba(148,163,184,0.2);">Time (UTC)</th>
+          <th style="text-align:left; padding:8px; border-bottom:1px solid rgba(148,163,184,0.2);">Purpose</th>
+          <th style="text-align:left; padding:8px; border-bottom:1px solid rgba(148,163,184,0.2);">Owner</th>
+          <th style="text-align:left; padding:8px; border-bottom:1px solid rgba(148,163,184,0.2);">Storage</th>
+          <th style="text-align:left; padding:8px; border-bottom:1px solid rgba(148,163,184,0.2);">Key</th>
+          <th style="text-align:left; padding:8px; border-bottom:1px solid rgba(148,163,184,0.2);">Scan</th>
+          <th style="text-align:left; padding:8px; border-bottom:1px solid rgba(148,163,184,0.2);">Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for u in rows %}
+        <tr style="border-top:1px solid rgba(148,163,184,0.10);">
+          <td style="padding:8px; white-space:nowrap;">{{ u.created_at.strftime("%Y-%m-%d %H:%M:%S") if u.created_at else "-" }}</td>
+          <td style="padding:8px;">{{ u.purpose.value if u.purpose else "-" }}</td>
+          <td style="padding:8px;">{% if u.owner %}@{{ u.owner.username }}{% else %}-{% endif %}</td>
+          <td style="padding:8px;">{{ u.storage_provider }}</td>
+          <td style="padding:8px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;">{{ u.key }}</td>
+          <td style="padding:8px;">{{ u.scan_status.value if u.scan_status else "-" }}</td>
+          <td style="padding:8px;">
+            <form method="post" action="{{ url_for('admin_upload_delete', file_id=u.id) }}" style="display:inline;">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button class="btn" type="submit">Delete</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+

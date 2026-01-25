@@ -1,0 +1,62 @@
+{% extends "base_admin.html" %}
+{% block title %}BeatFund · Admin · Audit Detail{% endblock %}
+
+{% block admin_content %}
+<div class="admin-page-header">
+  <h1>Audit Event #{{ log.id }}</h1>
+  <p>{{ (log.action_type or log.action) }} · {{ log.created_at.strftime("%Y-%m-%d %H:%M:%S") if log.created_at else "-" }} UTC</p>
+</div>
+
+<div class="card">
+  <h2>Summary</h2>
+  <div class="grid">
+    <div>
+      <div class="stat-label">Actor</div>
+      <div class="stat-value" style="font-size:1.05rem;">
+        {% if log.actor_user %}
+          @{{ log.actor_user.username }}
+        {% elif log.admin %}
+          @{{ log.admin.username }}
+        {% else %}
+          system
+        {% endif %}
+      </div>
+    </div>
+    <div>
+      <div class="stat-label">Target</div>
+      <div class="stat-value" style="font-size:1.05rem;">{{ log.target_type or "-" }}{% if log.target_id %} #{{ log.target_id }}{% endif %}</div>
+    </div>
+    <div>
+      <div class="stat-label">IP</div>
+      <div class="stat-value" style="font-size:1.05rem;">{{ log.ip_address or "-" }}</div>
+    </div>
+    <div>
+      <div class="stat-label">User-Agent</div>
+      <div class="stat-value" style="font-size:0.95rem; font-weight:500;">{{ log.user_agent or "-" }}</div>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Reason</h2>
+  <pre style="white-space:pre-wrap; margin:0; padding:12px; border-radius:10px; background:#020617; border:1px solid rgba(148,163,184,0.15);">{{ log.reason or "" }}</pre>
+</div>
+
+<div class="grid">
+  <div class="card">
+    <h2>Before</h2>
+    <pre style="white-space:pre-wrap; margin:0; padding:12px; border-radius:10px; background:#020617; border:1px solid rgba(148,163,184,0.15);">{{ before | tojson(indent=2) }}</pre>
+  </div>
+  <div class="card">
+    <h2>After</h2>
+    <pre style="white-space:pre-wrap; margin:0; padding:12px; border-radius:10px; background:#020617; border:1px solid rgba(148,163,184,0.15);">{{ after | tojson(indent=2) }}</pre>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Metadata</h2>
+  <pre style="white-space:pre-wrap; margin:0; padding:12px; border-radius:10px; background:#020617; border:1px solid rgba(148,163,184,0.15);">{{ meta | tojson(indent=2) }}</pre>
+</div>
+
+{% endblock %}
+

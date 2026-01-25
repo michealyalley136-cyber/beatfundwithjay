@@ -1,0 +1,290 @@
+{% extends "base.html" %}
+{% block title %}Chat · Booking #{{ booking.id }} · BeatFund{% endblock %}
+
+{% block content %}
+<style>
+  .chat-page {
+    max-width: 980px;
+    margin: 28px auto;
+    padding: 0 16px 60px;
+    color: #f7f9ff;
+  }
+  .chat-header {
+    display: flex;
+    align-items: start;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 14px;
+  }
+  .chat-title h1 {
+    margin: 0;
+    font-size: 20px;
+  }
+  .chat-title .sub {
+    opacity: 0.8;
+    font-size: 13px;
+    margin-top: 4px;
+  }
+  .chat-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+  .btn {
+    border-radius: 999px;
+    padding: 8px 12px;
+    border: 1px solid rgba(148,163,184,0.5);
+    background: transparent;
+    color: #f9fafb;
+    cursor: pointer;
+    font-size: 0.85rem;
+  }
+  .btn:hover { background: rgba(148,163,184,0.18); }
+  .btn-primary {
+    border-color: rgba(59,130,246,0.9);
+    background: linear-gradient(135deg, #2563eb, #22c55e);
+    color: #020617;
+    font-weight: 700;
+  }
+  .btn-danger {
+    border-color: rgba(248,113,113,0.9);
+    background: rgba(248,113,113,0.12);
+  }
+  .banner {
+    border: 1px solid rgba(234,179,8,0.55);
+    background: rgba(234,179,8,0.10);
+    border-radius: 12px;
+    padding: 12px 14px;
+    margin-bottom: 14px;
+    font-size: 13px;
+    line-height: 1.4;
+  }
+  .chat-box {
+    border: 1px solid rgba(255,255,255,0.08);
+    background: radial-gradient(circle at top left, #182a44, #050712);
+    border-radius: 16px;
+    padding: 14px;
+    box-shadow: 0 16px 40px rgba(0,0,0,0.45);
+  }
+  .messages {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    max-height: 520px;
+    overflow: auto;
+    padding-right: 6px;
+  }
+  .msg-row {
+    display: flex;
+    flex-direction: column;
+    max-width: 76%;
+  }
+  .msg-row.me {
+    align-self: flex-end;
+    text-align: right;
+  }
+  .msg-row.other {
+    align-self: flex-start;
+    text-align: left;
+  }
+  .bubble {
+    border-radius: 14px;
+    padding: 10px 12px;
+    border: 1px solid rgba(148,163,184,0.35);
+    background: rgba(15,23,42,0.85);
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-size: 14px;
+    line-height: 1.45;
+  }
+  .me .bubble {
+    border-color: rgba(59,130,246,0.45);
+    background: rgba(59,130,246,0.12);
+  }
+  .meta {
+    margin-top: 4px;
+    font-size: 12px;
+    opacity: 0.75;
+  }
+  .composer {
+    margin-top: 12px;
+    display: flex;
+    gap: 8px;
+    align-items: flex-end;
+  }
+  .composer textarea {
+    flex: 1;
+    min-height: 54px;
+    border-radius: 12px;
+    border: 1px solid rgba(148,163,184,0.5);
+    background: rgba(15,23,42,0.95);
+    color: #f9fafb;
+    padding: 10px 12px;
+    font-size: 14px;
+    resize: vertical;
+  }
+  .hint {
+    margin-top: 8px;
+    font-size: 12px;
+    opacity: 0.75;
+  }
+  .error {
+    margin-top: 10px;
+    color: #fecaca;
+    font-size: 13px;
+    display: none;
+  }
+</style>
+
+<div class="chat-page">
+  <div class="chat-header">
+    <div class="chat-title">
+      <a href="{{ url_for('booking_detail', booking_id=booking.id) }}" style="opacity:0.8; text-decoration:none;">← Back to booking</a>
+      <h1>Booking Chat</h1>
+      <div class="sub">
+        Booking #{{ booking.id }} · {{ booking.status|title }}
+        {% if provider and client %}
+          · @{{ provider.username }} ↔ @{{ client.username }}
+        {% endif %}
+      </div>
+    </div>
+    <div class="chat-actions">
+      <button class="btn" onclick="window.location.reload()">Refresh</button>
+      <button class="btn btn-danger" onclick="blockUser()">Block user</button>
+      <button class="btn btn-danger" onclick="reportChat()">Report</button>
+    </div>
+  </div>
+
+  <div class="banner">
+    <strong>Safety:</strong> Do not share phone numbers, emails, or payment details. Keep everything inside BeatFund.
+  </div>
+
+  {% if other_blocked_me %}
+    <div class="banner" style="border-color: rgba(248,113,113,0.7); background: rgba(248,113,113,0.10);">
+      You cannot send messages in this conversation.
+    </div>
+  {% elif i_blocked_other %}
+    <div class="banner" style="border-color: rgba(248,113,113,0.7); background: rgba(248,113,113,0.10);">
+      You blocked the other user. They can’t message you.
+    </div>
+  {% endif %}
+
+  <div class="chat-box">
+    <div class="messages" id="messages">
+      {% if messages %}
+        {% for m in messages %}
+          {% set mine = (m.sender_user_id == current_user.id) %}
+          <div class="msg-row {{ 'me' if mine else 'other' }}">
+            <div class="bubble">{{ m.body_text }}</div>
+            <div class="meta">
+              {% if mine %}You{% else %}@{{ m.sender.username if m.sender else 'user' }}{% endif %}
+              · {{ m.created_at.strftime('%b %d, %Y %I:%M %p') if m.created_at else '' }}
+            </div>
+          </div>
+        {% endfor %}
+      {% else %}
+        <div style="opacity:0.75; font-size: 13px;">No messages yet. Say hi!</div>
+      {% endif %}
+    </div>
+
+    <div class="composer">
+      <textarea id="chatText" placeholder="Write a message..." {% if other_blocked_me %}disabled{% endif %}></textarea>
+      <button class="btn btn-primary" onclick="sendMessage()" {% if other_blocked_me %}disabled{% endif %}>Send</button>
+    </div>
+    <div class="hint">
+      Rate limit: max {{ CHAT_RATE_LIMIT_PER_MINUTE }}/minute. Messages containing contact/payment info are blocked.
+    </div>
+    <div class="error" id="chatError"></div>
+  </div>
+</div>
+
+<script>
+  (function() {
+    const box = document.getElementById('messages');
+    if (box) { box.scrollTop = box.scrollHeight; }
+  })();
+
+  function showError(msg) {
+    const el = document.getElementById('chatError');
+    if (!el) return;
+    el.textContent = msg || 'Error';
+    el.style.display = 'block';
+    setTimeout(() => { el.style.display = 'none'; }, 5000);
+  }
+
+  function sendMessage() {
+    const textEl = document.getElementById('chatText');
+    const text = (textEl && textEl.value) ? textEl.value : '';
+    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
+    if (!csrfToken) {
+      showError('Missing CSRF token.');
+      return;
+    }
+
+    const fd = new FormData();
+    fd.append('csrf_token', csrfToken);
+    fd.append('text', text);
+
+    fetch('{{ url_for("booking_chat_send", booking_id=booking.id) }}', {
+      method: 'POST',
+      body: fd,
+      credentials: 'same-origin'
+    })
+    .then(r => r.json().then(j => ({ok: r.ok, j})))
+    .then(({ok, j}) => {
+      if (!ok || !j.success) {
+        showError((j && j.error) ? j.error : 'Message rejected.');
+        return;
+      }
+      // MVP: simplest refresh; no websockets required
+      window.location.reload();
+    })
+    .catch(() => showError('Network error.'));
+  }
+
+  function blockUser() {
+    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
+    if (!csrfToken) return showError('Missing CSRF token.');
+    if (!confirm('Block the other participant? They will not be able to message you.')) return;
+
+    const fd = new FormData();
+    fd.append('csrf_token', csrfToken);
+
+    fetch('{{ url_for("booking_chat_block", booking_id=booking.id) }}', {
+      method: 'POST',
+      body: fd,
+      credentials: 'same-origin'
+    })
+    .then(r => r.json())
+    .then(j => {
+      if (!j.success) return showError(j.error || 'Unable to block.');
+      window.location.reload();
+    })
+    .catch(() => showError('Network error.'));
+  }
+
+  function reportChat() {
+    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
+    if (!csrfToken) return showError('Missing CSRF token.');
+    const note = prompt('Optional: add a short note for the report (no contact info).') || '';
+
+    const fd = new FormData();
+    fd.append('csrf_token', csrfToken);
+    fd.append('note', note);
+
+    fetch('{{ url_for("booking_chat_report", booking_id=booking.id) }}', {
+      method: 'POST',
+      body: fd,
+      credentials: 'same-origin'
+    })
+    .then(r => r.json())
+    .then(j => {
+      if (!j.success) return showError(j.error || 'Unable to report.');
+      alert('Reported. Our team will review.');
+    })
+    .catch(() => showError('Network error.'));
+  }
+</script>
+{% endblock %}
+

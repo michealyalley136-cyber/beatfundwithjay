@@ -1,0 +1,92 @@
+{% extends "base_admin.html" %}
+{% block title %}BeatFund · Admin · Audit{% endblock %}
+
+{% block admin_content %}
+<div class="admin-page-header">
+  <h1>Audit Log</h1>
+  <p>Append-only audit events for finance/security and admin tooling.</p>
+</div>
+
+<div class="card">
+  <h2>Filters</h2>
+  <div class="card-subtitle">Use YYYY-MM-DD for dates. Leave blank for “all”.</div>
+  <form method="get" action="{{ url_for('admin_audit') }}" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; align-items:end;">
+    <div>
+      <label class="stat-label">Start</label>
+      <input class="form-control" name="start" value="{{ filters.start }}" placeholder="2026-01-01">
+    </div>
+    <div>
+      <label class="stat-label">End</label>
+      <input class="form-control" name="end" value="{{ filters.end }}" placeholder="2026-01-31">
+    </div>
+    <div>
+      <label class="stat-label">Action type</label>
+      <input class="form-control" name="action_type" value="{{ filters.action_type }}" placeholder="WALLET_ADJUSTMENT">
+    </div>
+    <div>
+      <label class="stat-label">Actor (id or username)</label>
+      <input class="form-control" name="actor" value="{{ filters.actor }}" placeholder="42 or jay">
+    </div>
+    <div>
+      <label class="stat-label">Target type</label>
+      <input class="form-control" name="target_type" value="{{ filters.target_type }}" placeholder="Wallet / Order / Booking">
+    </div>
+    <div>
+      <label class="stat-label">Target id</label>
+      <input class="form-control" name="target_id" value="{{ filters.target_id }}" placeholder="123">
+    </div>
+    <div style="display:flex; gap:10px;">
+      <button class="btn btn-primary" type="submit">Apply</button>
+      <a class="btn" href="{{ url_for('admin_audit_export_csv', **filters) }}">Export CSV</a>
+    </div>
+  </form>
+</div>
+
+<div class="card">
+  <h2>Results</h2>
+  <div class="card-subtitle">Showing up to 500 results (most recent first).</div>
+  <div style="overflow:auto;">
+    <table style="width:100%; border-collapse:collapse;">
+      <thead>
+        <tr>
+          <th style="text-align:left; padding:8px; border-bottom:1px solid rgba(148,163,184,0.2);">Time (UTC)</th>
+          <th style="text-align:left; padding:8px; border-bottom:1px solid rgba(148,163,184,0.2);">Action</th>
+          <th style="text-align:left; padding:8px; border-bottom:1px solid rgba(148,163,184,0.2);">Actor</th>
+          <th style="text-align:left; padding:8px; border-bottom:1px solid rgba(148,163,184,0.2);">Target</th>
+          <th style="text-align:left; padding:8px; border-bottom:1px solid rgba(148,163,184,0.2);">Reason</th>
+          <th style="text-align:left; padding:8px; border-bottom:1px solid rgba(148,163,184,0.2);">Detail</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for log in logs %}
+        <tr style="border-top:1px solid rgba(148,163,184,0.10);">
+          <td style="padding:8px; white-space:nowrap;">{{ log.created_at.strftime("%Y-%m-%d %H:%M:%S") if log.created_at else "-" }}</td>
+          <td style="padding:8px;">
+            {{ (log.action_type or log.action) or "-" }}
+          </td>
+          <td style="padding:8px;">
+            {% if log.actor_user %}
+              @{{ log.actor_user.username }}
+            {% elif log.admin %}
+              @{{ log.admin.username }}
+            {% else %}
+              system
+            {% endif %}
+          </td>
+          <td style="padding:8px;">
+            {{ log.target_type or "-" }}{% if log.target_id %} #{{ log.target_id }}{% endif %}
+          </td>
+          <td style="padding:8px; max-width:420px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+            {{ log.reason or "" }}
+          </td>
+          <td style="padding:8px;">
+            <a href="{{ url_for('admin_audit_detail', log_id=log.id) }}">View</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+

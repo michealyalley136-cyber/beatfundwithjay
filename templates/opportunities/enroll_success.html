@@ -1,0 +1,168 @@
+{% extends "base.html" %}
+{% block title %}Enrollment Successful · BeatFund{% endblock %}
+
+{% block extra_head %}
+<style>
+  .opp-success-page {
+    max-width: 600px;
+    margin: 32px auto 40px;
+    padding-inline: 16px;
+    text-align: center;
+  }
+
+  .opp-success-card {
+    background: white;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 48px 32px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  }
+
+  .opp-success-icon {
+    font-size: 64px;
+    margin-bottom: 24px;
+  }
+
+  .opp-success-title {
+    font-size: 28px;
+    font-weight: 700;
+    margin: 0 0 16px;
+    color: #1e293b;
+  }
+
+  .opp-success-subtitle {
+    font-size: 18px;
+    color: #64748b;
+    margin: 0 0 24px;
+  }
+
+  .opp-success-details {
+    background: #f8fafc;
+    border-radius: 8px;
+    padding: 24px;
+    margin: 24px 0;
+    text-align: left;
+  }
+
+  .opp-success-detail-item {
+    display: flex;
+    justify-content: space-between;
+    padding: 8px 0;
+    border-bottom: 1px solid #e2e8f0;
+  }
+
+  .opp-success-detail-item:last-child {
+    border-bottom: none;
+  }
+
+  .opp-success-detail-label {
+    font-weight: 500;
+    color: #475569;
+  }
+
+  .opp-success-detail-value {
+    color: #1e293b;
+  }
+
+  .opp-success-actions {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+    margin-top: 32px;
+  }
+
+  .opp-success-cta {
+    padding: 12px 24px;
+    background: #6b8bff;
+    color: white;
+    text-decoration: none;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 16px;
+    transition: background 0.2s ease;
+  }
+
+  .opp-success-cta:hover {
+    background: #5a6fd8;
+    color: white;
+  }
+
+  .opp-success-cta-secondary {
+    padding: 12px 24px;
+    background: white;
+    color: #6b8bff;
+    text-decoration: none;
+    border: 2px solid #6b8bff;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 16px;
+    transition: all 0.2s ease;
+  }
+
+  .opp-success-cta-secondary:hover {
+    background: #6b8bff;
+    color: white;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="opp-success-page">
+  <div class="opp-success-card">
+    <div class="opp-success-icon">🎉</div>
+    <h1 class="opp-success-title">Enrollment Successful!</h1>
+    <p class="opp-success-subtitle">
+      Welcome to {{ opportunity.title }}
+    </p>
+
+    <div class="opp-success-details">
+      <div class="opp-success-detail-item">
+        <span class="opp-success-detail-label">Opportunity</span>
+        <span class="opp-success-detail-value">{{ opportunity.title }}</span>
+      </div>
+      <div class="opp-success-detail-item">
+        <span class="opp-success-detail-label">Host</span>
+        <span class="opp-success-detail-value">{{ opportunity.host_profile.host_name }}</span>
+      </div>
+      <div class="opp-success-detail-item">
+        <span class="opp-success-detail-label">Format</span>
+        <span class="opp-success-detail-value">{{ 'Online' if opportunity.format == 'online' else 'In Person' }}</span>
+      </div>
+      {% if opportunity.start_date %}
+      <div class="opp-success-detail-item">
+        <span class="opp-success-detail-label">Start Date</span>
+        <span class="opp-success-detail-value">{{ opportunity.start_date.strftime('%B %d, %Y') }}</span>
+      </div>
+      {% endif %}
+      <div class="opp-success-detail-item">
+        <span class="opp-success-detail-label">Amount Paid</span>
+        <span class="opp-success-detail-value">
+          {% if enrollment.amount_cents == 0 %}
+          Free
+          {% else %}
+          ${{ "%.2f"|format(enrollment.amount_cents / 100) }}
+          {% endif %}
+        </span>
+      </div>
+      <div class="opp-success-detail-item">
+        <span class="opp-success-detail-label">Enrollment Date</span>
+        <span class="opp-success-detail-value">{{ enrollment.created_at.strftime('%B %d, %Y') }}</span>
+      </div>
+    </div>
+
+    <p style="color: #64748b; margin: 24px 0;">
+      A confirmation email has been sent to {{ enrollment.buyer_email }}.
+      The host will contact you with next steps and access instructions.
+    </p>
+
+    <div class="opp-success-actions">
+      <a href="{{ url_for('opportunities_index') }}" class="opp-success-cta-secondary">
+        Browse More Opportunities
+      </a>
+      <a href="{{ url_for('opportunities_detail', opportunity_id=opportunity.id) }}" class="opp-success-cta">
+        View Opportunity Details
+      </a>
+    </div>
+  </div>
+</div>
+{% endblock %}

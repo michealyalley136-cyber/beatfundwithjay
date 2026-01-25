@@ -161,6 +161,40 @@
       Role: {{ customer.role.value|capitalize }}
     </div>
 
+    <div style="margin-top: 14px; padding-top: 12px; border-top: 1px solid rgba(31,41,55,0.9);">
+      <div class="card-title" style="margin-bottom: 6px;">Admin wallet adjustment</div>
+      <div class="card-subtext" style="margin-bottom: 10px;">
+        Requires a reason. Creates an audit event.
+      </div>
+      <form method="POST" action="{{ url_for('admin_wallet_adjust', user_id=customer.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="stat-grid" style="grid-template-columns: 1fr 1fr;">
+          <div class="stat-card">
+            <div class="stat-label">Direction</div>
+            <select name="direction" class="form-control" required>
+              <option value="credit">Credit (+)</option>
+              <option value="debit">Debit (-)</option>
+            </select>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Amount (USD)</div>
+            <input name="amount_dollars" class="form-control" placeholder="e.g. 10.00" required>
+          </div>
+        </div>
+        <div class="form-group" style="margin-top: 10px;">
+          <label>Reason (required)</label>
+          <input name="reason" class="form-control" placeholder="Why are we adjusting this wallet?" required>
+        </div>
+        <div class="form-group">
+          <label>Internal note (optional)</label>
+          <input name="note" class="form-control" placeholder="Extra context for meta/audit">
+        </div>
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary">Apply adjustment</button>
+        </div>
+      </form>
+    </div>
+
     <div class="stat-grid">
       <div class="stat-card">
         <div class="stat-label">Total entries</div>
