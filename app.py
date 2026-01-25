@@ -811,7 +811,12 @@ login_manager.login_view = "login"
 # Prefer UPLOAD_PROVIDER (new), fall back to STORAGE_BACKEND (legacy).
 STORAGE_BACKEND = (os.getenv("UPLOAD_PROVIDER") or os.getenv("STORAGE_BACKEND") or "local").lower().strip()
 
-UPLOAD_ROOT = os.path.join(BASE_DIR, "uploads")
+# Allow Railway volume path (or any custom path) via env.
+UPLOAD_ROOT = (
+    os.getenv("UPLOAD_ROOT")
+    or os.getenv("RAILWAY_VOLUME_MOUNT")
+    or os.path.join(BASE_DIR, "uploads")
+)
 os.makedirs(UPLOAD_ROOT, exist_ok=True)
 app.config["UPLOAD_FOLDER"] = UPLOAD_ROOT
 
