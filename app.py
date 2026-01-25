@@ -791,8 +791,16 @@ login_manager.login_view = "login"
 # One-time DB bootstrap (only when explicitly enabled)
 if os.getenv("BOOTSTRAP_DB") == "1":
     with app.app_context():
-        db.create_all()
-        print("[OK] BOOTSTRAP_DB=1 -> db.create_all() completed")
+        try:
+            db.create_all()
+            db.session.commit()  # Explicitly commit the transaction
+            print("[OK] BOOTSTRAP_DB=1 -> db.create_all() completed and committed")
+            app.logger.info("Database tables created and committed successfully")
+        except Exception as bootstrap_err:
+            print(f"[ERROR] BOOTSTRAP_DB=1 failed: {bootstrap_err}")
+            app.logger.error(f"Database bootstrap failed: {bootstrap_err}", exc_info=True)
+            db.session.rollback()
+
 
 
 # =========================================================
