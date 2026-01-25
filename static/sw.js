@@ -1,4 +1,4 @@
-const CACHE_NAME = "beatfund-pwa-v1";
+const CACHE_NAME = "beatfund-pwa-v2";
 const PRECACHE_URLS = [
   "/",
   "/offline",

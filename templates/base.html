@@ -12,7 +12,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="BeatFund">
-  <link rel="apple-touch-icon" href="{{ url_for('static', filename='img/favicon/icon-180.png') }}">
+  <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='img/favicon/icon-180.png') }}">
   <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='img/favicon/icon-32.png') }}">
   <link rel="icon" type="image/png" sizes="16x16" href="{{ url_for('static', filename='img/favicon/icon-16.png') }}">
   <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}">
@@ -103,6 +103,7 @@
   <div class="pwa-install">
     <button id="installBtn" class="btn btn-primary" style="display:none;">Install BeatFund</button>
     <div id="iosInstallTip" class="ios-install-tip" style="display:none;">On iPhone: Share -> Add to Home Screen</div>
+    <div id="androidInstallTip" class="ios-install-tip" style="display:none;">On Android: Menu -> Install app</div>
   </div>
 
   {# Mobile hamburger button (shown on mobile by CSS) #}
