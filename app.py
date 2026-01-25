@@ -2766,6 +2766,31 @@ class WaitlistEntry(db.Model):
 # One-time DB Bootstrap (AFTER all models are defined)
 # =========================================================
 # This must run AFTER all model classes are defined so they're in db.metadata
+
+# Clean up missing avatar paths on startup (handles file loss after deploys)
+def _cleanup_missing_avatars():
+    """Remove avatar_path from database if files don't exist (e.g., after deploy with local storage)"""
+    if STORAGE_BACKEND != "local":
+        return  # Only relevant for local storage
+    
+    try:
+        with app.app_context():
+            missing_count = 0
+            users_with_avatars = User.query.filter(User.avatar_path != None).all()
+            for user in users_with_avatars:
+                avatar_path = os.path.join(app.config["UPLOAD_FOLDER"], user.avatar_path)
+                if not os.path.exists(avatar_path):
+                    user.avatar_path = None
+                    missing_count += 1
+            
+            if missing_count > 0:
+                db.session.commit()
+                app.logger.info(f"Cleaned up {missing_count} missing avatar paths on startup")
+    except Exception as e:
+        app.logger.warning(f"Could not cleanup missing avatars: {e}")
+
+_cleanup_missing_avatars()
+
 if os.getenv("BOOTSTRAP_DB") == "1":
     with app.app_context():
         try:
@@ -5222,10 +5247,21 @@ def user_avatar(user_id: int):
         if ext in ALLOWED_IMAGE:
             avatar_path = os.path.join(app.config["UPLOAD_FOLDER"], user.avatar_path)
             if os.path.exists(avatar_path):
-                resp = send_from_directory(app.config["UPLOAD_FOLDER"], user.avatar_path, as_attachment=False)
-                # In dev, avoid stale caching so new uploads show immediately
-                resp.headers["Cache-Control"] = "no-store"
-                return resp
+                try:
+                    resp = send_from_directory(app.config["UPLOAD_FOLDER"], user.avatar_path, as_attachment=False)
+                    # In dev, avoid stale caching so new uploads show immediately
+                    resp.headers["Cache-Control"] = "no-store"
+                    return resp
+                except Exception as e:
+                    app.logger.warning(f"Error serving avatar {user.avatar_path}: {e}")
+            else:
+                # File doesn't exist - it was probably lost after a deploy
+                # Clear it from DB so we don't keep trying to serve a ghost file
+                try:
+                    user.avatar_path = None
+                    db.session.commit()
+                except Exception as cleanup_err:
+                    app.logger.warning(f"Could not clear missing avatar path: {cleanup_err}")
 
     # Fallback: generate a simple SVG placeholder with initials
     name = (user.display_name or user.username or "U").strip()
@@ -7406,38 +7442,53 @@ def book_artist(username):
 @app.route("/market", endpoint="market_index")
 @login_required
 def market_index():
-    items = Beat.query.filter_by(is_active=True).order_by(Beat.is_featured.desc(), Beat.id.desc()).all()
+    try:
+        items = Beat.query.filter_by(is_active=True).order_by(Beat.is_featured.desc(), Beat.id.desc()).all()
 
-    provider_profiles = (
-        BookMeProfile.query
-        .join(User, BookMeProfile.user_id == User.id)
-        .filter(User.role.in_(list(BOOKME_PROVIDER_ROLES)))
-        .order_by(BookMeProfile.city.asc(), BookMeProfile.display_name.asc())
-        .all()
-    )
+        provider_profiles = (
+            BookMeProfile.query
+            .join(User, BookMeProfile.user_id == User.id)
+            .filter(User.role.in_(list(BOOKME_PROVIDER_ROLES)))
+            .order_by(BookMeProfile.city.asc(), BookMeProfile.display_name.asc())
+            .all()
+        )
 
-    def profile_has_role(profile, roles: set[RoleEnum]):
-        u = profile.user
-        return (u is not None) and (u.role in roles)
+        def profile_has_role(profile, roles: set[RoleEnum]):
+            u = profile.user
+            return (u is not None) and (u.role in roles)
 
-    studios = [p for p in provider_profiles if profile_has_role(p, {RoleEnum.studio})]
-    videographers = [p for p in provider_profiles if profile_has_role(p, {RoleEnum.videographer})]
-    talent_roles = {RoleEnum.artist, RoleEnum.dancer_choreographer, RoleEnum.emcee_host_hypeman, RoleEnum.dj}
-    talent_profiles = [p for p in provider_profiles if profile_has_role(p, talent_roles)]
+        studios = [p for p in provider_profiles if profile_has_role(p, {RoleEnum.studio})]
+        videographers = [p for p in provider_profiles if profile_has_role(p, {RoleEnum.videographer})]
+        talent_roles = {RoleEnum.artist, RoleEnum.dancer_choreographer, RoleEnum.emcee_host_hypeman, RoleEnum.dj}
+        talent_profiles = [p for p in provider_profiles if profile_has_role(p, talent_roles)]
 
-    used_ids = {p.id for p in studios + videographers + talent_profiles}
-    other_providers = [p for p in provider_profiles if p.id not in used_ids]
+        used_ids = {p.id for p in studios + videographers + talent_profiles}
+        other_providers = [p for p in provider_profiles if p.id not in used_ids]
 
-    return render_template(
-        "market_index.html",
-        items=items,
-        provider_profiles=provider_profiles,
-        studios=studios,
-        videographers=videographers,
-        talent_profiles=talent_profiles,
-        other_providers=other_providers,
-        RoleEnum=RoleEnum,
-    )
+        return render_template(
+            "market_index.html",
+            items=items,
+            provider_profiles=provider_profiles,
+            studios=studios,
+            videographers=videographers,
+            talent_profiles=talent_profiles,
+            other_providers=other_providers,
+            RoleEnum=RoleEnum,
+        )
+    except Exception as market_err:
+        app.logger.error(f"Market page error: {type(market_err).__name__}: {str(market_err)}", exc_info=True)
+        # Return empty market with error message
+        flash("The marketplace is temporarily unavailable. Please try again.", "warning")
+        return render_template(
+            "market_index.html",
+            items=[],
+            provider_profiles=[],
+            studios=[],
+            videographers=[],
+            talent_profiles=[],
+            other_providers=[],
+            RoleEnum=RoleEnum,
+        )
 
 
 @app.route("/market/my-purchases")
