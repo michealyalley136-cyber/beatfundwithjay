@@ -103,6 +103,18 @@ body{
 }
 .nav-username{ color: var(--muted); }
 
+.pwa-install{
+  display:flex;
+  align-items:center;
+  gap: 10px;
+}
+
+.ios-install-tip{
+  font-size: 11px;
+  color: var(--muted);
+  max-width: 220px;
+}
+
 /* Logout button should look like a normal nav link */
 .logout-form{ display:inline; margin:0; padding:0; }
 .nav-link-button{
@@ -621,6 +633,19 @@ code{
   .nav-right{ display:none; }
 
   .nav-toggle{ display:inline-flex; }
+
+  .pwa-install{
+    margin-left: auto;
+  }
+
+  .pwa-install .btn{
+    padding: 8px 10px;
+    font-size: 12px;
+  }
+  .ios-install-tip{
+    font-size: 10px;
+    max-width: 160px;
+  }
 }
 
 /* Additional mobile enhancements */

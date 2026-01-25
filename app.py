@@ -207,6 +207,14 @@ def add_request_id_header(response):
     """Add request ID to response header"""
     if hasattr(g, 'request_id'):
         response.headers['X-Request-ID'] = g.request_id
+    path = request.path or ""
+    if path.endswith(".webmanifest"):
+        response.headers["Content-Type"] = "application/manifest+json"
+        response.headers["Cache-Control"] = "public, max-age=3600"
+    elif path == "/static/sw.js":
+        response.headers["Cache-Control"] = "no-cache"
+    elif path.startswith("/static/"):
+        response.headers.setdefault("Cache-Control", "public, max-age=86400")
     return response
 
 # ---------------------------------------------------------
@@ -4636,6 +4644,11 @@ def waitlist_signup():
 @app.route("/terms")
 def terms():
     return render_template("policies/terms.html")
+
+
+@app.route("/offline")
+def offline():
+    return render_template("offline.html")
 
 
 @app.route("/privacy")
