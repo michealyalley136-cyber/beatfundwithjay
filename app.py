@@ -573,6 +573,7 @@ def normalize_database_url(url: str) -> str:
     Railway provides DATABASE_URL like:
       - postgres://... or postgresql://...
     We convert to postgresql+psycopg:// for SQLAlchemy + psycopg3.
+    SSL will be configured via engine options instead of URL to avoid parsing issues.
     """
     if not url:
         return url
@@ -584,14 +585,6 @@ def normalize_database_url(url: str) -> str:
     # Step 2: Replace postgresql:// with postgresql+psycopg:// (psycopg v3)
     if url.startswith("postgresql://"):
         url = url.replace("postgresql://", "postgresql+psycopg://", 1)
-    
-    # Step 3: Ensure SSL is set if not already present
-    # Add sslmode=require if no query params, or &sslmode=require if query params exist
-    if "postgresql+psycopg://" in url and "sslmode" not in url:
-        if "?" in url:
-            url += "&sslmode=require"
-        else:
-            url += "?sslmode=require"
     
     return url
 
@@ -619,6 +612,7 @@ def get_database_config():
         "max_overflow": 10,     # Max overflow connections
         "connect_args": {
             "connect_timeout": 10,
+            "sslmode": "require",  # Required for Railway Postgres
         },
     }
     
