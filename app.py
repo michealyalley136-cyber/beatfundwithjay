@@ -792,20 +792,27 @@ login_manager.login_view = "login"
 if os.getenv("BOOTSTRAP_DB") == "1":
     with app.app_context():
         try:
-            # Use the engine directly to ensure tables are created and persisted
+            # Create all tables using SQLAlchemy metadata
             db.create_all()
             
-            # Verify tables were created by querying the database
-            with db.engine.connect() as conn:
-                result = conn.execute(text("SELECT 1"))
-                result.fetchone()
-                
-            print("[OK] BOOTSTRAP_DB=1 -> db.create_all() completed and verified")
-            app.logger.info("Database tables created successfully")
+            # Flush and commit to ensure DDL is persisted
+            db.session.flush()
+            db.session.commit()
             
-            # Additional verification: check if user table exists
+            # Also ensure the engine commits by using a direct connection
+            with db.engine.begin() as conn:
+                # Just opening a transaction and closing it forces commit
+                conn.execute(text("SELECT 1"))
+            
+            print("[OK] BOOTSTRAP_DB=1 -> db.create_all() completed with transaction commit")
+            app.logger.info("Database tables creation triggered")
+            
+            # Verification: check if user table exists
+            import time
+            time.sleep(1)  # Wait for PostgreSQL to be ready
+            
             try:
-                with db.engine.connect() as conn:
+                with db.engine.begin() as conn:
                     result = conn.execute(text("""
                         SELECT table_name 
                         FROM information_schema.tables 
@@ -815,13 +822,15 @@ if os.getenv("BOOTSTRAP_DB") == "1":
                     if result.fetchone():
                         app.logger.info("✓ User table verified in PostgreSQL")
                     else:
-                        app.logger.error("✗ User table NOT found in PostgreSQL after create_all()")
+                        app.logger.error("✗ User table NOT found - DDL may not have persisted")
             except Exception as verify_err:
                 app.logger.warning(f"Could not verify tables: {verify_err}")
                 
         except Exception as bootstrap_err:
             print(f"[ERROR] BOOTSTRAP_DB=1 failed: {bootstrap_err}")
             app.logger.error(f"Database bootstrap failed: {bootstrap_err}", exc_info=True)
+
+
 
 
 
