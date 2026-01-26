@@ -2,8 +2,7 @@ from __future__ import annotations
 
 from flask import (
     Flask, render_template, request, redirect, url_for, flash,
-    send_from_directory, abort, jsonify, Response, session, g,
-    make_response
+    send_from_directory, abort, jsonify, Response, session, g
 )
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import (
@@ -38,7 +37,6 @@ import os
 import uuid
 import pathlib
 import csv
-import base64
 from io import StringIO
 import re
 import json
@@ -4733,103 +4731,6 @@ def terms():
 @app.route("/offline")
 def offline():
     return render_template("offline.html")
-
-
-def _build_windows_shortcut(app_url: str, icon_url: str) -> str:
-    return (
-        "[InternetShortcut]\n"
-        f"URL={app_url}\n"
-        f"IconFile={icon_url}\n"
-        "IconIndex=0\n"
-    )
-
-
-def _build_ios_webclip_profile(app_url: str, icon_bytes: bytes) -> str:
-    icon_b64 = base64.b64encode(icon_bytes).decode("ascii")
-    profile_uuid = str(uuid.uuid4()).upper()
-    payload_uuid = str(uuid.uuid4()).upper()
-    return f"""<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>PayloadContent</key>
-  <array>
-    <dict>
-      <key>FullScreen</key>
-      <true/>
-      <key>IsRemovable</key>
-      <true/>
-      <key>Label</key>
-      <string>BeatFund</string>
-      <key>PayloadDescription</key>
-      <string>BeatFund Web Clip</string>
-      <key>PayloadDisplayName</key>
-      <string>BeatFund</string>
-      <key>PayloadIdentifier</key>
-      <string>com.beatfund.webclip</string>
-      <key>PayloadOrganization</key>
-      <string>BeatFund Inc</string>
-      <key>PayloadType</key>
-      <string>com.apple.webClip.managed</string>
-      <key>PayloadUUID</key>
-      <string>{payload_uuid}</string>
-      <key>PayloadVersion</key>
-      <integer>1</integer>
-      <key>Precomposed</key>
-      <true/>
-      <key>URL</key>
-      <string>{app_url}</string>
-      <key>Icon</key>
-      <data>{icon_b64}</data>
-    </dict>
-  </array>
-  <key>PayloadDisplayName</key>
-  <string>BeatFund</string>
-  <key>PayloadIdentifier</key>
-  <string>com.beatfund.webclip.profile</string>
-  <key>PayloadOrganization</key>
-  <string>BeatFund Inc</string>
-  <key>PayloadRemovalDisallowed</key>
-  <false/>
-  <key>PayloadType</key>
-  <string>Configuration</string>
-  <key>PayloadUUID</key>
-  <string>{profile_uuid}</string>
-  <key>PayloadVersion</key>
-  <integer>1</integer>
-</dict>
-</plist>
-"""
-
-
-@app.route("/download")
-def download_app():
-    return render_template("download_app.html")
-
-
-@app.route("/download/windows")
-def download_windows_shortcut():
-    app_url = url_for("home", _external=True)
-    icon_url = url_for("static", filename="img/favicon/icon-512.png", _external=True)
-    content = _build_windows_shortcut(app_url, icon_url)
-    response = make_response(content)
-    response.headers["Content-Type"] = "application/internet-shortcut"
-    response.headers["Content-Disposition"] = "attachment; filename=BeatFund.url"
-    return response
-
-
-@app.route("/download/ios")
-def download_ios_profile():
-    app_url = url_for("home", _external=True)
-    icon_path = os.path.join(app.static_folder, "img", "favicon", "icon-180.png")
-    if not os.path.exists(icon_path):
-        abort(404)
-    with open(icon_path, "rb") as f:
-        icon_bytes = f.read()
-    profile = _build_ios_webclip_profile(app_url, icon_bytes)
-    response = Response(profile, mimetype="application/x-apple-aspen-config")
-    response.headers["Content-Disposition"] = "attachment; filename=BeatFund.mobileconfig"
-    return response
 
 
 @app.route("/privacy")

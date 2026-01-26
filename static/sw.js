@@ -22,7 +22,6 @@ function isSensitivePath(pathname) {
     pathname.startsWith("/login") ||
     pathname.startsWith("/logout") ||
     pathname.startsWith("/register") ||
-    pathname.startsWith("/download") ||
     pathname.startsWith("/stripe") ||
     pathname.startsWith("/webhook") ||
     pathname.startsWith("/create-checkout-session") ||

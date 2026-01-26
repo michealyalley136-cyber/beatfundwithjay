@@ -67,7 +67,6 @@
         <a href="{{ url_for('wallet_home') }}">Wallet</a>
         <a href="{{ url_for('opportunities') }}">Opportunities</a>
       {% endif %}
-      <a href="{{ url_for('download_app') }}">Download App</a>
 
       {# Notifications bell #}
       <div class="notifications-bell-container" style="position: relative; display: inline-block;">
@@ -97,7 +96,6 @@
       </form>
     {% else %}
       <a href="{{ url_for('login') }}">Log in</a>
-      <a href="{{ url_for('download_app') }}">Download App</a>
       <a href="{{ url_for('register') }}">Sign up</a>
     {% endif %}
   </div>
@@ -134,7 +132,6 @@
         <a href="{{ url_for('bookme_search') }}">BookMe</a>
         <a href="{{ url_for('wallet_home') }}">Wallet</a>
         <a href="{{ url_for('opportunities') }}">Opportunities</a>
-        <a href="{{ url_for('download_app') }}">Download App</a>
       </div>
     {% endif %}
 
@@ -169,7 +166,6 @@
 
     <div class="mobile-menu-section">
       <a href="{{ url_for('login') }}">Log in</a>
-      <a href="{{ url_for('download_app') }}">Download App</a>
       <a href="{{ url_for('register') }}">Sign up</a>
     </div>
   {% endif %}
