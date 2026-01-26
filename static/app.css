@@ -64,6 +64,9 @@ body{
   border-bottom: 1px solid var(--border);
   backdrop-filter: blur(16px);
 }
+.top-nav-admin{
+  row-gap: 6px;
+}
 
 .nav-left{ display:flex; align-items:center; gap:10px; }
 
@@ -95,6 +98,13 @@ body{
   padding-top: 6px;
   border-top: 1px solid var(--border);
 }
+.top-nav-admin .nav-center{
+  flex: 1 1 auto;
+  order: 2;
+  padding-top: 0;
+  border-top: 0;
+  justify-content: center;
+}
 .nav-center a{
   text-decoration:none;
   color: var(--text);
@@ -111,6 +121,7 @@ body{
   order: 2;
   flex-wrap: wrap;
 }
+.top-nav-admin .nav-right{ order: 4; }
 .nav-username{ color: var(--muted); }
 .nav-title{
   font-size: 12px;
@@ -130,6 +141,10 @@ body{
   align-items:center;
   gap: 10px;
   order: 2;
+}
+.top-nav-admin .pwa-install{
+  order: 3;
+  margin-left: auto;
 }
 .pwa-install.admin-install{
   flex-direction: column;

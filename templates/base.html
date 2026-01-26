@@ -22,7 +22,7 @@
 </head>
 
 <body>
-<header class="top-nav">
+<header class="top-nav{% if current_user.is_authenticated and current_user.role == RoleEnum.admin %} top-nav-admin{% endif %}">
   <div class="nav-left">
     <a href="{% if current_user.is_authenticated %}{{ url_for('route_to_dashboard') }}{% else %}{{ url_for('home') }}{% endif %}" style="text-decoration: none; color: inherit; display: block; cursor: pointer; transition: opacity 0.2s;" onmouseover="this.style.opacity='0.8'" onmouseout="this.style.opacity='1'">
       <div class="brand-text">
