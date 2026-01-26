@@ -1,0 +1,416 @@
+﻿{% extends "base.html" %}
+{% block title %}Analytics - BeatFund Admin{% endblock %}
+
+{% block extra_head %}
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap');
+
+  .analytics-shell {
+    font-family: "Space Grotesk", system-ui, -apple-system, "Segoe UI", sans-serif;
+    max-width: 1280px;
+    margin: 28px auto 80px;
+    padding: 0 20px;
+  }
+
+  .analytics-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 16px;
+  }
+
+  .analytics-title {
+    font-size: 22px;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    margin-bottom: 4px;
+  }
+
+  .analytics-subtitle {
+    font-size: 13px;
+    color: #9aa4c2;
+  }
+
+  .analytics-actions {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .analytics-btn {
+    padding: 6px 12px;
+    border-radius: 999px;
+    border: 1px solid rgba(148, 163, 184, 0.35);
+    background: rgba(15, 23, 42, 0.55);
+    color: #e5e7eb;
+    text-decoration: none;
+    font-size: 12px;
+  }
+
+  .analytics-kpis {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 12px;
+    margin-bottom: 18px;
+  }
+
+  .kpi-card {
+    background: rgba(12, 20, 34, 0.9);
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    border-radius: 14px;
+    padding: 12px 14px;
+  }
+
+  .kpi-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+    color: #8aa0c5;
+  }
+
+  .kpi-value {
+    font-size: 22px;
+    font-weight: 600;
+    margin: 6px 0 2px;
+  }
+
+  .kpi-meta {
+    font-size: 11px;
+    color: #a5b4d6;
+  }
+
+  .analytics-grid {
+    display: grid;
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+    gap: 12px;
+  }
+
+  .analytics-card {
+    background: rgba(12, 20, 34, 0.88);
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    border-radius: 14px;
+    padding: 14px;
+    min-height: 220px;
+  }
+
+  .analytics-card h3 {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+    color: #a8b5d6;
+    margin: 0 0 10px;
+  }
+
+  .span-4 { grid-column: span 4; }
+  .span-5 { grid-column: span 5; }
+  .span-6 { grid-column: span 6; }
+  .span-7 { grid-column: span 7; }
+  .span-8 { grid-column: span 8; }
+  .span-12 { grid-column: span 12; }
+
+  .analytics-list {
+    display: grid;
+    gap: 8px;
+    font-size: 12px;
+  }
+
+  .analytics-list-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-bottom: 6px;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+  }
+
+  .analytics-list-item:last-child { border-bottom: 0; }
+
+  .analytics-pill {
+    border-radius: 999px;
+    padding: 2px 8px;
+    font-size: 10px;
+    border: 1px solid rgba(148, 163, 184, 0.4);
+    color: #e2e8f0;
+  }
+
+  .chart-wrap {
+    height: 220px;
+  }
+
+  @media (max-width: 1200px) {
+    .analytics-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  }
+  @media (max-width: 900px) {
+    .analytics-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .analytics-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+    .span-8, .span-7, .span-6 { grid-column: span 6; }
+    .span-5, .span-4 { grid-column: span 3; }
+  }
+  @media (max-width: 640px) {
+    .analytics-kpis { grid-template-columns: 1fr; }
+    .analytics-grid { grid-template-columns: 1fr; }
+    .span-12, .span-8, .span-7, .span-6, .span-5, .span-4 { grid-column: span 1; }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="analytics-shell">
+  <div class="analytics-header">
+    <div>
+      <div class="analytics-title">Analytics</div>
+      <div class="analytics-subtitle">Operational intelligence across users, wallets, orders, KYC, and support.</div>
+    </div>
+    <div class="analytics-actions">
+      <a class="analytics-btn" href="{{ url_for('admin_dashboard') }}">Back to Admin</a>
+      <a class="analytics-btn" href="{{ url_for('admin_reports') }}">Financial Reports</a>
+    </div>
+  </div>
+
+  <div class="analytics-kpis">
+    <div class="kpi-card">
+      <div class="kpi-label">Total Users</div>
+      <div class="kpi-value">{{ total_users }}</div>
+      <div class="kpi-meta">Active: {{ active_users }}</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Orders</div>
+      <div class="kpi-value">{{ total_orders }}</div>
+      <div class="kpi-meta">Paid: {{ paid_orders }}</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Sales</div>
+      <div class="kpi-value">${{ '%.2f' % total_sales }}</div>
+      <div class="kpi-meta">Gross: ${{ '%.2f' % total_gross }}</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Platform Fees</div>
+      <div class="kpi-value">${{ '%.2f' % platform_fees }}</div>
+      <div class="kpi-meta">Processing: ${{ '%.2f' % processing_fees }}</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Wallet Volume</div>
+      <div class="kpi-value">${{ '%.2f' % wallet_volume }}</div>
+      <div class="kpi-meta">All ledger movement</div>
+    </div>
+  </div>
+
+  <div class="analytics-grid">
+    <section class="analytics-card span-8">
+      <h3>Orders & Revenue (Last 30 Days)</h3>
+      <div class="chart-wrap">
+        <canvas id="ordersChart"></canvas>
+      </div>
+    </section>
+
+    <section class="analytics-card span-4">
+      <h3>User Role Mix</h3>
+      <div class="chart-wrap">
+        <canvas id="roleChart"></canvas>
+      </div>
+    </section>
+
+    <section class="analytics-card span-4">
+      <h3>KYC Pipeline</h3>
+      <div class="chart-wrap">
+        <canvas id="kycChart"></canvas>
+      </div>
+    </section>
+
+    <section class="analytics-card span-4">
+      <h3>Wallet Activity by Type</h3>
+      <div class="chart-wrap">
+        <canvas id="ledgerChart"></canvas>
+      </div>
+    </section>
+
+    <section class="analytics-card span-4">
+      <h3>Support Tickets</h3>
+      <div class="chart-wrap">
+        <canvas id="ticketChart"></canvas>
+      </div>
+    </section>
+
+    <section class="analytics-card span-6">
+      <h3>Top Sellers</h3>
+      <div class="analytics-list">
+        {% if top_sellers %}
+          {% for row in top_sellers %}
+            <div class="analytics-list-item">
+              <span>@{{ row.username }}</span>
+              <span class="analytics-pill">{{ row.count }} sales - ${{ '%.2f' % (row.sum_cents / 100) }}</span>
+            </div>
+          {% endfor %}
+        {% else %}
+          <div class="analytics-list-item">
+            <span>No sales data yet.</span>
+          </div>
+        {% endif %}
+      </div>
+    </section>
+
+    <section class="analytics-card span-6">
+      <h3>Top Beats</h3>
+      <div class="analytics-list">
+        {% if top_beats %}
+          {% for row in top_beats %}
+            <div class="analytics-list-item">
+              <span>{{ row.title }}</span>
+              <span class="analytics-pill">{{ row.count }} orders - ${{ '%.2f' % (row.sum_cents / 100) }}</span>
+            </div>
+          {% endfor %}
+        {% else %}
+          <div class="analytics-list-item">
+            <span>No beat sales yet.</span>
+          </div>
+        {% endif %}
+      </div>
+    </section>
+
+    <section class="analytics-card span-6">
+      <h3>Bookings Overview</h3>
+      <div class="chart-wrap">
+        <canvas id="bookingChart"></canvas>
+      </div>
+    </section>
+
+    <section class="analytics-card span-6">
+      <h3>Uploads Health</h3>
+      <div class="chart-wrap">
+        <canvas id="uploadChart"></canvas>
+      </div>
+    </section>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+  const orderLabels = {{ order_labels|tojson }};
+  const orderCounts = {{ order_counts_series|tojson }};
+  const orderSales = {{ order_sales_series|tojson }};
+  const roleLabels = {{ role_labels|tojson }};
+  const roleValues = {{ role_values|tojson }};
+  const kycLabels = {{ kyc_labels|tojson }};
+  const kycValues = {{ kyc_values|tojson }};
+  const ledgerLabels = {{ ledger_labels|tojson }};
+  const ledgerCounts = {{ ledger_counts|tojson }};
+  const ledgerAmounts = {{ ledger_amounts|tojson }};
+  const ticketLabels = {{ ticket_labels|tojson }};
+  const ticketValues = {{ ticket_values|tojson }};
+  const bookingLabels = {{ booking_labels|tojson }};
+  const bookingValues = {{ booking_values|tojson }};
+  const uploadLabels = {{ upload_labels|tojson }};
+  const uploadValues = {{ upload_values|tojson }};
+
+  const baseGridColor = 'rgba(148, 163, 184, 0.12)';
+  const baseTickColor = '#cbd5f5';
+
+  function chartOpts() {
+    return {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { labels: { color: baseTickColor, font: { size: 10 } } } },
+      scales: {
+        x: { ticks: { color: baseTickColor }, grid: { color: baseGridColor } },
+        y: { ticks: { color: baseTickColor }, grid: { color: baseGridColor } }
+      }
+    };
+  }
+
+  if (document.getElementById('ordersChart')) {
+    new Chart(document.getElementById('ordersChart'), {
+      type: 'line',
+      data: {
+        labels: orderLabels,
+        datasets: [
+          { label: 'Orders', data: orderCounts, borderColor: '#38bdf8', backgroundColor: 'rgba(56, 189, 248, 0.2)', yAxisID: 'y' },
+          { label: 'Sales ($)', data: orderSales, borderColor: '#22c55e', backgroundColor: 'rgba(34, 197, 94, 0.2)', yAxisID: 'y1' }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { labels: { color: baseTickColor, font: { size: 10 } } } },
+        scales: {
+          x: { ticks: { color: baseTickColor }, grid: { color: baseGridColor } },
+          y: { position: 'left', ticks: { color: baseTickColor }, grid: { color: baseGridColor } },
+          y1: { position: 'right', ticks: { color: baseTickColor }, grid: { drawOnChartArea: false } }
+        }
+      }
+    });
+  }
+
+  if (document.getElementById('roleChart')) {
+    new Chart(document.getElementById('roleChart'), {
+      type: 'doughnut',
+      data: {
+        labels: roleLabels,
+        datasets: [{
+          data: roleValues,
+          backgroundColor: ['#38bdf8', '#22c55e', '#f97316', '#a855f7', '#facc15']
+        }]
+      },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { color: baseTickColor } } }, cutout: '65%' }
+    });
+  }
+
+  if (document.getElementById('kycChart')) {
+    new Chart(document.getElementById('kycChart'), {
+      type: 'bar',
+      data: {
+        labels: kycLabels,
+        datasets: [{ label: 'Users', data: kycValues, backgroundColor: '#facc15' }]
+      },
+      options: chartOpts()
+    });
+  }
+
+  if (document.getElementById('ledgerChart')) {
+    new Chart(document.getElementById('ledgerChart'), {
+      type: 'bar',
+      data: {
+        labels: ledgerLabels,
+        datasets: [
+          { label: 'Count', data: ledgerCounts, backgroundColor: 'rgba(56, 189, 248, 0.7)' },
+          { label: 'Amount ($)', data: ledgerAmounts, backgroundColor: 'rgba(34, 197, 94, 0.7)' }
+        ]
+      },
+      options: chartOpts()
+    });
+  }
+
+  if (document.getElementById('ticketChart')) {
+    new Chart(document.getElementById('ticketChart'), {
+      type: 'bar',
+      data: {
+        labels: ticketLabels,
+        datasets: [{ label: 'Tickets', data: ticketValues, backgroundColor: '#f97316' }]
+      },
+      options: chartOpts()
+    });
+  }
+
+  if (document.getElementById('bookingChart')) {
+    new Chart(document.getElementById('bookingChart'), {
+      type: 'bar',
+      data: {
+        labels: bookingLabels,
+        datasets: [{ label: 'Bookings', data: bookingValues, backgroundColor: '#a855f7' }]
+      },
+      options: chartOpts()
+    });
+  }
+
+  if (document.getElementById('uploadChart')) {
+    new Chart(document.getElementById('uploadChart'), {
+      type: 'bar',
+      data: {
+        labels: uploadLabels,
+        datasets: [{ label: 'Files', data: uploadValues, backgroundColor: '#38bdf8' }]
+      },
+      options: chartOpts()
+    });
+  }
+</script>
+{% endblock %}

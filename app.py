@@ -16,7 +16,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 from werkzeug.exceptions import RequestEntityTooLarge
 
-from sqlalchemy import UniqueConstraint, inspect, text, or_
+from sqlalchemy import UniqueConstraint, inspect, text, or_, func
 from sqlalchemy.sql import func
 from sqlalchemy.exc import (
     IntegrityError, ProgrammingError, OperationalError,
@@ -13717,8 +13717,11 @@ def admin_users():
     role = (request.args.get("role") or "").strip()
     status = (request.args.get("status") or "").strip()
     active = (request.args.get("active") or "").strip()
+    sort = (request.args.get("sort") or "").strip().lower()
+    order = (request.args.get("order") or "").strip().lower()
+    group_by_role = (request.args.get("group") or "1").strip().lower() not in ("0", "false", "off", "no")
 
-    query = User.query
+    query = User.query.filter(User.role != RoleEnum.admin.value)
 
     if q:
         like = f"%{q}%"
@@ -13745,7 +13748,25 @@ def admin_users():
         except Exception:
             pass
 
-    query = query.order_by(User.id.desc())
+    # Sorting
+    sort_map = {
+        "id": User.id,
+        "username": func.lower(User.username),
+        "role": User.role,
+        "kyc": User.kyc_status,
+        "status": User.is_active_col,
+    }
+    sort_expr = sort_map.get(sort or "role", User.role)
+    if order in ("desc", "za"):
+        sort_expr = sort_expr.desc()
+    else:
+        sort_expr = sort_expr.asc()
+
+    if group_by_role:
+        role_order = User.role.desc() if order in ("desc", "za") and (sort or "role") == "role" else User.role.asc()
+        query = query.order_by(role_order, sort_expr, User.id.asc())
+    else:
+        query = query.order_by(sort_expr, User.id.asc())
 
     # Flask-SQLAlchemy paginate
     pagination = query.paginate(page=page, per_page=25, error_out=False)
@@ -13758,6 +13779,9 @@ def admin_users():
         role=role,
         status=status,
         active=active,
+        sort=sort or "role",
+        order=order or "asc",
+        group_by_role=group_by_role,
         RoleEnum=RoleEnum,
         KYCStatus=KYCStatus,
     )
@@ -14853,6 +14877,201 @@ def admin_reports():
         wallet_stats=wallet_stats,
         role_stats=role_stats,
         EntryType=EntryType,
+    )
+
+
+@app.route("/dashboard/admin/analytics", endpoint="admin_analytics")
+@role_required("admin")
+def admin_analytics():
+    """Admin analytics dashboard (high-signal operational metrics)."""
+    now = datetime.utcnow()
+    last_30 = now - timedelta(days=30)
+
+    # Users (exclude admins)
+    role_counts = (
+        db.session.query(User.role, func.count(User.id))
+        .filter(User.role != RoleEnum.admin.value)
+        .group_by(User.role)
+        .order_by(User.role)
+        .all()
+    )
+    total_users = sum(row[1] for row in role_counts) if role_counts else 0
+    active_users = (
+        db.session.query(func.count(User.id))
+        .filter(User.role != RoleEnum.admin.value, User.is_active_col.is_(True))
+        .scalar() or 0
+    )
+
+    kyc_counts = (
+        db.session.query(User.kyc_status, func.count(User.id))
+        .filter(User.role != RoleEnum.admin.value)
+        .group_by(User.kyc_status)
+        .order_by(User.kyc_status)
+        .all()
+    )
+
+    # Orders / revenue
+    total_orders = db.session.query(func.count(Order.id)).scalar() or 0
+    paid_orders = db.session.query(func.count(Order.id)).filter(Order.status == OrderStatus.paid).scalar() or 0
+    total_sales_cents = (
+        db.session.query(func.coalesce(func.sum(Order.amount_cents), 0))
+        .filter(Order.status == OrderStatus.paid)
+        .scalar() or 0
+    )
+    total_gross_cents = (
+        db.session.query(func.coalesce(func.sum(Order.total_cents), 0))
+        .filter(Order.status == OrderStatus.paid)
+        .scalar() or 0
+    )
+    platform_fee_cents = (
+        db.session.query(func.coalesce(func.sum(Order.platform_fee_cents), 0))
+        .filter(Order.status == OrderStatus.paid)
+        .scalar() or 0
+    )
+    processing_fee_cents = (
+        db.session.query(func.coalesce(func.sum(Order.processing_fee_cents), 0))
+        .filter(Order.status == OrderStatus.paid)
+        .scalar() or 0
+    )
+
+    orders_series = (
+        db.session.query(
+            func.date(Order.created_at).label("day"),
+            func.count(Order.id).label("count"),
+            func.coalesce(func.sum(Order.amount_cents), 0).label("sum_cents"),
+        )
+        .filter(Order.created_at >= last_30)
+        .group_by("day")
+        .order_by("day")
+        .all()
+    )
+
+    # Wallet / ledger
+    wallet_volume_cents = (
+        db.session.query(func.coalesce(func.sum(func.abs(LedgerEntry.amount_cents)), 0))
+        .scalar() or 0
+    )
+    ledger_by_type = (
+        db.session.query(
+            LedgerEntry.entry_type,
+            func.count(LedgerEntry.id).label("count"),
+            func.coalesce(func.sum(LedgerEntry.amount_cents), 0).label("sum_cents"),
+        )
+        .group_by(LedgerEntry.entry_type)
+        .order_by(LedgerEntry.entry_type)
+        .all()
+    )
+
+    # Bookings & tickets
+    booking_counts = (
+        db.session.query(Booking.status, func.count(Booking.id))
+        .group_by(Booking.status)
+        .order_by(Booking.status)
+        .all()
+    )
+    ticket_counts = (
+        db.session.query(SupportTicket.status, func.count(SupportTicket.id))
+        .group_by(SupportTicket.status)
+        .order_by(SupportTicket.status)
+        .all()
+    )
+
+    # Uploads
+    upload_counts = (
+        db.session.query(UploadedFile.scan_status, func.count(UploadedFile.id))
+        .group_by(UploadedFile.scan_status)
+        .order_by(UploadedFile.scan_status)
+        .all()
+    )
+
+    # Top sellers + beats
+    top_sellers = (
+        db.session.query(
+            User.username,
+            func.count(Order.id).label("count"),
+            func.coalesce(func.sum(Order.amount_cents), 0).label("sum_cents"),
+        )
+        .join(User, User.id == Order.seller_id)
+        .filter(Order.status == OrderStatus.paid)
+        .group_by(User.username)
+        .order_by(func.sum(Order.amount_cents).desc())
+        .limit(5)
+        .all()
+    )
+    top_beats = (
+        db.session.query(
+            Beat.title,
+            func.count(Order.id).label("count"),
+            func.coalesce(func.sum(Order.amount_cents), 0).label("sum_cents"),
+        )
+        .join(Order, Order.beat_id == Beat.id)
+        .filter(Order.status == OrderStatus.paid)
+        .group_by(Beat.title)
+        .order_by(func.count(Order.id).desc())
+        .limit(5)
+        .all()
+    )
+
+    def _dstr(v):
+        if isinstance(v, datetime):
+            return v.strftime("%Y-%m-%d")
+        try:
+            return v.strftime("%Y-%m-%d")  # date
+        except Exception:
+            return str(v)
+
+    order_labels = [_dstr(row.day) for row in orders_series]
+    order_counts_series = [int(row.count) for row in orders_series]
+    order_sales_series = [round((row.sum_cents or 0) / 100.0, 2) for row in orders_series]
+
+    role_labels = [get_role_display(r) for r, _ in role_counts]
+    role_values = [int(c) for _, c in role_counts]
+
+    kyc_labels = [str(k).replace("_", " ").title() for k, _ in kyc_counts]
+    kyc_values = [int(c) for _, c in kyc_counts]
+
+    ledger_labels = [row.entry_type.value if hasattr(row.entry_type, "value") else str(row.entry_type) for row in ledger_by_type]
+    ledger_counts = [int(row.count) for row in ledger_by_type]
+    ledger_amounts = [round((row.sum_cents or 0) / 100.0, 2) for row in ledger_by_type]
+
+    booking_labels = [str(s).replace("_", " ").title() for s, _ in booking_counts]
+    booking_values = [int(c) for _, c in booking_counts]
+
+    ticket_labels = [str(s).replace("_", " ").title() for s, _ in ticket_counts]
+    ticket_values = [int(c) for _, c in ticket_counts]
+
+    upload_labels = [str(s).replace("_", " ").title() for s, _ in upload_counts]
+    upload_values = [int(c) for _, c in upload_counts]
+
+    return render_template(
+        "admin_analytics.html",
+        total_users=total_users,
+        active_users=active_users,
+        total_orders=total_orders,
+        paid_orders=paid_orders,
+        total_sales=round(total_sales_cents / 100.0, 2),
+        total_gross=round(total_gross_cents / 100.0, 2),
+        platform_fees=round(platform_fee_cents / 100.0, 2),
+        processing_fees=round(processing_fee_cents / 100.0, 2),
+        wallet_volume=round(wallet_volume_cents / 100.0, 2),
+        order_labels=order_labels,
+        order_counts_series=order_counts_series,
+        order_sales_series=order_sales_series,
+        role_labels=role_labels,
+        role_values=role_values,
+        kyc_labels=kyc_labels,
+        kyc_values=kyc_values,
+        ledger_labels=ledger_labels,
+        ledger_counts=ledger_counts,
+        ledger_amounts=ledger_amounts,
+        booking_labels=booking_labels,
+        booking_values=booking_values,
+        ticket_labels=ticket_labels,
+        ticket_values=ticket_values,
+        upload_labels=upload_labels,
+        upload_values=upload_values,
+        top_sellers=top_sellers,
+        top_beats=top_beats,
     )
 
 
