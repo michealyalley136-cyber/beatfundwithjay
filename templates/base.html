@@ -56,54 +56,87 @@
   </nav>
 
   {# Desktop main nav (hidden on mobile by CSS) #}
-  <div class="nav-right">
+    <div class="nav-right">
     {% if current_user.is_authenticated %}
-      <span class="nav-username">@{{ current_user.username }}</span>
-      {% if current_user.role != RoleEnum.admin %}
+      {% if current_user.role == RoleEnum.admin %}
+        {# Admin utilities are shown under the install button on the right #}
+      {% else %}
+        <span class="nav-username">@{{ current_user.username }}</span>
         <a href="{{ url_for('route_to_dashboard') }}">Dashboard</a>
         <a href="{{ url_for('market_index') }}">Market</a>
         <a href="{{ url_for('market_my_purchases') }}">My Purchases</a>
         <a href="{{ url_for('bookme_search') }}">BookMe</a>
         <a href="{{ url_for('wallet_home') }}">Wallet</a>
         <a href="{{ url_for('opportunities') }}">Opportunities</a>
-      {% endif %}
 
-      {# Notifications bell #}
-      <div class="notifications-bell-container" style="position: relative; display: inline-block;">
-        <button id="notificationsBell" class="notifications-bell" type="button" aria-label="Notifications" style="background: none; border: none; cursor: pointer; padding: 8px; position: relative;">
-          <span style="font-size: 20px;">🔔</span>
-          <span id="notificationsBadge" class="notifications-badge" style="display: none; position: absolute; top: 4px; right: 4px; background: #ef4444; color: white; border-radius: 50%; width: 18px; height: 18px; font-size: 11px; font-weight: bold; align-items: center; justify-content: center; line-height: 1;">0</span>
-        </button>
-        <div id="notificationsDropdown" class="notifications-dropdown" style="display: none; position: absolute; right: 0; top: 100%; margin-top: 8px; background: white; border: 1px solid #ddd; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); min-width: 320px; max-width: 400px; max-height: 500px; overflow-y: auto; z-index: 1000;">
-          <div style="padding: 12px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center;">
-            <strong>Notifications</strong>
-            <form method="POST" action="{{ url_for('mark_all_notifications_read_route') }}" style="display: inline; margin: 0;">
-              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-              <button type="submit" style="background: none; border: none; color: #4f8bff; cursor: pointer; font-size: 12px; padding: 0;">Mark all read</button>
-            </form>
-          </div>
-          <div id="notificationsList" style="max-height: 400px; overflow-y: auto;">
-            <div style="padding: 20px; text-align: center; color: #999;">Loading...</div>
-          </div>
-          <div style="padding: 8px; border-top: 1px solid #eee; text-align: center;">
-            <a href="{{ url_for('notifications_page') }}" style="color: #4f8bff; text-decoration: none; font-size: 13px;">View all notifications</a>
+        {# Notifications bell #}
+        <div class="notifications-bell-container" style="position: relative; display: inline-block;">
+          <button id="notificationsBell" class="notifications-bell" type="button" aria-label="Notifications" style="background: none; border: none; cursor: pointer; padding: 8px; position: relative;">
+            <span style="font-size: 20px;">🔔</span>
+            <span id="notificationsBadge" class="notifications-badge" style="display: none; position: absolute; top: 4px; right: 4px; background: #ef4444; color: white; border-radius: 50%; width: 18px; height: 18px; font-size: 11px; font-weight: bold; align-items: center; justify-content: center; line-height: 1;">0</span>
+          </button>
+          <div id="notificationsDropdown" class="notifications-dropdown" style="display: none; position: absolute; right: 0; top: 100%; margin-top: 8px; background: white; border: 1px solid #ddd; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); min-width: 320px; max-width: 400px; max-height: 500px; overflow-y: auto; z-index: 1000;">
+            <div style="padding: 12px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center;">
+              <strong>Notifications</strong>
+              <form method="POST" action="{{ url_for('mark_all_notifications_read_route') }}" style="display: inline; margin: 0;">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" style="background: none; border: none; color: #4f8bff; cursor: pointer; font-size: 12px; padding: 0;">Mark all read</button>
+              </form>
+            </div>
+            <div id="notificationsList" style="max-height: 400px; overflow-y: auto;">
+              <div style="padding: 20px; text-align: center; color: #999;">Loading...</div>
+            </div>
+            <div style="padding: 8px; border-top: 1px solid #eee; text-align: center;">
+              <a href="{{ url_for('notifications_page') }}" style="color: #4f8bff; text-decoration: none; font-size: 13px;">View all notifications</a>
+            </div>
           </div>
         </div>
-      </div>
+      {% endif %}
 
-      <form method="get" action="{{ url_for('logout_get') }}" class="logout-form">
-        <button type="submit" class="nav-link-button">Logout</button>
-      </form>
+      {% if current_user.role != RoleEnum.admin %}
+        <form method="get" action="{{ url_for('logout_get') }}" class="logout-form">
+          <button type="submit" class="nav-link-button">Logout</button>
+        </form>
+      {% endif %}
     {% else %}
       <a href="{{ url_for('login') }}">Log in</a>
       <a href="{{ url_for('register') }}">Sign up</a>
     {% endif %}
   </div>
 
-  <div class="pwa-install">
+  <div class="pwa-install{% if current_user.is_authenticated and current_user.role == RoleEnum.admin %} admin-install{% endif %}">
     <button id="installBtn" class="btn btn-primary" style="display:none;">Install BeatFund</button>
     <div id="iosInstallTip" class="ios-install-tip" style="display:none;">On iPhone: Share -> Add to Home Screen</div>
     <div id="androidInstallTip" class="ios-install-tip" style="display:none;">On Android: Menu -> Install app</div>
+    {% if current_user.is_authenticated and current_user.role == RoleEnum.admin %}
+      <div class="pwa-admin-meta">
+        <div class="notifications-bell-container" style="position: relative; display: inline-block;">
+          <button id="notificationsBell" class="notifications-bell" type="button" aria-label="Notifications" style="background: none; border: none; cursor: pointer; padding: 8px; position: relative;">
+            <span style="font-size: 20px;">🔔</span>
+            <span id="notificationsBadge" class="notifications-badge" style="display: none; position: absolute; top: 4px; right: 4px; background: #ef4444; color: white; border-radius: 50%; width: 18px; height: 18px; font-size: 11px; font-weight: bold; align-items: center; justify-content: center; line-height: 1;">0</span>
+          </button>
+          <div id="notificationsDropdown" class="notifications-dropdown" style="display: none; position: absolute; right: 0; top: 100%; margin-top: 8px; background: white; border: 1px solid #ddd; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); min-width: 320px; max-width: 400px; max-height: 500px; overflow-y: auto; z-index: 1000;">
+            <div style="padding: 12px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center;">
+              <strong>Notifications</strong>
+              <form method="POST" action="{{ url_for('mark_all_notifications_read_route') }}" style="display: inline; margin: 0;">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" style="background: none; border: none; color: #4f8bff; cursor: pointer; font-size: 12px; padding: 0;">Mark all read</button>
+              </form>
+            </div>
+            <div id="notificationsList" style="max-height: 400px; overflow-y: auto;">
+              <div style="padding: 20px; text-align: center; color: #999;">Loading...</div>
+            </div>
+            <div style="padding: 8px; border-top: 1px solid #eee; text-align: center;">
+              <a href="{{ url_for('notifications_page') }}" style="color: #4f8bff; text-decoration: none; font-size: 13px;">View all notifications</a>
+            </div>
+          </div>
+        </div>
+        <span class="nav-username">@{{ current_user.username }}</span>
+        <form method="get" action="{{ url_for('logout_get') }}" class="logout-form">
+          <button type="submit" class="nav-link-button">Logout</button>
+        </form>
+      </div>
+    {% endif %}
   </div>
 
   {# Mobile hamburger button (shown on mobile by CSS) #}
@@ -472,3 +505,4 @@
 
 </body>
 </html>
+
