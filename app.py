@@ -28,7 +28,7 @@ from contextlib import contextmanager
 from datetime import datetime, timedelta
 from time import time
 from jinja2 import TemplateNotFound
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP, ROUND_UP
 from collections import Counter
 from calendar import monthrange
 from typing import Optional
@@ -97,10 +97,46 @@ PASSWORD_MAX_AGE_DAYS = 90          # admins must change password every 90 days
 RESET_TOKEN_MAX_AGE_HOURS = 1       # reset links valid for 1 hour
 
 # Platform service fees
-BEAT_FEE_RATE = 0.12                # 12% of beat price
-BEAT_FEE_MIN_CENTS = 129            # $1.29 minimum
-BEAT_FEE_MAX_CENTS = 517            # $5.17 maximum
+BEAT_FEE_FLAT_CENTS = 517           # $5.17 flat fee per beat purchase
 # Note: SERVICE_FEE_RULES and DEFAULT_SERVICE_FEE_RULE are defined after RoleEnum
+
+# BeatFund service fee + processing fee config (service bookings)
+def _env_decimal(name: str, default: str) -> Decimal:
+    raw = (os.getenv(name) or "").strip()
+    if not raw:
+        return Decimal(str(default))
+    try:
+        return Decimal(raw)
+    except (InvalidOperation, ValueError):
+        return Decimal(str(default))
+
+
+def _env_int(name: str, default: int) -> int:
+    raw = (os.getenv(name) or "").strip()
+    if raw == "":
+        return int(default)
+    try:
+        return int(Decimal(raw))
+    except (InvalidOperation, ValueError):
+        return int(default)
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    raw = (os.getenv(name) or "").strip().lower()
+    if raw == "":
+        return bool(default)
+    return raw in {"1", "true", "yes", "y", "on"}
+
+
+BEATFUND_FEE_RATE = _env_decimal("BEATFUND_FEE_RATE", "0.0517")
+BEATFUND_FEE_MIN_CENTS = _env_int("BEATFUND_FEE_MIN_CENTS", 517)
+BEATFUND_FEE_CAP_CENTS = _env_int("BEATFUND_FEE_CAP_CENTS", 15000)
+if BEATFUND_FEE_CAP_CENTS <= 0:
+    BEATFUND_FEE_CAP_CENTS = 0  # disabled
+
+STRIPE_PROC_RATE = _env_decimal("STRIPE_PROC_RATE", "0.029")
+STRIPE_PROC_FIXED_CENTS = _env_int("STRIPE_PROC_FIXED_CENTS", 30)
+ALLOW_REFUND_BF_FEE_ON_PROVIDER_FAULT = _env_bool("ALLOW_REFUND_BF_FEE_ON_PROVIDER_FAULT", True)
 
 
 # =========================================================
@@ -1882,6 +1918,10 @@ class Booking(db.Model):
     location_text = db.Column(db.String(255), nullable=True)
 
     total_cents = db.Column(db.Integer, nullable=True)
+    quoted_total_cents = db.Column(db.Integer, nullable=True)
+    deposit_base_cents = db.Column(db.Integer, nullable=True)
+    beatfund_fee_total_cents = db.Column(db.Integer, nullable=True)
+    beatfund_fee_collected_cents = db.Column(db.Integer, nullable=False, default=0)
     status = db.Column(db.String(32), nullable=False, default=BOOKING_STATUS_PENDING)
 
     notes_from_client = db.Column(db.Text, nullable=True)
@@ -2081,11 +2121,20 @@ class PaymentStatus(str, enum.Enum):
     succeeded = "succeeded"
     failed = "failed"
     cancelled = "cancelled"
+    partially_refunded = "partially_refunded"
+    refunded = "refunded"
 
 
 class PaymentPurpose(str, enum.Enum):
     bookme_hold = "bookme_hold"
     beat_purchase = "beat_purchase"
+    booking_deposit = "booking_deposit"
+    booking_balance = "booking_balance"
+
+
+class PaymentKind(str, enum.Enum):
+    deposit = "deposit"
+    balance = "balance"
 
 
 class Payment(db.Model):
@@ -2094,15 +2143,29 @@ class Payment(db.Model):
     purpose = db.Column(db.Enum(PaymentPurpose), nullable=False)
     processor = db.Column(db.Enum(PaymentProcessor), nullable=False, default=PaymentProcessor.wallet)
     status = db.Column(db.Enum(PaymentStatus), nullable=False, default=PaymentStatus.created)
+    kind = db.Column(db.Enum(PaymentKind), nullable=True)
 
     amount_cents = db.Column(db.Integer, nullable=False)
     currency = db.Column(db.String(8), nullable=False, default="usd")
+
+    base_amount_cents = db.Column(db.Integer, nullable=True)
+    beatfund_fee_cents = db.Column(db.Integer, nullable=True)
+    processing_fee_cents = db.Column(db.Integer, nullable=True)
+    total_paid_cents = db.Column(db.Integer, nullable=True)
+    refunded_base_cents = db.Column(db.Integer, nullable=False, default=0)
+    nonrefundable_processing_kept_cents = db.Column(db.Integer, nullable=False, default=0)
+    nonrefundable_beatfund_kept_cents = db.Column(db.Integer, nullable=False, default=0)
 
     idempotency_key = db.Column(db.String(120), nullable=False, unique=True)
     external_id = db.Column(db.String(120), nullable=True, unique=True)
 
     booking_request_id = db.Column(db.Integer, db.ForeignKey("booking_request.id"), nullable=True, unique=True)
     booking_request = db.relationship("BookingRequest", foreign_keys=[booking_request_id])
+    booking_id = db.Column(db.Integer, db.ForeignKey("booking.id"), nullable=True, index=True)
+    booking = db.relationship("Booking", foreign_keys=[booking_id])
+
+    stripe_payment_intent_id = db.Column(db.String(255), nullable=True, index=True)
+    stripe_charge_id = db.Column(db.String(255), nullable=True, index=True)
 
     created_at = db.Column(db.DateTime, server_default=func.now())
     updated_at = db.Column(db.DateTime, server_default=func.now(), onupdate=func.now())
@@ -3139,27 +3202,11 @@ def clamp_cents(x: int, lo: int, hi: int) -> int:
 
 def calc_beat_platform_fee_cents(subtotal_cents: int) -> int:
     """
-    Calculate platform fee for beat purchase: 12% min $1.29 max $5.17
-    
-    Rules:
-    - If subtotal_cents <= 0: return 0
-    - fee = round(subtotal_cents * BEAT_FEE_RATE)
-    - fee = clamp(fee, BEAT_FEE_MIN_CENTS, BEAT_FEE_MAX_CENTS)
-    - Safety: fee cannot exceed subtotal_cents
+    Calculate platform fee for beat purchase: flat $5.17
     """
     if subtotal_cents <= 0:
         return 0
-    
-    # Calculate fee: 12% of subtotal, rounded
-    fee_cents = round(subtotal_cents * BEAT_FEE_RATE)
-    
-    # Apply min/max constraints
-    fee_cents = clamp_cents(fee_cents, BEAT_FEE_MIN_CENTS, BEAT_FEE_MAX_CENTS)
-    
-    # Safety check: fee cannot exceed subtotal
-    fee_cents = min(fee_cents, subtotal_cents)
-    
-    return fee_cents
+    return int(BEAT_FEE_FLAT_CENTS)
 
 
 def calc_service_platform_fee_cents(subtotal_cents: int, provider_role: RoleEnum | str) -> int:
@@ -3194,6 +3241,48 @@ def calc_service_platform_fee_cents(subtotal_cents: int, provider_role: RoleEnum
     return fee_cents
 
 
+def calc_beatfund_fee_cents(service_cents: int) -> int:
+    """
+    BeatFund service fee for bookings:
+    - rate = BEATFUND_FEE_RATE
+    - min = BEATFUND_FEE_MIN_CENTS
+    - cap = BEATFUND_FEE_CAP_CENTS (0 disables)
+    - round half up to nearest cent
+    """
+    if service_cents <= 0:
+        return 0
+    fee = (Decimal(service_cents) * BEATFUND_FEE_RATE).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+    fee_cents = int(fee)
+    fee_cents = max(fee_cents, BEATFUND_FEE_MIN_CENTS)
+    if BEATFUND_FEE_CAP_CENTS:
+        fee_cents = min(fee_cents, BEATFUND_FEE_CAP_CENTS)
+    fee_cents = min(fee_cents, service_cents)
+    return fee_cents
+
+
+def calc_total_and_processing(base_cents: int, beatfund_fee_cents: int) -> tuple[int, int]:
+    """
+    Compute total charge and processing fee so that after Stripe fees:
+    base + beatfund_fee remain. Uses ceil on total.
+    """
+    if base_cents < 0 or beatfund_fee_cents < 0:
+        raise ValueError("Amounts must be non-negative")
+    gross = Decimal(base_cents + beatfund_fee_cents + STRIPE_PROC_FIXED_CENTS)
+    denom = Decimal("1") - STRIPE_PROC_RATE
+    if denom <= 0:
+        raise ValueError("Invalid Stripe processing rate")
+    total_cents = int((gross / denom).to_integral_value(rounding=ROUND_UP))
+    processing_cents = total_cents - (base_cents + beatfund_fee_cents)
+    return total_cents, processing_cents
+
+
+def allocate_fee_between_deposit_and_balance(beatfund_fee_total_cents: int) -> tuple[int, int]:
+    """Collect minimum fee on deposit, remainder on balance."""
+    fee_deposit = min(beatfund_fee_total_cents, BEATFUND_FEE_MIN_CENTS)
+    fee_balance = max(0, beatfund_fee_total_cents - fee_deposit)
+    return fee_deposit, fee_balance
+
+
 def estimate_processing_fee_cents(amount_cents: int, method: str = "card") -> int:
     """Estimate payment processing fee. Returns 0 for now since Stripe is not enabled yet."""
     return 0  # Stripe not enabled yet
@@ -3221,15 +3310,84 @@ def fee_breakdown_for_service(subtotal_cents: int, provider_role: RoleEnum | str
     Calculate complete fee breakdown for service booking.
     Returns dict with: subtotal_cents, platform_fee_cents, processing_fee_cents, total_cents
     """
-    platform_fee_cents = calc_service_platform_fee_cents(subtotal_cents, provider_role)
-    processing_fee_cents = estimate_processing_fee_cents(subtotal_cents)
-    total_cents = subtotal_cents + platform_fee_cents + processing_fee_cents
-    
+    platform_fee_cents = calc_beatfund_fee_cents(subtotal_cents)
+    total_cents, processing_fee_cents = calc_total_and_processing(subtotal_cents, platform_fee_cents)
     return {
         "subtotal_cents": subtotal_cents,
         "platform_fee_cents": platform_fee_cents,
         "processing_fee_cents": processing_fee_cents,
         "total_cents": total_cents,
+    }
+
+
+def _resolve_booking_fee_fields(booking: "Booking") -> tuple[dict, bool]:
+    """Return normalized fee context and whether booking fields were updated."""
+    changed = False
+    quoted_total_cents = booking.quoted_total_cents
+    if quoted_total_cents is None and booking.total_cents is not None:
+        quoted_total_cents = int(booking.total_cents)
+        booking.quoted_total_cents = quoted_total_cents
+        changed = True
+
+    deposit_base_cents = booking.deposit_base_cents
+    if deposit_base_cents is None:
+        if quoted_total_cents is not None:
+            deposit_base_cents = min(HOLD_FEE_CENTS, int(quoted_total_cents))
+        else:
+            deposit_base_cents = HOLD_FEE_CENTS
+        booking.deposit_base_cents = int(deposit_base_cents)
+        changed = True
+
+    beatfund_fee_total_cents = booking.beatfund_fee_total_cents
+    if beatfund_fee_total_cents is None and quoted_total_cents is not None:
+        beatfund_fee_total_cents = calc_beatfund_fee_cents(int(quoted_total_cents))
+        booking.beatfund_fee_total_cents = int(beatfund_fee_total_cents)
+        changed = True
+
+    beatfund_fee_collected_cents = booking.beatfund_fee_collected_cents or 0
+    return (
+        {
+            "quoted_total_cents": quoted_total_cents,
+            "deposit_base_cents": deposit_base_cents,
+            "beatfund_fee_total_cents": beatfund_fee_total_cents,
+            "beatfund_fee_collected_cents": beatfund_fee_collected_cents,
+        },
+        changed,
+    )
+
+
+def compute_booking_payment_breakdown(booking: "Booking", kind: PaymentKind) -> dict | None:
+    ctx, _ = _resolve_booking_fee_fields(booking)
+    quoted_total_cents = ctx["quoted_total_cents"]
+    if quoted_total_cents is None or quoted_total_cents <= 0:
+        return None
+
+    deposit_base_cents = min(int(ctx["deposit_base_cents"] or 0), int(quoted_total_cents))
+    beatfund_fee_total_cents = int(ctx["beatfund_fee_total_cents"] or 0)
+    beatfund_fee_collected_cents = int(ctx["beatfund_fee_collected_cents"] or 0)
+
+    fee_deposit, _fee_balance = allocate_fee_between_deposit_and_balance(beatfund_fee_total_cents)
+
+    if kind == PaymentKind.deposit:
+        base_cents = deposit_base_cents
+        beatfund_fee_cents = fee_deposit
+    else:
+        base_cents = max(0, int(quoted_total_cents) - deposit_base_cents)
+        beatfund_fee_cents = max(0, beatfund_fee_total_cents - beatfund_fee_collected_cents)
+
+    if base_cents <= 0 and beatfund_fee_cents <= 0:
+        return None
+
+    total_cents, processing_fee_cents = calc_total_and_processing(base_cents, beatfund_fee_cents)
+    return {
+        "base_cents": base_cents,
+        "beatfund_fee_cents": beatfund_fee_cents,
+        "processing_fee_cents": processing_fee_cents,
+        "total_cents": total_cents,
+        "quoted_total_cents": quoted_total_cents,
+        "deposit_base_cents": deposit_base_cents,
+        "beatfund_fee_total_cents": beatfund_fee_total_cents,
+        "beatfund_fee_collected_cents": beatfund_fee_collected_cents,
     }
 
 
@@ -3254,6 +3412,7 @@ def get_platform_fee_wallet_user_id() -> Optional[int]:
 
 # Expose fee calculation functions to Jinja templates
 app.jinja_env.globals["calc_beat_platform_fee_cents"] = calc_beat_platform_fee_cents
+app.jinja_env.globals["calc_beatfund_fee_cents"] = calc_beatfund_fee_cents
 app.jinja_env.globals["format_cents_dollars"] = format_cents_dollars
 app.jinja_env.globals["cents_to_dollars"] = cents_to_dollars
 
@@ -3894,6 +4053,58 @@ def _ensure_sqlite_order_payment_columns():
     if "stripe_payment_intent" not in cols:
         db.session.execute(text(f"ALTER TABLE {table} ADD COLUMN stripe_payment_intent VARCHAR(255)"))
         db.session.execute(text(f"CREATE INDEX IF NOT EXISTS ix_order_stripe_payment_intent ON {table} (stripe_payment_intent)"))
+
+
+def _ensure_sqlite_booking_payment_columns():
+    """Add booking/payment fee columns for new booking payments (SQLite only)."""
+    if db.engine.url.get_backend_name() != "sqlite":
+        return
+
+    # Ensure payment table exists
+    if not _sqlite_has_table("payment"):
+        try:
+            Payment.__table__.create(db.engine)
+        except Exception:
+            pass
+
+    if _sqlite_has_table("payment"):
+        cols = _sqlite_columns("payment")
+        if "booking_id" not in cols:
+            db.session.execute(text("ALTER TABLE payment ADD COLUMN booking_id INTEGER"))
+            db.session.execute(text("CREATE INDEX IF NOT EXISTS ix_payment_booking_id ON payment (booking_id)"))
+        if "kind" not in cols:
+            db.session.execute(text("ALTER TABLE payment ADD COLUMN kind VARCHAR(20)"))
+        if "base_amount_cents" not in cols:
+            db.session.execute(text("ALTER TABLE payment ADD COLUMN base_amount_cents INTEGER"))
+        if "beatfund_fee_cents" not in cols:
+            db.session.execute(text("ALTER TABLE payment ADD COLUMN beatfund_fee_cents INTEGER"))
+        if "processing_fee_cents" not in cols:
+            db.session.execute(text("ALTER TABLE payment ADD COLUMN processing_fee_cents INTEGER"))
+        if "total_paid_cents" not in cols:
+            db.session.execute(text("ALTER TABLE payment ADD COLUMN total_paid_cents INTEGER"))
+        if "refunded_base_cents" not in cols:
+            db.session.execute(text("ALTER TABLE payment ADD COLUMN refunded_base_cents INTEGER DEFAULT 0"))
+        if "nonrefundable_processing_kept_cents" not in cols:
+            db.session.execute(text("ALTER TABLE payment ADD COLUMN nonrefundable_processing_kept_cents INTEGER DEFAULT 0"))
+        if "nonrefundable_beatfund_kept_cents" not in cols:
+            db.session.execute(text("ALTER TABLE payment ADD COLUMN nonrefundable_beatfund_kept_cents INTEGER DEFAULT 0"))
+        if "stripe_payment_intent_id" not in cols:
+            db.session.execute(text("ALTER TABLE payment ADD COLUMN stripe_payment_intent_id VARCHAR(255)"))
+            db.session.execute(text("CREATE INDEX IF NOT EXISTS ix_payment_stripe_payment_intent_id ON payment (stripe_payment_intent_id)"))
+        if "stripe_charge_id" not in cols:
+            db.session.execute(text("ALTER TABLE payment ADD COLUMN stripe_charge_id VARCHAR(255)"))
+            db.session.execute(text("CREATE INDEX IF NOT EXISTS ix_payment_stripe_charge_id ON payment (stripe_charge_id)"))
+
+    if _sqlite_has_table("booking"):
+        cols = _sqlite_columns("booking")
+        if "quoted_total_cents" not in cols:
+            db.session.execute(text("ALTER TABLE booking ADD COLUMN quoted_total_cents INTEGER"))
+        if "deposit_base_cents" not in cols:
+            db.session.execute(text("ALTER TABLE booking ADD COLUMN deposit_base_cents INTEGER"))
+        if "beatfund_fee_total_cents" not in cols:
+            db.session.execute(text("ALTER TABLE booking ADD COLUMN beatfund_fee_total_cents INTEGER"))
+        if "beatfund_fee_collected_cents" not in cols:
+            db.session.execute(text("ALTER TABLE booking ADD COLUMN beatfund_fee_collected_cents INTEGER DEFAULT 0"))
         db.session.commit()
     if "paid_at" not in cols:
         db.session.execute(text(f"ALTER TABLE {table} ADD COLUMN paid_at DATETIME"))
@@ -4013,6 +4224,7 @@ def _bootstrap_schema_once():
         _ensure_sqlite_waitlist_table()
         _ensure_sqlite_beat_stripe_columns()
         _ensure_sqlite_order_payment_columns()
+        _ensure_sqlite_booking_payment_columns()
     except Exception as e:
         app.logger.error(f"SQLite auto-migration failed: {type(e).__name__}: {str(e)}", exc_info=True)
         try:
@@ -6901,6 +7113,110 @@ def bookme_request_status(req_id):
     return redirect(url_for("bookme_requests"))
 
 
+@app.route("/bookings/<int:booking_id>/payment-intent", methods=["POST"])
+@login_required
+def booking_payment_intent(booking_id: int):
+    if not STRIPE_AVAILABLE or not STRIPE_SECRET_KEY:
+        return jsonify({"error": "Stripe is not configured. Please set STRIPE_SECRET_KEY."}), 500
+
+    booking = Booking.query.get_or_404(booking_id)
+    is_client = current_user.id == booking.client_id
+    is_admin = current_user.role == RoleEnum.admin
+    if not (is_client or is_admin):
+        return jsonify({"error": "Not authorized to pay for this booking."}), 403
+
+    kind_raw = ""
+    if request.is_json:
+        kind_raw = (request.json.get("kind") or "").strip().lower()
+    else:
+        kind_raw = (request.form.get("kind") or "").strip().lower()
+
+    try:
+        kind = PaymentKind(kind_raw)
+    except Exception:
+        return jsonify({"error": "Invalid payment kind."}), 400
+
+    ctx, changed = _resolve_booking_fee_fields(booking)
+    if changed:
+        db.session.commit()
+
+    if not ctx["quoted_total_cents"]:
+        return jsonify({"error": "Booking total must be set before payment."}), 400
+
+    if kind == PaymentKind.balance:
+        deposit_paid = Payment.query.filter_by(
+            booking_id=booking.id, kind=PaymentKind.deposit, status=PaymentStatus.succeeded
+        ).first()
+        if not deposit_paid and (ctx.get("deposit_base_cents") or 0) > 0:
+            return jsonify({"error": "Deposit must be paid before the balance."}), 400
+
+    existing_success = Payment.query.filter_by(
+        booking_id=booking.id, kind=kind, status=PaymentStatus.succeeded
+    ).first()
+    if existing_success:
+        return jsonify({"error": "This payment has already been completed."}), 409
+
+    breakdown = compute_booking_payment_breakdown(booking, kind)
+    if not breakdown:
+        return jsonify({"error": "No payment due for this booking."}), 400
+
+    idempotency_key = generate_idempotency_key(
+        "booking_payment", current_user.id, booking_id=booking.id, kind=kind.value
+    )
+    existing = Payment.query.filter_by(idempotency_key=idempotency_key).first()
+    if existing and existing.status in (PaymentStatus.created, PaymentStatus.processing, PaymentStatus.succeeded):
+        return jsonify({"error": "A payment for this booking is already in progress."}), 409
+
+    payment = Payment(
+        purpose=PaymentPurpose.booking_deposit if kind == PaymentKind.deposit else PaymentPurpose.booking_balance,
+        processor=PaymentProcessor.stripe,
+        status=PaymentStatus.processing,
+        kind=kind,
+        amount_cents=breakdown["total_cents"],
+        currency="usd",
+        base_amount_cents=breakdown["base_cents"],
+        beatfund_fee_cents=breakdown["beatfund_fee_cents"],
+        processing_fee_cents=breakdown["processing_fee_cents"],
+        total_paid_cents=breakdown["total_cents"],
+        idempotency_key=idempotency_key,
+        booking_id=booking.id,
+    )
+    try:
+        db.session.add(payment)
+        db.session.flush()
+
+        metadata = {
+            "booking_id": str(booking.id),
+            "payment_kind": kind.value,
+            "base_cents": str(breakdown["base_cents"]),
+            "beatfund_fee_cents": str(breakdown["beatfund_fee_cents"]),
+            "processing_fee_cents": str(breakdown["processing_fee_cents"]),
+            "total_cents": str(breakdown["total_cents"]),
+            "payment_id": str(payment.id),
+        }
+
+        intent = stripe.PaymentIntent.create(
+            amount=breakdown["total_cents"],
+            currency="usd",
+            payment_method_types=["card"],
+            metadata=metadata,
+        )
+
+        payment.stripe_payment_intent_id = str(intent.id)
+        payment.external_id = str(intent.id)
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Booking payment intent error: {type(e).__name__}: {e}")
+        return jsonify({"error": "Unable to start payment. Please try again."}), 500
+
+    return jsonify({
+        "client_secret": intent.client_secret,
+        "payment_id": payment.id,
+        "breakdown": breakdown,
+    }), 200
+
+
 @app.route("/bookings/<int:booking_id>", methods=["GET", "POST"])
 @login_required
 def booking_detail(booking_id):
@@ -6960,11 +7276,18 @@ def booking_detail(booking_id):
                 try:
                     total_dollars = float(total_dollars_raw)
                     booking.total_cents = int(total_dollars * 100) if total_dollars >= 0 else None
+                    if booking.total_cents is not None:
+                        booking.quoted_total_cents = booking.total_cents
+                        booking.beatfund_fee_total_cents = calc_beatfund_fee_cents(booking.total_cents)
+                        if booking.deposit_base_cents is None:
+                            booking.deposit_base_cents = min(HOLD_FEE_CENTS, booking.total_cents)
                 except ValueError:
                     flash("Total amount must be a valid number.", "error")
                     return redirect(url_for("booking_detail", booking_id=booking.id))
             elif total_dollars_raw == "":
                 booking.total_cents = None
+                booking.quoted_total_cents = None
+                booking.beatfund_fee_total_cents = None
             
             # Update notes (provider can update provider notes, client can update client notes)
             if is_provider:
@@ -7016,7 +7339,44 @@ def booking_detail(booking_id):
             db.session.commit()
             return redirect(url_for("booking_detail", booking_id=booking.id))
 
-    return render_template("booking_detail.html", booking=booking, is_provider=is_provider, is_client=is_client)
+    deposit_payment = Payment.query.filter_by(
+        booking_id=booking.id, kind=PaymentKind.deposit, status=PaymentStatus.succeeded
+    ).first()
+    balance_payment = Payment.query.filter_by(
+        booking_id=booking.id, kind=PaymentKind.balance, status=PaymentStatus.succeeded
+    ).first()
+
+    deposit_breakdown = None
+    balance_breakdown = None
+    deposit_due = False
+    balance_due = False
+
+    if is_client:
+        deposit_breakdown = compute_booking_payment_breakdown(booking, PaymentKind.deposit)
+        if deposit_breakdown and not deposit_payment:
+            deposit_due = True
+
+        if deposit_payment:
+            balance_breakdown = compute_booking_payment_breakdown(booking, PaymentKind.balance)
+            if balance_breakdown and (balance_breakdown.get("base_cents") or 0) > 0 and not balance_payment:
+                balance_due = True
+
+    stripe_enabled = bool(STRIPE_AVAILABLE and STRIPE_SECRET_KEY and STRIPE_PUBLISHABLE_KEY)
+
+    return render_template(
+        "booking_detail.html",
+        booking=booking,
+        is_provider=is_provider,
+        is_client=is_client,
+        deposit_breakdown=deposit_breakdown,
+        balance_breakdown=balance_breakdown,
+        deposit_due=deposit_due,
+        balance_due=balance_due,
+        deposit_payment=deposit_payment,
+        balance_payment=balance_payment,
+        stripe_enabled=stripe_enabled,
+        stripe_publishable_key=STRIPE_PUBLISHABLE_KEY,
+    )
 
 
 # =========================================================
@@ -7603,6 +7963,9 @@ def book_artist(username):
             duration_minutes=duration_minutes,
             location_text=location_text or None,
             total_cents=total_cents,
+            quoted_total_cents=total_cents,
+            deposit_base_cents=min(HOLD_FEE_CENTS, total_cents) if total_cents else None,
+            beatfund_fee_total_cents=calc_beatfund_fee_cents(total_cents) if total_cents else None,
             notes_from_client=notes_from_client or None,
             status=BOOKING_STATUS_PENDING,
         )
@@ -8138,8 +8501,10 @@ def create_checkout_session_hold_fee():
     if req.booking_id:
         return jsonify({"error": "Hold fee already paid for this booking request"}), 400
     
-    # Hold fee amount
+    # Hold fee amount (deposit base)
     hold_fee_cents = HOLD_FEE_CENTS
+    beatfund_fee_cents = BEATFUND_FEE_MIN_CENTS
+    total_cents, processing_fee_cents = calc_total_and_processing(hold_fee_cents, beatfund_fee_cents)
     
     # Get base URL for success/cancel URLs (must be publicly accessible)
     base_url = get_stripe_base_url()
@@ -8163,23 +8528,63 @@ def create_checkout_session_hold_fee():
                     "price_data": {
                         "currency": "usd",
                         "product_data": {
-                            "name": f"Booking Hold Fee - Booking Request",
-                            "description": f"Hold fee for booking with @{provider.username} on {req.preferred_time}. This fee will be held in escrow until the booking is completed.",
+                            "name": "Service payment (deposit)",
+                            "description": f"Hold fee for booking with @{provider.username} on {req.preferred_time}.",
                         },
                         "unit_amount": hold_fee_cents,
                     },
                     "quantity": 1,
                 }
+                ,
+                {
+                    "price_data": {
+                        "currency": "usd",
+                        "product_data": {
+                            "name": "BeatFund service fee (non-refundable)",
+                            "description": "BeatFund platform fee on the booking deposit.",
+                        },
+                        "unit_amount": beatfund_fee_cents,
+                    },
+                    "quantity": 1,
+                },
+                {
+                    "price_data": {
+                        "currency": "usd",
+                        "product_data": {
+                            "name": "Payment processing fee (non-refundable)",
+                            "description": "Covers card processing costs.",
+                        },
+                        "unit_amount": processing_fee_cents,
+                    },
+                    "quantity": 1,
+                },
             ],
             mode="payment",  # One-time payment (not subscription or setup)
             success_url=f"{base_url}/checkout/hold-fee/success?session_id={{CHECKOUT_SESSION_ID}}",
             cancel_url=f"{base_url}/bookme/requests",
             client_reference_id=f"hold_fee_req_{req_id}_user_{current_user.id}",
+            payment_intent_data={
+                "metadata": {
+                    "booking_request_id": str(req_id),
+                    "user_id": str(current_user.id),
+                    "provider_id": str(req.provider_id),
+                    "hold_fee_cents": str(hold_fee_cents),
+                    "beatfund_fee_cents": str(beatfund_fee_cents),
+                    "processing_fee_cents": str(processing_fee_cents),
+                    "total_cents": str(total_cents),
+                    "payment_kind": "deposit",
+                    "purpose": "bookme_hold",
+                }
+            },
             metadata={
                 "booking_request_id": str(req_id),
                 "user_id": str(current_user.id),
                 "provider_id": str(req.provider_id),
                 "hold_fee_cents": str(hold_fee_cents),
+                "beatfund_fee_cents": str(beatfund_fee_cents),
+                "processing_fee_cents": str(processing_fee_cents),
+                "total_cents": str(total_cents),
+                "payment_kind": "deposit",
                 "purpose": "bookme_hold",
             },
         )
@@ -8358,6 +8763,25 @@ def stripe_webhook():
             _alert_create(AlertSeverity.med, "PAYMENT_FAILED", "Stripe payment failed", {"stripe_event_id": event_id, "type": event_type})
         except Exception:
             pass
+        try:
+            pi = (event.get("data") or {}).get("object") or {}
+            metadata = pi.get("metadata") or {}
+            payment_kind = (metadata.get("payment_kind") or "").strip().lower()
+            if payment_kind in {"deposit", "balance"}:
+                payment_id = metadata.get("payment_id")
+                payment = None
+                if payment_id:
+                    try:
+                        payment = Payment.query.get(int(payment_id))
+                    except Exception:
+                        payment = None
+                if not payment and pi.get("id"):
+                    payment = Payment.query.filter_by(stripe_payment_intent_id=str(pi.get("id"))).first()
+                if payment and payment.status not in (PaymentStatus.succeeded, PaymentStatus.refunded):
+                    payment.status = PaymentStatus.failed if event_type == "payment_intent.payment_failed" else PaymentStatus.cancelled
+                    db.session.commit()
+        except Exception:
+            db.session.rollback()
         _mark_row(StripeWebhookEventStatus.processed)
         return Response(status=200)
 
@@ -8376,6 +8800,77 @@ def stripe_webhook():
             pass
         _mark_row(StripeWebhookEventStatus.processed)
         return Response(status=200)
+
+    if event_type == "payment_intent.succeeded":
+        pi = (event.get("data") or {}).get("object") or {}
+        metadata = pi.get("metadata") or {}
+        payment_kind = (metadata.get("payment_kind") or "").strip().lower()
+        if payment_kind in {"deposit", "balance"}:
+            payment_id = metadata.get("payment_id")
+            payment = None
+            if payment_id:
+                try:
+                    payment = Payment.query.get(int(payment_id))
+                except Exception:
+                    payment = None
+            if not payment and pi.get("id"):
+                payment = Payment.query.filter_by(stripe_payment_intent_id=str(pi.get("id"))).first()
+
+            if not payment:
+                app.logger.warning(f"Stripe webhook: booking payment not found (payment_id={payment_id} intent={pi.get('id')})")
+                _mark_row(StripeWebhookEventStatus.processed)
+                return Response(status=200)
+
+            if payment.status == PaymentStatus.succeeded:
+                _mark_row(StripeWebhookEventStatus.processed)
+                return Response(status=200)
+
+            try:
+                with db_txn():
+                    if db.engine.dialect.name == "postgresql":
+                        payment = Payment.query.filter_by(id=payment.id).with_for_update().first()
+                    else:
+                        payment = Payment.query.filter_by(id=payment.id).first()
+
+                    if not payment:
+                        _mark_row(StripeWebhookEventStatus.processed)
+                        return Response(status=200)
+
+                    if payment.status == PaymentStatus.succeeded:
+                        _mark_row(StripeWebhookEventStatus.processed)
+                        return Response(status=200)
+
+                    payment.status = PaymentStatus.succeeded
+                    if pi.get("id"):
+                        payment.stripe_payment_intent_id = str(pi.get("id"))
+                    if pi.get("latest_charge"):
+                        payment.stripe_charge_id = str(pi.get("latest_charge"))
+                    else:
+                        charges = (pi.get("charges") or {}).get("data") or []
+                        if charges:
+                            payment.stripe_charge_id = str(charges[0].get("id") or payment.stripe_charge_id)
+                    if payment.total_paid_cents is None and pi.get("amount_received"):
+                        try:
+                            payment.total_paid_cents = int(pi.get("amount_received"))
+                        except Exception:
+                            pass
+                    payment.nonrefundable_processing_kept_cents = int(payment.processing_fee_cents or 0)
+                    payment.nonrefundable_beatfund_kept_cents = int(payment.beatfund_fee_cents or 0)
+
+                    booking = Booking.query.get(payment.booking_id) if payment.booking_id else None
+                    if booking:
+                        booking.beatfund_fee_collected_cents = (booking.beatfund_fee_collected_cents or 0) + int(payment.beatfund_fee_cents or 0)
+                        if booking.quoted_total_cents is None and booking.total_cents is not None:
+                            booking.quoted_total_cents = booking.total_cents
+                        if booking.beatfund_fee_total_cents is None and booking.quoted_total_cents is not None:
+                            booking.beatfund_fee_total_cents = calc_beatfund_fee_cents(int(booking.quoted_total_cents))
+            except Exception:
+                app.logger.exception(f"Stripe webhook: error finalizing booking payment_id={getattr(payment, 'id', None)} intent={pi.get('id')}")
+                _mark_row(StripeWebhookEventStatus.failed, "booking_payment_finalize_failed")
+                return Response(status=500 if _is_production_mode() else 200)
+
+            _mark_row(StripeWebhookEventStatus.processed)
+            return Response(status=200)
 
     # Only process Checkout completion for fulfillment.
     if event_type != "checkout.session.completed":
@@ -9094,6 +9589,9 @@ def checkout_hold_fee_success():
             return redirect(url_for("bookme_requests"))
         
         hold_fee_cents = int(metadata.get("hold_fee_cents", HOLD_FEE_CENTS))
+        beatfund_fee_cents = int(metadata.get("beatfund_fee_cents", 0) or 0)
+        processing_fee_cents = int(metadata.get("processing_fee_cents", 0) or 0)
+        total_cents = int(metadata.get("total_cents", hold_fee_cents + beatfund_fee_cents + processing_fee_cents) or 0)
         provider = User.query.get(req.provider_id)
         if not provider:
             flash("Provider not found.", "error")
@@ -9154,6 +9652,9 @@ def checkout_hold_fee_success():
                     event_title=f"Booking with @{provider.username}",
                     event_datetime=event_datetime,
                     total_cents=None,  # Full payment amount set later
+                    quoted_total_cents=None,
+                    deposit_base_cents=HOLD_FEE_CENTS,
+                    beatfund_fee_total_cents=None,
                     status=BOOKING_STATUS_CONFIRMED,  # Confirmed after hold fee payment
                     notes_from_client=req_check.message,
                 )
@@ -9178,6 +9679,36 @@ def checkout_hold_fee_success():
                     hold_fee_cents,
                     meta=f"hold fee for booking #{booking.id} with @{provider.username} (Stripe payment - held in escrow)"
                 )
+
+                # Store payment breakdown for deposit (Stripe Checkout uses a PaymentIntent internally)
+                try:
+                    payment_intent_id = getattr(checkout_session, "payment_intent", None)
+                    payment = Payment(
+                        purpose=PaymentPurpose.booking_deposit,
+                        processor=PaymentProcessor.stripe,
+                        status=PaymentStatus.succeeded,
+                        kind=PaymentKind.deposit,
+                        amount_cents=total_cents,
+                        currency="usd",
+                        base_amount_cents=hold_fee_cents,
+                        beatfund_fee_cents=beatfund_fee_cents,
+                        processing_fee_cents=processing_fee_cents,
+                        total_paid_cents=total_cents,
+                        idempotency_key=generate_idempotency_key(
+                            "booking_deposit", current_user.id, booking_id=booking.id, session_id=session_id
+                        ),
+                        booking_id=booking.id,
+                        stripe_payment_intent_id=str(payment_intent_id) if payment_intent_id else None,
+                        external_id=str(payment_intent_id) if payment_intent_id else None,
+                    )
+                    payment.nonrefundable_processing_kept_cents = int(processing_fee_cents or 0)
+                    payment.nonrefundable_beatfund_kept_cents = int(beatfund_fee_cents or 0)
+                    db.session.add(payment)
+                except Exception:
+                    pass
+
+                # Track BeatFund fee collected on the booking
+                booking.beatfund_fee_collected_cents = int(booking.beatfund_fee_collected_cents or 0) + int(beatfund_fee_cents or 0)
 
                 # Finance audit: hold creation (escrow)
                 try:
@@ -9243,6 +9774,9 @@ def checkout_hold_fee_success():
             booking_request=req_check,
             provider=provider,
             hold_fee_cents=hold_fee_cents,
+            beatfund_fee_cents=beatfund_fee_cents,
+            processing_fee_cents=processing_fee_cents,
+            total_cents=total_cents,
             stripe_session_id=session_id,
         )
         
@@ -13893,6 +14427,95 @@ def admin_transactions():
     )
 
 
+@app.route("/dashboard/admin/refunds", methods=["GET", "POST"], endpoint="admin_refunds")
+@role_required("admin")
+def admin_refunds():
+    """Admin refund tool for booking payments."""
+    if not STRIPE_AVAILABLE or not STRIPE_SECRET_KEY:
+        flash("Stripe is not configured.", "error")
+        return redirect(url_for("admin_transactions"))
+
+    if request.method == "POST":
+        payment_id_raw = (request.form.get("payment_id") or "").strip()
+        refund_base_raw = (request.form.get("refund_base_cents") or "").strip()
+        provider_fault = (request.form.get("provider_fault") or "").strip().lower() in {"1", "true", "yes", "on"}
+        reason = (request.form.get("reason") or "").strip()
+
+        try:
+            payment_id = int(payment_id_raw)
+        except Exception:
+            flash("Invalid payment ID.", "error")
+            return redirect(url_for("admin_refunds"))
+
+        try:
+            refund_base_cents = int(refund_base_raw)
+        except Exception:
+            flash("Refund base cents must be a number.", "error")
+            return redirect(url_for("admin_refunds"))
+
+        payment = Payment.query.get(payment_id)
+        if not payment:
+            flash("Payment not found.", "error")
+            return redirect(url_for("admin_refunds"))
+
+        remaining_base = int(payment.base_amount_cents or 0) - int(payment.refunded_base_cents or 0)
+        if refund_base_cents <= 0 or refund_base_cents > remaining_base:
+            flash("Refund amount exceeds remaining refundable base.", "error")
+            return redirect(url_for("admin_refunds"))
+
+        refundable_bf = 0
+        already_refunded_bf = int(payment.beatfund_fee_cents or 0) - int(payment.nonrefundable_beatfund_kept_cents or 0)
+        if provider_fault and ALLOW_REFUND_BF_FEE_ON_PROVIDER_FAULT and already_refunded_bf <= 0:
+            refundable_bf = int(payment.beatfund_fee_cents or 0)
+
+        refundable_cents = refund_base_cents + refundable_bf
+        if refundable_cents <= 0:
+            flash("No refundable amount available for this payment.", "error")
+            return redirect(url_for("admin_refunds"))
+
+        try:
+            refund_kwargs = {"amount": refundable_cents, "reason": "requested_by_customer"}
+            if payment.stripe_payment_intent_id:
+                refund_kwargs["payment_intent"] = payment.stripe_payment_intent_id
+            elif payment.stripe_charge_id:
+                refund_kwargs["charge"] = payment.stripe_charge_id
+            else:
+                flash("Stripe payment reference missing on this payment.", "error")
+                return redirect(url_for("admin_refunds"))
+
+            stripe.Refund.create(**refund_kwargs)
+
+            payment.refunded_base_cents = int(payment.refunded_base_cents or 0) + refund_base_cents
+            payment.nonrefundable_processing_kept_cents = int(payment.processing_fee_cents or 0)
+            payment.nonrefundable_beatfund_kept_cents = int(payment.beatfund_fee_cents or 0) - refundable_bf
+
+            if payment.refunded_base_cents >= int(payment.base_amount_cents or 0):
+                payment.status = PaymentStatus.refunded
+            else:
+                payment.status = PaymentStatus.partially_refunded
+
+            booking = Booking.query.get(payment.booking_id) if payment.booking_id else None
+            if booking and refundable_bf > 0:
+                booking.beatfund_fee_collected_cents = max(0, int(booking.beatfund_fee_collected_cents or 0) - refundable_bf)
+
+            db.session.commit()
+            flash("Refund processed successfully.", "success")
+            return redirect(url_for("admin_refunds"))
+        except Exception as e:
+            db.session.rollback()
+            flash(f"Refund failed: {e}", "error")
+            return redirect(url_for("admin_refunds"))
+
+    payments = (
+        Payment.query
+        .filter(Payment.processor == PaymentProcessor.stripe)
+        .order_by(Payment.created_at.desc())
+        .limit(50)
+        .all()
+    )
+    return render_template("admin_refunds.html", payments=payments)
+
+
 @app.route("/dashboard/admin/audit-access/<int:user_id>", methods=["GET", "POST"], endpoint="admin_audit_access")
 @role_required("admin")
 def admin_audit_access(user_id: int):
@@ -14628,9 +15251,7 @@ def admin_fees():
         "admin_fees.html",
         cfg={
             "HOLD_FEE_CENTS": HOLD_FEE_CENTS,
-            "BEAT_FEE_RATE": float(BEAT_FEE_RATE) if "BEAT_FEE_RATE" in globals() else None,
-            "BEAT_FEE_MIN_CENTS": BEAT_FEE_MIN_CENTS if "BEAT_FEE_MIN_CENTS" in globals() else None,
-            "BEAT_FEE_MAX_CENTS": BEAT_FEE_MAX_CENTS if "BEAT_FEE_MAX_CENTS" in globals() else None,
+            "BEAT_FEE_FLAT_CENTS": BEAT_FEE_FLAT_CENTS,
             "MAX_TXN_DOLLARS": MAX_TXN_DOLLARS,
         },
     )

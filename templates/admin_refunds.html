@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}Admin Refunds · BeatFund{% endblock %}
+
+{% block content %}
+<div class="policy-page">
+  <h1>Refunds (Admin)</h1>
+  <p>Issue refunds for booking payments. Processing and BeatFund fees are non-refundable unless provider fault is approved.</p>
+
+  <form method="POST" style="margin-top: 20px; padding: 16px; border: 1px solid #ddd; border-radius: 12px;">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px;">
+      <label>
+        Payment ID
+        <input type="number" name="payment_id" required>
+      </label>
+      <label>
+        Refund base cents
+        <input type="number" name="refund_base_cents" required>
+      </label>
+      <label>
+        Provider fault (refund BeatFund fee)
+        <select name="provider_fault">
+          <option value="0">No</option>
+          <option value="1">Yes</option>
+        </select>
+      </label>
+      <label>
+        Reason
+        <input type="text" name="reason" placeholder="Optional">
+      </label>
+    </div>
+
+    <button type="submit" style="margin-top: 12px;">Process refund</button>
+  </form>
+
+  <h2 style="margin-top: 28px;">Recent Stripe Payments</h2>
+  <table style="width: 100%; border-collapse: collapse;">
+    <thead>
+      <tr>
+        <th style="text-align:left; padding: 8px; border-bottom: 1px solid #ddd;">ID</th>
+        <th style="text-align:left; padding: 8px; border-bottom: 1px solid #ddd;">Booking</th>
+        <th style="text-align:left; padding: 8px; border-bottom: 1px solid #ddd;">Kind</th>
+        <th style="text-align:left; padding: 8px; border-bottom: 1px solid #ddd;">Status</th>
+        <th style="text-align:left; padding: 8px; border-bottom: 1px solid #ddd;">Base</th>
+        <th style="text-align:left; padding: 8px; border-bottom: 1px solid #ddd;">BeatFund fee</th>
+        <th style="text-align:left; padding: 8px; border-bottom: 1px solid #ddd;">Processing fee</th>
+        <th style="text-align:left; padding: 8px; border-bottom: 1px solid #ddd;">Total</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for p in payments %}
+        <tr>
+          <td style="padding: 8px; border-bottom: 1px solid #eee;">{{ p.id }}</td>
+          <td style="padding: 8px; border-bottom: 1px solid #eee;">{{ p.booking_id or "-" }}</td>
+          <td style="padding: 8px; border-bottom: 1px solid #eee;">{{ p.kind.value if p.kind else "-" }}</td>
+          <td style="padding: 8px; border-bottom: 1px solid #eee;">{{ p.status.value if p.status else "-" }}</td>
+          <td style="padding: 8px; border-bottom: 1px solid #eee;">${{ '%.2f'|format((p.base_amount_cents or 0) / 100.0) }}</td>
+          <td style="padding: 8px; border-bottom: 1px solid #eee;">${{ '%.2f'|format((p.beatfund_fee_cents or 0) / 100.0) }}</td>
+          <td style="padding: 8px; border-bottom: 1px solid #eee;">${{ '%.2f'|format((p.processing_fee_cents or 0) / 100.0) }}</td>
+          <td style="padding: 8px; border-bottom: 1px solid #eee;">${{ '%.2f'|format((p.total_paid_cents or p.amount_cents or 0) / 100.0) }}</td>
+        </tr>
+      {% else %}
+        <tr>
+          <td colspan="8" style="padding: 12px;">No payments found.</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

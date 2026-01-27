@@ -205,6 +205,18 @@
         <span class="info-label">Hold Fee Paid</span>
         <span class="info-value info-total">${{ '%.2f'|format(hold_fee_cents / 100.0) }}</span>
       </div>
+      <div class="info-row">
+        <span class="info-label">BeatFund service fee (non-refundable)</span>
+        <span class="info-value">${{ '%.2f'|format((beatfund_fee_cents or 0) / 100.0) }}</span>
+      </div>
+      <div class="info-row">
+        <span class="info-label">Payment processing fee (non-refundable)</span>
+        <span class="info-value">${{ '%.2f'|format((processing_fee_cents or 0) / 100.0) }}</span>
+      </div>
+      <div class="info-row">
+        <span class="info-label">Total Paid</span>
+        <span class="info-value info-total">${{ '%.2f'|format((total_cents or 0) / 100.0) }}</span>
+      </div>
     </div>
 
     <div class="action-buttons">

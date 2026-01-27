@@ -137,6 +137,42 @@
     opacity: 0.7;
     font-style: italic;
   }
+  .bf-payment-card {
+    margin-top: 12px;
+    padding: 14px;
+    border-radius: 16px;
+    border: 1px solid rgba(148,163,184,0.4);
+    background: rgba(8,16,30,0.6);
+  }
+  .bf-fee-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.85rem;
+    margin-top: 6px;
+  }
+  .bf-payment-actions {
+    margin-top: 12px;
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .bf-payment-note {
+    font-size: 0.78rem;
+    opacity: 0.75;
+    margin-top: 8px;
+  }
+  #booking-card-element {
+    margin-top: 10px;
+    padding: 10px 12px;
+    border-radius: 12px;
+    border: 1px solid rgba(148,163,184,0.35);
+    background: rgba(2,6,23,0.8);
+  }
+  #booking-card-errors {
+    color: #fca5a5;
+    font-size: 0.8rem;
+    margin-top: 8px;
+  }
   .bf-contract-box {
     font-size: 0.82rem;
     opacity: 0.85;
@@ -415,7 +451,7 @@
         <ul>
           <li>
             <strong>Provider:</strong> @{{ booking.provider.username }}
-            ({{ booking.provider_role.value.replace("_"," ")|title if booking.provider_role else "Provider" }})
+            ({{ get_role_display(booking.provider_role) if booking.provider_role else "Provider" }})
           </li>
           <li>
             <strong>Client:</strong> @{{ booking.client.username }}
@@ -434,6 +470,75 @@
           BeatFund's wallet ledger records any holds or transfers made through the platform for this booking.
         </p>
       </div>
+
+      {% if is_client %}
+        <div class="bf-section-title">Payment</div>
+        <div class="bf-payment-card">
+          {% if not stripe_enabled %}
+            <div class="bf-meta-value">Stripe is not configured. Payments are unavailable.</div>
+          {% elif not deposit_breakdown %}
+            <div class="bf-meta-value">Set the booking total to enable payments.</div>
+          {% else %}
+            {% if deposit_due %}
+              <div class="bf-meta-label">Deposit due</div>
+              <div class="bf-fee-row">
+                <span>Service payment</span>
+                <span>${{ '%.2f'|format(deposit_breakdown.base_cents / 100.0) }}</span>
+              </div>
+              <div class="bf-fee-row">
+                <span>BeatFund service fee (non-refundable)</span>
+                <span>${{ '%.2f'|format(deposit_breakdown.beatfund_fee_cents / 100.0) }}</span>
+              </div>
+              <div class="bf-fee-row">
+                <span>Payment processing fee (non-refundable)</span>
+                <span>${{ '%.2f'|format(deposit_breakdown.processing_fee_cents / 100.0) }}</span>
+              </div>
+              <div class="bf-fee-row">
+                <strong>Total</strong>
+                <strong>${{ '%.2f'|format(deposit_breakdown.total_cents / 100.0) }}</strong>
+              </div>
+            {% else %}
+              <div class="bf-meta-value">Deposit paid.</div>
+            {% endif %}
+
+            {% if balance_due and balance_breakdown %}
+              <div class="bf-meta-label" style="margin-top:12px;">Balance due</div>
+              <div class="bf-fee-row">
+                <span>Service payment</span>
+                <span>${{ '%.2f'|format(balance_breakdown.base_cents / 100.0) }}</span>
+              </div>
+              <div class="bf-fee-row">
+                <span>BeatFund service fee (non-refundable)</span>
+                <span>${{ '%.2f'|format(balance_breakdown.beatfund_fee_cents / 100.0) }}</span>
+              </div>
+              <div class="bf-fee-row">
+                <span>Payment processing fee (non-refundable)</span>
+                <span>${{ '%.2f'|format(balance_breakdown.processing_fee_cents / 100.0) }}</span>
+              </div>
+              <div class="bf-fee-row">
+                <strong>Total</strong>
+                <strong>${{ '%.2f'|format(balance_breakdown.total_cents / 100.0) }}</strong>
+              </div>
+            {% elif deposit_breakdown and not balance_due %}
+              <div class="bf-meta-value" style="margin-top:10px;">Balance paid or not required.</div>
+            {% endif %}
+
+            {% if deposit_due or balance_due %}
+              <div id="booking-card-element"></div>
+              <div id="booking-card-errors"></div>
+              <div class="bf-payment-actions">
+                {% if deposit_due %}
+                  <button class="bf-btn bf-btn-primary" type="button" data-payment-kind="deposit">Pay deposit</button>
+                {% endif %}
+                {% if balance_due %}
+                  <button class="bf-btn bf-btn-primary" type="button" data-payment-kind="balance">Pay balance</button>
+                {% endif %}
+              </div>
+              <div class="bf-payment-note">Fees are shown before payment. Processing and BeatFund fees are non-refundable.</div>
+            {% endif %}
+          {% endif %}
+        </div>
+      {% endif %}
     </section>
 
     <!-- RIGHT: People + messages + provider notes -->
@@ -444,7 +549,7 @@
       <div class="bf-user-card">
         <div class="bf-user-username">@{{ booking.provider.username }}</div>
         <div class="bf-user-role">
-          {{ booking.provider_role.value.replace("_", " ")|title if booking.provider_role else "Provider" }}
+          {{ get_role_display(booking.provider_role) if booking.provider_role else "Provider" }}
         </div>
       </div>
 
@@ -519,6 +624,67 @@
     </section>
   </div>
 </div>
+
+{% if is_client and stripe_enabled and (deposit_due or balance_due) %}
+<script src="https://js.stripe.com/v3/"></script>
+<script>
+  (function () {
+    const stripe = Stripe({{ stripe_publishable_key|tojson }});
+    const elements = stripe.elements();
+    const card = elements.create('card', {style: {base: {color: '#e2e8f0', fontSize: '14px'}}});
+    card.mount('#booking-card-element');
+
+    const buttons = document.querySelectorAll('[data-payment-kind]');
+    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
+    const errorEl = document.getElementById('booking-card-errors');
+
+    async function startPayment(kind, button) {
+      if (!csrfToken) return;
+      button.disabled = true;
+      const original = button.textContent;
+      button.textContent = 'Processing...';
+
+      try {
+        const resp = await fetch(`/bookings/{{ booking.id }}/payment-intent`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': csrfToken
+          },
+          body: JSON.stringify({kind})
+        });
+
+        const data = await resp.json();
+        if (!resp.ok) {
+          throw new Error(data.error || 'Unable to start payment');
+        }
+
+        const result = await stripe.confirmCardPayment(data.client_secret, {
+          payment_method: {card}
+        });
+
+        if (result.error) {
+          throw new Error(result.error.message || 'Payment failed');
+        }
+
+        if (result.paymentIntent && result.paymentIntent.status === 'succeeded') {
+          window.location.reload();
+        }
+      } catch (err) {
+        if (errorEl) {
+          errorEl.textContent = err.message;
+        }
+        button.disabled = false;
+        button.textContent = original;
+      }
+    }
+
+    buttons.forEach(btn => {
+      btn.addEventListener('click', () => startPayment(btn.dataset.paymentKind, btn));
+    });
+  })();
+</script>
+{% endif %}
 
 <script>
   let editMode = false;

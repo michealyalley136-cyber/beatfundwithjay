@@ -289,7 +289,7 @@
                 <div class="booking-meta-row">
                   <span class="booking-label">Provider:</span>
                   <span class="booking-value">
-                    @{{ b.provider.username }} · {{ b.provider_role.value.replace("_", " ").title() }}
+                    @{{ b.provider.username }} · {{ get_role_display(b.provider_role) if b.provider_role else "Provider" }}
                   </span>
                 </div>
                 <div class="booking-meta-row">
@@ -344,7 +344,7 @@
       <strong>Note:</strong>
       When you accept a BookMe request, BeatFund places a temporary hold fee of
       <strong>${{ '%.2f' % (HOLD_FEE_CENTS / 100.0) }}</strong>
-      between the client and provider wallets to secure the slot (demo mode).
+      plus applicable fees shown at checkout to secure the slot (demo mode).
     </p>
   </section>
 </div>
