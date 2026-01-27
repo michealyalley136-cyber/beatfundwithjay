@@ -4105,6 +4105,66 @@ def _ensure_sqlite_booking_payment_columns():
             db.session.execute(text("ALTER TABLE booking ADD COLUMN beatfund_fee_total_cents INTEGER"))
         if "beatfund_fee_collected_cents" not in cols:
             db.session.execute(text("ALTER TABLE booking ADD COLUMN beatfund_fee_collected_cents INTEGER DEFAULT 0"))
+
+
+def _ensure_postgres_booking_fee_columns():
+    """Add booking fee columns in Postgres if missing (safe, idempotent)."""
+    try:
+        if db.engine.url.get_backend_name() != "postgresql":
+            return
+    except Exception:
+        return
+
+    try:
+        with db.engine.begin() as conn:
+            rows = conn.execute(text("""
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_schema = 'public' AND table_name = 'booking'
+            """)).fetchall()
+            existing = {r[0] for r in rows}
+            required = {
+                "quoted_total_cents",
+                "deposit_base_cents",
+                "beatfund_fee_total_cents",
+                "beatfund_fee_collected_cents",
+            }
+            missing = sorted(required - existing)
+
+            if missing:
+                conn.execute(text("""
+                    ALTER TABLE booking
+                      ADD COLUMN IF NOT EXISTS quoted_total_cents INTEGER,
+                      ADD COLUMN IF NOT EXISTS deposit_base_cents INTEGER,
+                      ADD COLUMN IF NOT EXISTS beatfund_fee_total_cents INTEGER,
+                      ADD COLUMN IF NOT EXISTS beatfund_fee_collected_cents INTEGER;
+                """))
+                app.logger.warning(f"[DB] Added booking fee columns: {', '.join(missing)}")
+            else:
+                app.logger.info("[DB] Booking fee columns already present")
+
+            needs_backfill = conn.execute(text("""
+                SELECT 1
+                FROM booking
+                WHERE deposit_base_cents IS NULL
+                   OR beatfund_fee_total_cents IS NULL
+                   OR beatfund_fee_collected_cents IS NULL
+                LIMIT 1
+            """)).first() is not None
+
+            if needs_backfill:
+                conn.execute(text("""
+                    UPDATE booking
+                    SET deposit_base_cents = COALESCE(deposit_base_cents, :deposit_default),
+                        beatfund_fee_total_cents = COALESCE(beatfund_fee_total_cents, 0),
+                        beatfund_fee_collected_cents = COALESCE(beatfund_fee_collected_cents, 0)
+                    WHERE deposit_base_cents IS NULL
+                       OR beatfund_fee_total_cents IS NULL
+                       OR beatfund_fee_collected_cents IS NULL
+                """), {"deposit_default": HOLD_FEE_CENTS})
+                app.logger.info("[DB] Backfilled booking fee columns (defaults applied)")
+    except Exception as e:
+        app.logger.warning(f"[DB] Postgres booking fee patch skipped: {type(e).__name__}: {e}")
         db.session.commit()
     if "paid_at" not in cols:
         db.session.execute(text(f"ALTER TABLE {table} ADD COLUMN paid_at DATETIME"))
@@ -4198,6 +4258,11 @@ def _bootstrap_schema_once():
                     app.logger.info("✓ Database tables created successfully in production")
         except Exception as e:
             app.logger.warning(f"Could not auto-create tables in production: {type(e).__name__}: {str(e)}")
+
+        try:
+            _ensure_postgres_booking_fee_columns()
+        except Exception:
+            pass
         
         _SCHEMA_BOOTSTRAP_DONE = True
         return
@@ -4225,6 +4290,7 @@ def _bootstrap_schema_once():
         _ensure_sqlite_beat_stripe_columns()
         _ensure_sqlite_order_payment_columns()
         _ensure_sqlite_booking_payment_columns()
+        _ensure_postgres_booking_fee_columns()
     except Exception as e:
         app.logger.error(f"SQLite auto-migration failed: {type(e).__name__}: {str(e)}", exc_info=True)
         try:
@@ -15255,6 +15321,48 @@ def admin_fees():
             "MAX_TXN_DOLLARS": MAX_TXN_DOLLARS,
         },
     )
+
+
+@app.route("/dashboard/admin/schema/booking", endpoint="admin_booking_schema")
+@role_required("admin")
+def admin_booking_schema():
+    """Admin schema check for booking fee columns (Postgres)."""
+    cols = []
+    error = None
+    has_fee_columns = False
+    sample_ok = False
+
+    try:
+        if db.engine.dialect.name == "postgresql":
+            with db.engine.begin() as conn:
+                rows = conn.execute(text("""
+                    SELECT column_name, data_type
+                    FROM information_schema.columns
+                    WHERE table_schema = 'public' AND table_name = 'booking'
+                    ORDER BY ordinal_position
+                """)).fetchall()
+                cols = [{"name": r[0], "type": r[1]} for r in rows]
+                col_names = {r[0] for r in rows}
+                required = {"quoted_total_cents", "deposit_base_cents", "beatfund_fee_total_cents", "beatfund_fee_collected_cents"}
+                has_fee_columns = required.issubset(col_names)
+                # Simple probe to confirm column exists
+                conn.execute(text("SELECT quoted_total_cents FROM booking LIMIT 1"))
+                sample_ok = True
+        else:
+            cols = [{"name": c, "type": "unknown"} for c in sorted(_sqlite_columns("booking"))]
+            required = {"quoted_total_cents", "deposit_base_cents", "beatfund_fee_total_cents", "beatfund_fee_collected_cents"}
+            has_fee_columns = required.issubset({c["name"] for c in cols})
+            sample_ok = True
+    except Exception as e:
+        error = f"{type(e).__name__}: {str(e)[:200]}"
+
+    return jsonify({
+        "ok": error is None,
+        "has_fee_columns": has_fee_columns,
+        "sample_ok": sample_ok,
+        "columns": cols,
+        "error": error,
+    })
 
 
 @app.route("/healthz")
