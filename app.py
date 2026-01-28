@@ -1886,6 +1886,7 @@ class NotificationRecipient(db.Model):
 # Standard Booking status values (string constants for consistency)
 BOOKING_STATUS_PENDING = "pending"
 BOOKING_STATUS_ACCEPTED = "accepted"
+BOOKING_STATUS_QUOTED = "quoted"
 BOOKING_STATUS_CONFIRMED = "confirmed"
 BOOKING_STATUS_COMPLETED = "completed"
 BOOKING_STATUS_CANCELLED = "cancelled"
@@ -1896,6 +1897,7 @@ BOOKING_STATUS_DISPUTED = "disputed"
 VALID_BOOKING_STATUSES = {
     BOOKING_STATUS_PENDING,
     BOOKING_STATUS_ACCEPTED,
+    BOOKING_STATUS_QUOTED,
     BOOKING_STATUS_CONFIRMED,
     BOOKING_STATUS_COMPLETED,
     BOOKING_STATUS_CANCELLED,
@@ -1919,6 +1921,8 @@ class Booking(db.Model):
 
     total_cents = db.Column(db.Integer, nullable=True)
     quoted_total_cents = db.Column(db.Integer, nullable=True)
+    quote_hourly_rate_cents = db.Column(db.Integer, nullable=True)
+    quote_breakdown_text = db.Column(db.Text, nullable=True)
     deposit_base_cents = db.Column(db.Integer, nullable=True)
     beatfund_fee_total_cents = db.Column(db.Integer, nullable=True)
     beatfund_fee_collected_cents = db.Column(db.Integer, nullable=False, default=0)
@@ -2061,6 +2065,7 @@ class BookingRequest(db.Model):
 
     message = db.Column(db.Text, nullable=True)
     preferred_time = db.Column(db.String(120), nullable=False)
+    duration_minutes = db.Column(db.Integer, nullable=True)
 
     status = db.Column(db.Enum(BookingStatus), nullable=False, default=BookingStatus.pending, index=True)
     created_at = db.Column(db.DateTime, server_default=func.now(), index=True)
@@ -3630,17 +3635,18 @@ def _ensure_sqlite_booking_request_booking_id():
     if not _sqlite_has_table("booking_request"):
         return
     cols = _sqlite_columns("booking_request")
-    if "booking_id" in cols:
-        return
-
-    db.session.execute(text("ALTER TABLE booking_request ADD COLUMN booking_id INTEGER"))
-    db.session.execute(text(
-        "CREATE UNIQUE INDEX IF NOT EXISTS uq_booking_request_booking_id ON booking_request (booking_id)"
-    ))
-    db.session.execute(text(
-        "CREATE INDEX IF NOT EXISTS ix_booking_request_booking_id ON booking_request (booking_id)"
-    ))
-    db.session.commit()
+    if "booking_id" not in cols:
+        db.session.execute(text("ALTER TABLE booking_request ADD COLUMN booking_id INTEGER"))
+        db.session.execute(text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_booking_request_booking_id ON booking_request (booking_id)"
+        ))
+        db.session.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_booking_request_booking_id ON booking_request (booking_id)"
+        ))
+        db.session.commit()
+    if "duration_minutes" not in cols:
+        db.session.execute(text("ALTER TABLE booking_request ADD COLUMN duration_minutes INTEGER"))
+        db.session.commit()
 
 
 def _ensure_sqlite_follow_table_name_and_indexes():
@@ -4107,6 +4113,10 @@ def _ensure_sqlite_booking_payment_columns():
         cols = _sqlite_columns("booking")
         if "quoted_total_cents" not in cols:
             db.session.execute(text("ALTER TABLE booking ADD COLUMN quoted_total_cents INTEGER"))
+        if "quote_hourly_rate_cents" not in cols:
+            db.session.execute(text("ALTER TABLE booking ADD COLUMN quote_hourly_rate_cents INTEGER"))
+        if "quote_breakdown_text" not in cols:
+            db.session.execute(text("ALTER TABLE booking ADD COLUMN quote_breakdown_text TEXT"))
         if "deposit_base_cents" not in cols:
             db.session.execute(text("ALTER TABLE booking ADD COLUMN deposit_base_cents INTEGER"))
         if "beatfund_fee_total_cents" not in cols:
@@ -4133,6 +4143,8 @@ def _ensure_postgres_booking_fee_columns():
             existing = {r[0] for r in rows}
             required = {
                 "quoted_total_cents",
+                "quote_hourly_rate_cents",
+                "quote_breakdown_text",
                 "deposit_base_cents",
                 "beatfund_fee_total_cents",
                 "beatfund_fee_collected_cents",
@@ -4143,6 +4155,8 @@ def _ensure_postgres_booking_fee_columns():
                 conn.execute(text("""
                     ALTER TABLE booking
                       ADD COLUMN IF NOT EXISTS quoted_total_cents INTEGER,
+                      ADD COLUMN IF NOT EXISTS quote_hourly_rate_cents INTEGER,
+                      ADD COLUMN IF NOT EXISTS quote_breakdown_text TEXT,
                       ADD COLUMN IF NOT EXISTS deposit_base_cents INTEGER,
                       ADD COLUMN IF NOT EXISTS beatfund_fee_total_cents INTEGER,
                       ADD COLUMN IF NOT EXISTS beatfund_fee_collected_cents INTEGER;
@@ -4173,6 +4187,34 @@ def _ensure_postgres_booking_fee_columns():
                 app.logger.info("[DB] Backfilled booking fee columns (defaults applied)")
     except Exception as e:
         app.logger.warning(f"[DB] Postgres booking fee patch skipped: {type(e).__name__}: {e}")
+
+
+def _ensure_postgres_booking_request_duration_column():
+    """Add duration_minutes to booking_request in Postgres if missing (safe, idempotent)."""
+    try:
+        if db.engine.url.get_backend_name() != "postgresql":
+            return
+    except Exception:
+        return
+
+    try:
+        with db.engine.begin() as conn:
+            rows = conn.execute(text("""
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_schema = 'public' AND table_name = 'booking_request'
+            """)).fetchall()
+            existing = {r[0] for r in rows}
+            if "duration_minutes" not in existing:
+                conn.execute(text("""
+                    ALTER TABLE booking_request
+                      ADD COLUMN IF NOT EXISTS duration_minutes INTEGER;
+                """))
+                app.logger.warning("[DB] Added booking_request.duration_minutes column")
+            else:
+                app.logger.info("[DB] booking_request.duration_minutes already present")
+    except Exception as e:
+        app.logger.warning(f"[DB] Postgres booking_request patch skipped: {type(e).__name__}: {e}")
 
 
 def _ensure_postgres_payment_fee_columns():
@@ -4351,6 +4393,7 @@ def _bootstrap_schema_once():
 
         try:
             _ensure_postgres_booking_fee_columns()
+            _ensure_postgres_booking_request_duration_column()
             _ensure_postgres_payment_fee_columns()
         except Exception:
             pass
@@ -4382,6 +4425,7 @@ def _bootstrap_schema_once():
         _ensure_sqlite_order_payment_columns()
         _ensure_sqlite_booking_payment_columns()
         _ensure_postgres_booking_fee_columns()
+        _ensure_postgres_booking_request_duration_column()
         _ensure_postgres_payment_fee_columns()
     except Exception as e:
         app.logger.error(f"SQLite auto-migration failed: {type(e).__name__}: {str(e)}", exc_info=True)
@@ -7396,56 +7440,56 @@ def booking_detail(booking_id):
             if booking.status in [BOOKING_STATUS_COMPLETED, BOOKING_STATUS_CANCELLED, BOOKING_STATUS_DISPUTED]:
                 flash("Cannot edit bookings that are completed, cancelled, or disputed.", "error")
                 return redirect(url_for("booking_detail", booking_id=booking.id))
-            
-            # Update event title
-            event_title = (request.form.get("event_title") or "").strip()
-            if event_title:
-                booking.event_title = event_title
-            
-            # Update date/time
-            event_date = (request.form.get("event_date") or "").strip()
-            event_time = (request.form.get("event_time") or "").strip()
-            if event_date and event_time:
-                try:
-                    booking.event_datetime = datetime.strptime(f"{event_date} {event_time}", "%Y-%m-%d %H:%M")
-                except ValueError:
-                    flash("Invalid date/time format.", "error")
+            if is_client or is_admin:
+                # Update event title
+                event_title = (request.form.get("event_title") or "").strip()
+                if event_title:
+                    booking.event_title = event_title
+
+                # Update date/time
+                event_date = (request.form.get("event_date") or "").strip()
+                event_time = (request.form.get("event_time") or "").strip()
+                if event_date and event_time:
+                    try:
+                        booking.event_datetime = datetime.strptime(f"{event_date} {event_time}", "%Y-%m-%d %H:%M")
+                    except ValueError:
+                        flash("Invalid date/time format.", "error")
+                        return redirect(url_for("booking_detail", booking_id=booking.id))
+                elif event_date or event_time:
+                    flash("Both date and time are required.", "error")
                     return redirect(url_for("booking_detail", booking_id=booking.id))
-            elif event_date or event_time:
-                flash("Both date and time are required.", "error")
-                return redirect(url_for("booking_detail", booking_id=booking.id))
-            
-            # Update duration
-            duration_minutes_raw = (request.form.get("duration_minutes") or "").strip()
-            if duration_minutes_raw:
-                try:
-                    booking.duration_minutes = int(duration_minutes_raw) if duration_minutes_raw else None
-                except ValueError:
-                    flash("Duration must be a number.", "error")
-                    return redirect(url_for("booking_detail", booking_id=booking.id))
-            
-            # Update location
-            location_text = (request.form.get("location_text") or "").strip()
-            booking.location_text = location_text or None
-            
-            # Update total amount
-            total_dollars_raw = (request.form.get("total_dollars") or "").strip()
-            if total_dollars_raw:
-                try:
-                    total_dollars = float(total_dollars_raw)
-                    booking.total_cents = int(total_dollars * 100) if total_dollars >= 0 else None
-                    if booking.total_cents is not None:
-                        booking.quoted_total_cents = booking.total_cents
-                        booking.beatfund_fee_total_cents = calc_beatfund_fee_cents(booking.total_cents)
-                        if booking.deposit_base_cents is None:
-                            booking.deposit_base_cents = min(HOLD_FEE_CENTS, booking.total_cents)
-                except ValueError:
-                    flash("Total amount must be a valid number.", "error")
-                    return redirect(url_for("booking_detail", booking_id=booking.id))
-            elif total_dollars_raw == "":
-                booking.total_cents = None
-                booking.quoted_total_cents = None
-                booking.beatfund_fee_total_cents = None
+
+                # Update duration
+                duration_minutes_raw = (request.form.get("duration_minutes") or "").strip()
+                if duration_minutes_raw:
+                    try:
+                        booking.duration_minutes = int(duration_minutes_raw) if duration_minutes_raw else None
+                    except ValueError:
+                        flash("Duration must be a number.", "error")
+                        return redirect(url_for("booking_detail", booking_id=booking.id))
+
+                # Update location
+                location_text = (request.form.get("location_text") or "").strip()
+                booking.location_text = location_text or None
+
+                # Update total amount (client-only)
+                total_dollars_raw = (request.form.get("total_dollars") or "").strip()
+                if total_dollars_raw:
+                    try:
+                        total_dollars = float(total_dollars_raw)
+                        booking.total_cents = int(total_dollars * 100) if total_dollars >= 0 else None
+                        if booking.total_cents is not None:
+                            booking.quoted_total_cents = booking.total_cents
+                            booking.beatfund_fee_total_cents = calc_beatfund_fee_cents(booking.total_cents)
+                            if booking.deposit_base_cents is None:
+                                booking.deposit_base_cents = min(HOLD_FEE_CENTS, booking.total_cents)
+                    except ValueError:
+                        flash("Total amount must be a valid number.", "error")
+                        return redirect(url_for("booking_detail", booking_id=booking.id))
+                elif total_dollars_raw == "":
+                    booking.total_cents = None
+                    booking.quoted_total_cents = None
+                    booking.beatfund_fee_total_cents = None
             
             # Update notes (provider can update provider notes, client can update client notes)
             if is_provider:
@@ -7532,6 +7576,7 @@ def booking_detail(booking_id):
         booking=booking,
         is_provider=is_provider,
         is_client=is_client,
+        is_admin=is_admin,
         deposit_breakdown=deposit_breakdown,
         balance_breakdown=balance_breakdown,
         deposit_due=deposit_due,
@@ -7541,6 +7586,60 @@ def booking_detail(booking_id):
         stripe_enabled=stripe_enabled,
         stripe_publishable_key=STRIPE_PUBLISHABLE_KEY,
     )
+
+
+@app.route("/bookings/<int:booking_id>/quote", methods=["POST"])
+@login_required
+def booking_quote(booking_id: int):
+    booking = Booking.query.get_or_404(booking_id)
+    is_provider = current_user.id == booking.provider_id
+    is_admin = current_user.role == RoleEnum.admin
+
+    if not (is_provider or is_admin):
+        flash("You are not allowed to quote this booking.", "error")
+        return redirect(url_for("booking_detail", booking_id=booking.id))
+
+    duration_minutes = int(booking.duration_minutes or 0)
+    if duration_minutes <= 0:
+        flash("Duration is required before sending a quote.", "error")
+        return redirect(url_for("booking_detail", booking_id=booking.id))
+
+    hourly_rate_raw = (request.form.get("hourly_rate_dollars") or "").strip()
+    breakdown_text = (request.form.get("quote_breakdown_text") or "").strip()
+
+    if not hourly_rate_raw:
+        flash("Hourly rate is required.", "error")
+        return redirect(url_for("booking_detail", booking_id=booking.id))
+
+    try:
+        rate_decimal = Decimal(hourly_rate_raw)
+    except Exception:
+        flash("Hourly rate must be a valid number.", "error")
+        return redirect(url_for("booking_detail", booking_id=booking.id))
+
+    if rate_decimal <= 0:
+        flash("Hourly rate must be greater than 0.", "error")
+        return redirect(url_for("booking_detail", booking_id=booking.id))
+
+    if not breakdown_text:
+        flash("Please provide a quote breakdown.", "error")
+        return redirect(url_for("booking_detail", booking_id=booking.id))
+
+    hourly_rate_cents = int((rate_decimal * 100).to_integral_value(rounding=ROUND_UP))
+    duration_hours = (duration_minutes + 59) // 60
+    quoted_total_cents = duration_hours * hourly_rate_cents
+
+    booking.quote_hourly_rate_cents = hourly_rate_cents
+    booking.quoted_total_cents = quoted_total_cents
+    booking.total_cents = quoted_total_cents
+    booking.quote_breakdown_text = breakdown_text
+    booking.deposit_base_cents = min(HOLD_FEE_CENTS, quoted_total_cents)
+    booking.beatfund_fee_total_cents = calc_beatfund_fee_cents(quoted_total_cents)
+    booking.status = BOOKING_STATUS_QUOTED
+
+    db.session.commit()
+    flash("Quote sent to client.", "success")
+    return redirect(url_for("booking_detail", booking_id=booking.id))
 
 
 # =========================================================
@@ -7814,6 +7913,8 @@ def bookme_book_provider(username):
         preferred_time_fallback = (request.form.get("preferred_time") or "").strip()
         budget = (request.form.get("budget") or "").strip()
         message = (request.form.get("message") or "").strip()
+        duration_hours_raw = (request.form.get("duration_hours") or "").strip()
+        duration_minutes_raw = (request.form.get("duration_minutes") or "").strip()
         
         # Build preferred_time from date/time or use fallback
         preferred_time = preferred_time_fallback
@@ -7833,6 +7934,53 @@ def bookme_book_provider(username):
                 follower_count=follower_count,
                 is_following=is_following
             )
+
+        duration_hours = 0
+        duration_minutes = 0
+        try:
+            if duration_hours_raw:
+                duration_hours = int(duration_hours_raw)
+            if duration_minutes_raw:
+                duration_minutes = int(duration_minutes_raw)
+        except ValueError:
+            flash("Duration must be a valid number of hours/minutes.", "error")
+            return render_template(
+                "bookme_book_provider.html",
+                provider=provider,
+                form_data=request.form,
+                follower_count=follower_count,
+                is_following=is_following
+            )
+
+        if duration_hours < 0 or duration_minutes < 0 or duration_minutes > 59:
+            flash("Duration minutes must be between 0 and 59.", "error")
+            return render_template(
+                "bookme_book_provider.html",
+                provider=provider,
+                form_data=request.form,
+                follower_count=follower_count,
+                is_following=is_following
+            )
+
+        total_duration_minutes = (duration_hours * 60) + duration_minutes
+        if total_duration_minutes <= 0:
+            flash("Duration is required.", "error")
+            return render_template(
+                "bookme_book_provider.html",
+                provider=provider,
+                form_data=request.form,
+                follower_count=follower_count,
+                is_following=is_following
+            )
+        if total_duration_minutes < 30 or total_duration_minutes > (12 * 60):
+            flash("Duration must be between 30 minutes and 12 hours.", "error")
+            return render_template(
+                "bookme_book_provider.html",
+                provider=provider,
+                form_data=request.form,
+                follower_count=follower_count,
+                is_following=is_following
+            )
         
         # Build comprehensive message from role-specific fields
         role_val = (provider.role if provider.role else str(provider.role)).lower()
@@ -7840,6 +7988,7 @@ def bookme_book_provider(username):
         
         if budget:
             message_parts.append(f"Budget: {budget}")
+        message_parts.append(f"Duration: {total_duration_minutes} minutes")
         
         # Studio-specific fields
         if role_val in ["studio"]:
@@ -8038,6 +8187,7 @@ def bookme_book_provider(username):
             client_id=current_user.id,
             message=full_message or None,
             preferred_time=preferred_time,
+            duration_minutes=total_duration_minutes,
         )
         db.session.add(req)
         db.session.commit()
@@ -8101,6 +8251,14 @@ def book_artist(username):
                 duration_minutes = int(duration_minutes_raw)
             except ValueError:
                 errors.append("Duration must be a number of minutes.")
+        else:
+            errors.append("Duration is required.")
+
+        if duration_minutes is not None:
+            if duration_minutes <= 0:
+                errors.append("Duration must be greater than 0 minutes.")
+            elif duration_minutes < 30 or duration_minutes > (12 * 60):
+                errors.append("Duration must be between 30 minutes and 12 hours.")
 
         total_cents = None
         if price_dollars_raw:
@@ -9815,6 +9973,7 @@ def checkout_hold_fee_success():
                     client_id=current_user.id,
                     event_title=f"Booking with @{provider.username}",
                     event_datetime=event_datetime,
+                    duration_minutes=req_check.duration_minutes,
                     total_cents=None,  # Full payment amount set later
                     quoted_total_cents=None,
                     deposit_base_cents=HOLD_FEE_CENTS,
@@ -15457,7 +15616,14 @@ def admin_booking_schema():
                 booking_names = {r[0] for r in booking_rows}
                 payment_names = {r[0] for r in payment_rows}
 
-                booking_required = {"quoted_total_cents", "deposit_base_cents", "beatfund_fee_total_cents", "beatfund_fee_collected_cents"}
+                booking_required = {
+                    "quoted_total_cents",
+                    "quote_hourly_rate_cents",
+                    "quote_breakdown_text",
+                    "deposit_base_cents",
+                    "beatfund_fee_total_cents",
+                    "beatfund_fee_collected_cents",
+                }
                 payment_required = {
                     "kind",
                     "base_amount_cents",
@@ -15500,7 +15666,14 @@ def admin_booking_schema():
             booking_cols = [{"name": c, "type": "unknown"} for c in sorted(booking_names)]
             payment_cols = [{"name": c, "type": "unknown"} for c in sorted(payment_names)]
 
-            booking_required = {"quoted_total_cents", "deposit_base_cents", "beatfund_fee_total_cents", "beatfund_fee_collected_cents"}
+            booking_required = {
+                "quoted_total_cents",
+                "quote_hourly_rate_cents",
+                "quote_breakdown_text",
+                "deposit_base_cents",
+                "beatfund_fee_total_cents",
+                "beatfund_fee_collected_cents",
+            }
             payment_required = {
                 "kind",
                 "base_amount_cents",

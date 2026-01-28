@@ -78,6 +78,17 @@
 
       <div class="pb-grid">
         <div class="pb-field">
+          <label class="pb-label" for="duration_hours">Duration hours (required)</label>
+          <input class="pb-input" id="duration_hours" name="duration_hours" type="number" min="0" step="1" value="{{ form_data.get('duration_hours','') }}" required>
+        </div>
+        <div class="pb-field">
+          <label class="pb-label" for="duration_minutes">Duration minutes</label>
+          <input class="pb-input" id="duration_minutes" name="duration_minutes" type="number" min="0" max="59" step="1" value="{{ form_data.get('duration_minutes','') }}" placeholder="0">
+        </div>
+      </div>
+
+      <div class="pb-grid">
+        <div class="pb-field">
           <label class="pb-label" for="budget">Budget (optional)</label>
           <input class="pb-input" id="budget" name="budget" type="text" placeholder="e.g. $150/hr or $400 flat" value="{{ form_data.get('budget','') }}">
         </div>
@@ -113,10 +124,6 @@
                 <option {% if form_data.get('session_type')=='Mixing session' %}selected{% endif %}>Mixing session</option>
                 <option {% if form_data.get('session_type')=='Mastering session' %}selected{% endif %}>Mastering session</option>
               </select>
-            </div>
-            <div class="pb-field">
-              <label class="pb-label" for="hours">Estimated hours</label>
-              <input class="pb-input" id="hours" name="hours" type="number" min="1" step="1" value="{{ form_data.get('hours','') }}">
             </div>
             <div class="pb-field">
               <label class="pb-label" for="people">People attending</label>
@@ -259,10 +266,6 @@
               </select>
             </div>
             <div class="pb-field">
-              <label class="pb-label" for="set_duration">Set duration (hours)</label>
-              <input class="pb-input" id="set_duration" name="set_duration" type="number" min="0.5" step="0.5" value="{{ form_data.get('set_duration','') }}">
-            </div>
-            <div class="pb-field">
               <label class="pb-label" for="equipment_provided">Equipment provided?</label>
               <select class="pb-select" id="equipment_provided" name="equipment_provided">
                 <option value="">Choose…</option>
@@ -288,10 +291,6 @@
                 <option {% if form_data.get('performance_type')=='Corporate event' %}selected{% endif %}>Corporate event</option>
                 <option {% if form_data.get('performance_type')=='Opening act' %}selected{% endif %}>Opening act</option>
               </select>
-            </div>
-            <div class="pb-field">
-              <label class="pb-label" for="set_duration_artist">Set duration (minutes)</label>
-              <input class="pb-input" id="set_duration_artist" name="set_duration_artist" type="number" min="15" step="15" value="{{ form_data.get('set_duration_artist','') }}">
             </div>
             <div class="pb-field">
               <label class="pb-label" for="venue_type">Venue type</label>
@@ -376,10 +375,6 @@
                 <option {% if form_data.get('event_type_emcee')=='Festival' %}selected{% endif %}>Festival</option>
                 <option {% if form_data.get('event_type_emcee')=='Award show' %}selected{% endif %}>Award show</option>
               </select>
-            </div>
-            <div class="pb-field">
-              <label class="pb-label" for="hosting_duration">Hosting duration (hours)</label>
-              <input class="pb-input" id="hosting_duration" name="hosting_duration" type="number" min="0.5" step="0.5" value="{{ form_data.get('hosting_duration','') }}">
             </div>
             <div class="pb-field">
               <label class="pb-label" for="style_emcee">Style/preference</label>

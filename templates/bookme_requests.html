@@ -242,14 +242,6 @@
                     <span class="booking-value">{{ b.location_text }}</span>
                   </div>
                 {% endif %}
-                {% if b.total_cents %}
-                  <div class="booking-meta-row">
-                    <span class="booking-label">Total:</span>
-                    <span class="booking-value">
-                      ${{ "%.2f" % (b.total_cents / 100.0) }}
-                    </span>
-                  </div>
-                {% endif %}
               </div>
               <div class="booking-side">
                 <span class="booking-status status-{{ b.status }}">
