@@ -1922,6 +1922,7 @@ class Booking(db.Model):
     total_cents = db.Column(db.Integer, nullable=True)
     quoted_total_cents = db.Column(db.Integer, nullable=True)
     quote_hourly_rate_cents = db.Column(db.Integer, nullable=True)
+    quote_calculation_text = db.Column(db.Text, nullable=True)
     quote_breakdown_text = db.Column(db.Text, nullable=True)
     deposit_base_cents = db.Column(db.Integer, nullable=True)
     beatfund_fee_total_cents = db.Column(db.Integer, nullable=True)
@@ -4115,6 +4116,8 @@ def _ensure_sqlite_booking_payment_columns():
             db.session.execute(text("ALTER TABLE booking ADD COLUMN quoted_total_cents INTEGER"))
         if "quote_hourly_rate_cents" not in cols:
             db.session.execute(text("ALTER TABLE booking ADD COLUMN quote_hourly_rate_cents INTEGER"))
+        if "quote_calculation_text" not in cols:
+            db.session.execute(text("ALTER TABLE booking ADD COLUMN quote_calculation_text TEXT"))
         if "quote_breakdown_text" not in cols:
             db.session.execute(text("ALTER TABLE booking ADD COLUMN quote_breakdown_text TEXT"))
         if "deposit_base_cents" not in cols:
@@ -4144,6 +4147,7 @@ def _ensure_postgres_booking_fee_columns():
             required = {
                 "quoted_total_cents",
                 "quote_hourly_rate_cents",
+                "quote_calculation_text",
                 "quote_breakdown_text",
                 "deposit_base_cents",
                 "beatfund_fee_total_cents",
@@ -4156,6 +4160,7 @@ def _ensure_postgres_booking_fee_columns():
                     ALTER TABLE booking
                       ADD COLUMN IF NOT EXISTS quoted_total_cents INTEGER,
                       ADD COLUMN IF NOT EXISTS quote_hourly_rate_cents INTEGER,
+                      ADD COLUMN IF NOT EXISTS quote_calculation_text TEXT,
                       ADD COLUMN IF NOT EXISTS quote_breakdown_text TEXT,
                       ADD COLUMN IF NOT EXISTS deposit_base_cents INTEGER,
                       ADD COLUMN IF NOT EXISTS beatfund_fee_total_cents INTEGER,
@@ -7605,31 +7610,41 @@ def booking_quote(booking_id: int):
         return redirect(url_for("booking_detail", booking_id=booking.id))
 
     hourly_rate_raw = (request.form.get("hourly_rate_dollars") or "").strip()
+    quote_total_raw = (request.form.get("quote_total_dollars") or "").strip()
     breakdown_text = (request.form.get("quote_breakdown_text") or "").strip()
+    calculation_text = (request.form.get("quote_calculation_text") or "").strip()
 
-    if not hourly_rate_raw:
-        flash("Hourly rate is required.", "error")
+    if not quote_total_raw:
+        flash("Quoted total is required.", "error")
         return redirect(url_for("booking_detail", booking_id=booking.id))
 
     try:
-        rate_decimal = Decimal(hourly_rate_raw)
+        total_decimal = Decimal(quote_total_raw)
     except Exception:
-        flash("Hourly rate must be a valid number.", "error")
+        flash("Quoted total must be a valid number.", "error")
         return redirect(url_for("booking_detail", booking_id=booking.id))
 
-    if rate_decimal <= 0:
-        flash("Hourly rate must be greater than 0.", "error")
+    if total_decimal <= 0:
+        flash("Quoted total must be greater than 0.", "error")
         return redirect(url_for("booking_detail", booking_id=booking.id))
 
     if not breakdown_text:
         flash("Please provide a quote breakdown.", "error")
         return redirect(url_for("booking_detail", booking_id=booking.id))
 
-    hourly_rate_cents = int((rate_decimal * 100).to_integral_value(rounding=ROUND_UP))
-    duration_hours = (duration_minutes + 59) // 60
-    quoted_total_cents = duration_hours * hourly_rate_cents
+    hourly_rate_cents = None
+    if hourly_rate_raw:
+        try:
+            rate_decimal = Decimal(hourly_rate_raw)
+            if rate_decimal > 0:
+                hourly_rate_cents = int((rate_decimal * 100).to_integral_value(rounding=ROUND_UP))
+        except Exception:
+            hourly_rate_cents = None
+
+    quoted_total_cents = int((total_decimal * 100).to_integral_value(rounding=ROUND_UP))
 
     booking.quote_hourly_rate_cents = hourly_rate_cents
+    booking.quote_calculation_text = calculation_text or None
     booking.quoted_total_cents = quoted_total_cents
     booking.total_cents = quoted_total_cents
     booking.quote_breakdown_text = breakdown_text
@@ -15619,6 +15634,7 @@ def admin_booking_schema():
                 booking_required = {
                     "quoted_total_cents",
                     "quote_hourly_rate_cents",
+                    "quote_calculation_text",
                     "quote_breakdown_text",
                     "deposit_base_cents",
                     "beatfund_fee_total_cents",
@@ -15669,6 +15685,7 @@ def admin_booking_schema():
             booking_required = {
                 "quoted_total_cents",
                 "quote_hourly_rate_cents",
+                "quote_calculation_text",
                 "quote_breakdown_text",
                 "deposit_base_cents",
                 "beatfund_fee_total_cents",
