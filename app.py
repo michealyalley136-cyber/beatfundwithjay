@@ -4053,6 +4053,14 @@ def _ensure_sqlite_order_payment_columns():
     if "stripe_payment_intent" not in cols:
         db.session.execute(text(f"ALTER TABLE {table} ADD COLUMN stripe_payment_intent VARCHAR(255)"))
         db.session.execute(text(f"CREATE INDEX IF NOT EXISTS ix_order_stripe_payment_intent ON {table} (stripe_payment_intent)"))
+        db.session.commit()
+    if "paid_at" not in cols:
+        db.session.execute(text(f"ALTER TABLE {table} ADD COLUMN paid_at DATETIME"))
+        db.session.commit()
+    if "status" in cols:
+        # Ensure we have an index for status filtering (SQLite won't auto-add it)
+        db.session.execute(text(f"CREATE INDEX IF NOT EXISTS ix_order_status ON {table} (status)"))
+        db.session.commit()
 
 
 def _ensure_sqlite_booking_payment_columns():
@@ -4165,14 +4173,96 @@ def _ensure_postgres_booking_fee_columns():
                 app.logger.info("[DB] Backfilled booking fee columns (defaults applied)")
     except Exception as e:
         app.logger.warning(f"[DB] Postgres booking fee patch skipped: {type(e).__name__}: {e}")
-        db.session.commit()
-    if "paid_at" not in cols:
-        db.session.execute(text(f"ALTER TABLE {table} ADD COLUMN paid_at DATETIME"))
-        db.session.commit()
-    if "status" in cols:
-        # Ensure we have an index for status filtering (SQLite won't auto-add it)
-        db.session.execute(text(f"CREATE INDEX IF NOT EXISTS ix_order_status ON {table} (status)"))
-        db.session.commit()
+
+
+def _ensure_postgres_payment_fee_columns():
+    """Add payment fee columns in Postgres if missing (safe, idempotent)."""
+    try:
+        if db.engine.url.get_backend_name() != "postgresql":
+            return
+    except Exception:
+        return
+
+    try:
+        with db.engine.begin() as conn:
+            rows = conn.execute(text("""
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_schema = 'public' AND table_name = 'payment'
+            """)).fetchall()
+            existing = {r[0] for r in rows}
+            required = {
+                "kind",
+                "base_amount_cents",
+                "beatfund_fee_cents",
+                "processing_fee_cents",
+                "total_paid_cents",
+                "refunded_base_cents",
+                "nonrefundable_processing_kept_cents",
+                "nonrefundable_beatfund_kept_cents",
+                "idempotency_key",
+                "external_id",
+                "booking_request_id",
+                "stripe_payment_intent_id",
+                "stripe_charge_id",
+            }
+            missing = sorted(required - existing)
+
+            if missing:
+                conn.execute(text("""
+                    ALTER TABLE payment
+                      ADD COLUMN IF NOT EXISTS kind TEXT,
+                      ADD COLUMN IF NOT EXISTS base_amount_cents INTEGER,
+                      ADD COLUMN IF NOT EXISTS beatfund_fee_cents INTEGER,
+                      ADD COLUMN IF NOT EXISTS processing_fee_cents INTEGER,
+                      ADD COLUMN IF NOT EXISTS total_paid_cents INTEGER,
+                      ADD COLUMN IF NOT EXISTS refunded_base_cents INTEGER DEFAULT 0,
+                      ADD COLUMN IF NOT EXISTS nonrefundable_processing_kept_cents INTEGER DEFAULT 0,
+                      ADD COLUMN IF NOT EXISTS nonrefundable_beatfund_kept_cents INTEGER DEFAULT 0,
+                      ADD COLUMN IF NOT EXISTS idempotency_key TEXT,
+                      ADD COLUMN IF NOT EXISTS external_id TEXT,
+                      ADD COLUMN IF NOT EXISTS booking_request_id INTEGER,
+                      ADD COLUMN IF NOT EXISTS stripe_payment_intent_id TEXT,
+                      ADD COLUMN IF NOT EXISTS stripe_charge_id TEXT;
+                """))
+                app.logger.warning(f"[DB] Added payment fee columns: {', '.join(missing)}")
+            else:
+                app.logger.info("[DB] Payment fee columns already present")
+
+            needs_backfill = conn.execute(text("""
+                SELECT 1
+                FROM payment
+                WHERE base_amount_cents IS NULL
+                   OR beatfund_fee_cents IS NULL
+                   OR processing_fee_cents IS NULL
+                   OR total_paid_cents IS NULL
+                   OR refunded_base_cents IS NULL
+                   OR nonrefundable_processing_kept_cents IS NULL
+                   OR nonrefundable_beatfund_kept_cents IS NULL
+                LIMIT 1
+            """)).first() is not None
+
+            if needs_backfill:
+                conn.execute(text("""
+                    UPDATE payment
+                    SET base_amount_cents = COALESCE(base_amount_cents, amount_cents),
+                        beatfund_fee_cents = COALESCE(beatfund_fee_cents, 0),
+                        processing_fee_cents = COALESCE(processing_fee_cents, 0),
+                        total_paid_cents = COALESCE(total_paid_cents, amount_cents),
+                        refunded_base_cents = COALESCE(refunded_base_cents, 0),
+                        nonrefundable_processing_kept_cents = COALESCE(nonrefundable_processing_kept_cents, processing_fee_cents),
+                        nonrefundable_beatfund_kept_cents = COALESCE(nonrefundable_beatfund_kept_cents, beatfund_fee_cents)
+                    WHERE base_amount_cents IS NULL
+                       OR beatfund_fee_cents IS NULL
+                       OR processing_fee_cents IS NULL
+                       OR total_paid_cents IS NULL
+                       OR refunded_base_cents IS NULL
+                       OR nonrefundable_processing_kept_cents IS NULL
+                       OR nonrefundable_beatfund_kept_cents IS NULL
+                """))
+                app.logger.info("[DB] Backfilled payment fee columns (defaults applied)")
+    except Exception as e:
+        app.logger.warning(f"[DB] Postgres payment fee patch skipped: {type(e).__name__}: {e}")
 
 
 def _ensure_sqlite_careers_tables():
@@ -4261,6 +4351,7 @@ def _bootstrap_schema_once():
 
         try:
             _ensure_postgres_booking_fee_columns()
+            _ensure_postgres_payment_fee_columns()
         except Exception:
             pass
         
@@ -4291,6 +4382,7 @@ def _bootstrap_schema_once():
         _ensure_sqlite_order_payment_columns()
         _ensure_sqlite_booking_payment_columns()
         _ensure_postgres_booking_fee_columns()
+        _ensure_postgres_payment_fee_columns()
     except Exception as e:
         app.logger.error(f"SQLite auto-migration failed: {type(e).__name__}: {str(e)}", exc_info=True)
         try:
@@ -7405,12 +7497,18 @@ def booking_detail(booking_id):
             db.session.commit()
             return redirect(url_for("booking_detail", booking_id=booking.id))
 
-    deposit_payment = Payment.query.filter_by(
-        booking_id=booking.id, kind=PaymentKind.deposit, status=PaymentStatus.succeeded
-    ).first()
-    balance_payment = Payment.query.filter_by(
-        booking_id=booking.id, kind=PaymentKind.balance, status=PaymentStatus.succeeded
-    ).first()
+    try:
+        deposit_payment = Payment.query.filter_by(
+            booking_id=booking.id, kind=PaymentKind.deposit, status=PaymentStatus.succeeded
+        ).first()
+        balance_payment = Payment.query.filter_by(
+            booking_id=booking.id, kind=PaymentKind.balance, status=PaymentStatus.succeeded
+        ).first()
+    except (ProgrammingError, OperationalError) as e:
+        db.session.rollback()
+        app.logger.warning(f"[DB] Payment kind lookup skipped: {type(e).__name__}: {e}")
+        deposit_payment = None
+        balance_payment = None
 
     deposit_breakdown = None
     balance_breakdown = None
@@ -15324,43 +15422,125 @@ def admin_fees():
 
 
 @app.route("/dashboard/admin/schema/booking", endpoint="admin_booking_schema")
+@app.route("/dashboard/admin/schema-check", endpoint="admin_schema_check")
 @role_required("admin")
 def admin_booking_schema():
-    """Admin schema check for booking fee columns (Postgres)."""
-    cols = []
+    """Admin schema check for booking/payment fee columns (Postgres)."""
+    booking_cols = []
+    payment_cols = []
     error = None
     has_fee_columns = False
-    sample_ok = False
+    has_payment_columns = False
+    has_payment_kind = False
+    booking_sample_ok = False
+    payment_sample_ok = False
 
     try:
         if db.engine.dialect.name == "postgresql":
             with db.engine.begin() as conn:
-                rows = conn.execute(text("""
+                booking_rows = conn.execute(text("""
                     SELECT column_name, data_type
                     FROM information_schema.columns
                     WHERE table_schema = 'public' AND table_name = 'booking'
                     ORDER BY ordinal_position
                 """)).fetchall()
-                cols = [{"name": r[0], "type": r[1]} for r in rows]
-                col_names = {r[0] for r in rows}
-                required = {"quoted_total_cents", "deposit_base_cents", "beatfund_fee_total_cents", "beatfund_fee_collected_cents"}
-                has_fee_columns = required.issubset(col_names)
-                # Simple probe to confirm column exists
-                conn.execute(text("SELECT quoted_total_cents FROM booking LIMIT 1"))
-                sample_ok = True
+                payment_rows = conn.execute(text("""
+                    SELECT column_name, data_type
+                    FROM information_schema.columns
+                    WHERE table_schema = 'public' AND table_name = 'payment'
+                    ORDER BY ordinal_position
+                """)).fetchall()
+
+                booking_cols = [{"name": r[0], "type": r[1]} for r in booking_rows]
+                payment_cols = [{"name": r[0], "type": r[1]} for r in payment_rows]
+
+                booking_names = {r[0] for r in booking_rows}
+                payment_names = {r[0] for r in payment_rows}
+
+                booking_required = {"quoted_total_cents", "deposit_base_cents", "beatfund_fee_total_cents", "beatfund_fee_collected_cents"}
+                payment_required = {
+                    "kind",
+                    "base_amount_cents",
+                    "beatfund_fee_cents",
+                    "processing_fee_cents",
+                    "total_paid_cents",
+                    "refunded_base_cents",
+                    "nonrefundable_processing_kept_cents",
+                    "nonrefundable_beatfund_kept_cents",
+                    "idempotency_key",
+                    "external_id",
+                    "booking_request_id",
+                    "stripe_payment_intent_id",
+                    "stripe_charge_id",
+                }
+
+                has_fee_columns = booking_required.issubset(booking_names)
+                has_payment_columns = payment_required.issubset(payment_names)
+                has_payment_kind = "kind" in payment_names
+
+                try:
+                    conn.execute(text("SELECT quoted_total_cents FROM booking LIMIT 1"))
+                    booking_sample_ok = True
+                except Exception:
+                    booking_sample_ok = False
+
+                try:
+                    conn.execute(text("SELECT kind FROM payment LIMIT 1"))
+                    payment_sample_ok = True
+                except Exception:
+                    payment_sample_ok = False
         else:
-            cols = [{"name": c, "type": "unknown"} for c in sorted(_sqlite_columns("booking"))]
-            required = {"quoted_total_cents", "deposit_base_cents", "beatfund_fee_total_cents", "beatfund_fee_collected_cents"}
-            has_fee_columns = required.issubset({c["name"] for c in cols})
-            sample_ok = True
+            booking_names = set()
+            payment_names = set()
+            if _sqlite_has_table("booking"):
+                booking_names = set(_sqlite_columns("booking"))
+            if _sqlite_has_table("payment"):
+                payment_names = set(_sqlite_columns("payment"))
+
+            booking_cols = [{"name": c, "type": "unknown"} for c in sorted(booking_names)]
+            payment_cols = [{"name": c, "type": "unknown"} for c in sorted(payment_names)]
+
+            booking_required = {"quoted_total_cents", "deposit_base_cents", "beatfund_fee_total_cents", "beatfund_fee_collected_cents"}
+            payment_required = {
+                "kind",
+                "base_amount_cents",
+                "beatfund_fee_cents",
+                "processing_fee_cents",
+                "total_paid_cents",
+                "refunded_base_cents",
+                "nonrefundable_processing_kept_cents",
+                "nonrefundable_beatfund_kept_cents",
+                "idempotency_key",
+                "external_id",
+                "booking_request_id",
+                "stripe_payment_intent_id",
+                "stripe_charge_id",
+            }
+
+            has_fee_columns = booking_required.issubset(booking_names)
+            has_payment_columns = payment_required.issubset(payment_names)
+            has_payment_kind = "kind" in payment_names
+            booking_sample_ok = bool(booking_names)
+            payment_sample_ok = bool(payment_names)
     except Exception as e:
         error = f"{type(e).__name__}: {str(e)[:200]}"
 
     return jsonify({
         "ok": error is None,
         "has_fee_columns": has_fee_columns,
-        "sample_ok": sample_ok,
-        "columns": cols,
+        "sample_ok": booking_sample_ok,
+        "columns": booking_cols,
+        "booking": {
+            "has_fee_columns": has_fee_columns,
+            "sample_ok": booking_sample_ok,
+            "columns": booking_cols,
+        },
+        "payment": {
+            "has_payment_columns": has_payment_columns,
+            "has_payment_kind": has_payment_kind,
+            "sample_ok": payment_sample_ok,
+            "columns": payment_cols,
+        },
         "error": error,
     })
 
