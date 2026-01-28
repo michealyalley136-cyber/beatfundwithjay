@@ -7087,7 +7087,8 @@ def bookme_request_confirm(provider_id):
         kind="info",
         title="New booking request",
         body=f"@{current_user.username} requested {pref}",
-        url=url_for("bookme_requests")
+        url=url_for("bookme_requests"),
+        commit=True,
     )
     
     flash("Booking request sent.", "success")
@@ -7234,7 +7235,8 @@ def bookme_request_status(req_id):
                             kind="warning",
                             title="Booking request declined",
                             body=f"@{current_user.username} declined your request.",
-                            url=url_for("bookme_requests")
+                            url=url_for("bookme_requests"),
+                            commit=True,
                         )
             
             flash("Booking request declined." if updated else "This request is no longer pending.",
@@ -7287,7 +7289,8 @@ def bookme_request_status(req_id):
                     title="Booking request accepted",
                     body=f"@{current_user.username} accepted your request for {req.preferred_time}",
                     url=url_for("bookme_requests"),
-                    email=True
+                    email=True,
+                    commit=True,
                 )
 
         flash("Accepted. Waiting for client to confirm & pay the hold fee.", "success")
@@ -7312,7 +7315,8 @@ def bookme_request_status(req_id):
                     kind="warning",
                     title="Booking request cancelled",
                     body=f"@{current_user.username} cancelled the request.",
-                    url=url_for("bookme_requests")
+                    url=url_for("bookme_requests"),
+                    commit=True,
                 )
             
             flash("Booking request cancelled.", "success")
@@ -8233,7 +8237,8 @@ def bookme_book_provider(username):
             kind="info",
             title="New booking request",
             body=f"@{current_user.username} requested {preferred_time}",
-            url=url_for("bookme_requests")
+            url=url_for("bookme_requests"),
+            commit=True,
         )
         
         flash("Booking request sent successfully.", "success")
@@ -11949,6 +11954,9 @@ def provider_dashboard():
     incoming_requests = BookingRequest.query.filter_by(
         provider_id=current_user.id, status=BookingStatus.pending
     ).count()
+    accepted_requests = BookingRequest.query.filter_by(
+        provider_id=current_user.id, status=BookingStatus.accepted
+    ).count()
     outgoing_requests = BookingRequest.query.filter_by(client_id=current_user.id).count()
     
     # Bookings as provider
@@ -11960,6 +11968,13 @@ def provider_dashboard():
         Booking.query
         .filter_by(provider_id=current_user.id)
         .order_by(Booking.created_at.desc())
+        .limit(10)
+        .all()
+    )
+    provider_recent_accepted_requests = (
+        BookingRequest.query
+        .filter_by(provider_id=current_user.id, status=BookingStatus.accepted)
+        .order_by(BookingRequest.created_at.desc())
         .limit(10)
         .all()
     )
@@ -11985,12 +12000,14 @@ def provider_dashboard():
         following_count=following_count,
         artist_can_take_gigs=artist_can_take_gigs,
         incoming_requests=incoming_requests,
+        accepted_requests=accepted_requests,
         outgoing_requests=outgoing_requests,
         provider_bookings_count=provider_bookings_count,
         provider_pending_bookings=provider_pending_bookings,
         client_bookings_count=client_bookings_count,
         client_pending_bookings=client_pending_bookings,
         provider_recent_bookings=provider_recent_bookings,
+        provider_recent_accepted_requests=provider_recent_accepted_requests,
         client_recent_bookings=client_recent_bookings,
     )
 

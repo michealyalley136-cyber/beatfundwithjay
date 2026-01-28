@@ -310,6 +310,11 @@
           <div class="hint">Session requests</div>
         </div>
         <div class="bf-kpi">
+          <div class="label">Accepted Requests</div>
+          <div class="value">{{ accepted_requests }}</div>
+          <div class="hint">Awaiting payment</div>
+        </div>
+        <div class="bf-kpi">
           <div class="label">Confirmed Sessions</div>
           <div class="value">{{ provider_bookings_count }}</div>
           <div class="hint">Total bookings</div>
@@ -376,16 +381,27 @@
     <!-- Recent Studio Sessions -->
     <div class="bf-card span-8">
       <h3>Recent Studio Sessions</h3>
-      {% if provider_recent_bookings and provider_recent_bookings|length > 0 %}
+      {% if (provider_recent_accepted_requests and provider_recent_accepted_requests|length > 0) or (provider_recent_bookings and provider_recent_bookings|length > 0) %}
         <div class="bf-list">
+          {% for r in provider_recent_accepted_requests[:5] %}
+            <div class="bf-row">
+              <div class="left">
+                <div class="title">Accepted request - Awaiting payment</div>
+                <div class="meta">
+                  {{ r.preferred_time }}{% if r.client %} - Client: @{{ r.client.username }}{% endif %}
+                </div>
+              </div>
+              <a class="bf-btn" href="{{ url_for('bookme_requests') }}">View</a>
+            </div>
+          {% endfor %}
           {% for b in provider_recent_bookings[:5] %}
             <div class="bf-row">
               <div class="left">
-                <div class="title">{{ b.event_title }} · {{ b.status }}</div>
+                <div class="title">{{ b.event_title }} - {{ b.status }}</div>
                 <div class="meta">
                   {% if b.event_datetime %}{{ b.event_datetime.strftime("%b %d, %Y %I:%M %p") }}{% endif %}
-                  {% if b.client %} · Client: @{{ b.client.username }}{% endif %}
-                  {% if b.location_text %} · {{ b.location_text }}{% endif %}
+                  {% if b.client %} - Client: @{{ b.client.username }}{% endif %}
+                  {% if b.location_text %} - {{ b.location_text }}{% endif %}
                 </div>
               </div>
               <a class="bf-btn" href="{{ url_for('booking_detail', booking_id=b.id) }}">View</a>
@@ -413,6 +429,7 @@
         </div>
         <div style="display: flex; gap: 8px; flex-wrap: wrap;">
           <span class="bf-chip">{{ provider_bookings_count }} confirmed</span>
+          <span class="bf-chip">{{ accepted_requests }} accepted</span>
           <span class="bf-chip">{{ provider_pending_bookings }} pending</span>
         </div>
       </div>
