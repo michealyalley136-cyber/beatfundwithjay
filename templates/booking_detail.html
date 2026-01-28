@@ -501,18 +501,25 @@
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <div class="bf-meta-row">
                 <div style="flex: 1;">
-                  <div class="bf-meta-label">Hourly rate ($/hr) (optional)</div>
-                  <input type="number" name="hourly_rate_dollars" class="bf-input" min="0" step="0.01" value="{{ '%.2f'|format(booking.quote_hourly_rate_cents / 100.0) if booking.quote_hourly_rate_cents else '' }}">
+                  <div class="bf-meta-label">Billable hours</div>
+                  {% set default_billable_minutes = booking.quote_billable_minutes or ((booking.duration_minutes + 59) // 60) * 60 %}
+                  <input type="number" name="billable_hours" class="bf-input" min="0" step="0.25" value="{{ '%.2f'|format(default_billable_minutes / 60.0) }}" required>
                 </div>
                 <div style="flex: 1;">
-                  <div class="bf-meta-label">Quoted total ($)</div>
-                  <input type="number" name="quote_total_dollars" class="bf-input" min="0" step="0.01" value="{{ '%.2f'|format(booking.quoted_total_cents / 100.0) if booking.quoted_total_cents else '' }}" required>
+                  <div class="bf-meta-label">Hourly rate ($/hr)</div>
+                  <input type="number" name="hourly_rate_dollars" class="bf-input" min="0" step="0.01" value="{{ '%.2f'|format(booking.quote_hourly_rate_cents / 100.0) if booking.quote_hourly_rate_cents else '' }}" required>
                 </div>
               </div>
               <div class="bf-meta-row">
                 <div style="flex: 1;">
-                  <div class="bf-meta-label">Calculated as (optional)</div>
-                  <input type="text" name="quote_calculation_text" class="bf-input" placeholder="e.g. 6 hrs × $50/hr" value="{{ booking.quote_calculation_text or '' }}">
+                  <div class="bf-meta-label">Calculated total</div>
+                  <div class="bf-meta-value" id="quote-total-display">
+                    {% if booking.quoted_total_cents %}
+                      ${{ "%.2f"|format(booking.quoted_total_cents / 100.0) }}
+                    {% else %}
+                      —
+                    {% endif %}
+                  </div>
                 </div>
               </div>
               <div class="bf-meta-row">
@@ -521,6 +528,9 @@
                   <textarea name="quote_breakdown_text" class="bf-textarea" placeholder="Studio time: 3 hrs x $50/hr = $150&#10;Engineer: $25&#10;Total: $175" required>{{ booking.quote_breakdown_text or "" }}</textarea>
                 </div>
               </div>
+              <div class="bf-payment-note" id="quote-calc-note">
+                Calculated as: <span id="quote-hours-display">{{ '%.2f'|format(default_billable_minutes / 60.0) }}</span> hrs × $<span id="quote-hourly-display">{{ '%.2f'|format(booking.quote_hourly_rate_cents / 100.0) if booking.quote_hourly_rate_cents else '0.00' }}</span>/hr
+              </div>
               <div class="bf-payment-actions">
                 <button class="bf-btn bf-btn-primary" type="submit">Send quote</button>
               </div>
@@ -528,19 +538,31 @@
           {% elif is_client %}
             {% if booking.quoted_total_cents %}
               <div class="bf-fee-row">
-                <span>Duration</span>
-                <span>{{ duration_hours }} hr{% if duration_hours != 1 %}s{% endif %}</span>
+                <span>Requested duration</span>
+                <span>
+                  {% if booking.duration_minutes %}
+                    {{ (booking.duration_minutes / 60.0)|round(2) }} hrs
+                  {% else %}
+                    —
+                  {% endif %}
+                </span>
               </div>
+              {% if booking.quote_billable_minutes %}
+                <div class="bf-fee-row">
+                  <span>Provider billable hours</span>
+                  <span>{{ '%.2f'|format(booking.quote_billable_minutes / 60.0) }} hrs</span>
+                </div>
+              {% endif %}
               {% if booking.quote_hourly_rate_cents %}
                 <div class="bf-fee-row">
                   <span>Hourly rate</span>
                   <span>${{ "%.2f"|format(booking.quote_hourly_rate_cents / 100.0) }}/hr</span>
                 </div>
               {% endif %}
-              {% if booking.quote_calculation_text %}
+              {% if booking.quote_billable_minutes and booking.quote_hourly_rate_cents %}
                 <div class="bf-fee-row">
                   <span>Calculated as</span>
-                  <span>{{ booking.quote_calculation_text }}</span>
+                  <span>{{ '%.2f'|format(booking.quote_billable_minutes / 60.0) }} hrs × ${{ "%.2f"|format(booking.quote_hourly_rate_cents / 100.0) }}/hr</span>
                 </div>
               {% endif %}
               {% if booking.quote_breakdown_text %}
@@ -716,6 +738,39 @@
     </section>
   </div>
 </div>
+
+{% if is_provider and booking.duration_minutes %}
+<script>
+  (function () {
+    const hoursInput = document.querySelector('input[name="billable_hours"]');
+    const rateInput = document.querySelector('input[name="hourly_rate_dollars"]');
+    const totalDisplay = document.getElementById('quote-total-display');
+    const hoursDisplay = document.getElementById('quote-hours-display');
+    const hourlyDisplay = document.getElementById('quote-hourly-display');
+
+    if (!hoursInput || !rateInput || !totalDisplay) return;
+
+    function updateQuote() {
+      const hours = parseFloat(hoursInput.value || '0');
+      const rate = parseFloat(rateInput.value || '0');
+      if (!isFinite(hours) || !isFinite(rate) || hours <= 0 || rate <= 0) {
+        totalDisplay.textContent = '—';
+        if (hoursDisplay) hoursDisplay.textContent = (hours > 0 ? hours.toFixed(2) : '0.00');
+        if (hourlyDisplay) hourlyDisplay.textContent = (rate > 0 ? rate.toFixed(2) : '0.00');
+        return;
+      }
+      const total = hours * rate;
+      totalDisplay.textContent = `$${total.toFixed(2)}`;
+      if (hoursDisplay) hoursDisplay.textContent = hours.toFixed(2);
+      if (hourlyDisplay) hourlyDisplay.textContent = rate.toFixed(2);
+    }
+
+    hoursInput.addEventListener('input', updateQuote);
+    rateInput.addEventListener('input', updateQuote);
+    updateQuote();
+  })();
+</script>
+{% endif %}
 
 {% if is_client and stripe_enabled and (deposit_due or balance_due) %}
 <script src="https://js.stripe.com/v3/"></script>
