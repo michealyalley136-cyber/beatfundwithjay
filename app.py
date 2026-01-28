@@ -2054,6 +2054,7 @@ class MessageModerationLog(db.Model):
 class BookingStatus(str, enum.Enum):
     pending = "pending"
     accepted = "accepted"
+    confirmed = "confirmed"
     declined = "declined"
     cancelled = "cancelled"
 
@@ -4256,6 +4257,7 @@ def _ensure_postgres_payment_fee_columns():
                 "idempotency_key",
                 "external_id",
                 "booking_request_id",
+                "booking_id",
                 "stripe_payment_intent_id",
                 "stripe_charge_id",
             }
@@ -4275,10 +4277,15 @@ def _ensure_postgres_payment_fee_columns():
                       ADD COLUMN IF NOT EXISTS idempotency_key TEXT,
                       ADD COLUMN IF NOT EXISTS external_id TEXT,
                       ADD COLUMN IF NOT EXISTS booking_request_id INTEGER,
+                      ADD COLUMN IF NOT EXISTS booking_id INTEGER,
                       ADD COLUMN IF NOT EXISTS stripe_payment_intent_id TEXT,
                       ADD COLUMN IF NOT EXISTS stripe_charge_id TEXT;
                 """))
                 app.logger.warning(f"[DB] Added payment fee columns: {', '.join(missing)}")
+                try:
+                    conn.execute(text("CREATE INDEX IF NOT EXISTS ix_payment_booking_id ON payment (booking_id)"))
+                except Exception:
+                    pass
             else:
                 app.logger.info("[DB] Payment fee columns already present")
 
@@ -15741,6 +15748,7 @@ def admin_booking_schema():
                     "idempotency_key",
                     "external_id",
                     "booking_request_id",
+                    "booking_id",
                     "stripe_payment_intent_id",
                     "stripe_charge_id",
                 }
@@ -15793,6 +15801,7 @@ def admin_booking_schema():
                 "idempotency_key",
                 "external_id",
                 "booking_request_id",
+                "booking_id",
                 "stripe_payment_intent_id",
                 "stripe_charge_id",
             }
