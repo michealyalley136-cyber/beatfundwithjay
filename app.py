@@ -4321,6 +4321,18 @@ def _ensure_postgres_payment_fee_columns():
                        OR nonrefundable_beatfund_kept_cents IS NULL
                 """))
                 app.logger.info("[DB] Backfilled payment fee columns (defaults applied)")
+            try:
+                conn.execute(text("""
+                    UPDATE payment p
+                    SET booking_id = br.booking_id
+                    FROM booking_request br
+                    WHERE p.booking_request_id = br.id
+                      AND p.booking_id IS NULL
+                      AND br.booking_id IS NOT NULL
+                """))
+                app.logger.info("[DB] Backfilled payment.booking_id from booking_request")
+            except Exception:
+                pass
     except Exception as e:
         app.logger.warning(f"[DB] Postgres payment fee patch skipped: {type(e).__name__}: {e}")
 
@@ -7367,6 +7379,12 @@ def booking_payment_intent(booking_id: int):
     if not ctx["quoted_total_cents"]:
         return jsonify({"error": "Booking total must be set before payment."}), 400
 
+    req = None
+    try:
+        req = BookingRequest.query.filter_by(booking_id=booking.id).first()
+    except Exception:
+        req = None
+
     if kind == PaymentKind.balance:
         if booking.event_datetime:
             now = datetime.utcnow()
@@ -7375,16 +7393,28 @@ def booking_payment_intent(booking_id: int):
                 return jsonify({"error": "Balance payment is no longer available after the booking time."}), 400
             if now >= balance_due_by:
                 return jsonify({
-                    "error": f"Balance must be paid at least {BOOKING_BALANCE_DEADLINE_HOURS} hours before the booking time."
+                    "error": (
+                        f"Balance must be paid at least {BOOKING_BALANCE_DEADLINE_HOURS} hours before the booking time."
+                    )
                 }), 400
         deposit_paid = Payment.query.filter_by(
             booking_id=booking.id, kind=PaymentKind.deposit, status=PaymentStatus.succeeded
         ).first()
+        if not deposit_paid and req:
+            deposit_paid = Payment.query.filter_by(
+                booking_request_id=req.id, kind=PaymentKind.deposit, status=PaymentStatus.succeeded
+            ).first()
         if not deposit_paid and (ctx.get("deposit_base_cents") or 0) > 0:
             return jsonify({"error": "Deposit must be paid before the balance."}), 400
     elif kind == PaymentKind.deposit:
         if booking.event_datetime and datetime.utcnow() >= booking.event_datetime:
             return jsonify({"error": "Deposit payment is no longer available after the booking time."}), 400
+        if req:
+            existing_hold = Payment.query.filter_by(
+                booking_request_id=req.id, kind=PaymentKind.deposit, status=PaymentStatus.succeeded
+            ).first()
+            if existing_hold:
+                return jsonify({"error": "Deposit already paid."}), 409
 
     existing_success = Payment.query.filter_by(
         booking_id=booking.id, kind=kind, status=PaymentStatus.succeeded
@@ -7592,6 +7622,19 @@ def booking_detail(booking_id):
         app.logger.warning(f"[DB] Payment kind lookup skipped: {type(e).__name__}: {e}")
         deposit_payment = None
         balance_payment = None
+
+    if not deposit_payment:
+        try:
+            req = BookingRequest.query.filter_by(booking_id=booking.id).first()
+        except Exception:
+            req = None
+        if req:
+            try:
+                deposit_payment = Payment.query.filter_by(
+                    booking_request_id=req.id, kind=PaymentKind.deposit, status=PaymentStatus.succeeded
+                ).first()
+            except Exception:
+                deposit_payment = deposit_payment
 
     deposit_breakdown = None
     balance_breakdown = None
@@ -10101,6 +10144,19 @@ def checkout_hold_fee_success():
                     meta=f"hold fee for booking #{booking.id} with @{provider.username} (Stripe payment - held in escrow)"
                 )
 
+                # Credit provider ledger for hold fee (Stripe payment)
+                try:
+                    provider_w = Wallet.query.filter_by(user_id=provider.id).first()
+                    if not provider_w:
+                        provider_w = Wallet(user_id=provider.id)
+                        db.session.add(provider_w)
+                        db.session.flush()
+                    meta_income = f"booking #{booking.id} deposit (Stripe)"
+                    if not LedgerEntry.query.filter_by(wallet_id=provider_w.id, entry_type=EntryType.sale_income, meta=meta_income).first():
+                        post_ledger(provider_w, EntryType.sale_income, hold_fee_cents, meta=meta_income)
+                except Exception:
+                    app.logger.warning("Hold fee: unable to post provider ledger entry")
+
                 # Store payment breakdown for deposit (Stripe Checkout uses a PaymentIntent internally)
                 try:
                     payment_intent_id = getattr(checkout_session, "payment_intent", None)
@@ -12029,13 +12085,17 @@ def provider_dashboard():
         .limit(10)
         .all()
     )
-    provider_recent_accepted_requests = (
-        BookingRequest.query
-        .filter_by(provider_id=current_user.id, status=BookingStatus.accepted)
-        .order_by(BookingRequest.created_at.desc())
-        .limit(10)
-        .all()
-    )
+    provider_recent_accepted_requests = []
+    try:
+        provider_recent_accepted_requests = (
+            BookingRequest.query
+            .filter_by(provider_id=current_user.id, status=BookingStatus.accepted)
+            .order_by(BookingRequest.created_at.desc())
+            .limit(10)
+            .all()
+        )
+    except Exception:
+        provider_recent_accepted_requests = []
     
     # Bookings as client
     client_bookings_count = Booking.query.filter_by(client_id=current_user.id).count()
