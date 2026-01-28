@@ -7471,12 +7471,17 @@ def booking_detail(booking_id):
 
                 # Update duration
                 duration_minutes_raw = (request.form.get("duration_minutes") or "").strip()
-                if duration_minutes_raw:
-                    try:
-                        booking.duration_minutes = int(duration_minutes_raw) if duration_minutes_raw else None
-                    except ValueError:
-                        flash("Duration must be a number.", "error")
-                        return redirect(url_for("booking_detail", booking_id=booking.id))
+                if not duration_minutes_raw:
+                    flash("Duration is required.", "error")
+                    return redirect(url_for("booking_detail", booking_id=booking.id))
+                try:
+                    booking.duration_minutes = int(duration_minutes_raw)
+                except ValueError:
+                    flash("Duration must be a number.", "error")
+                    return redirect(url_for("booking_detail", booking_id=booking.id))
+                if booking.duration_minutes <= 0:
+                    flash("Duration must be greater than 0 minutes.", "error")
+                    return redirect(url_for("booking_detail", booking_id=booking.id))
 
                 # Update location
                 location_text = (request.form.get("location_text") or "").strip()

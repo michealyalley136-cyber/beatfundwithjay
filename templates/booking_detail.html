@@ -362,8 +362,8 @@
 
           <div class="bf-meta-row">
             <div>
-              <div class="bf-meta-label">Duration (minutes)</div>
-              <input type="number" name="duration_minutes" class="bf-input" value="{{ booking.duration_minutes or '' }}" min="1">
+              <div class="bf-meta-label">Duration (required, minutes)</div>
+              <input type="number" name="duration_minutes" class="bf-input" value="{{ booking.duration_minutes or '' }}" min="1" required>
             </div>
             <div>
               <div class="bf-meta-label">Total Amount ($)</div>
