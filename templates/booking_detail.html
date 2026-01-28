@@ -575,9 +575,13 @@
                 <strong>Quoted total</strong>
                 <strong>${{ "%.2f"|format(booking.quoted_total_cents / 100.0) }}</strong>
               </div>
-              <div class="bf-payment-actions">
-                <a class="bf-btn bf-btn-primary" href="#booking-payment-section">Accept quote &amp; pay deposit</a>
-              </div>
+              {% if deposit_due %}
+                <div class="bf-payment-actions">
+                  <button class="bf-btn bf-btn-primary" type="button" data-payment-kind="deposit" data-scroll-target="#booking-payment-section">
+                    Accept quote &amp; pay deposit
+                  </button>
+                </div>
+              {% endif %}
             {% else %}
               <div class="bf-meta-value">Waiting for the provider to send a quote.</div>
             {% endif %}
@@ -633,6 +637,12 @@
                 <strong>Total</strong>
                 <strong>${{ '%.2f'|format(balance_breakdown.total_cents / 100.0) }}</strong>
               </div>
+              {% if balance_due_by %}
+                <div class="bf-payment-note">Balance due by {{ balance_due_by.strftime("%b %d, %Y %I:%M %p") }} ({{ BOOKING_BALANCE_DEADLINE_HOURS }}h before booking).</div>
+              {% endif %}
+              {% if balance_blocked_reason %}
+                <div class="bf-payment-note" style="color:#fca5a5;">{{ balance_blocked_reason }}</div>
+              {% endif %}
             {% elif deposit_breakdown and not balance_due %}
               <div class="bf-meta-value" style="margin-top:10px;">Balance paid or not required.</div>
             {% endif %}
@@ -645,7 +655,9 @@
                   <button class="bf-btn bf-btn-primary" type="button" data-payment-kind="deposit">Pay deposit</button>
                 {% endif %}
                 {% if balance_due %}
-                  <button class="bf-btn bf-btn-primary" type="button" data-payment-kind="balance">Pay balance</button>
+                  <button class="bf-btn bf-btn-primary" type="button" data-payment-kind="balance" {% if balance_blocked %}disabled{% endif %}>
+                    Pay balance
+                  </button>
                 {% endif %}
               </div>
               <div class="bf-payment-note">Fees are shown before payment. Processing and BeatFund fees are non-refundable.</div>
@@ -787,6 +799,13 @@
 
     async function startPayment(kind, button) {
       if (!csrfToken) return;
+      const scrollTarget = button?.dataset?.scrollTarget;
+      if (scrollTarget) {
+        const targetEl = document.querySelector(scrollTarget);
+        if (targetEl) {
+          targetEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      }
       button.disabled = true;
       const original = button.textContent;
       button.textContent = 'Processing...';

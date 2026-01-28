@@ -137,6 +137,7 @@ if BEATFUND_FEE_CAP_CENTS <= 0:
 STRIPE_PROC_RATE = _env_decimal("STRIPE_PROC_RATE", "0.029")
 STRIPE_PROC_FIXED_CENTS = _env_int("STRIPE_PROC_FIXED_CENTS", 30)
 ALLOW_REFUND_BF_FEE_ON_PROVIDER_FAULT = _env_bool("ALLOW_REFUND_BF_FEE_ON_PROVIDER_FAULT", True)
+BOOKING_BALANCE_DEADLINE_HOURS = _env_int("BOOKING_BALANCE_DEADLINE_HOURS", 48)
 
 
 # =========================================================
@@ -7360,11 +7361,23 @@ def booking_payment_intent(booking_id: int):
         return jsonify({"error": "Booking total must be set before payment."}), 400
 
     if kind == PaymentKind.balance:
+        if booking.event_datetime:
+            now = datetime.utcnow()
+            balance_due_by = booking.event_datetime - timedelta(hours=BOOKING_BALANCE_DEADLINE_HOURS)
+            if now >= booking.event_datetime:
+                return jsonify({"error": "Balance payment is no longer available after the booking time."}), 400
+            if now >= balance_due_by:
+                return jsonify({
+                    "error": f"Balance must be paid at least {BOOKING_BALANCE_DEADLINE_HOURS} hours before the booking time."
+                }), 400
         deposit_paid = Payment.query.filter_by(
             booking_id=booking.id, kind=PaymentKind.deposit, status=PaymentStatus.succeeded
         ).first()
         if not deposit_paid and (ctx.get("deposit_base_cents") or 0) > 0:
             return jsonify({"error": "Deposit must be paid before the balance."}), 400
+    elif kind == PaymentKind.deposit:
+        if booking.event_datetime and datetime.utcnow() >= booking.event_datetime:
+            return jsonify({"error": "Deposit payment is no longer available after the booking time."}), 400
 
     existing_success = Payment.query.filter_by(
         booking_id=booking.id, kind=kind, status=PaymentStatus.succeeded
@@ -7577,6 +7590,9 @@ def booking_detail(booking_id):
     balance_breakdown = None
     deposit_due = False
     balance_due = False
+    balance_blocked = False
+    balance_blocked_reason = None
+    balance_due_by = None
 
     if is_client:
         deposit_breakdown = compute_booking_payment_breakdown(booking, PaymentKind.deposit)
@@ -7587,6 +7603,18 @@ def booking_detail(booking_id):
             balance_breakdown = compute_booking_payment_breakdown(booking, PaymentKind.balance)
             if balance_breakdown and (balance_breakdown.get("base_cents") or 0) > 0 and not balance_payment:
                 balance_due = True
+
+        if booking.event_datetime and balance_due:
+            now = datetime.utcnow()
+            balance_due_by = booking.event_datetime - timedelta(hours=BOOKING_BALANCE_DEADLINE_HOURS)
+            if now >= booking.event_datetime:
+                balance_blocked = True
+                balance_blocked_reason = "Balance payment is no longer available after the booking time."
+            elif now >= balance_due_by:
+                balance_blocked = True
+                balance_blocked_reason = (
+                    f"Balance must be paid at least {BOOKING_BALANCE_DEADLINE_HOURS} hours before the booking time."
+                )
 
     stripe_enabled = bool(STRIPE_AVAILABLE and STRIPE_SECRET_KEY and STRIPE_PUBLISHABLE_KEY)
 
@@ -7600,10 +7628,14 @@ def booking_detail(booking_id):
         balance_breakdown=balance_breakdown,
         deposit_due=deposit_due,
         balance_due=balance_due,
+        balance_blocked=balance_blocked,
+        balance_blocked_reason=balance_blocked_reason,
+        balance_due_by=balance_due_by,
         deposit_payment=deposit_payment,
         balance_payment=balance_payment,
         stripe_enabled=stripe_enabled,
         stripe_publishable_key=STRIPE_PUBLISHABLE_KEY,
+        BOOKING_BALANCE_DEADLINE_HOURS=BOOKING_BALANCE_DEADLINE_HOURS,
     )
 
 
@@ -9226,6 +9258,25 @@ def stripe_webhook():
                             booking.quoted_total_cents = booking.total_cents
                         if booking.beatfund_fee_total_cents is None and booking.quoted_total_cents is not None:
                             booking.beatfund_fee_total_cents = calc_beatfund_fee_cents(int(booking.quoted_total_cents))
+                        try:
+                            provider_wallet = Wallet.query.filter_by(user_id=booking.provider_id).first() if booking.provider_id else None
+                            if not provider_wallet and booking.provider_id:
+                                provider_wallet = Wallet(user_id=booking.provider_id)
+                                db.session.add(provider_wallet)
+                                db.session.flush()
+
+                            base_cents = int(payment.base_amount_cents or 0)
+                            if provider_wallet and base_cents > 0:
+                                kind_label = payment.kind.value if payment.kind else "payment"
+                                meta = f"booking #{booking.id} {kind_label} (Stripe)"
+                                if not LedgerEntry.query.filter_by(
+                                    wallet_id=provider_wallet.id,
+                                    entry_type=EntryType.sale_income,
+                                    meta=meta,
+                                ).first():
+                                    post_ledger(provider_wallet, EntryType.sale_income, base_cents, meta=meta)
+                        except Exception:
+                            app.logger.warning("Stripe webhook: unable to post booking ledger entry")
             except Exception:
                 app.logger.exception(f"Stripe webhook: error finalizing booking payment_id={getattr(payment, 'id', None)} intent={pi.get('id')}")
                 _mark_row(StripeWebhookEventStatus.failed, "booking_payment_finalize_failed")
