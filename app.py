@@ -3269,6 +3269,11 @@ def calc_beatfund_fee_cents(service_cents: int) -> int:
     return fee_cents
 
 
+def calc_beatfund_fee_total(service_total_cents: int) -> int:
+    """Alias helper for booking BeatFund fee calculation."""
+    return calc_beatfund_fee_cents(service_total_cents)
+
+
 def calc_total_and_processing(base_cents: int, beatfund_fee_cents: int) -> tuple[int, int]:
     """
     Compute total charge and processing fee so that after Stripe fees:
@@ -3365,7 +3370,13 @@ def _resolve_booking_fee_fields(booking: "Booking") -> tuple[dict, bool]:
     )
 
 
-def compute_booking_payment_breakdown(booking: "Booking", kind: PaymentKind) -> dict | None:
+def compute_booking_payment_breakdown(
+    booking: "Booking",
+    kind: PaymentKind,
+    *,
+    base_paid_cents: int | None = None,
+    bf_paid_cents: int | None = None,
+) -> dict | None:
     ctx, _ = _resolve_booking_fee_fields(booking)
     quoted_total_cents = ctx["quoted_total_cents"]
     if quoted_total_cents is None or quoted_total_cents <= 0:
@@ -3374,6 +3385,8 @@ def compute_booking_payment_breakdown(booking: "Booking", kind: PaymentKind) -> 
     deposit_base_cents = min(int(ctx["deposit_base_cents"] or 0), int(quoted_total_cents))
     beatfund_fee_total_cents = int(ctx["beatfund_fee_total_cents"] or 0)
     beatfund_fee_collected_cents = int(ctx["beatfund_fee_collected_cents"] or 0)
+    if bf_paid_cents is not None:
+        beatfund_fee_collected_cents = max(0, int(bf_paid_cents))
 
     fee_deposit, _fee_balance = allocate_fee_between_deposit_and_balance(beatfund_fee_total_cents)
 
@@ -3381,7 +3394,8 @@ def compute_booking_payment_breakdown(booking: "Booking", kind: PaymentKind) -> 
         base_cents = deposit_base_cents
         beatfund_fee_cents = fee_deposit
     else:
-        base_cents = max(0, int(quoted_total_cents) - deposit_base_cents)
+        paid_base = deposit_base_cents if base_paid_cents is None else max(0, int(base_paid_cents))
+        base_cents = max(0, int(quoted_total_cents) - paid_base)
         beatfund_fee_cents = max(0, beatfund_fee_total_cents - beatfund_fee_collected_cents)
 
     if base_cents <= 0 and beatfund_fee_cents <= 0:
@@ -3397,6 +3411,25 @@ def compute_booking_payment_breakdown(booking: "Booking", kind: PaymentKind) -> 
         "deposit_base_cents": deposit_base_cents,
         "beatfund_fee_total_cents": beatfund_fee_total_cents,
         "beatfund_fee_collected_cents": beatfund_fee_collected_cents,
+    }
+
+
+def sum_successful_payments(booking: "Booking", booking_request: "BookingRequest" | None = None) -> dict:
+    """Sum successful payments for a booking (includes legacy booking_request payments)."""
+    filters = [Payment.status == PaymentStatus.succeeded]
+    if booking_request:
+        filters.append(or_(Payment.booking_id == booking.id, Payment.booking_request_id == booking_request.id))
+    else:
+        filters.append(Payment.booking_id == booking.id)
+
+    payments = Payment.query.filter(*filters).all()
+    base_paid = sum(int(p.base_amount_cents or 0) for p in payments)
+    bf_paid = sum(int(p.beatfund_fee_cents or 0) for p in payments)
+    total_paid = sum(int(p.total_paid_cents or p.amount_cents or 0) for p in payments)
+    return {
+        "base_paid_cents": base_paid,
+        "bf_paid_cents": bf_paid,
+        "total_paid_cents": total_paid,
     }
 
 
@@ -7372,81 +7405,159 @@ def booking_payment_intent(booking_id: int):
     except Exception:
         return jsonify({"error": "Invalid payment kind."}), 400
 
+    payload, status = _create_booking_payment_intent_for_kind(booking, kind)
+    return jsonify(payload), status
+
+
+def _get_booking_request_for_payment(booking: "Booking") -> "BookingRequest" | None:
+    try:
+        return BookingRequest.query.filter_by(booking_id=booking.id).first()
+    except Exception:
+        return None
+
+
+def _get_booking_service_total_ctx(booking: "Booking") -> tuple[int | None, dict]:
     ctx, changed = _resolve_booking_fee_fields(booking)
     if changed:
         db.session.commit()
+    service_total_cents = ctx.get("quoted_total_cents")
+    if service_total_cents is None or int(service_total_cents) <= 0:
+        return None, ctx
+    return int(service_total_cents), ctx
 
-    if not ctx["quoted_total_cents"]:
-        return jsonify({"error": "Booking total must be set before payment."}), 400
 
-    req = None
+def _find_existing_booking_payment(
+    booking: "Booking",
+    kind: PaymentKind,
+    booking_request: "BookingRequest" | None = None,
+) -> "Payment" | None:
+    filters = [
+        Payment.kind == kind,
+        Payment.status.in_([PaymentStatus.created, PaymentStatus.processing, PaymentStatus.succeeded]),
+    ]
+    if booking_request:
+        filters.append(or_(Payment.booking_id == booking.id, Payment.booking_request_id == booking_request.id))
+    else:
+        filters.append(Payment.booking_id == booking.id)
+    return Payment.query.filter(*filters).order_by(Payment.created_at.desc()).first()
+
+
+def _reuse_payment_intent(payment: "Payment") -> tuple[str | None, str | None]:
+    if not payment or not payment.stripe_payment_intent_id:
+        return None, None
     try:
-        req = BookingRequest.query.filter_by(booking_id=booking.id).first()
+        intent = stripe.PaymentIntent.retrieve(payment.stripe_payment_intent_id)
     except Exception:
-        req = None
+        return None, None
+    intent_status = getattr(intent, "status", None) or intent.get("status")
+    if intent_status in ("succeeded", "canceled"):
+        return None, intent_status
+    client_secret = getattr(intent, "client_secret", None) or intent.get("client_secret")
+    return client_secret, intent_status
+
+
+def _create_booking_payment_intent_for_kind(booking: "Booking", kind: PaymentKind) -> tuple[dict, int]:
+    service_total_cents, ctx = _get_booking_service_total_ctx(booking)
+    if not service_total_cents:
+        return {"error": "Booking total must be set before payment."}, 400
+
+    booking_request = _get_booking_request_for_payment(booking)
+    sums = sum_successful_payments(booking, booking_request)
+    base_paid_cents = sums.get("base_paid_cents", 0)
+    bf_paid_cents = sums.get("bf_paid_cents", 0)
+
+    deposit_base_cents = min(int(ctx.get("deposit_base_cents") or HOLD_FEE_CENTS), int(service_total_cents))
+    beatfund_fee_total_cents = int(ctx.get("beatfund_fee_total_cents") or calc_beatfund_fee_total(service_total_cents))
 
     if kind == PaymentKind.balance:
         if booking.event_datetime:
             now = datetime.utcnow()
             balance_due_by = booking.event_datetime - timedelta(hours=BOOKING_BALANCE_DEADLINE_HOURS)
             if now >= booking.event_datetime:
-                return jsonify({"error": "Balance payment is no longer available after the booking time."}), 400
+                return {"error": "Balance payment is no longer available after the booking time."}, 400
             if now >= balance_due_by:
-                return jsonify({
+                return {
                     "error": (
                         f"Balance must be paid at least {BOOKING_BALANCE_DEADLINE_HOURS} hours before the booking time."
                     )
-                }), 400
-        deposit_paid = Payment.query.filter_by(
-            booking_id=booking.id, kind=PaymentKind.deposit, status=PaymentStatus.succeeded
-        ).first()
-        if not deposit_paid and req:
-            deposit_paid = Payment.query.filter_by(
-                booking_request_id=req.id, kind=PaymentKind.deposit, status=PaymentStatus.succeeded
-            ).first()
-        if not deposit_paid and (ctx.get("deposit_base_cents") or 0) > 0:
-            return jsonify({"error": "Deposit must be paid before the balance."}), 400
-    elif kind == PaymentKind.deposit:
+                }, 400
+
+    existing = _find_existing_booking_payment(booking, kind, booking_request)
+    if existing:
+        if existing.status == PaymentStatus.succeeded:
+            if kind == PaymentKind.deposit:
+                return {"error": "deposit_already_paid"}, 409
+            return {"error": "no_balance_due"}, 409
+        reused_secret, intent_status = _reuse_payment_intent(existing)
+        if reused_secret:
+            return {"client_secret": reused_secret, "payment_id": existing.id, "reuse": True}, 200
+        if intent_status == "canceled":
+            try:
+                existing.status = PaymentStatus.failed
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
+        else:
+            return {"error": "payment_in_progress"}, 409
+
+    if kind == PaymentKind.deposit:
         if booking.event_datetime and datetime.utcnow() >= booking.event_datetime:
-            return jsonify({"error": "Deposit payment is no longer available after the booking time."}), 400
-        if req:
-            existing_hold = Payment.query.filter_by(
-                booking_request_id=req.id, kind=PaymentKind.deposit, status=PaymentStatus.succeeded
-            ).first()
-            if existing_hold:
-                return jsonify({"error": "Deposit already paid."}), 409
+            return {"error": "Deposit payment is no longer available after the booking time."}, 400
+        base_cents = deposit_base_cents
+        beatfund_fee_cents = min(beatfund_fee_total_cents, BEATFUND_FEE_MIN_CENTS)
+    else:
+        if deposit_base_cents > 0 and base_paid_cents < deposit_base_cents:
+            return {"error": "deposit_required"}, 400
+        remaining_base = max(0, int(service_total_cents) - int(base_paid_cents or 0))
+        remaining_bf = max(0, int(beatfund_fee_total_cents) - int(bf_paid_cents or 0))
+        if remaining_base <= 0 and remaining_bf <= 0:
+            return {"error": "no_balance_due"}, 409
+        base_cents = remaining_base
+        beatfund_fee_cents = remaining_bf
 
-    existing_success = Payment.query.filter_by(
-        booking_id=booking.id, kind=kind, status=PaymentStatus.succeeded
-    ).first()
-    if existing_success:
-        return jsonify({"error": "This payment has already been completed."}), 409
-
-    breakdown = compute_booking_payment_breakdown(booking, kind)
-    if not breakdown:
-        return jsonify({"error": "No payment due for this booking."}), 400
+    total_cents, processing_fee_cents = calc_total_and_processing(base_cents, beatfund_fee_cents)
+    breakdown = {
+        "base_cents": base_cents,
+        "beatfund_fee_cents": beatfund_fee_cents,
+        "processing_fee_cents": processing_fee_cents,
+        "total_cents": total_cents,
+    }
 
     idempotency_key = generate_idempotency_key(
-        "booking_payment", current_user.id, booking_id=booking.id, kind=kind.value
+        "booking_payment", current_user.id, booking_id=booking.id, kind=kind.value, total=total_cents
     )
-    existing = Payment.query.filter_by(idempotency_key=idempotency_key).first()
-    if existing and existing.status in (PaymentStatus.created, PaymentStatus.processing, PaymentStatus.succeeded):
-        return jsonify({"error": "A payment for this booking is already in progress."}), 409
+    existing_by_key = Payment.query.filter_by(idempotency_key=idempotency_key).first()
+    if existing_by_key and existing_by_key.status in (PaymentStatus.created, PaymentStatus.processing, PaymentStatus.succeeded):
+        reused_secret, intent_status = _reuse_payment_intent(existing_by_key)
+        if reused_secret:
+            return {"client_secret": reused_secret, "payment_id": existing_by_key.id, "reuse": True}, 200
+        if intent_status == "canceled":
+            try:
+                existing_by_key.status = PaymentStatus.failed
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
+        else:
+            return {"error": "payment_in_progress"}, 409
 
     payment = Payment(
         purpose=PaymentPurpose.booking_deposit if kind == PaymentKind.deposit else PaymentPurpose.booking_balance,
         processor=PaymentProcessor.stripe,
         status=PaymentStatus.processing,
         kind=kind,
-        amount_cents=breakdown["total_cents"],
+        amount_cents=total_cents,
         currency="usd",
-        base_amount_cents=breakdown["base_cents"],
-        beatfund_fee_cents=breakdown["beatfund_fee_cents"],
-        processing_fee_cents=breakdown["processing_fee_cents"],
-        total_paid_cents=breakdown["total_cents"],
+        base_amount_cents=base_cents,
+        beatfund_fee_cents=beatfund_fee_cents,
+        processing_fee_cents=processing_fee_cents,
+        total_paid_cents=total_cents,
         idempotency_key=idempotency_key,
         booking_id=booking.id,
     )
+    if booking_request and kind == PaymentKind.deposit:
+        if not Payment.query.filter_by(booking_request_id=booking_request.id).first():
+            payment.booking_request_id = booking_request.id
+
     try:
         db.session.add(payment)
         db.session.flush()
@@ -7454,18 +7565,19 @@ def booking_payment_intent(booking_id: int):
         metadata = {
             "booking_id": str(booking.id),
             "payment_kind": kind.value,
-            "base_cents": str(breakdown["base_cents"]),
-            "beatfund_fee_cents": str(breakdown["beatfund_fee_cents"]),
-            "processing_fee_cents": str(breakdown["processing_fee_cents"]),
-            "total_cents": str(breakdown["total_cents"]),
+            "base_cents": str(base_cents),
+            "beatfund_fee_cents": str(beatfund_fee_cents),
+            "processing_fee_cents": str(processing_fee_cents),
+            "total_cents": str(total_cents),
             "payment_id": str(payment.id),
         }
 
         intent = stripe.PaymentIntent.create(
-            amount=breakdown["total_cents"],
+            amount=total_cents,
             currency="usd",
             payment_method_types=["card"],
             metadata=metadata,
+            idempotency_key=f"booking:{booking.id}:{kind.value}:{total_cents}",
         )
 
         payment.stripe_payment_intent_id = str(intent.id)
@@ -7474,13 +7586,45 @@ def booking_payment_intent(booking_id: int):
     except Exception as e:
         db.session.rollback()
         app.logger.error(f"Booking payment intent error: {type(e).__name__}: {e}")
-        return jsonify({"error": "Unable to start payment. Please try again."}), 500
+        return {"error": "Unable to start payment. Please try again."}, 500
 
-    return jsonify({
+    return {
         "client_secret": intent.client_secret,
         "payment_id": payment.id,
         "breakdown": breakdown,
-    }), 200
+    }, 200
+
+
+@app.route("/api/bookings/<int:booking_id>/pay/deposit", methods=["POST"])
+@login_required
+def api_pay_booking_deposit(booking_id: int):
+    if not STRIPE_AVAILABLE or not STRIPE_SECRET_KEY:
+        return jsonify({"error": "Stripe is not configured. Please set STRIPE_SECRET_KEY."}), 500
+
+    booking = Booking.query.get_or_404(booking_id)
+    is_client = current_user.id == booking.client_id
+    is_admin = current_user.role == RoleEnum.admin
+    if not (is_client or is_admin):
+        return jsonify({"error": "Not authorized to pay for this booking."}), 403
+
+    payload, status = _create_booking_payment_intent_for_kind(booking, PaymentKind.deposit)
+    return jsonify(payload), status
+
+
+@app.route("/api/bookings/<int:booking_id>/pay/balance", methods=["POST"])
+@login_required
+def api_pay_booking_balance(booking_id: int):
+    if not STRIPE_AVAILABLE or not STRIPE_SECRET_KEY:
+        return jsonify({"error": "Stripe is not configured. Please set STRIPE_SECRET_KEY."}), 500
+
+    booking = Booking.query.get_or_404(booking_id)
+    is_client = current_user.id == booking.client_id
+    is_admin = current_user.role == RoleEnum.admin
+    if not (is_client or is_admin):
+        return jsonify({"error": "Not authorized to pay for this booking."}), 403
+
+    payload, status = _create_booking_payment_intent_for_kind(booking, PaymentKind.balance)
+    return jsonify(payload), status
 
 
 @app.route("/bookings/<int:booking_id>", methods=["GET", "POST"])
@@ -7635,6 +7779,11 @@ def booking_detail(booking_id):
                 ).first()
             except Exception:
                 deposit_payment = deposit_payment
+    else:
+        try:
+            req = BookingRequest.query.filter_by(booking_id=booking.id).first()
+        except Exception:
+            req = None
 
     deposit_breakdown = None
     balance_breakdown = None
@@ -7643,15 +7792,47 @@ def booking_detail(booking_id):
     balance_blocked = False
     balance_blocked_reason = None
     balance_due_by = None
+    service_total_cents = None
+    deposit_base_cents = None
+    deposit_credit_cents = None
+    remaining_service_cents = None
+    base_paid_cents = 0
+    bf_paid_cents = 0
 
     if is_client:
-        deposit_breakdown = compute_booking_payment_breakdown(booking, PaymentKind.deposit)
-        if deposit_breakdown and not deposit_payment:
+        ctx, changed = _resolve_booking_fee_fields(booking)
+        if changed:
+            db.session.commit()
+        service_total_cents = ctx.get("quoted_total_cents")
+        if service_total_cents is not None:
+            service_total_cents = int(service_total_cents)
+        deposit_base_cents = min(int(ctx.get("deposit_base_cents") or 0), int(service_total_cents or 0)) if service_total_cents else None
+
+        sums = sum_successful_payments(booking, req)
+        base_paid_cents = sums.get("base_paid_cents", 0)
+        bf_paid_cents = sums.get("bf_paid_cents", 0)
+
+        if service_total_cents:
+            remaining_service_cents = max(0, service_total_cents - base_paid_cents)
+            deposit_credit_cents = min(deposit_base_cents or 0, base_paid_cents)
+
+        deposit_breakdown = compute_booking_payment_breakdown(
+            booking,
+            PaymentKind.deposit,
+            base_paid_cents=base_paid_cents,
+            bf_paid_cents=bf_paid_cents,
+        )
+        if deposit_breakdown and (deposit_base_cents or 0) > 0 and base_paid_cents < (deposit_base_cents or 0):
             deposit_due = True
 
-        if deposit_payment:
-            balance_breakdown = compute_booking_payment_breakdown(booking, PaymentKind.balance)
-            if balance_breakdown and (balance_breakdown.get("base_cents") or 0) > 0 and not balance_payment:
+        if service_total_cents is not None:
+            balance_breakdown = compute_booking_payment_breakdown(
+                booking,
+                PaymentKind.balance,
+                base_paid_cents=base_paid_cents,
+                bf_paid_cents=bf_paid_cents,
+            )
+            if (remaining_service_cents or 0) > 0 and (deposit_base_cents or 0) <= base_paid_cents and not balance_payment:
                 balance_due = True
 
         if booking.event_datetime and balance_due:
@@ -7683,6 +7864,12 @@ def booking_detail(booking_id):
         balance_due_by=balance_due_by,
         deposit_payment=deposit_payment,
         balance_payment=balance_payment,
+        service_total_cents=service_total_cents,
+        deposit_base_cents=deposit_base_cents,
+        deposit_credit_cents=deposit_credit_cents,
+        remaining_service_cents=remaining_service_cents,
+        base_paid_cents=base_paid_cents,
+        bf_paid_cents=bf_paid_cents,
         stripe_enabled=stripe_enabled,
         stripe_publishable_key=STRIPE_PUBLISHABLE_KEY,
         BOOKING_BALANCE_DEADLINE_HOURS=BOOKING_BALANCE_DEADLINE_HOURS,

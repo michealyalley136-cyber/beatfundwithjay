@@ -616,7 +616,7 @@
                 <strong>${{ '%.2f'|format(deposit_breakdown.total_cents / 100.0) }}</strong>
               </div>
             {% else %}
-              <div class="bf-meta-value">Deposit paid.</div>
+              <div class="bf-meta-value">Deposit paid ✅</div>
             {% endif %}
 
             {% if balance_due and balance_breakdown %}
@@ -645,6 +645,18 @@
               {% endif %}
             {% elif deposit_breakdown and not balance_due %}
               <div class="bf-meta-value" style="margin-top:10px;">Balance paid or not required.</div>
+            {% endif %}
+
+            {% if service_total_cents is not none %}
+              <div class="bf-meta-label" style="margin-top:12px;">Payment summary</div>
+              <div class="bf-fee-row">
+                <span>Deposit credited</span>
+                <span>${{ '%.2f'|format((deposit_credit_cents or 0) / 100.0) }}</span>
+              </div>
+              <div class="bf-fee-row">
+                <span>Remaining service balance</span>
+                <span>${{ '%.2f'|format((remaining_service_cents or 0) / 100.0) }}</span>
+              </div>
             {% endif %}
 
             {% if deposit_due or balance_due %}
@@ -799,6 +811,9 @@
 
     async function startPayment(kind, button) {
       if (!csrfToken) return;
+      const endpoint = kind === 'balance'
+        ? `/api/bookings/{{ booking.id }}/pay/balance`
+        : `/api/bookings/{{ booking.id }}/pay/deposit`;
       const scrollTarget = button?.dataset?.scrollTarget;
       if (scrollTarget) {
         const targetEl = document.querySelector(scrollTarget);
@@ -811,7 +826,7 @@
       button.textContent = 'Processing...';
 
       try {
-        const resp = await fetch(`/bookings/{{ booking.id }}/payment-intent`, {
+        const resp = await fetch(endpoint, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -822,6 +837,10 @@
 
         const data = await resp.json();
         if (!resp.ok) {
+          if (data.error === 'deposit_already_paid' || data.error === 'no_balance_due') {
+            window.location.reload();
+            return;
+          }
           throw new Error(data.error || 'Unable to start payment');
         }
 
