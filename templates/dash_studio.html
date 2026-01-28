@@ -381,9 +381,10 @@
     <!-- Recent Studio Sessions -->
     <div class="bf-card span-8">
       <h3>Recent Studio Sessions</h3>
-      {% if (provider_recent_accepted_requests and provider_recent_accepted_requests|length > 0) or (provider_recent_bookings and provider_recent_bookings|length > 0) %}
+      {% set accepted_requests_list = provider_recent_accepted_requests|default([]) %}
+      {% if (accepted_requests_list and accepted_requests_list|length > 0) or (provider_recent_bookings and provider_recent_bookings|length > 0) %}
         <div class="bf-list">
-          {% for r in provider_recent_accepted_requests[:5] %}
+          {% for r in accepted_requests_list[:5] %}
             <div class="bf-row">
               <div class="left">
                 <div class="title">Accepted request - Awaiting payment</div>
