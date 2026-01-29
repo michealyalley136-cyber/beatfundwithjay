@@ -1900,6 +1900,8 @@ BOOKING_STATUS_PENDING = "pending"
 BOOKING_STATUS_ACCEPTED = "accepted"
 BOOKING_STATUS_QUOTED = "quoted"
 BOOKING_STATUS_CONFIRMED = "confirmed"
+BOOKING_STATUS_HOLD_PAID = "hold_paid"
+BOOKING_STATUS_PAID = "paid"
 BOOKING_STATUS_COMPLETED = "completed"
 BOOKING_STATUS_CANCELLED = "cancelled"
 BOOKING_STATUS_DECLINED = "declined"
@@ -1911,6 +1913,8 @@ VALID_BOOKING_STATUSES = {
     BOOKING_STATUS_ACCEPTED,
     BOOKING_STATUS_QUOTED,
     BOOKING_STATUS_CONFIRMED,
+    BOOKING_STATUS_HOLD_PAID,
+    BOOKING_STATUS_PAID,
     BOOKING_STATUS_COMPLETED,
     BOOKING_STATUS_CANCELLED,
     BOOKING_STATUS_DECLINED,
@@ -3281,8 +3285,16 @@ def calc_beatfund_fee_cents(service_cents: int) -> int:
 
 
 def calc_beatfund_fee_total(service_total_cents: int) -> int:
-    """Alias helper for booking BeatFund fee calculation."""
-    return calc_beatfund_fee_cents(service_total_cents)
+    """Booking BeatFund fee: ceil(rate * total) with min/cap."""
+    if service_total_cents <= 0:
+        return 0
+    fee = (Decimal(service_total_cents) * BEATFUND_FEE_RATE).to_integral_value(rounding=ROUND_UP)
+    fee_cents = int(fee)
+    fee_cents = max(fee_cents, BEATFUND_FEE_MIN_CENTS)
+    if BEATFUND_FEE_CAP_CENTS:
+        fee_cents = min(fee_cents, BEATFUND_FEE_CAP_CENTS)
+    fee_cents = min(fee_cents, service_total_cents)
+    return fee_cents
 
 
 def calc_total_and_processing(base_cents: int, beatfund_fee_cents: int) -> tuple[int, int]:
@@ -3356,16 +3368,13 @@ def _resolve_booking_fee_fields(booking: "Booking") -> tuple[dict, bool]:
 
     deposit_base_cents = booking.deposit_base_cents
     if deposit_base_cents is None:
-        if quoted_total_cents is not None:
-            deposit_base_cents = min(HOLD_FEE_CENTS, int(quoted_total_cents))
-        else:
-            deposit_base_cents = HOLD_FEE_CENTS
+        deposit_base_cents = HOLD_FEE_CENTS
         booking.deposit_base_cents = int(deposit_base_cents)
         changed = True
 
     beatfund_fee_total_cents = booking.beatfund_fee_total_cents
     if beatfund_fee_total_cents is None and quoted_total_cents is not None:
-        beatfund_fee_total_cents = calc_beatfund_fee_cents(int(quoted_total_cents))
+        beatfund_fee_total_cents = calc_beatfund_fee_total(int(quoted_total_cents))
         booking.beatfund_fee_total_cents = int(beatfund_fee_total_cents)
         changed = True
 
@@ -3390,24 +3399,37 @@ def compute_booking_payment_breakdown(
 ) -> dict | None:
     ctx, _ = _resolve_booking_fee_fields(booking)
     quoted_total_cents = ctx["quoted_total_cents"]
-    if quoted_total_cents is None or quoted_total_cents <= 0:
-        return None
 
-    deposit_base_cents = min(int(ctx["deposit_base_cents"] or 0), int(quoted_total_cents))
-    beatfund_fee_total_cents = int(ctx["beatfund_fee_total_cents"] or 0)
-    beatfund_fee_collected_cents = int(ctx["beatfund_fee_collected_cents"] or 0)
-    if bf_paid_cents is not None:
-        beatfund_fee_collected_cents = max(0, int(bf_paid_cents))
-
-    fee_deposit, _fee_balance = allocate_fee_between_deposit_and_balance(beatfund_fee_total_cents)
+    deposit_base_cents = HOLD_FEE_CENTS
 
     if kind == PaymentKind.deposit:
         base_cents = deposit_base_cents
-        beatfund_fee_cents = fee_deposit
-    else:
-        paid_base = deposit_base_cents if base_paid_cents is None else max(0, int(base_paid_cents))
-        base_cents = max(0, int(quoted_total_cents) - paid_base)
-        beatfund_fee_cents = max(0, beatfund_fee_total_cents - beatfund_fee_collected_cents)
+        beatfund_fee_cents = 0
+        if base_cents <= 0:
+            return None
+        total_cents, processing_fee_cents = calc_total_and_processing(base_cents, beatfund_fee_cents)
+        return {
+            "base_cents": base_cents,
+            "beatfund_fee_cents": beatfund_fee_cents,
+            "processing_fee_cents": processing_fee_cents,
+            "total_cents": total_cents,
+            "quoted_total_cents": quoted_total_cents,
+            "deposit_base_cents": deposit_base_cents,
+            "beatfund_fee_total_cents": int(ctx.get("beatfund_fee_total_cents") or 0),
+            "beatfund_fee_collected_cents": int(ctx.get("beatfund_fee_collected_cents") or 0),
+        }
+
+    if quoted_total_cents is None or quoted_total_cents <= 0:
+        return None
+
+    beatfund_fee_total_cents = int(ctx.get("beatfund_fee_total_cents") or calc_beatfund_fee_total(int(quoted_total_cents)))
+    beatfund_fee_collected_cents = int(ctx.get("beatfund_fee_collected_cents") or 0)
+    if bf_paid_cents is not None:
+        beatfund_fee_collected_cents = max(0, int(bf_paid_cents))
+
+    paid_base = deposit_base_cents if base_paid_cents is None else max(0, int(base_paid_cents))
+    base_cents = max(0, int(quoted_total_cents) - paid_base)
+    beatfund_fee_cents = max(0, beatfund_fee_total_cents - beatfund_fee_collected_cents)
 
     if base_cents <= 0 and beatfund_fee_cents <= 0:
         return None
@@ -4968,6 +4990,8 @@ CHAT_ALLOWED_BOOKING_STATUSES: set[str] = {
     BOOKING_STATUS_PENDING,
     BOOKING_STATUS_ACCEPTED,
     BOOKING_STATUS_CONFIRMED,
+    BOOKING_STATUS_HOLD_PAID,
+    BOOKING_STATUS_PAID,
     BOOKING_STATUS_COMPLETED,
 }
 
@@ -7653,6 +7677,8 @@ def _payment_breakdown_response(kind: PaymentKind, base_cents: int, beatfund_fee
     }
     if kind == PaymentKind.deposit:
         breakdown["hold_base_cents"] = int(base_cents)
+    if kind == PaymentKind.balance:
+        breakdown["remaining_base_cents"] = int(base_cents)
     return breakdown
 
 
@@ -7664,9 +7690,7 @@ def _create_booking_payment_intent_for_kind(booking: "Booking", kind: PaymentKin
     base_paid_cents = sums.get("base_paid_cents", 0)
     bf_paid_cents = sums.get("bf_paid_cents", 0)
 
-    deposit_base_cents = int(ctx.get("deposit_base_cents") or HOLD_FEE_CENTS)
-    if service_total_cents:
-        deposit_base_cents = min(int(deposit_base_cents), int(service_total_cents))
+    deposit_base_cents = HOLD_FEE_CENTS
 
     if not service_total_cents:
         if kind != PaymentKind.deposit:
@@ -7674,15 +7698,15 @@ def _create_booking_payment_intent_for_kind(booking: "Booking", kind: PaymentKin
         service_total_cents = int(deposit_base_cents or HOLD_FEE_CENTS)
 
     beatfund_fee_total_cents = int(ctx.get("beatfund_fee_total_cents") or 0)
-    if beatfund_fee_total_cents <= 0:
+    if service_total_cents and beatfund_fee_total_cents <= 0:
         beatfund_fee_total_cents = calc_beatfund_fee_total(int(service_total_cents))
-    if kind == PaymentKind.deposit and beatfund_fee_total_cents < BEATFUND_FEE_MIN_CENTS:
-        beatfund_fee_total_cents = BEATFUND_FEE_MIN_CENTS
+    if kind == PaymentKind.balance and service_total_cents:
+        beatfund_fee_total_cents = calc_beatfund_fee_total(int(service_total_cents))
 
     def fallback_breakdown() -> dict:
         if kind == PaymentKind.deposit:
             base_c = deposit_base_cents
-            bf_c = min(beatfund_fee_total_cents, BEATFUND_FEE_MIN_CENTS)
+            bf_c = 0
         else:
             base_c = max(0, int(service_total_cents) - int(base_paid_cents or 0))
             bf_c = max(0, int(beatfund_fee_total_cents) - int(bf_paid_cents or 0))
@@ -7741,7 +7765,7 @@ def _create_booking_payment_intent_for_kind(booking: "Booking", kind: PaymentKin
         if booking.event_datetime and datetime.utcnow() >= booking.event_datetime:
             return {"error": "Deposit payment is no longer available after the booking time."}, 400
         base_cents = deposit_base_cents
-        beatfund_fee_cents = min(beatfund_fee_total_cents, BEATFUND_FEE_MIN_CENTS)
+        beatfund_fee_cents = 0
     else:
         if deposit_base_cents > 0 and base_paid_cents < deposit_base_cents:
             return {"error": "deposit_required"}, 400
@@ -7843,6 +7867,47 @@ def _create_booking_payment_intent_for_kind(booking: "Booking", kind: PaymentKin
     }, 200
 
 
+def _refund_hold_deposit_for_provider_cancel(booking: "Booking") -> bool:
+    """Refund the hold deposit base only (processing fees are non-refundable)."""
+    if not STRIPE_AVAILABLE or not STRIPE_SECRET_KEY:
+        return False
+
+    deposit_payment = Payment.query.filter_by(
+        booking_id=booking.id, kind=PaymentKind.deposit, status=PaymentStatus.succeeded
+    ).first()
+    if not deposit_payment:
+        return False
+
+    refundable = int(deposit_payment.base_amount_cents or 0) - int(deposit_payment.refunded_base_cents or 0)
+    refundable = min(refundable, HOLD_FEE_CENTS)
+    if refundable <= 0:
+        return False
+
+    refund_kwargs = {"amount": refundable, "reason": "requested_by_customer"}
+    if deposit_payment.stripe_payment_intent_id:
+        refund_kwargs["payment_intent"] = deposit_payment.stripe_payment_intent_id
+    elif deposit_payment.stripe_charge_id:
+        refund_kwargs["charge"] = deposit_payment.stripe_charge_id
+    else:
+        return False
+
+    try:
+        stripe.Refund.create(**refund_kwargs)
+    except Exception as e:
+        app.logger.warning(f"Provider cancel refund failed: {type(e).__name__}: {e}")
+        return False
+
+    deposit_payment.refunded_base_cents = int(deposit_payment.refunded_base_cents or 0) + refundable
+    deposit_payment.nonrefundable_processing_kept_cents = int(deposit_payment.processing_fee_cents or 0)
+    deposit_payment.nonrefundable_beatfund_kept_cents = int(deposit_payment.beatfund_fee_cents or 0)
+    if deposit_payment.refunded_base_cents >= int(deposit_payment.base_amount_cents or 0):
+        deposit_payment.status = PaymentStatus.refunded
+    else:
+        deposit_payment.status = PaymentStatus.partially_refunded
+    db.session.commit()
+    return True
+
+
 @app.route("/api/bookings/<int:booking_id>/pay/deposit", methods=["POST"])
 @login_required
 def api_pay_booking_deposit(booking_id: int):
@@ -7941,9 +8006,9 @@ def booking_detail(booking_id):
                         booking.total_cents = int(total_dollars * 100) if total_dollars >= 0 else None
                         if booking.total_cents is not None:
                             booking.quoted_total_cents = booking.total_cents
-                            booking.beatfund_fee_total_cents = calc_beatfund_fee_cents(booking.total_cents)
+                            booking.beatfund_fee_total_cents = calc_beatfund_fee_total(booking.total_cents)
                             if booking.deposit_base_cents is None:
-                                booking.deposit_base_cents = min(HOLD_FEE_CENTS, booking.total_cents)
+                                booking.deposit_base_cents = HOLD_FEE_CENTS
                     except ValueError:
                         flash("Total amount must be a valid number.", "error")
                         return redirect(url_for("booking_detail", booking_id=booking.id))
@@ -7962,10 +8027,12 @@ def booking_detail(booking_id):
             
             # Status updates (only provider can change status to accepted/confirmed/cancelled)
             if is_provider:
+                refund_hold = False
                 new_status = (request.form.get("status") or "").strip().lower()
                 if new_status and new_status in [BOOKING_STATUS_PENDING, BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED, BOOKING_STATUS_CANCELLED]:
                     booking.status = new_status
                     if new_status == BOOKING_STATUS_CANCELLED:
+                        refund_hold = True
                         flash("Booking has been cancelled.", "success")
                     elif new_status == BOOKING_STATUS_ACCEPTED:
                         flash("Booking has been accepted.", "success")
@@ -7973,6 +8040,11 @@ def booking_detail(booking_id):
                         flash("Booking has been confirmed.", "success")
             
             db.session.commit()
+            if is_provider and locals().get("refund_hold"):
+                try:
+                    _refund_hold_deposit_for_provider_cancel(booking)
+                except Exception:
+                    pass
             flash("Booking updated successfully.", "success")
             return redirect(url_for("booking_detail", booking_id=booking.id))
         
@@ -8046,6 +8118,8 @@ def booking_detail(booking_id):
     remaining_service_cents = None
     base_paid_cents = 0
     bf_paid_cents = 0
+    beatfund_fee_total_cents = None
+    beatfund_fee_remaining_cents = None
 
     if is_client:
         ctx, changed = _resolve_booking_fee_fields(booking)
@@ -8054,7 +8128,7 @@ def booking_detail(booking_id):
         service_total_cents = ctx.get("quoted_total_cents")
         if service_total_cents is not None:
             service_total_cents = int(service_total_cents)
-        deposit_base_cents = min(int(ctx.get("deposit_base_cents") or 0), int(service_total_cents or 0)) if service_total_cents else None
+        deposit_base_cents = HOLD_FEE_CENTS
 
         sums = sum_successful_payments(booking, req)
         base_paid_cents = sums.get("base_paid_cents", 0)
@@ -8063,6 +8137,8 @@ def booking_detail(booking_id):
         if service_total_cents:
             remaining_service_cents = max(0, service_total_cents - base_paid_cents)
             deposit_credit_cents = min(deposit_base_cents or 0, base_paid_cents)
+            beatfund_fee_total_cents = calc_beatfund_fee_total(service_total_cents)
+            beatfund_fee_remaining_cents = max(0, int(beatfund_fee_total_cents) - int(bf_paid_cents or 0))
 
         deposit_breakdown = compute_booking_payment_breakdown(
             booking,
@@ -8118,6 +8194,8 @@ def booking_detail(booking_id):
         remaining_service_cents=remaining_service_cents,
         base_paid_cents=base_paid_cents,
         bf_paid_cents=bf_paid_cents,
+        beatfund_fee_total_cents=beatfund_fee_total_cents,
+        beatfund_fee_remaining_cents=beatfund_fee_remaining_cents,
         stripe_enabled=stripe_enabled,
         stripe_publishable_key=STRIPE_PUBLISHABLE_KEY,
         BOOKING_BALANCE_DEADLINE_HOURS=BOOKING_BALANCE_DEADLINE_HOURS,
@@ -8189,8 +8267,8 @@ def booking_quote(booking_id: int):
     booking.quoted_total_cents = quoted_total_cents
     booking.total_cents = quoted_total_cents
     booking.quote_breakdown_text = breakdown_text
-    booking.deposit_base_cents = min(HOLD_FEE_CENTS, quoted_total_cents)
-    booking.beatfund_fee_total_cents = calc_beatfund_fee_cents(quoted_total_cents)
+    booking.deposit_base_cents = HOLD_FEE_CENTS
+    booking.beatfund_fee_total_cents = calc_beatfund_fee_total(quoted_total_cents)
     booking.status = BOOKING_STATUS_QUOTED
 
     db.session.commit()
@@ -8858,8 +8936,8 @@ def book_artist(username):
             location_text=location_text or None,
             total_cents=total_cents,
             quoted_total_cents=total_cents,
-            deposit_base_cents=min(HOLD_FEE_CENTS, total_cents) if total_cents else None,
-            beatfund_fee_total_cents=calc_beatfund_fee_cents(total_cents) if total_cents else None,
+            deposit_base_cents=HOLD_FEE_CENTS,
+            beatfund_fee_total_cents=calc_beatfund_fee_total(total_cents) if total_cents else None,
             notes_from_client=notes_from_client or None,
             status=BOOKING_STATUS_PENDING,
         )
@@ -9757,7 +9835,7 @@ def stripe_webhook():
                         if booking.quoted_total_cents is None and booking.total_cents is not None:
                             booking.quoted_total_cents = booking.total_cents
                         if booking.beatfund_fee_total_cents is None and booking.quoted_total_cents is not None:
-                            booking.beatfund_fee_total_cents = calc_beatfund_fee_cents(int(booking.quoted_total_cents))
+                            booking.beatfund_fee_total_cents = calc_beatfund_fee_total(int(booking.quoted_total_cents))
                         try:
                             provider_wallet = Wallet.query.filter_by(user_id=booking.provider_id).first() if booking.provider_id else None
                             if not provider_wallet and booking.provider_id:
@@ -9781,7 +9859,7 @@ def stripe_webhook():
                         # Booking status + notifications
                         try:
                             if payment.kind == PaymentKind.deposit and booking.status not in (BOOKING_STATUS_COMPLETED, BOOKING_STATUS_CANCELLED):
-                                booking.status = BOOKING_STATUS_CONFIRMED
+                                booking.status = BOOKING_STATUS_HOLD_PAID
                                 req_link = BookingRequest.query.filter_by(booking_id=booking.id).first()
                                 if req_link and req_link.status == BookingStatus.accepted:
                                     req_link.status = BookingStatus.confirmed
@@ -9790,7 +9868,7 @@ def stripe_webhook():
                                 total_base_paid = sums.get("base_paid_cents", 0)
                                 service_total = booking.quoted_total_cents or booking.total_cents
                                 if service_total and total_base_paid >= int(service_total):
-                                    booking.status = BOOKING_STATUS_CONFIRMED
+                                    booking.status = BOOKING_STATUS_PAID
                         except Exception:
                             pass
 
@@ -9848,6 +9926,27 @@ def stripe_webhook():
 
             _mark_row(StripeWebhookEventStatus.processed)
             return Response(status=200)
+
+    if event_type in ("payment_intent.payment_failed", "payment_intent.canceled"):
+        pi = (event.get("data") or {}).get("object") or {}
+        metadata = pi.get("metadata") or {}
+        payment_id = metadata.get("payment_id")
+        payment = None
+        if payment_id:
+            try:
+                payment = Payment.query.get(int(payment_id))
+            except Exception:
+                payment = None
+        if not payment and pi.get("id"):
+            payment = Payment.query.filter_by(stripe_payment_intent_id=str(pi.get("id"))).first()
+        if payment and payment.status != PaymentStatus.succeeded:
+            try:
+                payment.status = PaymentStatus.failed if event_type == "payment_intent.payment_failed" else PaymentStatus.cancelled
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
+        _mark_row(StripeWebhookEventStatus.processed)
+        return Response(status=200)
 
     # Only process Checkout completion for fulfillment.
     if event_type != "checkout.session.completed":

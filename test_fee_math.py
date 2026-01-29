@@ -3,9 +3,8 @@ Basic fee math checks for BeatFund booking fees.
 Run: python test_fee_math.py
 """
 from app import (
-    calc_beatfund_fee_cents,
+    calc_beatfund_fee_total,
     calc_total_and_processing,
-    allocate_fee_between_deposit_and_balance,
 )
 
 
@@ -16,27 +15,30 @@ def assert_close(actual: int, expected: int, tolerance: int = 1) -> None:
 
 def run():
     # $100 service
-    fee_100 = calc_beatfund_fee_cents(10000)
+    fee_100 = calc_beatfund_fee_total(10000)
     if fee_100 != 517:
         raise AssertionError(f"$100 fee should be 517 cents, got {fee_100}")
 
-    # $250 service with $20 deposit
+    # $100 service balance (fees on top)
+    total_balance_100, processing_balance_100 = calc_total_and_processing(8000, fee_100)
+    assert_close(total_balance_100, 8803)
+    assert_close(processing_balance_100, 286)
+
+    # $250 service with $20 hold
     total_service = 25000
-    fee_total = calc_beatfund_fee_cents(total_service)
+    fee_total = calc_beatfund_fee_total(total_service)
     if fee_total != 1293:
         raise AssertionError(f"$250 fee should be 1293 cents, got {fee_total}")
 
-    fee_deposit, fee_balance = allocate_fee_between_deposit_and_balance(fee_total)
-    if fee_deposit != 517 or fee_balance != 776:
-        raise AssertionError(f"Fee split wrong: deposit {fee_deposit}, balance {fee_balance}")
+    # Hold fee: base only + processing
+    total_deposit, processing_deposit = calc_total_and_processing(2000, 0)
+    assert_close(total_deposit, 2091)
+    assert_close(processing_deposit, 91)
 
-    total_deposit, processing_deposit = calc_total_and_processing(2000, fee_deposit)
-    assert_close(total_deposit, 2624)
-    assert_close(processing_deposit, 107)
-
-    total_balance, processing_balance = calc_total_and_processing(23000, fee_balance)
-    assert_close(total_balance, 24517)
-    assert_close(processing_balance, 741)
+    # Balance: remaining base + full BeatFund fee + processing
+    total_balance, processing_balance = calc_total_and_processing(23000, fee_total)
+    assert_close(total_balance, 25050)
+    assert_close(processing_balance, 757)
 
     print("[OK] Fee math checks passed.")
 

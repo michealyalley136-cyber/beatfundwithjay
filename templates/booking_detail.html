@@ -517,7 +517,7 @@
                     {% if booking.quoted_total_cents %}
                       ${{ "%.2f"|format(booking.quoted_total_cents / 100.0) }}
                     {% else %}
-                      —
+                      --
                     {% endif %}
                   </div>
                 </div>
@@ -529,7 +529,7 @@
                 </div>
               </div>
               <div class="bf-payment-note" id="quote-calc-note">
-                Calculated as: <span id="quote-hours-display">{{ '%.2f'|format(default_billable_minutes / 60.0) }}</span> hrs × $<span id="quote-hourly-display">{{ '%.2f'|format(booking.quote_hourly_rate_cents / 100.0) if booking.quote_hourly_rate_cents else '0.00' }}</span>/hr
+                Calculated as: <span id="quote-hours-display">{{ '%.2f'|format(default_billable_minutes / 60.0) }}</span> hrs x $<span id="quote-hourly-display">{{ '%.2f'|format(booking.quote_hourly_rate_cents / 100.0) if booking.quote_hourly_rate_cents else '0.00' }}</span>/hr
               </div>
               <div class="bf-payment-actions">
                 <button class="bf-btn bf-btn-primary" type="submit">Send quote</button>
@@ -543,7 +543,7 @@
                   {% if booking.duration_minutes %}
                     {{ (booking.duration_minutes / 60.0)|round(2) }} hrs
                   {% else %}
-                    —
+                    --
                   {% endif %}
                 </span>
               </div>
@@ -562,7 +562,7 @@
               {% if booking.quote_billable_minutes and booking.quote_hourly_rate_cents %}
                 <div class="bf-fee-row">
                   <span>Calculated as</span>
-                  <span>{{ '%.2f'|format(booking.quote_billable_minutes / 60.0) }} hrs × ${{ "%.2f"|format(booking.quote_hourly_rate_cents / 100.0) }}/hr</span>
+                  <span>{{ '%.2f'|format(booking.quote_billable_minutes / 60.0) }} hrs x ${{ "%.2f"|format(booking.quote_hourly_rate_cents / 100.0) }}/hr</span>
                 </div>
               {% endif %}
               {% if booking.quote_breakdown_text %}
@@ -575,10 +575,14 @@
                 <strong>Quoted total</strong>
                 <strong>${{ "%.2f"|format(booking.quoted_total_cents / 100.0) }}</strong>
               </div>
+              <div class="bf-fee-row">
+                <span>Provider payout (full quote)</span>
+                <span>${{ "%.2f"|format(booking.quoted_total_cents / 100.0) }}</span>
+              </div>
               {% if deposit_due %}
                 <div class="bf-payment-actions">
                   <button class="bf-btn bf-btn-primary" type="button" data-payment-kind="deposit" data-scroll-target="#booking-payment-section">
-                    Accept quote &amp; pay deposit
+                    Accept quote &amp; pay hold
                   </button>
                 </div>
               {% endif %}
@@ -598,43 +602,48 @@
             <div class="bf-meta-value">Waiting for the provider to set a quote.</div>
           {% else %}
             {% if deposit_due %}
-              <div class="bf-meta-label">Deposit due</div>
+              <div class="bf-meta-label">Hold due now</div>
               <div class="bf-fee-row">
-                <span>Service payment</span>
+                <span>Hold amount (credited)</span>
                 <span>${{ '%.2f'|format(deposit_breakdown.base_cents / 100.0) }}</span>
-              </div>
-              <div class="bf-fee-row">
-                <span>BeatFund service fee (non-refundable)</span>
-                <span>${{ '%.2f'|format(deposit_breakdown.beatfund_fee_cents / 100.0) }}</span>
               </div>
               <div class="bf-fee-row">
                 <span>Payment processing fee (non-refundable)</span>
                 <span>${{ '%.2f'|format(deposit_breakdown.processing_fee_cents / 100.0) }}</span>
               </div>
               <div class="bf-fee-row">
-                <strong>Total</strong>
+                <strong>Total due now</strong>
                 <strong>${{ '%.2f'|format(deposit_breakdown.total_cents / 100.0) }}</strong>
               </div>
+              <div class="bf-payment-note">BeatFund service fee (5.17%) applies when you pay the remaining balance. Processing fees are non-refundable.</div>
             {% else %}
-              <div class="bf-meta-value">Deposit paid ✅</div>
+              <div class="bf-meta-value">Hold paid ✅</div>
             {% endif %}
 
-            {% if balance_due and balance_breakdown %}
+                        {% if balance_due and balance_breakdown %}
               <div class="bf-meta-label" style="margin-top:12px;">Balance due</div>
               <div class="bf-fee-row">
-                <span>Service payment</span>
-                <span>${{ '%.2f'|format(balance_breakdown.base_cents / 100.0) }}</span>
+                <span>Service total (quoted)</span>
+                <span>${{ '%.2f'|format((service_total_cents or 0) / 100.0) }}</span>
               </div>
               <div class="bf-fee-row">
-                <span>BeatFund service fee (non-refundable)</span>
-                <span>${{ '%.2f'|format(balance_breakdown.beatfund_fee_cents / 100.0) }}</span>
+                <span>Hold paid (credited)</span>
+                <span>-${{ '%.2f'|format((deposit_credit_cents or 0) / 100.0) }}</span>
+              </div>
+              <div class="bf-fee-row">
+                <span>Remaining base</span>
+                <span>${{ '%.2f'|format((remaining_service_cents or 0) / 100.0) }}</span>
+              </div>
+              <div class="bf-fee-row">
+                <span>BeatFund service fee (5.17%)</span>
+                <span>${{ '%.2f'|format((beatfund_fee_remaining_cents or 0) / 100.0) }}</span>
               </div>
               <div class="bf-fee-row">
                 <span>Payment processing fee (non-refundable)</span>
                 <span>${{ '%.2f'|format(balance_breakdown.processing_fee_cents / 100.0) }}</span>
               </div>
               <div class="bf-fee-row">
-                <strong>Total</strong>
+                <strong>Total due now</strong>
                 <strong>${{ '%.2f'|format(balance_breakdown.total_cents / 100.0) }}</strong>
               </div>
               {% if balance_due_by %}
@@ -647,7 +656,7 @@
               <div class="bf-meta-value" style="margin-top:10px;">Balance paid or not required.</div>
             {% endif %}
 
-            {% if service_total_cents is not none %}
+            {% if service_total_cents is not none and not balance_due %}
               <div class="bf-meta-label" style="margin-top:12px;">Payment summary</div>
               <div class="bf-fee-row">
                 <span>Deposit credited</span>
@@ -672,7 +681,7 @@
                   </button>
                 {% endif %}
               </div>
-              <div class="bf-payment-note">Fees are shown before payment. Processing and BeatFund fees are non-refundable.</div>
+              <div class="bf-payment-note">Processing fees are non-refundable. BeatFund service fee applies when you pay the remaining balance.</div>
             {% endif %}
           {% endif %}
         </div>
@@ -778,7 +787,7 @@
       const hours = parseFloat(hoursInput.value || '0');
       const rate = parseFloat(rateInput.value || '0');
       if (!isFinite(hours) || !isFinite(rate) || hours <= 0 || rate <= 0) {
-        totalDisplay.textContent = '—';
+        totalDisplay.textContent = '--';
         if (hoursDisplay) hoursDisplay.textContent = (hours > 0 ? hours.toFixed(2) : '0.00');
         if (hourlyDisplay) hourlyDisplay.textContent = (rate > 0 ? rate.toFixed(2) : '0.00');
         return;

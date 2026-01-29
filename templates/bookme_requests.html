@@ -254,19 +254,15 @@
           <strong id="hold-fee-base">${{ '%.2f'|format(HOLD_FEE_CENTS / 100.0) }}</strong>
         </div>
         <div class="bf-break-row">
-          <span>BeatFund service fee (non-refundable)</span>
-          <strong id="hold-fee-bf">—</strong>
-        </div>
-        <div class="bf-break-row">
           <span>Payment processing fee (non-refundable)</span>
-          <strong id="hold-fee-processing">—</strong>
+          <strong id="hold-fee-processing">--</strong>
         </div>
         <div class="bf-break-row total">
           <span>Total due now</span>
-          <strong id="hold-fee-total">—</strong>
+          <strong id="hold-fee-total">--</strong>
         </div>
       </div>
-      <div class="bf-refund-note">Processing and BeatFund fees are non-refundable.</div>
+      <div class="bf-refund-note">BeatFund service fee (5.17%) applies when you pay the remaining balance. Processing fees are non-refundable.</div>
       <div id="hold-fee-element"></div>
       <div id="hold-fee-error" class="bf-error"></div>
     </div>
@@ -649,7 +645,6 @@
     const errorEl = document.getElementById('hold-fee-error');
     const confirmBtn = document.getElementById('hold-fee-confirm');
     const baseEl = document.getElementById('hold-fee-base');
-    const bfEl = document.getElementById('hold-fee-bf');
     const processingEl = document.getElementById('hold-fee-processing');
     const totalEl = document.getElementById('hold-fee-total');
     const closeButtons = modal ? modal.querySelectorAll('[data-close]') : [];
@@ -671,9 +666,8 @@
       if (elementContainer) elementContainer.innerHTML = '';
       if (errorEl) errorEl.textContent = '';
       if (baseEl) baseEl.textContent = '$' + {{ ('%.2f'|format(HOLD_FEE_CENTS / 100.0))|tojson }};
-      if (bfEl) bfEl.textContent = '—';
-      if (processingEl) processingEl.textContent = '—';
-      if (totalEl) totalEl.textContent = '—';
+      if (processingEl) processingEl.textContent = '--';
+      if (totalEl) totalEl.textContent = '--';
       if (confirmBtn) confirmBtn.textContent = 'Pay';
     }
 
@@ -715,11 +709,9 @@
         }
         const breakdown = data.breakdown || {};
         const baseCents = (breakdown.hold_base_cents ?? breakdown.base_cents ?? 0);
-        const bfCents = (breakdown.beatfund_fee_cents ?? 0);
         const procCents = (breakdown.processing_fee_cents ?? 0);
         const totalCents = (breakdown.total_cents ?? 0);
         if (baseEl) baseEl.textContent = formatCents(baseCents);
-        if (bfEl) bfEl.textContent = formatCents(bfCents);
         if (processingEl) processingEl.textContent = formatCents(procCents);
         if (totalEl) totalEl.textContent = formatCents(totalCents);
         if (confirmBtn) confirmBtn.textContent = `Pay ${formatCents(totalCents)}`;
