@@ -571,6 +571,27 @@
       align-items: flex-start;
     }
   }
+  /* Hard modal clickability override */
+  #hold-fee-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 99999;
+    pointer-events: auto;
+  }
+  #hold-fee-modal.is-hidden {
+    display: none;
+  }
+  #hold-fee-modal .bf-modal-overlay {
+    z-index: 0;
+    pointer-events: auto;
+  }
+  #hold-fee-modal .bf-modal-body {
+    z-index: 1;
+    pointer-events: auto;
+  }
+  #hold-fee-modal button {
+    pointer-events: auto;
+  }
 </style>
 
 {% if stripe_enabled %}
@@ -656,6 +677,12 @@
     let elements = null;
     let paymentElement = null;
     const holdDefault = {{ ('%.2f'|format(HOLD_FEE_CENTS / 100.0))|tojson }};
+
+    document.addEventListener('click', (event) => {
+      if (modal && !modal.classList.contains('is-hidden')) {
+        console.log('[modal click reached]');
+      }
+    }, true);
 
     function formatCents(cents) {
       const value = Number(cents || 0) / 100;
@@ -762,7 +789,7 @@
         paymentElement.mount('#stripe-payment-element');
         if (confirmBtn) confirmBtn.setAttribute('aria-disabled', 'false');
       } catch (err) {
-        if (errorEl) errorEl.textContent = err.message;
+        if (errorEl) errorEl.textContent = err.message || 'Unable to start payment.';
         if (confirmBtn) confirmBtn.setAttribute('aria-disabled', 'true');
       } finally {
         button.disabled = false;
