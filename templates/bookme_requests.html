@@ -251,19 +251,19 @@
       <div class="bf-breakdown">
         <div class="bf-break-row">
           <span>Hold amount (credited)</span>
-          <strong id="hold-fee-base">$0.00</strong>
+          <strong id="hold-fee-base">${{ '%.2f'|format(HOLD_FEE_CENTS / 100.0) }}</strong>
         </div>
         <div class="bf-break-row">
           <span>BeatFund service fee (non-refundable)</span>
-          <strong id="hold-fee-bf">$0.00</strong>
+          <strong id="hold-fee-bf">—</strong>
         </div>
         <div class="bf-break-row">
           <span>Payment processing fee (non-refundable)</span>
-          <strong id="hold-fee-processing">$0.00</strong>
+          <strong id="hold-fee-processing">—</strong>
         </div>
         <div class="bf-break-row total">
           <span>Total due now</span>
-          <strong id="hold-fee-total">$0.00</strong>
+          <strong id="hold-fee-total">—</strong>
         </div>
       </div>
       <div class="bf-refund-note">Processing and BeatFund fees are non-refundable.</div>
@@ -670,10 +670,10 @@
       elements = null;
       if (elementContainer) elementContainer.innerHTML = '';
       if (errorEl) errorEl.textContent = '';
-      if (baseEl) baseEl.textContent = '$0.00';
-      if (bfEl) bfEl.textContent = '$0.00';
-      if (processingEl) processingEl.textContent = '$0.00';
-      if (totalEl) totalEl.textContent = '$0.00';
+      if (baseEl) baseEl.textContent = '$' + {{ ('%.2f'|format(HOLD_FEE_CENTS / 100.0))|tojson }};
+      if (bfEl) bfEl.textContent = '—';
+      if (processingEl) processingEl.textContent = '—';
+      if (totalEl) totalEl.textContent = '—';
       if (confirmBtn) confirmBtn.textContent = 'Pay';
     }
 
@@ -707,7 +707,8 @@
         const data = await resp.json();
         if (!resp.ok) {
           if (data.error === 'deposit_already_paid') {
-            window.location.reload();
+            if (errorEl) errorEl.textContent = 'Deposit already paid. Reloading...';
+            setTimeout(() => window.location.reload(), 800);
             return;
           }
           throw new Error(data.error || 'Unable to start payment');
