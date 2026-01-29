@@ -255,7 +255,7 @@
         </div>
         <div class="bf-break-row">
           <span>Payment processing fee (non-refundable)</span>
-          <strong id="holdProcFee">--</strong>
+          <strong id="holdProcFee">—</strong>
         </div>
         <div class="bf-break-row total">
           <span>Total due now</span>
@@ -267,7 +267,7 @@
       <div id="holdError" class="bf-error"></div>
     </div>
     <div class="bf-modal-actions">
-      <button class="btn btn-primary" type="button" id="holdPayBtn" disabled>Pay $--</button>
+      <button class="btn btn-primary" type="button" id="holdPayBtn" disabled>Pay $—</button>
     </div>
   </div>
 </div>
@@ -652,7 +652,7 @@
     const baseEl = document.getElementById('hold-fee-base');
     const processingEl = document.getElementById('holdProcFee');
     const totalEl = document.getElementById('holdTotalDue');
-    const closeButtons = modal ? modal.querySelectorAll('[data-close]') : [];
+    const closeButtons = modal ? modal.querySelectorAll('[data-close], #holdCloseBtn, #holdCancelBtn, .bf-modal-close') : [];
     const modalBody = modal ? modal.querySelector('.bf-modal-body') : null;
     const modalOverlay = modal ? modal.querySelector('.bf-modal-overlay') : null;
     const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
@@ -674,10 +674,10 @@
       if (elementContainer) elementContainer.innerHTML = '';
       if (errorEl) errorEl.textContent = '';
       if (baseEl) baseEl.textContent = `$${holdDefault}`;
-      if (processingEl) processingEl.textContent = '--';
+      if (processingEl) processingEl.textContent = '—';
       if (totalEl) totalEl.textContent = `$${holdDefault}`;
       if (confirmBtn) {
-        confirmBtn.textContent = 'Pay $--';
+        confirmBtn.textContent = 'Pay $—';
         confirmBtn.disabled = true;
       }
     }
@@ -716,7 +716,6 @@
       console.log('[hold modal] pay hold fee clicked');
       const original = button.textContent;
       button.disabled = true;
-      button.textContent = 'Starting...';
       resetModal();
       openModal();
       if (!stripeEnabled || !stripe) {
@@ -756,21 +755,6 @@
         paymentElement = elements.create('payment');
         paymentElement.mount('#stripe-payment-element');
         if (confirmBtn) confirmBtn.disabled = false;
-        confirmBtn.onclick = async () => {
-          console.log('[hold modal] pay confirm clicked');
-          if (!elements) return;
-          confirmBtn.disabled = true;
-          const result = await stripe.confirmPayment({
-            elements,
-            confirmParams: {
-              return_url: `${window.location.origin}/bookme/requests`
-            }
-          });
-          if (result.error) {
-            if (errorEl) errorEl.textContent = result.error.message || 'Payment failed.';
-            confirmBtn.disabled = false;
-          }
-        };
       } catch (err) {
         if (errorEl) errorEl.textContent = err.message;
         if (confirmBtn) confirmBtn.disabled = true;
@@ -783,6 +767,27 @@
     document.querySelectorAll('.pay-hold-fee-btn').forEach(btn => {
       btn.addEventListener('click', () => startHoldFeePayment(btn.dataset.bookingId, btn));
     });
+
+    if (confirmBtn) {
+      confirmBtn.addEventListener('click', async () => {
+        console.log('[hold modal] pay confirm clicked');
+        if (!elements) {
+          if (errorEl) errorEl.textContent = 'Payment form not ready.';
+          return;
+        }
+        confirmBtn.disabled = true;
+        const result = await stripe.confirmPayment({
+          elements,
+          confirmParams: {
+            return_url: `${window.location.origin}/bookme/requests`
+          }
+        });
+        if (result.error) {
+          if (errorEl) errorEl.textContent = result.error.message || 'Payment failed.';
+          confirmBtn.disabled = false;
+        }
+      });
+    }
   });
 </script>
 {% endblock %}
