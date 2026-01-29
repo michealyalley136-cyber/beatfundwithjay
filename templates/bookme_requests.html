@@ -476,15 +476,15 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    z-index: 10000;
-    pointer-events: auto;
+    z-index: 20000 !important;
+    pointer-events: auto !important;
   }
   .bf-modal-overlay {
     position: absolute;
     inset: 0;
     background: rgba(2, 6, 23, 0.7);
-    z-index: 10000;
-    pointer-events: auto;
+    z-index: 20000 !important;
+    pointer-events: auto !important;
   }
   .bf-modal-body {
     position: relative;
@@ -493,8 +493,11 @@
     border: 1px solid rgba(148, 163, 184, 0.3);
     padding: 1rem;
     width: min(500px, 92vw);
-    z-index: 10001;
-    pointer-events: auto;
+    z-index: 20001 !important;
+    pointer-events: auto !important;
+  }
+  .bf-modal-body button {
+    pointer-events: auto !important;
   }
   .bf-modal-header {
     display: flex;
