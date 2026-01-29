@@ -7679,6 +7679,18 @@ def _create_booking_payment_intent_for_kind(booking: "Booking", kind: PaymentKin
     if kind == PaymentKind.deposit and beatfund_fee_total_cents < BEATFUND_FEE_MIN_CENTS:
         beatfund_fee_total_cents = BEATFUND_FEE_MIN_CENTS
 
+    def fallback_breakdown() -> dict:
+        if kind == PaymentKind.deposit:
+            base_c = deposit_base_cents
+            bf_c = min(beatfund_fee_total_cents, BEATFUND_FEE_MIN_CENTS)
+        else:
+            base_c = max(0, int(service_total_cents) - int(base_paid_cents or 0))
+            bf_c = max(0, int(beatfund_fee_total_cents) - int(bf_paid_cents or 0))
+        if base_c <= 0 and bf_c <= 0:
+            return _payment_breakdown_response(kind, 0, 0, 0, 0)
+        total_c, proc_c = calc_total_and_processing(base_c, bf_c)
+        return _payment_breakdown_response(kind, base_c, bf_c, proc_c, total_c)
+
     if kind == PaymentKind.balance:
         if booking.event_datetime:
             now = datetime.utcnow()
@@ -7700,17 +7712,15 @@ def _create_booking_payment_intent_for_kind(booking: "Booking", kind: PaymentKin
             return {"error": "no_balance_due"}, 409
         reused_secret, intent_status = _reuse_payment_intent(existing)
         if reused_secret:
-            breakdown = None
-            try:
-                breakdown = _payment_breakdown_response(
-                    kind,
-                    int(existing.base_amount_cents or 0),
-                    int(existing.beatfund_fee_cents or 0),
-                    int(existing.processing_fee_cents or 0),
-                    int(existing.total_paid_cents or existing.amount_cents or 0),
-                )
-            except Exception:
-                breakdown = None
+            breakdown = _payment_breakdown_response(
+                kind,
+                int(existing.base_amount_cents or 0),
+                int(existing.beatfund_fee_cents or 0),
+                int(existing.processing_fee_cents or 0),
+                int(existing.total_paid_cents or existing.amount_cents or 0),
+            )
+            if not breakdown or int(breakdown.get("total_cents") or 0) <= 0:
+                breakdown = fallback_breakdown()
             return {
                 "client_secret": reused_secret,
                 "payment_id": existing.id,
@@ -7752,17 +7762,15 @@ def _create_booking_payment_intent_for_kind(booking: "Booking", kind: PaymentKin
     if existing_by_key and existing_by_key.status in (PaymentStatus.created, PaymentStatus.processing, PaymentStatus.succeeded):
         reused_secret, intent_status = _reuse_payment_intent(existing_by_key)
         if reused_secret:
-            breakdown = None
-            try:
-                breakdown = _payment_breakdown_response(
-                    kind,
-                    int(existing_by_key.base_amount_cents or 0),
-                    int(existing_by_key.beatfund_fee_cents or 0),
-                    int(existing_by_key.processing_fee_cents or 0),
-                    int(existing_by_key.total_paid_cents or existing_by_key.amount_cents or 0),
-                )
-            except Exception:
-                breakdown = None
+            breakdown = _payment_breakdown_response(
+                kind,
+                int(existing_by_key.base_amount_cents or 0),
+                int(existing_by_key.beatfund_fee_cents or 0),
+                int(existing_by_key.processing_fee_cents or 0),
+                int(existing_by_key.total_paid_cents or existing_by_key.amount_cents or 0),
+            )
+            if not breakdown or int(breakdown.get("total_cents") or 0) <= 0:
+                breakdown = fallback_breakdown()
             return {
                 "client_secret": reused_secret,
                 "payment_id": existing_by_key.id,

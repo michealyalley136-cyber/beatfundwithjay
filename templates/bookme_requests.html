@@ -124,9 +124,9 @@
             </div>
             {% if req.status == BookingStatus.accepted and not deposit_paid %}
               {% if req.booking_id %}
-                <button class="btn btn-primary pay-hold-fee-btn" type="button" data-booking-id="{{ req.booking_id }}">
-                  Pay hold fee (${{ '%.2f'|format(HOLD_FEE_CENTS / 100.0) }})
-                </button>
+              <button class="btn btn-primary pay-hold-fee-btn" type="button" data-action="pay-hold" data-booking-id="{{ req.booking_id }}">
+                Pay hold fee (${{ '%.2f'|format(HOLD_FEE_CENTS / 100.0) }})
+              </button>
               {% else %}
                 <span class="btn btn-disabled">Awaiting setup</span>
               {% endif %}
