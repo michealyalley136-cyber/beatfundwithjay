@@ -246,7 +246,7 @@
     <div class="bf-modal-content">
       <p class="bf-modal-text">
         Your hold fee reserves the session and is credited toward the service.
-        BeatFund and processing fees are non-refundable.
+        Processing fees are non-refundable. BeatFund service fee applies when you pay the remaining balance.
       </p>
       <div class="bf-breakdown">
         <div class="bf-break-row">
@@ -255,19 +255,19 @@
         </div>
         <div class="bf-break-row">
           <span>Payment processing fee (non-refundable)</span>
-          <strong id="hold-fee-processing">--</strong>
+          <strong id="holdProcFee">Loading...</strong>
         </div>
         <div class="bf-break-row total">
           <span>Total due now</span>
-          <strong id="hold-fee-total">--</strong>
+          <strong id="holdTotalDue">${{ '%.2f'|format(HOLD_FEE_CENTS / 100.0) }}</strong>
         </div>
       </div>
       <div class="bf-refund-note">BeatFund service fee (5.17%) applies when you pay the remaining balance. Processing fees are non-refundable.</div>
-      <div id="hold-fee-element"></div>
-      <div id="hold-fee-error" class="bf-error"></div>
+      <div id="stripe-payment-element"></div>
+      <div id="holdError" class="bf-error"></div>
     </div>
     <div class="bf-modal-actions">
-      <button class="btn btn-primary" type="button" id="hold-fee-confirm">Pay</button>
+      <button class="btn btn-primary" type="button" id="holdPayBtn" disabled>Pay</button>
       <button class="btn btn-secondary" type="button" data-close="true">Cancel</button>
     </div>
   </div>
@@ -574,7 +574,7 @@
 <script src="https://js.stripe.com/v3/"></script>
 {% endif %}
 <script>
-  (function () {
+  document.addEventListener('DOMContentLoaded', () => {
     const tabs = document.querySelectorAll('.bf-tab');
     const segButtons = document.querySelectorAll('.bf-seg');
     const segmentGroups = document.querySelectorAll('.bf-segmented');
@@ -641,16 +641,17 @@
     if (!stripeEnabled) return;
     const stripe = Stripe({{ stripe_publishable_key|tojson }});
     const modal = document.getElementById('hold-fee-modal');
-    const elementContainer = document.getElementById('hold-fee-element');
-    const errorEl = document.getElementById('hold-fee-error');
-    const confirmBtn = document.getElementById('hold-fee-confirm');
+    const elementContainer = document.getElementById('stripe-payment-element');
+    const errorEl = document.getElementById('holdError');
+    const confirmBtn = document.getElementById('holdPayBtn');
     const baseEl = document.getElementById('hold-fee-base');
-    const processingEl = document.getElementById('hold-fee-processing');
-    const totalEl = document.getElementById('hold-fee-total');
+    const processingEl = document.getElementById('holdProcFee');
+    const totalEl = document.getElementById('holdTotalDue');
     const closeButtons = modal ? modal.querySelectorAll('[data-close]') : [];
     const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
     let elements = null;
     let paymentElement = null;
+    const holdDefault = {{ ('%.2f'|format(HOLD_FEE_CENTS / 100.0))|tojson }};
 
     function formatCents(cents) {
       const value = Number(cents || 0) / 100;
@@ -665,10 +666,13 @@
       elements = null;
       if (elementContainer) elementContainer.innerHTML = '';
       if (errorEl) errorEl.textContent = '';
-      if (baseEl) baseEl.textContent = '$' + {{ ('%.2f'|format(HOLD_FEE_CENTS / 100.0))|tojson }};
-      if (processingEl) processingEl.textContent = '--';
-      if (totalEl) totalEl.textContent = '--';
-      if (confirmBtn) confirmBtn.textContent = 'Pay';
+      if (baseEl) baseEl.textContent = `$${holdDefault}`;
+      if (processingEl) processingEl.textContent = 'Loading...';
+      if (totalEl) totalEl.textContent = `$${holdDefault}`;
+      if (confirmBtn) {
+        confirmBtn.textContent = 'Pay';
+        confirmBtn.disabled = true;
+      }
     }
 
     function openModal() {
@@ -689,6 +693,8 @@
       const original = button.textContent;
       button.disabled = true;
       button.textContent = 'Starting...';
+      resetModal();
+      openModal();
       try {
         const resp = await fetch(`/api/bookings/${bookingId}/pay/deposit`, {
           method: 'POST',
@@ -718,8 +724,8 @@
 
         elements = stripe.elements({clientSecret: data.client_secret});
         paymentElement = elements.create('payment');
-        paymentElement.mount('#hold-fee-element');
-        openModal();
+        paymentElement.mount('#stripe-payment-element');
+        if (confirmBtn) confirmBtn.disabled = false;
         confirmBtn.onclick = async () => {
           confirmBtn.disabled = true;
           const result = await stripe.confirmPayment({
@@ -735,6 +741,7 @@
         };
       } catch (err) {
         if (errorEl) errorEl.textContent = err.message;
+        if (confirmBtn) confirmBtn.disabled = true;
       } finally {
         button.disabled = false;
         button.textContent = original;
@@ -744,6 +751,6 @@
     document.querySelectorAll('.pay-hold-fee-btn').forEach(btn => {
       btn.addEventListener('click', () => startHoldFeePayment(btn.dataset.bookingId, btn));
     });
-  })();
+  });
 </script>
 {% endblock %}
