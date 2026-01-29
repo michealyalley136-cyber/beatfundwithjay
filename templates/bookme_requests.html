@@ -244,6 +244,29 @@
       <button class="bf-icon-btn" type="button" data-close="true">Close</button>
     </div>
     <div class="bf-modal-content">
+      <p class="bf-modal-text">
+        Your hold fee reserves the session and is credited toward the service.
+        BeatFund and processing fees are non-refundable.
+      </p>
+      <div class="bf-breakdown">
+        <div class="bf-break-row">
+          <span>Hold amount (credited)</span>
+          <strong id="hold-fee-base">$0.00</strong>
+        </div>
+        <div class="bf-break-row">
+          <span>BeatFund service fee (non-refundable)</span>
+          <strong id="hold-fee-bf">$0.00</strong>
+        </div>
+        <div class="bf-break-row">
+          <span>Payment processing fee (non-refundable)</span>
+          <strong id="hold-fee-processing">$0.00</strong>
+        </div>
+        <div class="bf-break-row total">
+          <span>Total due now</span>
+          <strong id="hold-fee-total">$0.00</strong>
+        </div>
+      </div>
+      <div class="bf-refund-note">Processing and BeatFund fees are non-refundable.</div>
       <div id="hold-fee-element"></div>
       <div id="hold-fee-error" class="bf-error"></div>
     </div>
@@ -489,6 +512,35 @@
   .bf-modal-content {
     margin-bottom: 1rem;
   }
+  .bf-modal-text {
+    font-size: 0.85rem;
+    opacity: 0.85;
+    margin-bottom: 0.75rem;
+  }
+  .bf-breakdown {
+    border: 1px solid rgba(148, 163, 184, 0.25);
+    border-radius: 12px;
+    padding: 0.7rem 0.8rem;
+    background: rgba(2, 6, 23, 0.4);
+    margin-bottom: 0.75rem;
+  }
+  .bf-break-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.82rem;
+    margin-bottom: 0.35rem;
+  }
+  .bf-break-row.total {
+    border-top: 1px solid rgba(148, 163, 184, 0.2);
+    padding-top: 0.35rem;
+    margin-bottom: 0;
+    font-weight: 600;
+  }
+  .bf-refund-note {
+    font-size: 0.75rem;
+    opacity: 0.75;
+    margin-bottom: 0.75rem;
+  }
   .bf-modal-actions {
     display: flex;
     justify-content: flex-end;
@@ -596,10 +648,19 @@
     const elementContainer = document.getElementById('hold-fee-element');
     const errorEl = document.getElementById('hold-fee-error');
     const confirmBtn = document.getElementById('hold-fee-confirm');
+    const baseEl = document.getElementById('hold-fee-base');
+    const bfEl = document.getElementById('hold-fee-bf');
+    const processingEl = document.getElementById('hold-fee-processing');
+    const totalEl = document.getElementById('hold-fee-total');
     const closeButtons = modal ? modal.querySelectorAll('[data-close]') : [];
     const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
     let elements = null;
     let paymentElement = null;
+
+    function formatCents(cents) {
+      const value = Number(cents || 0) / 100;
+      return `$${value.toFixed(2)}`;
+    }
 
     function resetModal() {
       if (paymentElement) {
@@ -609,6 +670,11 @@
       elements = null;
       if (elementContainer) elementContainer.innerHTML = '';
       if (errorEl) errorEl.textContent = '';
+      if (baseEl) baseEl.textContent = '$0.00';
+      if (bfEl) bfEl.textContent = '$0.00';
+      if (processingEl) processingEl.textContent = '$0.00';
+      if (totalEl) totalEl.textContent = '$0.00';
+      if (confirmBtn) confirmBtn.textContent = 'Pay';
     }
 
     function openModal() {
@@ -646,6 +712,17 @@
           }
           throw new Error(data.error || 'Unable to start payment');
         }
+        const breakdown = data.breakdown || {};
+        const baseCents = (breakdown.hold_base_cents ?? breakdown.base_cents ?? 0);
+        const bfCents = (breakdown.beatfund_fee_cents ?? 0);
+        const procCents = (breakdown.processing_fee_cents ?? 0);
+        const totalCents = (breakdown.total_cents ?? 0);
+        if (baseEl) baseEl.textContent = formatCents(baseCents);
+        if (bfEl) bfEl.textContent = formatCents(bfCents);
+        if (processingEl) processingEl.textContent = formatCents(procCents);
+        if (totalEl) totalEl.textContent = formatCents(totalCents);
+        if (confirmBtn) confirmBtn.textContent = `Pay ${formatCents(totalCents)}`;
+
         elements = stripe.elements({clientSecret: data.client_secret});
         paymentElement = elements.create('payment');
         paymentElement.mount('#hold-fee-element');

@@ -7644,6 +7644,18 @@ def _reuse_payment_intent(payment: "Payment") -> tuple[str | None, str | None]:
     return client_secret, intent_status
 
 
+def _payment_breakdown_response(kind: PaymentKind, base_cents: int, beatfund_fee_cents: int, processing_fee_cents: int, total_cents: int) -> dict:
+    breakdown = {
+        "base_cents": int(base_cents),
+        "beatfund_fee_cents": int(beatfund_fee_cents),
+        "processing_fee_cents": int(processing_fee_cents),
+        "total_cents": int(total_cents),
+    }
+    if kind == PaymentKind.deposit:
+        breakdown["hold_base_cents"] = int(base_cents)
+    return breakdown
+
+
 def _create_booking_payment_intent_for_kind(booking: "Booking", kind: PaymentKind) -> tuple[dict, int]:
     service_total_cents, ctx = _get_booking_service_total_ctx(booking)
 
@@ -7688,7 +7700,24 @@ def _create_booking_payment_intent_for_kind(booking: "Booking", kind: PaymentKin
             return {"error": "no_balance_due"}, 409
         reused_secret, intent_status = _reuse_payment_intent(existing)
         if reused_secret:
-            return {"client_secret": reused_secret, "payment_id": existing.id, "reuse": True}, 200
+            breakdown = None
+            try:
+                breakdown = _payment_breakdown_response(
+                    kind,
+                    int(existing.base_amount_cents or 0),
+                    int(existing.beatfund_fee_cents or 0),
+                    int(existing.processing_fee_cents or 0),
+                    int(existing.total_paid_cents or existing.amount_cents or 0),
+                )
+            except Exception:
+                breakdown = None
+            return {
+                "client_secret": reused_secret,
+                "payment_id": existing.id,
+                "payment_intent_id": existing.stripe_payment_intent_id,
+                "breakdown": breakdown,
+                "reuse": True,
+            }, 200
         if intent_status == "canceled":
             try:
                 existing.status = PaymentStatus.failed
@@ -7714,12 +7743,7 @@ def _create_booking_payment_intent_for_kind(booking: "Booking", kind: PaymentKin
         beatfund_fee_cents = remaining_bf
 
     total_cents, processing_fee_cents = calc_total_and_processing(base_cents, beatfund_fee_cents)
-    breakdown = {
-        "base_cents": base_cents,
-        "beatfund_fee_cents": beatfund_fee_cents,
-        "processing_fee_cents": processing_fee_cents,
-        "total_cents": total_cents,
-    }
+    breakdown = _payment_breakdown_response(kind, base_cents, beatfund_fee_cents, processing_fee_cents, total_cents)
 
     idempotency_key = generate_idempotency_key(
         "booking_payment", current_user.id, booking_id=booking.id, kind=kind.value, total=total_cents
@@ -7728,7 +7752,24 @@ def _create_booking_payment_intent_for_kind(booking: "Booking", kind: PaymentKin
     if existing_by_key and existing_by_key.status in (PaymentStatus.created, PaymentStatus.processing, PaymentStatus.succeeded):
         reused_secret, intent_status = _reuse_payment_intent(existing_by_key)
         if reused_secret:
-            return {"client_secret": reused_secret, "payment_id": existing_by_key.id, "reuse": True}, 200
+            breakdown = None
+            try:
+                breakdown = _payment_breakdown_response(
+                    kind,
+                    int(existing_by_key.base_amount_cents or 0),
+                    int(existing_by_key.beatfund_fee_cents or 0),
+                    int(existing_by_key.processing_fee_cents or 0),
+                    int(existing_by_key.total_paid_cents or existing_by_key.amount_cents or 0),
+                )
+            except Exception:
+                breakdown = None
+            return {
+                "client_secret": reused_secret,
+                "payment_id": existing_by_key.id,
+                "payment_intent_id": existing_by_key.stripe_payment_intent_id,
+                "breakdown": breakdown,
+                "reuse": True,
+            }, 200
         if intent_status == "canceled":
             try:
                 existing_by_key.status = PaymentStatus.failed
@@ -7789,6 +7830,7 @@ def _create_booking_payment_intent_for_kind(booking: "Booking", kind: PaymentKin
     return {
         "client_secret": intent.client_secret,
         "payment_id": payment.id,
+        "payment_intent_id": payment.stripe_payment_intent_id,
         "breakdown": breakdown,
     }, 200
 
