@@ -638,8 +638,7 @@
     showList('requests', 'incoming');
 
     const stripeEnabled = {{ 'true' if stripe_enabled else 'false' }};
-    if (!stripeEnabled) return;
-    const stripe = Stripe({{ stripe_publishable_key|tojson }});
+    const stripe = stripeEnabled ? Stripe({{ stripe_publishable_key|tojson }}) : null;
     const modal = document.getElementById('hold-fee-modal');
     const elementContainer = document.getElementById('stripe-payment-element');
     const errorEl = document.getElementById('holdError');
@@ -695,6 +694,12 @@
       button.textContent = 'Starting...';
       resetModal();
       openModal();
+      if (!stripeEnabled || !stripe) {
+        if (errorEl) errorEl.textContent = 'Stripe is not configured. Please try again later.';
+        button.disabled = false;
+        button.textContent = original;
+        return;
+      }
       try {
         const resp = await fetch(`/api/bookings/${bookingId}/pay/deposit`, {
           method: 'POST',
@@ -727,6 +732,7 @@
         paymentElement.mount('#stripe-payment-element');
         if (confirmBtn) confirmBtn.disabled = false;
         confirmBtn.onclick = async () => {
+          if (!elements) return;
           confirmBtn.disabled = true;
           const result = await stripe.confirmPayment({
             elements,
