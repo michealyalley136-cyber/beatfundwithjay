@@ -1821,15 +1821,18 @@ class Notification(db.Model):
     __tablename__ = "notification"
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    actor_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True, index=True)
     kind = db.Column(db.String(50), nullable=False, default="info")  # info, success, warning, error
     title = db.Column(db.String(160), nullable=False)
     body = db.Column(db.Text, nullable=True)
     url = db.Column(db.String(400), nullable=True)  # where to send user when clicked
+    event_key = db.Column(db.String(120), nullable=True, index=True)
     is_read = db.Column(db.Boolean, nullable=False, default=False, index=True)
     created_at = db.Column(db.DateTime, server_default=func.now(), index=True)
     emailed_at = db.Column(db.DateTime, nullable=True)
 
     user = db.relationship("User", backref=db.backref("notifications", lazy="dynamic"))
+    actor = db.relationship("User", foreign_keys=[actor_user_id])
 
 
 # ------- Marketplace Activity Broadcast (event-driven) -------
@@ -3720,10 +3723,12 @@ def _ensure_sqlite_notifications_table():
             CREATE TABLE notification (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER NOT NULL,
+                actor_user_id INTEGER,
                 kind VARCHAR(50) NOT NULL DEFAULT 'info',
                 title VARCHAR(160) NOT NULL,
                 body TEXT,
                 url VARCHAR(400),
+                event_key VARCHAR(120),
                 is_read BOOLEAN NOT NULL DEFAULT 0,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 emailed_at DATETIME,
@@ -3731,8 +3736,19 @@ def _ensure_sqlite_notifications_table():
             )
         """))
         db.session.execute(text("CREATE INDEX IF NOT EXISTS ix_notification_user_id ON notification (user_id)"))
+        db.session.execute(text("CREATE INDEX IF NOT EXISTS ix_notification_actor_user_id ON notification (actor_user_id)"))
+        db.session.execute(text("CREATE INDEX IF NOT EXISTS ix_notification_event_key ON notification (event_key)"))
         db.session.execute(text("CREATE INDEX IF NOT EXISTS ix_notification_is_read ON notification (is_read)"))
         db.session.execute(text("CREATE INDEX IF NOT EXISTS ix_notification_created_at ON notification (created_at)"))
+        db.session.commit()
+    else:
+        cols = _sqlite_columns("notification")
+        if "actor_user_id" not in cols:
+            db.session.execute(text("ALTER TABLE notification ADD COLUMN actor_user_id INTEGER"))
+        if "event_key" not in cols:
+            db.session.execute(text("ALTER TABLE notification ADD COLUMN event_key VARCHAR(120)"))
+        db.session.execute(text("CREATE INDEX IF NOT EXISTS ix_notification_actor_user_id ON notification (actor_user_id)"))
+        db.session.execute(text("CREATE INDEX IF NOT EXISTS ix_notification_event_key ON notification (event_key)"))
         db.session.commit()
     
     # Add email_notifications_enabled to user table if missing
@@ -4370,6 +4386,49 @@ def _ensure_postgres_payment_fee_columns():
         app.logger.warning(f"[DB] Postgres payment fee patch skipped: {type(e).__name__}: {e}")
 
 
+def _ensure_postgres_notification_columns():
+    """Add notification columns in Postgres if missing (safe, idempotent)."""
+    try:
+        if db.engine.url.get_backend_name() != "postgresql":
+            return
+    except Exception:
+        return
+
+    try:
+        with db.engine.begin() as conn:
+            rows = conn.execute(text("""
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_schema = 'public' AND table_name = 'notification'
+            """)).fetchall()
+            existing = {r[0] for r in rows}
+            missing = []
+            if "actor_user_id" not in existing:
+                missing.append("actor_user_id")
+            if "event_key" not in existing:
+                missing.append("event_key")
+
+            if missing:
+                conn.execute(text("""
+                    ALTER TABLE notification
+                      ADD COLUMN IF NOT EXISTS actor_user_id INTEGER,
+                      ADD COLUMN IF NOT EXISTS event_key TEXT;
+                """))
+                try:
+                    conn.execute(text("CREATE INDEX IF NOT EXISTS ix_notification_actor_user_id ON notification (actor_user_id)"))
+                except Exception:
+                    pass
+                try:
+                    conn.execute(text("CREATE INDEX IF NOT EXISTS ix_notification_event_key ON notification (event_key)"))
+                except Exception:
+                    pass
+                app.logger.warning(f"[DB] Added notification columns: {', '.join(missing)}")
+            else:
+                app.logger.info("[DB] Notification columns already present")
+    except Exception as e:
+        app.logger.warning(f"[DB] Postgres notification patch skipped: {type(e).__name__}: {e}")
+
+
 def _ensure_sqlite_careers_tables():
     """Create careers tables (job_post and job_application) if missing"""
     if db.engine.url.get_backend_name() != "sqlite":
@@ -4458,6 +4517,7 @@ def _bootstrap_schema_once():
             _ensure_postgres_booking_fee_columns()
             _ensure_postgres_booking_request_duration_column()
             _ensure_postgres_payment_fee_columns()
+            _ensure_postgres_notification_columns()
         except Exception:
             pass
         
@@ -4490,6 +4550,7 @@ def _bootstrap_schema_once():
         _ensure_postgres_booking_fee_columns()
         _ensure_postgres_booking_request_duration_column()
         _ensure_postgres_payment_fee_columns()
+        _ensure_postgres_notification_columns()
     except Exception as e:
         app.logger.error(f"SQLite auto-migration failed: {type(e).__name__}: {str(e)}", exc_info=True)
         try:
@@ -4501,17 +4562,33 @@ def _bootstrap_schema_once():
 # =========================================================
 # Notifications System
 # =========================================================
-def create_notification(user_id: int, kind: str, title: str, body: str = None, url: str = None, *, commit: bool = False) -> Notification:
-    """Create a notification for a user. Never commits by default - must be committed at route level."""
+def create_notification(
+    user_id: int,
+    kind: str,
+    title: str,
+    body: str = None,
+    url: str = None,
+    *,
+    actor_user_id: int | None = None,
+    event_key: str | None = None,
+    commit: bool = False,
+) -> Notification:
+    """Create a notification for a user (dedupe by event_key if provided)."""
+    if event_key:
+        existing = Notification.query.filter_by(user_id=user_id, event_key=event_key).first()
+        if existing:
+            return existing
+
     notif = Notification(
         user_id=user_id,
+        actor_user_id=actor_user_id,
         kind=kind,
         title=title,
         body=body,
-        url=url
+        url=url,
+        event_key=event_key,
     )
     db.session.add(notif)
-    # Note: commit=False by default - caller must commit in transaction
     if commit:
         db.session.commit()
     return notif
@@ -5078,12 +5155,29 @@ def send_email(to_email: str, subject: str, text_body: str) -> bool:
         return False
 
 
-def notify_user(user: User, kind: str, title: str, body: str = None, url: str = None, *, email: bool = False, commit: bool = False) -> Notification:
+def notify_user(
+    user: User,
+    kind: str,
+    title: str,
+    body: str = None,
+    url: str = None,
+    *,
+    actor_user_id: int | None = None,
+    event_key: str | None = None,
+    email: bool = False,
+    commit: bool = False,
+) -> Notification:
     """Create a notification and optionally send email. Never commits by default - must be committed at route level."""
-    notif = create_notification(user.id, kind, title, body, url, commit=commit)
-    
-    # Email sending should happen AFTER transaction commit, not during
-    # This function only creates the notification row
+    notif = create_notification(
+        user.id,
+        kind,
+        title,
+        body,
+        url,
+        actor_user_id=actor_user_id,
+        event_key=event_key,
+        commit=commit,
+    )
     return notif
 
 
@@ -7141,6 +7235,8 @@ def bookme_request_confirm(provider_id):
         title="New booking request",
         body=f"@{current_user.username} requested {pref}",
         url=url_for("bookme_requests"),
+        actor_user_id=current_user.id,
+        event_key=f"bookme_request_created:{req.id}",
         commit=True,
     )
     
@@ -7183,10 +7279,7 @@ def bookme_request(provider_id):
 def bookme_requests():
     incoming_requests = (
         BookingRequest.query
-        .filter(
-            BookingRequest.provider_id == current_user.id,
-            BookingRequest.status == BookingStatus.pending,
-        )
+        .filter(BookingRequest.provider_id == current_user.id)
         .order_by(BookingRequest.created_at.desc())
         .all()
     )
@@ -7212,14 +7305,55 @@ def bookme_requests():
         .all()
     )
 
+    request_ids = [r.id for r in (incoming_requests + outgoing_requests)]
+    booking_ids = [r.booking_id for r in (incoming_requests + outgoing_requests) if r.booking_id]
+    request_deposit_paid = {}
+    if request_ids or booking_ids:
+        payments = Payment.query.filter(
+            Payment.kind == PaymentKind.deposit,
+            Payment.status == PaymentStatus.succeeded,
+            or_(
+                Payment.booking_request_id.in_(request_ids or [0]),
+                Payment.booking_id.in_(booking_ids or [0]),
+            ),
+        ).all()
+        booking_to_request = {r.booking_id: r.id for r in (incoming_requests + outgoing_requests) if r.booking_id}
+        for p in payments:
+            if p.booking_request_id:
+                request_deposit_paid[int(p.booking_request_id)] = True
+            if p.booking_id and p.booking_id in booking_to_request:
+                request_deposit_paid[int(booking_to_request[p.booking_id])] = True
+
+    booking_payment_meta = {}
+    for b in (incoming_bookings + outgoing_bookings):
+        req = BookingRequest.query.filter_by(booking_id=b.id).first()
+        sums = sum_successful_payments(b, req)
+        base_paid = sums.get("base_paid_cents", 0)
+        service_total = b.quoted_total_cents or b.total_cents
+        deposit_base = b.deposit_base_cents or HOLD_FEE_CENTS
+        if service_total:
+            deposit_base = min(int(deposit_base), int(service_total))
+        deposit_paid = bool(service_total and base_paid >= int(deposit_base)) if service_total else bool(base_paid >= int(deposit_base))
+        remaining_base = max(0, int(service_total) - int(base_paid)) if service_total else None
+        booking_payment_meta[b.id] = {
+            "deposit_paid": deposit_paid,
+            "remaining_base_cents": remaining_base,
+        }
+
+    stripe_enabled = bool(STRIPE_AVAILABLE and STRIPE_SECRET_KEY and STRIPE_PUBLISHABLE_KEY)
+
     return render_template(
         "bookme_requests.html",
-        incoming_requests=incoming_requests,
-        outgoing_requests=outgoing_requests,
-        incoming_bookings=incoming_bookings,
-        outgoing_bookings=outgoing_bookings,
+        requests_incoming=incoming_requests,
+        requests_sent=outgoing_requests,
+        bookings_as_provider=incoming_bookings,
+        bookings_as_client=outgoing_bookings,
+        request_deposit_paid=request_deposit_paid,
+        booking_payment_meta=booking_payment_meta,
         HOLD_FEE_CENTS=HOLD_FEE_CENTS,
         BookingStatus=BookingStatus,
+        stripe_enabled=stripe_enabled,
+        stripe_publishable_key=STRIPE_PUBLISHABLE_KEY,
     )
 
 
@@ -7289,6 +7423,8 @@ def bookme_request_status(req_id):
                             title="Booking request declined",
                             body=f"@{current_user.username} declined your request.",
                             url=url_for("bookme_requests"),
+                            actor_user_id=current_user.id,
+                            event_key=f"bookme_request_declined:{req.id}",
                             commit=True,
                         )
             
@@ -7333,7 +7469,43 @@ def bookme_request_status(req_id):
 
         # Notify client
         req = BookingRequest.query.get(req_id)
+        booking = None
         if req:
+            if not req.booking_id:
+                event_datetime = None
+                try:
+                    if " " in req.preferred_time:
+                        event_datetime = datetime.strptime(req.preferred_time, "%Y-%m-%d %H:%M")
+                    else:
+                        event_datetime = datetime.strptime(req.preferred_time, "%Y-%m-%d")
+                except Exception:
+                    event_datetime = datetime.utcnow()
+
+                booking = Booking(
+                    provider_id=req.provider_id,
+                    provider_role=current_user.role,
+                    client_id=req.client_id,
+                    event_title=f"Booking with @{current_user.username}",
+                    event_datetime=event_datetime,
+                    duration_minutes=req.duration_minutes,
+                    total_cents=None,
+                    quoted_total_cents=None,
+                    deposit_base_cents=HOLD_FEE_CENTS,
+                    beatfund_fee_total_cents=None,
+                    status=BOOKING_STATUS_ACCEPTED,
+                    notes_from_client=req.message,
+                )
+                db.session.add(booking)
+                db.session.flush()
+                req.booking_id = booking.id
+                try:
+                    get_or_create_booking_conversation(booking.id)
+                except Exception:
+                    pass
+                db.session.commit()
+            else:
+                booking = Booking.query.get(req.booking_id)
+
             client = User.query.get(req.client_id)
             if client:
                 notify_user(
@@ -7341,7 +7513,9 @@ def bookme_request_status(req_id):
                     kind="success",
                     title="Booking request accepted",
                     body=f"@{current_user.username} accepted your request for {req.preferred_time}",
-                    url=url_for("bookme_requests"),
+                    url=url_for("booking_detail", booking_id=booking.id) if booking else url_for("bookme_requests"),
+                    actor_user_id=current_user.id,
+                    event_key=f"bookme_request_accepted:{req.id}",
                     email=True,
                     commit=True,
                 )
@@ -7369,6 +7543,8 @@ def bookme_request_status(req_id):
                     title="Booking request cancelled",
                     body=f"@{current_user.username} cancelled the request.",
                     url=url_for("bookme_requests"),
+                    actor_user_id=current_user.id,
+                    event_key=f"bookme_request_cancelled:{req.id}",
                     commit=True,
                 )
             
@@ -7458,16 +7634,26 @@ def _reuse_payment_intent(payment: "Payment") -> tuple[str | None, str | None]:
 
 def _create_booking_payment_intent_for_kind(booking: "Booking", kind: PaymentKind) -> tuple[dict, int]:
     service_total_cents, ctx = _get_booking_service_total_ctx(booking)
-    if not service_total_cents:
-        return {"error": "Booking total must be set before payment."}, 400
 
     booking_request = _get_booking_request_for_payment(booking)
     sums = sum_successful_payments(booking, booking_request)
     base_paid_cents = sums.get("base_paid_cents", 0)
     bf_paid_cents = sums.get("bf_paid_cents", 0)
 
-    deposit_base_cents = min(int(ctx.get("deposit_base_cents") or HOLD_FEE_CENTS), int(service_total_cents))
-    beatfund_fee_total_cents = int(ctx.get("beatfund_fee_total_cents") or calc_beatfund_fee_total(service_total_cents))
+    deposit_base_cents = int(ctx.get("deposit_base_cents") or HOLD_FEE_CENTS)
+    if service_total_cents:
+        deposit_base_cents = min(int(deposit_base_cents), int(service_total_cents))
+
+    if not service_total_cents:
+        if kind != PaymentKind.deposit:
+            return {"error": "Booking total must be set before payment."}, 400
+        service_total_cents = int(deposit_base_cents or HOLD_FEE_CENTS)
+
+    beatfund_fee_total_cents = int(ctx.get("beatfund_fee_total_cents") or 0)
+    if beatfund_fee_total_cents <= 0:
+        beatfund_fee_total_cents = calc_beatfund_fee_total(int(service_total_cents))
+    if kind == PaymentKind.deposit and beatfund_fee_total_cents < BEATFUND_FEE_MIN_CENTS:
+        beatfund_fee_total_cents = BEATFUND_FEE_MIN_CENTS
 
     if kind == PaymentKind.balance:
         if booking.event_datetime:
@@ -7946,6 +8132,21 @@ def booking_quote(booking_id: int):
     booking.status = BOOKING_STATUS_QUOTED
 
     db.session.commit()
+    try:
+        client = User.query.get(booking.client_id)
+        if client:
+            notify_user(
+                client,
+                kind="success",
+                title="Quote ready",
+                body=f"@{current_user.username} sent you a quote for booking #{booking.id}.",
+                url=url_for("booking_detail", booking_id=booking.id),
+                actor_user_id=current_user.id,
+                event_key=f"booking:{booking.id}:quote_sent",
+                commit=True,
+            )
+    except Exception:
+        pass
     flash("Quote sent to client.", "success")
     return redirect(url_for("booking_detail", booking_id=booking.id))
 
@@ -9514,6 +9715,70 @@ def stripe_webhook():
                                     post_ledger(provider_wallet, EntryType.sale_income, base_cents, meta=meta)
                         except Exception:
                             app.logger.warning("Stripe webhook: unable to post booking ledger entry")
+
+                        # Booking status + notifications
+                        try:
+                            if payment.kind == PaymentKind.deposit and booking.status not in (BOOKING_STATUS_COMPLETED, BOOKING_STATUS_CANCELLED):
+                                booking.status = BOOKING_STATUS_CONFIRMED
+                                req_link = BookingRequest.query.filter_by(booking_id=booking.id).first()
+                                if req_link and req_link.status == BookingStatus.accepted:
+                                    req_link.status = BookingStatus.confirmed
+                            if payment.kind == PaymentKind.balance:
+                                sums = sum_successful_payments(booking, BookingRequest.query.filter_by(booking_id=booking.id).first())
+                                total_base_paid = sums.get("base_paid_cents", 0)
+                                service_total = booking.quoted_total_cents or booking.total_cents
+                                if service_total and total_base_paid >= int(service_total):
+                                    booking.status = BOOKING_STATUS_CONFIRMED
+                        except Exception:
+                            pass
+
+                        try:
+                            provider = User.query.get(booking.provider_id) if booking.provider_id else None
+                            client = User.query.get(booking.client_id) if booking.client_id else None
+                            if payment.kind == PaymentKind.deposit:
+                                if provider:
+                                    notify_user(
+                                        provider,
+                                        kind="success",
+                                        title="Deposit paid",
+                                        body=f"Deposit received for booking #{booking.id}.",
+                                        url=url_for("booking_detail", booking_id=booking.id),
+                                        event_key=f"booking:{booking.id}:deposit_paid",
+                                        commit=False,
+                                    )
+                                if client:
+                                    notify_user(
+                                        client,
+                                        kind="success",
+                                        title="Deposit paid",
+                                        body=f"Your hold fee was received for booking #{booking.id}.",
+                                        url=url_for("booking_detail", booking_id=booking.id),
+                                        event_key=f"booking:{booking.id}:deposit_paid_client",
+                                        commit=False,
+                                    )
+                            elif payment.kind == PaymentKind.balance:
+                                if provider:
+                                    notify_user(
+                                        provider,
+                                        kind="success",
+                                        title="Balance paid",
+                                        body=f"Balance payment received for booking #{booking.id}.",
+                                        url=url_for("booking_detail", booking_id=booking.id),
+                                        event_key=f"booking:{booking.id}:balance_paid",
+                                        commit=False,
+                                    )
+                                if client:
+                                    notify_user(
+                                        client,
+                                        kind="success",
+                                        title="Balance paid",
+                                        body=f"Your balance payment was received for booking #{booking.id}.",
+                                        url=url_for("booking_detail", booking_id=booking.id),
+                                        event_key=f"booking:{booking.id}:balance_paid_client",
+                                        commit=False,
+                                    )
+                        except Exception:
+                            pass
             except Exception:
                 app.logger.exception(f"Stripe webhook: error finalizing booking payment_id={getattr(payment, 'id', None)} intent={pi.get('id')}")
                 _mark_row(StripeWebhookEventStatus.failed, "booking_payment_finalize_failed")
@@ -10411,7 +10676,19 @@ def checkout_hold_fee_success():
                     title="Hold fee paid - Booking confirmed!",
                     body=f"@{current_user.username} paid the hold fee. Booking is now confirmed for {req_check.preferred_time}",
                     url=url_for("booking_detail", booking_id=booking.id),
+                    actor_user_id=current_user.id,
+                    event_key=f"booking:{booking.id}:deposit_paid",
                     commit=False
+                )
+                notify_user(
+                    current_user,
+                    kind="success",
+                    title="Deposit paid",
+                    body=f"Your hold fee was received for booking #{booking.id}.",
+                    url=url_for("booking_detail", booking_id=booking.id),
+                    actor_user_id=current_user.id,
+                    event_key=f"booking:{booking.id}:deposit_paid_client",
+                    commit=False,
                 )
         
         except ValueError as e:
