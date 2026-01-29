@@ -477,12 +477,15 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    z-index: 1000;
+    z-index: 10000;
+    pointer-events: auto;
   }
   .bf-modal-overlay {
     position: absolute;
     inset: 0;
     background: rgba(2, 6, 23, 0.7);
+    z-index: 10000;
+    pointer-events: auto;
   }
   .bf-modal-body {
     position: relative;
@@ -491,7 +494,8 @@
     border: 1px solid rgba(148, 163, 184, 0.3);
     padding: 1rem;
     width: min(500px, 92vw);
-    z-index: 1;
+    z-index: 10001;
+    pointer-events: auto;
   }
   .bf-modal-header {
     display: flex;
@@ -647,6 +651,8 @@
     const processingEl = document.getElementById('holdProcFee');
     const totalEl = document.getElementById('holdTotalDue');
     const closeButtons = modal ? modal.querySelectorAll('[data-close]') : [];
+    const modalBody = modal ? modal.querySelector('.bf-modal-body') : null;
+    const modalOverlay = modal ? modal.querySelector('.bf-modal-overlay') : null;
     const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
     let elements = null;
     let paymentElement = null;
@@ -684,11 +690,28 @@
     }
 
     closeButtons.forEach(btn => {
-      btn.addEventListener('click', closeModal);
+      btn.addEventListener('click', (event) => {
+        console.log('[hold modal] close/cancel clicked');
+        event.preventDefault();
+        closeModal();
+      });
     });
+    if (modalOverlay) {
+      modalOverlay.addEventListener('click', (event) => {
+        console.log('[hold modal] overlay clicked');
+        event.preventDefault();
+        closeModal();
+      });
+    }
+    if (modalBody) {
+      modalBody.addEventListener('click', (event) => {
+        event.stopPropagation();
+      });
+    }
 
     async function startHoldFeePayment(bookingId, button) {
       if (!bookingId || !csrfToken) return;
+      console.log('[hold modal] pay hold fee clicked');
       const original = button.textContent;
       button.disabled = true;
       button.textContent = 'Starting...';
@@ -732,6 +755,7 @@
         paymentElement.mount('#stripe-payment-element');
         if (confirmBtn) confirmBtn.disabled = false;
         confirmBtn.onclick = async () => {
+          console.log('[hold modal] pay confirm clicked');
           if (!elements) return;
           confirmBtn.disabled = true;
           const result = await stripe.confirmPayment({
