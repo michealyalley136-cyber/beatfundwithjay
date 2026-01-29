@@ -255,7 +255,7 @@
         </div>
         <div class="bf-break-row">
           <span>Payment processing fee (non-refundable)</span>
-          <strong id="holdProcFee">Loading...</strong>
+          <strong id="holdProcFee">--</strong>
         </div>
         <div class="bf-break-row total">
           <span>Total due now</span>
@@ -267,7 +267,7 @@
       <div id="holdError" class="bf-error"></div>
     </div>
     <div class="bf-modal-actions">
-      <button class="btn btn-primary" type="button" id="holdPayBtn" disabled>Pay</button>
+      <button class="btn btn-primary" type="button" id="holdPayBtn" disabled>Pay $--</button>
       <button class="btn btn-secondary" type="button" data-close="true">Cancel</button>
     </div>
   </div>
@@ -667,10 +667,10 @@
       if (elementContainer) elementContainer.innerHTML = '';
       if (errorEl) errorEl.textContent = '';
       if (baseEl) baseEl.textContent = `$${holdDefault}`;
-      if (processingEl) processingEl.textContent = 'Loading...';
+      if (processingEl) processingEl.textContent = '--';
       if (totalEl) totalEl.textContent = `$${holdDefault}`;
       if (confirmBtn) {
-        confirmBtn.textContent = 'Pay';
+        confirmBtn.textContent = 'Pay $--';
         confirmBtn.disabled = true;
       }
     }
