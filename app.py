@@ -1831,8 +1831,16 @@ class Notification(db.Model):
     created_at = db.Column(db.DateTime, server_default=func.now(), index=True)
     emailed_at = db.Column(db.DateTime, nullable=True)
 
-    user = db.relationship("User", backref=db.backref("notifications", lazy="dynamic"))
-    actor = db.relationship("User", foreign_keys=[actor_user_id])
+    user = db.relationship(
+        "User",
+        foreign_keys=[user_id],
+        backref=db.backref("notifications", lazy="dynamic"),
+    )
+    actor = db.relationship(
+        "User",
+        foreign_keys=[actor_user_id],
+        backref=db.backref("notifications_sent", lazy="dynamic"),
+    )
 
 
 # ------- Marketplace Activity Broadcast (event-driven) -------
@@ -3629,14 +3637,18 @@ def get_social_counts(user_id: int) -> tuple[int, int]:
 @app.before_request
 def _load_my_social_counts():
     """Load social counts for current user, gracefully handle missing tables during bootstrap"""
-    if current_user.is_authenticated:
-        try:
-            g.my_followers_count, g.my_following_count = get_social_counts(current_user.id)
-        except Exception as e:
-            # If table doesn't exist yet (during bootstrap), use defaults
-            app.logger.warning(f"Could not load social counts (table might not exist yet): {type(e).__name__}")
+    try:
+        if current_user.is_authenticated:
+            try:
+                g.my_followers_count, g.my_following_count = get_social_counts(current_user.id)
+            except Exception as e:
+                # If table doesn't exist yet (during bootstrap), use defaults
+                app.logger.warning(f"Could not load social counts (table might not exist yet): {type(e).__name__}")
+                g.my_followers_count, g.my_following_count = 0, 0
+        else:
             g.my_followers_count, g.my_following_count = 0, 0
-    else:
+    except Exception as e:
+        app.logger.warning(f"Could not load social counts: {type(e).__name__}")
         g.my_followers_count, g.my_following_count = 0, 0
 
 
