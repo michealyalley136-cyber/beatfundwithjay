@@ -7360,6 +7360,17 @@ def bookme_requests():
             if p.booking_id and p.booking_id in booking_to_request:
                 request_deposit_paid[int(booking_to_request[p.booking_id])] = True
 
+    booking_map = {b.id: b for b in outgoing_bookings}
+    hold_actions = []
+    for req in outgoing_requests:
+        if req.status == BookingStatus.accepted and req.booking_id and not request_deposit_paid.get(req.id, False):
+            booking = booking_map.get(req.booking_id)
+            hold_actions.append({
+                "booking_id": req.booking_id,
+                "provider_username": req.provider.username if req.provider else "",
+                "preferred_time": (booking.event_datetime.strftime("%Y-%m-%d %H:%M") if booking and booking.event_datetime else (req.preferred_time or "")),
+            })
+
     booking_payment_meta = {}
     for b in (incoming_bookings + outgoing_bookings):
         req = BookingRequest.query.filter_by(booking_id=b.id).first()
@@ -7386,6 +7397,7 @@ def bookme_requests():
         bookings_as_client=outgoing_bookings,
         request_deposit_paid=request_deposit_paid,
         booking_payment_meta=booking_payment_meta,
+        hold_actions=hold_actions,
         HOLD_FEE_CENTS=HOLD_FEE_CENTS,
         BookingStatus=BookingStatus,
         stripe_enabled=stripe_enabled,

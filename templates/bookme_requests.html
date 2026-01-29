@@ -4,6 +4,8 @@
 {% block content %}
 {% set incoming_requests = requests_incoming|default([]) %}
 {% set sent_requests = requests_sent|default([]) %}
+{% set hold_actions = hold_actions|default([]) %}
+{% set default_request_segment = 'sent' if hold_actions|length > 0 else 'incoming' %}
 {% set provider_bookings = bookings_as_provider|default([]) %}
 {% set client_bookings = bookings_as_client|default([]) %}
 
@@ -32,6 +34,31 @@
     </div>
   </section>
 
+  {% if hold_actions %}
+    <section class="bf-action-card">
+      <div class="bf-action-header">
+        <strong>Action required</strong>
+        <span>You have {{ hold_actions|length }} holds to confirm</span>
+      </div>
+      <div class="bf-action-list">
+        {% for item in hold_actions %}
+          <div class="bf-action-row">
+            <div>
+              <div class="bf-action-title">@{{ item.provider_username }}</div>
+              <div class="bf-action-meta">{{ item.preferred_time or "Time not set" }}</div>
+            </div>
+            <div class="bf-action-side">
+              <span class="bf-pill">Hold ${{ '%.2f'|format(HOLD_FEE_CENTS / 100.0) }}</span>
+              <button class="btn btn-primary pay-hold-fee-btn" type="button" data-booking-id="{{ item.booking_id }}">
+                Pay hold fee (${{ '%.2f'|format(HOLD_FEE_CENTS / 100.0) }})
+              </button>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    </section>
+  {% endif %}
+
   <div class="bf-toolbar">
     <div class="bf-tabs">
       <button class="bf-tab is-active" type="button" data-tab="requests">Requests</button>
@@ -52,8 +79,8 @@
   </div>
 
   <div class="bf-segmented" data-tab="requests">
-    <button class="bf-seg is-active" type="button" data-segment="incoming">Incoming</button>
-    <button class="bf-seg" type="button" data-segment="sent">Sent</button>
+    <button class="bf-seg {% if default_request_segment == 'incoming' %}is-active{% endif %}" type="button" data-segment="incoming">Incoming</button>
+    <button class="bf-seg {% if default_request_segment == 'sent' %}is-active{% endif %}" type="button" data-segment="sent">Sent</button>
   </div>
 
   <div class="bf-segmented is-hidden" data-tab="bookings">
@@ -130,6 +157,8 @@
               {% else %}
                 <span class="btn btn-disabled">Awaiting setup</span>
               {% endif %}
+            {% elif req.status == BookingStatus.accepted and deposit_paid %}
+              <span class="bf-pill">Hold paid</span>
             {% elif req.status == BookingStatus.pending %}
               <form method="post" action="{{ url_for('bookme_request_status', req_id=req.id) }}">
                 <input type="hidden" name="action" value="cancel" />
@@ -293,6 +322,48 @@
     justify-content: space-between;
     align-items: center;
     font-size: 0.85rem;
+  }
+  .bf-action-card {
+    margin-top: 1.25rem;
+    background: rgba(15, 23, 42, 0.85);
+    border: 1px solid rgba(148, 163, 184, 0.35);
+    border-radius: 14px;
+    padding: 0.9rem 1rem;
+  }
+  .bf-action-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.9rem;
+    margin-bottom: 0.75rem;
+  }
+  .bf-action-list {
+    display: grid;
+    gap: 0.75rem;
+  }
+  .bf-action-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    align-items: center;
+    background: rgba(2, 6, 23, 0.45);
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    border-radius: 12px;
+    padding: 0.75rem 0.85rem;
+  }
+  .bf-action-title {
+    font-weight: 600;
+  }
+  .bf-action-meta {
+    font-size: 0.8rem;
+    opacity: 0.8;
+  }
+  .bf-action-side {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    flex-wrap: wrap;
+    justify-content: flex-end;
   }
   .bf-toolbar {
     margin-top: 1.5rem;
@@ -659,7 +730,7 @@
 
     if (statusFilter) statusFilter.addEventListener('change', updateFilters);
     if (searchInput) searchInput.addEventListener('input', updateFilters);
-    showList('requests', 'incoming');
+    showList('requests', {{ default_request_segment|tojson }});
 
     const stripeEnabled = {{ 'true' if stripe_enabled else 'false' }};
     const stripe = stripeEnabled ? Stripe({{ stripe_publishable_key|tojson }}) : null;
