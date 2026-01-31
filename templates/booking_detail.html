@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Booking #{{ booking.id }} · BeatFund{% endblock %}
+{% block title %}Booking #{{ booking.id }} - BeatFund{% endblock %}
 
 {% block content %}
 <style>
@@ -290,10 +290,10 @@
     <div>
       <h1 id="booking-title-display">{{ booking.event_title or ("Booking #" ~ booking.id) }}</h1>
       <div class="bf-header-sub">
-        Booking #{{ booking.id }} •
+        Booking #{{ booking.id }} -
         <span id="booking-date-display">
         {% if booking.event_datetime %}
-          {{ booking.event_datetime.strftime("%b %d, %Y · %I:%M %p") }}
+          {{ booking.event_datetime.strftime("%b %d, %Y - %I:%M %p") }}
         {% else %}
           Date/time: TBD
         {% endif %}
@@ -413,7 +413,7 @@
             <div class="bf-meta-label">Date &amp; time</div>
             <div class="bf-meta-value bf-display-value">
               {% if booking.event_datetime %}
-                {{ booking.event_datetime.strftime("%A, %b %d, %Y · %I:%M %p") }}
+                {{ booking.event_datetime.strftime("%A, %b %d, %Y - %I:%M %p") }}
               {% else %}
                 Not set / discussed separately
               {% endif %}
@@ -617,7 +617,7 @@
               </div>
               <div class="bf-payment-note">BeatFund service fee (5.17%) applies when you pay the remaining balance. Processing fees are non-refundable.</div>
             {% else %}
-              <div class="bf-meta-value">Hold paid ✅</div>
+              <div class="bf-meta-value">Hold paid</div>
             {% endif %}
 
                         {% if balance_due and balance_breakdown %}
@@ -788,8 +788,8 @@
       const rate = parseFloat(rateInput.value || '0');
       if (!isFinite(hours) || !isFinite(rate) || hours <= 0 || rate <= 0) {
         totalDisplay.textContent = '--';
-        if (hoursDisplay) hoursDisplay.textContent = (hours > 0 ? hours.toFixed(2) : '0.00');
-        if (hourlyDisplay) hourlyDisplay.textContent = (rate > 0 ? rate.toFixed(2) : '0.00');
+        if (hoursDisplay) hoursDisplay.textContent = (hours > 0  hours.toFixed(2) : '0.00');
+        if (hourlyDisplay) hourlyDisplay.textContent = (rate > 0  rate.toFixed(2) : '0.00');
         return;
       }
       const total = hours * rate;
@@ -808,31 +808,60 @@
 {% if is_client and stripe_enabled and (deposit_due or balance_due) %}
 <script src="https://js.stripe.com/v3/"></script>
 <script>
-  (function () {
-    const stripe = Stripe({{ stripe_publishable_key|tojson }});
+  document.addEventListener('DOMContentLoaded', () => {
+    console.log('[booking_detail] Stripe payment init');
+    const pk = {{ stripe_publishable_key|tojson }};
+    const stripe = Stripe(pk);
     const elements = stripe.elements();
     const card = elements.create('card', {style: {base: {color: '#e2e8f0', fontSize: '14px'}}});
-    card.mount('#booking-card-element');
-
-    const buttons = document.querySelectorAll('[data-payment-kind]');
-    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
+    const cardMount = document.getElementById('booking-card-element');
     const errorEl = document.getElementById('booking-card-errors');
+    if (cardMount) {
+      card.mount('#booking-card-element');
+    }
 
-    async function startPayment(kind, button) {
-      if (!csrfToken) return;
-      const endpoint = kind === 'balance'
-        ? `/api/bookings/{{ booking.id }}/pay/balance`
-        : `/api/bookings/{{ booking.id }}/pay/deposit`;
-      const scrollTarget = button?.dataset?.scrollTarget;
-      if (scrollTarget) {
-        const targetEl = document.querySelector(scrollTarget);
-        if (targetEl) {
-          targetEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        }
+    let cardComplete = false;
+    card.on('change', (event) => {
+      cardComplete = !!event.complete;
+      if (event.error && errorEl) {
+        errorEl.textContent = event.error.message;
       }
-      button.disabled = true;
-      const original = button.textContent;
-      button.textContent = 'Processing...';
+    });
+
+    const metaToken = document.querySelector('meta[name="csrf-token"]');
+    const csrfToken = metaToken - metaToken.getAttribute('content') : '';
+
+    function setError(message) {
+      if (errorEl) {
+        errorEl.textContent = message;
+      }
+    }
+
+    document.addEventListener('click', async (e) => {
+      const btn = e.target.closest('[data-payment-kind]');
+      if (!btn) return;
+      e.preventDefault();
+      const kind = (btn.dataset.paymentKind || '').toLowerCase();
+      console.log('[booking_detail] click', kind, btn);
+
+      if (!csrfToken) {
+        setError('Missing CSRF token... add meta tag in base.html');
+        return;
+      }
+      if (!cardComplete) {
+        setError('Enter your card details first, then click again.');
+        if (cardMount) cardMount.scrollIntoView({behavior: 'smooth', block: 'center'});
+        return;
+      }
+
+      const endpoint = kind === 'balance'
+        - `/api/bookings/{{ booking.id }}/pay/balance`
+        : `/api/bookings/{{ booking.id }}/pay/deposit`;
+      console.log('[booking_detail] POST', endpoint);
+
+      btn.disabled = true;
+      const original = btn.textContent;
+      btn.textContent = 'Processing...';
 
       try {
         const resp = await fetch(endpoint, {
@@ -843,14 +872,22 @@
           },
           body: JSON.stringify({kind})
         });
-
-        const data = await resp.json();
+        const raw = await resp.text();
+        let data = null;
+        try {
+          data = raw - JSON.parse(raw) : {};
+        } catch (err) {
+          data = null;
+        }
+        console.log('[booking_detail] response', resp.status, data);
         if (!resp.ok) {
-          if (data.error === 'deposit_already_paid' || data.error === 'no_balance_due') {
-            window.location.reload();
-            return;
-          }
-          throw new Error(data.error || 'Unable to start payment');
+          const msg = (data && data.error) - data.error : (raw || 'Unable to start payment');
+          setError(msg);
+          return;
+        }
+        if (!data || !data.client_secret) {
+          setError('Payment could not be started. Please try again.');
+          return;
         }
 
         const result = await stripe.confirmCardPayment(data.client_secret, {
@@ -858,26 +895,24 @@
         });
 
         if (result.error) {
-          throw new Error(result.error.message || 'Payment failed');
+          setError(result.error.message || 'Payment failed');
+          return;
         }
 
         if (result.paymentIntent && result.paymentIntent.status === 'succeeded') {
           window.location.reload();
+          return;
         }
       } catch (err) {
-        if (errorEl) {
-          errorEl.textContent = err.message;
-        }
-        button.disabled = false;
-        button.textContent = original;
+        setError(err && err.message - err.message : 'Payment failed');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = original;
       }
-    }
-
-    buttons.forEach(btn => {
-      btn.addEventListener('click', () => startPayment(btn.dataset.paymentKind, btn));
-    });
-  })();
+    }, true);
+  });
 </script>
+{% endif %}
 {% endif %}
 
 <script>
