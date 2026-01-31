@@ -9070,17 +9070,34 @@ def market_my_purchases():
 # =========================================================
 # Stripe Configuration
 # =========================================================
-STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "sk_test_placeholder").strip()
-STRIPE_PUBLISHABLE_KEY = os.getenv("STRIPE_PUBLISHABLE_KEY", "pk_test_placeholder").strip()
-STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "whsec_test_placeholder").strip()
+def _clean_env(name: str) -> str:
+    value = os.getenv(name, "")
+    return value.strip() if value else ""
 
-# Validate that Stripe keys are set and not placeholders
-if STRIPE_SECRET_KEY and STRIPE_SECRET_KEY.startswith("sk_test_your_secret_key"):
-    STRIPE_SECRET_KEY = ""  # Treat placeholder as not set
-if STRIPE_PUBLISHABLE_KEY and STRIPE_PUBLISHABLE_KEY.startswith("pk_test_your_publishable_key"):
-    STRIPE_PUBLISHABLE_KEY = ""  # Treat placeholder as not set
-if STRIPE_WEBHOOK_SECRET and STRIPE_WEBHOOK_SECRET.startswith("whsec_your_webhook_secret"):
-    STRIPE_WEBHOOK_SECRET = ""  # Treat placeholder as not set
+
+def _is_placeholder(value: str) -> bool:
+    if not value:
+        return False
+    lowered = value.lower()
+    if "placeholder" in lowered or "your_" in lowered:
+        return True
+    if lowered in {"sk_test_placeholder", "pk_test_placeholder", "whsec_test_placeholder"}:
+        return True
+    return False
+
+
+STRIPE_SECRET_KEY = _clean_env("STRIPE_SECRET_KEY")
+STRIPE_PUBLISHABLE_KEY = _clean_env("STRIPE_PUBLISHABLE_KEY")
+STRIPE_WEBHOOK_SECRET = _clean_env("STRIPE_WEBHOOK_SECRET")
+
+if _is_placeholder(STRIPE_SECRET_KEY):
+    STRIPE_SECRET_KEY = ""
+if _is_placeholder(STRIPE_PUBLISHABLE_KEY):
+    STRIPE_PUBLISHABLE_KEY = ""
+if _is_placeholder(STRIPE_WEBHOOK_SECRET):
+    STRIPE_WEBHOOK_SECRET = ""
+
+stripe_enabled = bool(STRIPE_SECRET_KEY and STRIPE_PUBLISHABLE_KEY)
 
 # Base URL for Stripe checkout success/cancel URLs
 # Use APP_BASE_URL if set (for production), otherwise fall back to request.host_url
@@ -9102,16 +9119,21 @@ def get_stripe_base_url() -> str:
     # Fallback to request.host_url (works in dev, but should set APP_BASE_URL in production)
     return request.host_url.rstrip("/") if request else ""
 
-if STRIPE_AVAILABLE and STRIPE_SECRET_KEY:
+if stripe_enabled and STRIPE_AVAILABLE:
     stripe.api_key = STRIPE_SECRET_KEY
-    app.logger.info(f"Stripe initialized with API key (key length: {len(STRIPE_SECRET_KEY)})")
-elif STRIPE_SECRET_KEY:
+elif stripe_enabled and not STRIPE_AVAILABLE:
     app.logger.warning("STRIPE_SECRET_KEY is set but stripe package is not installed. Install with: pip install stripe")
-else:
-    app.logger.warning(f"Stripe not configured: STRIPE_AVAILABLE={STRIPE_AVAILABLE}, STRIPE_SECRET_KEY length={len(STRIPE_SECRET_KEY) if STRIPE_SECRET_KEY else 0}")
+elif not stripe_enabled:
+    app.logger.warning("Stripe not configured: missing STRIPE_SECRET_KEY or STRIPE_PUBLISHABLE_KEY")
 
-# Safe startup diagnostics (do NOT log secrets)
-app.logger.info(f"Stripe env: STRIPE_SECRET_KEY_set={bool(STRIPE_SECRET_KEY)} STRIPE_WEBHOOK_SECRET_set={bool(STRIPE_WEBHOOK_SECRET)}")
+pub_prefix = STRIPE_PUBLISHABLE_KEY[:7] if STRIPE_PUBLISHABLE_KEY else ""
+app.logger.info(
+    f"Stripe config: enabled={stripe_enabled} "
+    f"publishable_set={bool(STRIPE_PUBLISHABLE_KEY)} "
+    f"secret_set={bool(STRIPE_SECRET_KEY)} "
+    f"webhook_set={bool(STRIPE_WEBHOOK_SECRET)} "
+    f"pub_prefix={pub_prefix}"
+)
 
 
 def sync_beat_to_stripe(beat: Beat, commit: bool = True) -> tuple[Optional[str], Optional[str]]:
