@@ -284,7 +284,7 @@
         </div>
         <div class="bf-break-row">
           <span>Payment processing fee (non-refundable)</span>
-          <strong id="holdProcFee">—</strong>
+          <strong id="holdProcFee">--</strong>
         </div>
         <div class="bf-break-row total">
           <span>Total due now</span>
@@ -296,7 +296,7 @@
       <div id="holdError" class="bf-error"></div>
     </div>
     <div class="bf-modal-actions">
-      <button class="btn btn-primary" type="button" id="holdPayBtn" aria-disabled="true">Pay $—</button>
+      <button class="btn btn-primary" type="button" id="holdPayBtn" aria-disabled="true">Pay $--</button>
     </div>
   </div>
 </div>
@@ -733,7 +733,13 @@
     showList('requests', {{ default_request_segment|tojson }});
 
     const stripeEnabled = {{ 'true' if stripe_enabled else 'false' }};
-    const stripe = stripeEnabled ? Stripe({{ stripe_publishable_key|tojson }}) : null;
+    const stripeKey = {{ stripe_publishable_key|tojson }};
+    let stripe = null;
+    if (stripeEnabled && window.Stripe) {
+      stripe = Stripe(stripeKey);
+    } else if (stripeEnabled) {
+      console.warn('[hold modal] Stripe.js not available');
+    }
     const modal = document.getElementById('hold-fee-modal');
     const elementContainer = document.getElementById('stripe-payment-element');
     const errorEl = document.getElementById('holdError');
@@ -769,10 +775,10 @@
       if (elementContainer) elementContainer.innerHTML = '';
       if (errorEl) errorEl.textContent = '';
       if (baseEl) baseEl.textContent = `$${holdDefault}`;
-      if (processingEl) processingEl.textContent = '—';
+      if (processingEl) processingEl.textContent = '--';
       if (totalEl) totalEl.textContent = `$${holdDefault}`;
       if (confirmBtn) {
-        confirmBtn.textContent = 'Pay $—';
+        confirmBtn.textContent = 'Pay $--';
         confirmBtn.setAttribute('aria-disabled', 'true');
       }
     }
@@ -868,8 +874,11 @@
       }
     }
 
-    document.querySelectorAll('.pay-hold-fee-btn').forEach(btn => {
-      btn.addEventListener('click', () => startHoldFeePayment(btn.dataset.bookingId, btn));
+    document.addEventListener('click', (event) => {
+      const btn = event.target.closest('.pay-hold-fee-btn');
+      if (!btn) return;
+      event.preventDefault();
+      startHoldFeePayment(btn.dataset.bookingId, btn);
     });
 
     if (confirmBtn) {

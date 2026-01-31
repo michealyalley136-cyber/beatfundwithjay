@@ -581,10 +581,19 @@
               </div>
               {% if deposit_due %}
                 <div class="bf-payment-actions">
-                  <button class="bf-btn bf-btn-primary" type="button" data-payment-kind="deposit" data-scroll-target="#booking-payment-section">
-                    Accept quote &amp; pay hold
-                  </button>
+                  {% if stripe_enabled %}
+                    <button class="bf-btn bf-btn-primary" type="button" data-payment-kind="deposit" data-scroll-target="#booking-payment-section">
+                      Accept quote &amp; pay hold
+                    </button>
+                  {% else %}
+                    <button class="bf-btn bf-btn-primary" type="button" data-payment-kind="deposit" data-scroll-target="#booking-payment-section" disabled>
+                      Accept quote &amp; pay hold
+                    </button>
+                  {% endif %}
                 </div>
+                {% if not stripe_enabled %}
+                  <div class="bf-payment-note">Stripe not configured. Payments unavailable.</div>
+                {% endif %}
               {% endif %}
             {% else %}
               <div class="bf-meta-value">Waiting for the provider to send a quote.</div>
@@ -788,8 +797,8 @@
       const rate = parseFloat(rateInput.value || '0');
       if (!isFinite(hours) || !isFinite(rate) || hours <= 0 || rate <= 0) {
         totalDisplay.textContent = '--';
-        if (hoursDisplay) hoursDisplay.textContent = (hours > 0  hours.toFixed(2) : '0.00');
-        if (hourlyDisplay) hourlyDisplay.textContent = (rate > 0  rate.toFixed(2) : '0.00');
+        if (hoursDisplay) hoursDisplay.textContent = (hours > 0 ? hours.toFixed(2) : '0.00');
+        if (hourlyDisplay) hourlyDisplay.textContent = (rate > 0 ? rate.toFixed(2) : '0.00');
         return;
       }
       const total = hours * rate;
@@ -816,6 +825,7 @@
     const card = elements.create('card', {style: {base: {color: '#e2e8f0', fontSize: '14px'}}});
     const cardMount = document.getElementById('booking-card-element');
     const errorEl = document.getElementById('booking-card-errors');
+
     if (cardMount) {
       card.mount('#booking-card-element');
     }
@@ -829,7 +839,7 @@
     });
 
     const metaToken = document.querySelector('meta[name="csrf-token"]');
-    const csrfToken = metaToken - metaToken.getAttribute('content') : '';
+    const csrfToken = metaToken ? metaToken.getAttribute('content') : '';
 
     function setError(message) {
       if (errorEl) {
@@ -842,25 +852,31 @@
       if (!btn) return;
       e.preventDefault();
       const kind = (btn.dataset.paymentKind || '').toLowerCase();
+      if (kind !== 'deposit' && kind !== 'balance') {
+        return;
+      }
       console.log('[booking_detail] click', kind, btn);
 
       if (!csrfToken) {
         setError('Missing CSRF token... add meta tag in base.html');
         return;
       }
+
       if (!cardComplete) {
         setError('Enter your card details first, then click again.');
-        if (cardMount) cardMount.scrollIntoView({behavior: 'smooth', block: 'center'});
+        if (cardMount) {
+          cardMount.scrollIntoView({behavior: 'smooth', block: 'center'});
+        }
         return;
       }
 
       const endpoint = kind === 'balance'
-        - `/api/bookings/{{ booking.id }}/pay/balance`
+        ? `/api/bookings/{{ booking.id }}/pay/balance`
         : `/api/bookings/{{ booking.id }}/pay/deposit`;
       console.log('[booking_detail] POST', endpoint);
 
-      btn.disabled = true;
       const original = btn.textContent;
+      btn.disabled = true;
       btn.textContent = 'Processing...';
 
       try {
@@ -868,23 +884,28 @@
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'X-CSRFToken': csrfToken
+            'X-CSRFToken': csrfToken,
+            'X-CSRF-Token': csrfToken
           },
           body: JSON.stringify({kind})
         });
+
         const raw = await resp.text();
         let data = null;
         try {
-          data = raw - JSON.parse(raw) : {};
+          data = raw ? JSON.parse(raw) : {};
         } catch (err) {
-          data = null;
+          setError('Server returned non-JSON response.');
+          return;
         }
+
         console.log('[booking_detail] response', resp.status, data);
         if (!resp.ok) {
-          const msg = (data && data.error) - data.error : (raw || 'Unable to start payment');
+          const msg = (data && data.error) ? data.error : (raw || 'Payment failed');
           setError(msg);
           return;
         }
+
         if (!data || !data.client_secret) {
           setError('Payment could not be started. Please try again.');
           return;
@@ -904,7 +925,7 @@
           return;
         }
       } catch (err) {
-        setError(err && err.message - err.message : 'Payment failed');
+        setError(err && err.message ? err.message : 'Payment failed');
       } finally {
         btn.disabled = false;
         btn.textContent = original;
