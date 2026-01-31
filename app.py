@@ -11237,7 +11237,20 @@ def market_download(beat_id):
         flash("No deliverable file available for this beat.", "error")
         return redirect(url_for("market_index"))
 
-    # Use the unified uploads route so S3 signed URLs + scan gating apply.
+    # If stems_path is already a URL, redirect directly.
+    if isinstance(beat.stems_path, str) and beat.stems_path.startswith(("http://", "https://")):
+        return redirect(beat.stems_path)
+
+    # Prefer signed URL for S3 to avoid 404s when legacy uploads lack UploadedFile rows.
+    if STORAGE_BACKEND == "s3" and isinstance(storage_backend, S3StorageBackend):
+        key = beat.stems_path
+        if S3_PREFIX and key.startswith(f"{S3_PREFIX}/"):
+            key = key[len(S3_PREFIX) + 1 :]
+        signed_url = storage_backend.get_signed_url(key, expires=SIGNED_URL_TTL_SECONDS)
+        if signed_url:
+            return redirect(signed_url)
+
+    # Fallback to unified uploads route so local storage + scan gating apply.
     return redirect(url_for("media_file", filename=beat.stems_path))
 
 
