@@ -367,7 +367,7 @@
     {% block admin_content %}{% endblock %}
 </main>
 
-<script>
+<script nonce="{{ csp_nonce }}">
   (function() {
     const badge = document.getElementById('adminNotifBadge');
     if (!badge) return;

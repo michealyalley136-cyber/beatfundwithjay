@@ -318,7 +318,7 @@
   .wallet-ledger-amt.debit { color: #f97373; }
 </style>
 
-<script>
+<script nonce="{{ csp_nonce }}">
   window.addEventListener("DOMContentLoaded", function () {
     const pills = document.querySelectorAll("[data-wallet-action-pill]");
     const actionInput = document.getElementById("wallet-action-input");

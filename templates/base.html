@@ -10,6 +10,7 @@
   <link rel="manifest" href="{{ url_for('static', filename='manifest.webmanifest') }}">
   <meta name="theme-color" content="#19E28C">
   <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="BeatFund">
   <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='img/favicon/icon-180.png') }}">
@@ -249,7 +250,7 @@
   </div>
 </footer>
 
-<script>
+<script nonce="{{ csp_nonce }}">
   (function () {
     const btn = document.querySelector('.nav-toggle');
     const menu = document.getElementById('mobileMenu');

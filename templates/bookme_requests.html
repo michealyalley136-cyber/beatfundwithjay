@@ -668,7 +668,7 @@
 {% if stripe_enabled %}
 <script src="https://js.stripe.com/v3/"></script>
 {% endif %}
-<script>
+<script nonce="{{ csp_nonce }}">
   document.addEventListener('DOMContentLoaded', () => {
     const tabs = document.querySelectorAll('.bf-tab');
     const segButtons = document.querySelectorAll('.bf-seg');

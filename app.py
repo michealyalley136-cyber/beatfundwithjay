@@ -35,6 +35,7 @@ from typing import Optional
 import enum
 import os
 import uuid
+import secrets
 import pathlib
 import csv
 from io import StringIO
@@ -313,6 +314,10 @@ def setup_logging():
 setup_logging()
 app.logger = logging.getLogger(__name__)
 
+@app.before_request
+def set_csp_nonce():
+    g.csp_nonce = secrets.token_urlsafe(16)
+
 # ---------------------------------------------------------
 # Security Headers Middleware
 # ---------------------------------------------------------
@@ -330,14 +335,17 @@ def set_security_headers(response):
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     
     # Content Security Policy - use nonce in production if possible
+    nonce = getattr(g, 'csp_nonce', '')
+    nonce_src = f"'nonce-{nonce}' " if nonce else ""
     if IS_DEV:
         csp_policy = (
             "default-src 'self'; "
-            "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+            f"script-src 'self' 'unsafe-inline' {nonce_src}https://cdn.jsdelivr.net https://js.stripe.com; "
             "style-src 'self' 'unsafe-inline'; "
             "img-src 'self' data: https:; "
             "font-src 'self' data:; "
-            "connect-src 'self'; "
+            "connect-src 'self' https://api.stripe.com; "
+            "frame-src 'self' https://js.stripe.com https://hooks.stripe.com; "
             "frame-ancestors 'none'; "
             "base-uri 'self'; "
             "form-action 'self';"
@@ -346,17 +354,18 @@ def set_security_headers(response):
         # Production: stricter CSP with additional security directives
         csp_policy = (
             "default-src 'self'; "
-            "script-src 'self' https://cdn.jsdelivr.net; "
+            f"script-src 'self' {nonce_src}https://cdn.jsdelivr.net https://js.stripe.com; "
             "style-src 'self' 'unsafe-inline'; "  # Allow inline styles for compatibility
             "img-src 'self' data: https:; "
             "font-src 'self' data: https:; "
-            "connect-src 'self'; "
+            "connect-src 'self' https://api.stripe.com; "
+            "frame-src 'self' https://js.stripe.com https://hooks.stripe.com; "
             "frame-ancestors 'none'; "
             "base-uri 'self'; "
             "form-action 'self'; "
             "object-src 'none'; "  # Block plugins (Flash, etc.)
             "media-src 'self'; "  # Allow media from same origin
-            "worker-src 'none'; "  # Block web workers for security
+            "worker-src 'self'; "  # Block web workers for security
             "manifest-src 'self'; "  # Allow web app manifests
             "upgrade-insecure-requests;"  # Upgrade HTTP to HTTPS
         )
@@ -377,7 +386,7 @@ def set_security_headers(response):
 @app.context_processor
 def inject_csrf_token():
     # templates can do: {{ csrf_token() }}
-    return dict(csrf_token=generate_csrf)
+    return dict(csrf_token=generate_csrf, csp_nonce=getattr(g, "csp_nonce", ""))
 
 
 @app.errorhandler(CSRFError)

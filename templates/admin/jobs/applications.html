@@ -162,7 +162,7 @@
   </div>
 </div>
 
-<script>
+<script nonce="{{ csp_nonce }}">
   function toggleDetail(appId) {
     const detail = document.getElementById('detail-' + appId);
     detail.style.display = detail.style.display === 'none' ? 'table-row' : 'none';

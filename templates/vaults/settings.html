@@ -278,7 +278,7 @@
   </div>
 </div>
 
-<script>
+<script nonce="{{ csp_nonce }}">
   document.querySelector('input[name="auto_fund_enabled"]').addEventListener('change', function() {
     const options = document.getElementById('auto-fund-options');
     if (this.checked) {

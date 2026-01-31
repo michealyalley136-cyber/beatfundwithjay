@@ -280,7 +280,7 @@
   {% endif %}
 </div>
 
-<script>
+<script nonce="{{ csp_nonce }}">
   function handleNotificationClick(row) {
     const notifId = row.getAttribute('data-notif-id');
     const isRead = row.getAttribute('data-is-read') === 'true';

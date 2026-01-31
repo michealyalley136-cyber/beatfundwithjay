@@ -398,7 +398,7 @@
       {% endif %}
     </div>
 
-    <script>
+    <script nonce="{{ csp_nonce }}">
       // Redirect to Stripe Checkout
       document.addEventListener('DOMContentLoaded', function() {
         const checkoutButton = document.getElementById('checkout-button');

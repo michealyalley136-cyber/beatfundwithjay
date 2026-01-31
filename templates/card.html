@@ -271,7 +271,7 @@
       {% endif %}
     {% endwith %}
 
-    <script>
+    <script nonce="{{ csp_nonce }}">
         // Flip card on click
         document.getElementById('cardWrapper').addEventListener('click', function() {
             this.style.transform = this.style.transform === 'rotateY(180deg)' ? 'rotateY(0deg)' : 'rotateY(180deg)';

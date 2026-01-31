@@ -309,7 +309,7 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<script>
+<script nonce="{{ csp_nonce }}">
   (function () {
     const ctx = document.getElementById('roleChart');
     if (!ctx) return;
@@ -342,7 +342,7 @@
     });
   })();
 </script>
-<script>
+<script nonce="{{ csp_nonce }}">
   (function () {
     document.querySelectorAll('.admin-card[data-href]').forEach(function (card) {
       card.setAttribute('role', 'button');

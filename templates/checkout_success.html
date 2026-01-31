@@ -273,7 +273,7 @@
 </div>
 
 {% if not is_paid and order_id %}
-<script>
+<script nonce="{{ csp_nonce }}">
   (function () {
     const orderId = {{ order_id|int }};
     const stripeSessionId = {{ (stripe_session_id or "")|tojson }};

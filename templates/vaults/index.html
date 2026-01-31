@@ -438,7 +438,7 @@
   {% endif %}
 </div>
 
-<script>
+<script nonce="{{ csp_nonce }}">
   // Quick fund form - update action URL when vault is selected
   const quickFundForm = document.getElementById('quick-fund-form');
   const quickVaultSelect = document.getElementById('quick_vault_id');

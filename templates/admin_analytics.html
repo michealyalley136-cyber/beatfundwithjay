@@ -285,7 +285,7 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<script>
+<script nonce="{{ csp_nonce }}">
   const orderLabels = {{ order_labels|tojson }};
   const orderCounts = {{ order_counts_series|tojson }};
   const orderSales = {{ order_sales_series|tojson }};

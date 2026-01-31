@@ -441,7 +441,7 @@
   {% endif %}
 </div>
 
-<script>
+<script nonce="{{ csp_nonce }}">
   function openPricePrompt(beatId, currentPrice) {
     const newPrice = prompt('Set new price in USD (e.g. 19.99):', currentPrice || '0.00');
     if (newPrice === null) return;

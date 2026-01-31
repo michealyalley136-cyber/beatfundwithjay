@@ -782,7 +782,7 @@
 </div>
 
 {% if is_provider and booking.duration_minutes %}
-<script>
+<script nonce="{{ csp_nonce }}">
   (function () {
     const hoursInput = document.querySelector('input[name="billable_hours"]');
     const rateInput = document.querySelector('input[name="hourly_rate_dollars"]');
@@ -816,7 +816,7 @@
 
 {% if is_client and stripe_enabled and (deposit_due or balance_due) %}
 <script src="https://js.stripe.com/v3/"></script>
-<script>
+<script nonce="{{ csp_nonce }}">
   document.addEventListener('DOMContentLoaded', () => {
     console.log('[booking_detail] Stripe payment init');
     const pk = {{ stripe_publishable_key|tojson }};
@@ -936,7 +936,7 @@
 {% endif %}
 {% endif %}
 
-<script>
+<script nonce="{{ csp_nonce }}">
   let editMode = false;
   
   function toggleEditMode() {
