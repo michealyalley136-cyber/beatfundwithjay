@@ -25,5 +25,5 @@ WTForms==3.2.1
 
 # Optional production dependencies (install only if needed)
 # redis>=5.0.0  # For Redis-based rate limiting (set REDIS_URL env var)
-# boto3>=1.34.0  # For S3 storage backend (set STORAGE_BACKEND=s3 env var)
+boto3>=1.34.0  # For S3 storage backend (set STORAGE_BACKEND=s3 env var)
 # sentry-sdk>=2.0.0  # For error tracking (set SENTRY_DSN env var)
