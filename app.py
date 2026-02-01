@@ -341,6 +341,7 @@ def set_security_headers(response):
         csp_policy = (
             "default-src 'self'; "
             f"script-src 'self' 'unsafe-inline' {nonce_src}https://cdn.jsdelivr.net https://js.stripe.com; "
+            "script-src-attr 'unsafe-inline'; "
             "style-src 'self' 'unsafe-inline'; "
             "img-src 'self' data: https:; "
             "font-src 'self' data:; "
@@ -355,6 +356,7 @@ def set_security_headers(response):
         csp_policy = (
             "default-src 'self'; "
             f"script-src 'self' {nonce_src}https://cdn.jsdelivr.net https://js.stripe.com; "
+            "script-src-attr 'unsafe-inline'; "
             "style-src 'self' 'unsafe-inline'; "  # Allow inline styles for compatibility
             "img-src 'self' data: https:; "
             "font-src 'self' data: https:; "
