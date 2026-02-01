@@ -9124,6 +9124,8 @@ def get_stripe_base_url() -> str:
 
     app_base_url = os.getenv("APP_BASE_URL", "").strip()
     if app_base_url:
+        if not re.match(r"^https?://", app_base_url, re.IGNORECASE):
+            app_base_url = f"https://{app_base_url}"
         return app_base_url.rstrip("/")
     # Fallback to request.host_url (works in dev, but should set APP_BASE_URL in production)
     return request.host_url.rstrip("/") if request else ""
