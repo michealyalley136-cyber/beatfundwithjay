@@ -206,12 +206,12 @@
     {% endif %}
 
     <div class="confirm-actions">
-      <form method="POST" action="{{ url_for('bookme_request_confirm', provider_id=provider.id) }}">
+      <form method="POST" action="{{ url_for('bookme_request_confirm', provider_id=provider.id) }}" data-disable-on-submit="true">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="confirmed" value="true">
         <input type="hidden" name="message" value="{{ message }}">
         <input type="hidden" name="preferred_time" value="{{ preferred_time }}">
-        <button type="submit" class="btn btn-primary">Confirm & Send Request</button>
+        <button type="submit" class="btn btn-primary" data-loading-text="Sending...">Confirm & Send Request</button>
       </form>
       <a href="{{ url_for('bookme_request', provider_id=provider.id) }}" class="btn btn-secondary">Cancel</a>
     </div>

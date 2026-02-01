@@ -583,7 +583,7 @@
     </aside>
   </header>
 
-  <div class="mk-shell" id="mk-shell">
+  <div class="mk-shell" id="mk-shell" data-refresh-root="market">
     <!-- LEFT: "Find the right beat" filters -->
     <section class="mk-card mk-filters-card">
       <div class="mk-card-inner">
@@ -1200,7 +1200,7 @@
 </div>
 
 <script nonce="{{ csp_nonce }}">
-  document.addEventListener("DOMContentLoaded", function () {
+  function initMarketUI() {
     const shell = document.getElementById("mk-shell");
 
     // Beats filtering only affects the beats rail
@@ -1585,6 +1585,9 @@
         if (e.key === "Enter") { e.preventDefault(); applyProviderFilters(); }
       });
     });
-  });
+  }
+
+  document.addEventListener("DOMContentLoaded", initMarketUI);
+  window.BeatFundPageInit = initMarketUI;
 </script>
 {% endblock %}

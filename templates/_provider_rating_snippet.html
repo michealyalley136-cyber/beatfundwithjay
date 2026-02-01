@@ -1,15 +1,16 @@
 {% if provider_rating_summary %}
-  <div class="bf-card" style="margin-top:12px;">
-    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
-      <div>
-        <strong>Rating:</strong>
-        {{ provider_rating_summary.avg }} / 5
-        <span style="opacity:0.7;">({{ provider_rating_summary.count }} review{{ provider_rating_summary.count != 1 and 's' or '' }})</span>
-      </div>
-      <div>
-        <a class="btn btn-secondary" href="{{ url_for('provider_portfolio_public', username=current_user.username) }}">View reviews</a>
-        <a class="btn btn-secondary" href="{{ url_for('provider_settings') }}">Availability</a>
-      </div>
+  <div class="bf-rating-card">
+    <div class="bf-rating-left">
+      {% if provider_rating_summary.count and provider_rating_summary.count > 0 %}
+        <span class="bf-rating-score">⭐ {{ '%.1f'|format(provider_rating_summary.avg) }}</span>
+        <span class="bf-rating-count">({{ provider_rating_summary.count }})</span>
+      {% else %}
+        <span class="bf-rating-new">New • No reviews yet</span>
+      {% endif %}
+    </div>
+    <div class="bf-rating-actions">
+      <a class="btn btn-secondary" href="{{ url_for('provider_portfolio_public', username=current_user.username) }}">View reviews</a>
+      <a class="btn btn-secondary" href="{{ url_for('provider_availability_alias') }}">Availability</a>
     </div>
   </div>
 {% endif %}

@@ -469,11 +469,11 @@
         </p>
         <ul>
           <li>
-            <strong>Provider:</strong> @{{ booking.provider.username }}
+            <strong>Provider:</strong> @{{ provider_user.username if provider_user else "Unknown" }}
             ({{ get_role_display(booking.provider_role) if booking.provider_role else "Provider" }})
           </li>
           <li>
-            <strong>Client:</strong> @{{ booking.client.username }}
+            <strong>Client:</strong> @{{ client_user.username if client_user else "Unknown" }}
           </li>
         </ul>
 
@@ -703,7 +703,7 @@
 
       <div class="bf-section-title">Provider</div>
       <div class="bf-user-card">
-        <div class="bf-user-username">@{{ booking.provider.username }}</div>
+        <div class="bf-user-username">@{{ provider_user.username if provider_user else "Unknown" }}</div>
         <div class="bf-user-role">
           {{ get_role_display(booking.provider_role) if booking.provider_role else "Provider" }}
         </div>
@@ -711,7 +711,7 @@
 
       <div class="bf-section-title">Client</div>
       <div class="bf-user-card">
-        <div class="bf-user-username">@{{ booking.client.username }}</div>
+        <div class="bf-user-username">@{{ client_user.username if client_user else "Unknown" }}</div>
         <div class="bf-user-role">Client / event organizer</div>
       </div>
 

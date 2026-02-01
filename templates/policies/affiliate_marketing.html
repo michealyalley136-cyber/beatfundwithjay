@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}Affiliate Marketing - BeatFund{% endblock %}
+
+{% block extra_head %}
+<style>
+  .affiliate-cta { margin: 16px 0 24px; }
+  .affiliate-steps {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 12px;
+    margin: 12px 0 24px;
+  }
+  .affiliate-step {
+    border: 1px solid rgba(255,255,255,.12);
+    background: rgba(255,255,255,.05);
+    border-radius: 14px;
+    padding: 12px 14px;
+  }
+  .affiliate-step h3 { margin: 0 0 6px; font-size: 1rem; }
+  .affiliate-note { opacity: .8; font-size: .95rem; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="policy-page">
+  <h1>Affiliate Marketing</h1>
+  <p>Partner with BeatFund to share opportunities for creators and earn commission on qualified activity you refer.</p>
+
+  <div class="affiliate-cta">
+    <a class="btn btn-primary" href="{{ url_for('affiliate_apply') }}">Become an Affiliate</a>
+  </div>
+
+  <h2>How it works</h2>
+  <div class="affiliate-steps">
+    <div class="affiliate-step">
+      <h3>1) Apply</h3>
+      <p>Join the affiliate program and receive a unique referral link or code.</p>
+    </div>
+    <div class="affiliate-step">
+      <h3>2) Share</h3>
+      <p>Promote BeatFund to your audience using your approved link or code.</p>
+    </div>
+    <div class="affiliate-step">
+      <h3>3) Earn</h3>
+      <p>When qualified referrals complete paid actions, you earn commission.</p>
+    </div>
+    <div class="affiliate-step">
+      <h3>4) Get paid</h3>
+      <p>We confirm activity and issue payouts according to the current schedule.</p>
+    </div>
+  </div>
+
+  <h2>Qualified referrals</h2>
+  <p>Commissions are created on paid events such as beat purchases or booking holding fees made by users you referred.</p>
+
+  <h2>How commission is calculated</h2>
+  <p>Commission is calculated on BeatFund platform fees (not the total sale), net of refunds/chargebacks.</p>
+
+  <h2>Payouts</h2>
+  <p>Beta: manual payouts; later: Stripe Connect onboarding.</p>
+
+  <h2>Rules</h2>
+  <ul>
+    <li>No self-referrals.</li>
+    <li>No bots, fake signups, or artificial traffic.</li>
+    <li>No misleading claims or spammy promotion.</li>
+    <li>BeatFund may disable codes or withhold payouts for abuse or fraud.</li>
+  </ul>
+
+  <h2>Disclosure</h2>
+  <p>FTC disclosure is required on affiliate content (for example: #ad or Sponsored).</p>
+
+  <h2>Contact</h2>
+  <p>
+    Questions? Email us at
+    <a href="mailto:{{ contact_email }}">{{ contact_email }}</a>.
+  </p>
+</div>
+{% endblock %}

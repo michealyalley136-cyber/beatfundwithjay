@@ -9,6 +9,7 @@
 {% set provider_bookings = bookings_as_provider|default([]) %}
 {% set client_bookings = bookings_as_client|default([]) %}
 
+<div data-refresh-root="bookme-requests">
 <div class="page bookme-requests-page">
   <header class="page-header">
     <h1>BookMe - Requests & Bookings</h1>
@@ -34,6 +35,8 @@
     </div>
   </section>
 
+  <div id="holdFeeError" class="bf-error" role="status"></div>
+
   {% if hold_actions %}
     <section class="bf-action-card">
       <div class="bf-action-header">
@@ -49,7 +52,7 @@
             </div>
             <div class="bf-action-side">
               <span class="bf-pill">Hold ${{ '%.2f'|format(HOLD_FEE_CENTS / 100.0) }}</span>
-              <button class="btn btn-primary pay-hold-fee-btn" type="button" data-booking-id="{{ item.booking_id }}">
+              <button class="btn btn-primary pay-hold-fee-btn" type="button" data-booking-id="{{ item.booking_id }}" data-request-id="{{ item.request_id }}">
                 Pay hold fee (${{ '%.2f'|format(HOLD_FEE_CENTS / 100.0) }})
               </button>
             </div>
@@ -151,7 +154,7 @@
             </div>
             {% if req.status == BookingStatus.accepted and not deposit_paid %}
               {% if req.booking_id %}
-              <button class="btn btn-primary pay-hold-fee-btn" type="button" data-action="pay-hold" data-booking-id="{{ req.booking_id }}">
+              <button class="btn btn-primary pay-hold-fee-btn" type="button" data-action="pay-hold" data-booking-id="{{ req.booking_id }}" data-request-id="{{ req.id }}">
                 Pay hold fee (${{ '%.2f'|format(HOLD_FEE_CENTS / 100.0) }})
               </button>
               {% else %}
@@ -299,6 +302,7 @@
       <button class="btn btn-primary" type="button" id="holdPayBtn" aria-disabled="true">Pay $--</button>
     </div>
   </div>
+</div>
 </div>
 
 <style>
@@ -665,11 +669,8 @@
   }
 </style>
 
-{% if stripe_enabled %}
-<script src="https://js.stripe.com/v3/"></script>
-{% endif %}
 <script nonce="{{ csp_nonce }}">
-  document.addEventListener('DOMContentLoaded', () => {
+  function initBookmeRequests() {
     const tabs = document.querySelectorAll('.bf-tab');
     const segButtons = document.querySelectorAll('.bf-seg');
     const segmentGroups = document.querySelectorAll('.bf-segmented');
@@ -732,143 +733,62 @@
     if (searchInput) searchInput.addEventListener('input', updateFilters);
     showList('requests', {{ default_request_segment|tojson }});
 
-    const stripeEnabled = {{ 'true' if stripe_enabled else 'false' }};
-    const stripeKey = {{ stripe_publishable_key|tojson }};
-    let stripe = null;
-    if (stripeEnabled && window.Stripe) {
-      stripe = Stripe(stripeKey);
-    } else if (stripeEnabled) {
-      console.warn('[hold modal] Stripe.js not available');
-    }
-    const modal = document.getElementById('hold-fee-modal');
-    const elementContainer = document.getElementById('stripe-payment-element');
-    const errorEl = document.getElementById('holdError');
-    const confirmBtn = document.getElementById('holdPayBtn');
-    const baseEl = document.getElementById('hold-fee-base');
-    const processingEl = document.getElementById('holdProcFee');
-    const totalEl = document.getElementById('holdTotalDue');
-    const closeButtons = modal ? modal.querySelectorAll('[data-close], #holdCloseBtn, #holdCancelBtn, .bf-modal-close') : [];
-    const modalBody = modal ? modal.querySelector('.bf-modal-body') : null;
-    const modalOverlay = modal ? modal.querySelector('.bf-modal-overlay') : null;
     const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
-    let elements = null;
-    let paymentElement = null;
-    const holdDefault = {{ ('%.2f'|format(HOLD_FEE_CENTS / 100.0))|tojson }};
+    const holdFeeError = document.getElementById('holdFeeError');
 
-    document.addEventListener('click', (event) => {
-      if (modal && !modal.classList.contains('is-hidden')) {
-        console.log('[modal click reached]');
-      }
-    }, true);
-
-    function formatCents(cents) {
-      const value = Number(cents || 0) / 100;
-      return `$${value.toFixed(2)}`;
-    }
-
-    function resetModal() {
-      if (paymentElement) {
-        paymentElement.unmount();
-        paymentElement = null;
-      }
-      elements = null;
-      if (elementContainer) elementContainer.innerHTML = '';
-      if (errorEl) errorEl.textContent = '';
-      if (baseEl) baseEl.textContent = `$${holdDefault}`;
-      if (processingEl) processingEl.textContent = '--';
-      if (totalEl) totalEl.textContent = `$${holdDefault}`;
-      if (confirmBtn) {
-        confirmBtn.textContent = 'Pay $--';
-        confirmBtn.setAttribute('aria-disabled', 'true');
+    function setHoldFeeError(message) {
+      if (holdFeeError) {
+        holdFeeError.textContent = message || '';
       }
     }
 
-    function openModal() {
-      if (modal) modal.classList.remove('is-hidden');
-    }
-
-    function closeModal() {
-      if (modal) modal.classList.add('is-hidden');
-      resetModal();
-    }
-
-    closeButtons.forEach(btn => {
-      btn.addEventListener('click', (event) => {
-        console.log('[hold modal] close/cancel clicked');
-        event.preventDefault();
-        closeModal();
-      });
-    });
-    if (modalOverlay) {
-      modalOverlay.addEventListener('click', (event) => {
-        console.log('[hold modal] overlay clicked');
-        event.preventDefault();
-        closeModal();
-      });
-    }
-    if (modalBody) {
-      modalBody.addEventListener('click', (event) => {
-        event.stopPropagation();
-      });
-    }
-
-    async function startHoldFeePayment(bookingId, button) {
-      if (!bookingId || !csrfToken) return;
-      console.log('[hold modal] pay hold fee clicked');
-      const original = button.textContent;
-      button.disabled = true;
-      resetModal();
-      openModal();
-      if (!stripeEnabled || !stripe) {
-        if (errorEl) errorEl.textContent = 'Stripe is not configured. Please try again later.';
-        button.disabled = false;
-        button.textContent = original;
+    async function startHoldFeeCheckout(button) {
+      if (!button) return;
+      if (!csrfToken) {
+        setHoldFeeError('Missing CSRF token. Refresh and try again.');
         return;
       }
+      const bookingId = button.dataset.bookingId;
+      const requestId = button.dataset.requestId;
+      if (!bookingId && !requestId) {
+        setHoldFeeError('Missing booking details. Refresh and try again.');
+        return;
+      }
+
+      const original = button.textContent;
+      button.disabled = true;
+      button.textContent = 'Redirecting...';
+      setHoldFeeError('');
+
       try {
-        const resp = await fetch(`/api/bookings/${bookingId}/pay/deposit`, {
+        const resp = await fetch('/create-checkout-session-hold-fee', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             'X-CSRFToken': csrfToken
           },
-          body: JSON.stringify({kind: 'deposit'})
+          body: JSON.stringify({
+            booking_request_id: requestId,
+            booking_id: bookingId
+          })
         });
-        const respText = await resp.text();
-        let data = null;
+        const raw = await resp.text();
+        let data = {};
         try {
-          data = respText ? JSON.parse(respText) : {};
+          data = raw ? JSON.parse(raw) : {};
         } catch (err) {
-          data = null;
-        }
-        if (!data || typeof data !== 'object') {
-          throw new Error('Unable to start payment.');
+          data = {};
         }
         if (!resp.ok) {
-          if (data.error === 'deposit_already_paid') {
-            if (errorEl) errorEl.textContent = 'Deposit already paid. Reloading...';
-            setTimeout(() => window.location.reload(), 800);
-            return;
-          }
-          throw new Error(data.error || 'Unable to start payment');
+          throw new Error(data.error || 'Unable to start Stripe checkout.');
         }
-        const breakdown = data.breakdown || {};
-        const baseCents = (breakdown.hold_base_cents ?? breakdown.base_cents ?? 0);
-        const procCents = (breakdown.processing_fee_cents ?? 0);
-        const totalCents = (breakdown.total_cents ?? 0);
-        if (baseEl) baseEl.textContent = formatCents(baseCents);
-        if (processingEl) processingEl.textContent = formatCents(procCents);
-        if (totalEl) totalEl.textContent = formatCents(totalCents);
-        if (confirmBtn) confirmBtn.textContent = `Pay ${formatCents(totalCents)}`;
-
-        elements = stripe.elements({clientSecret: data.client_secret});
-        paymentElement = elements.create('payment');
-        paymentElement.mount('#stripe-payment-element');
-        if (confirmBtn) confirmBtn.setAttribute('aria-disabled', 'false');
+        const url = data.url;
+        if (!url) {
+          throw new Error('Stripe checkout URL missing.');
+        }
+        window.location.href = url;
       } catch (err) {
-        if (errorEl) errorEl.textContent = err.message || 'Unable to start payment.';
-        if (confirmBtn) confirmBtn.setAttribute('aria-disabled', 'true');
-      } finally {
+        setHoldFeeError(err && err.message ? err.message : 'Unable to start hold fee checkout.');
         button.disabled = false;
         button.textContent = original;
       }
@@ -878,33 +798,11 @@
       const btn = event.target.closest('.pay-hold-fee-btn');
       if (!btn) return;
       event.preventDefault();
-      startHoldFeePayment(btn.dataset.bookingId, btn);
+      startHoldFeeCheckout(btn);
     });
+  }
 
-    if (confirmBtn) {
-      confirmBtn.addEventListener('click', async () => {
-        console.log('[hold modal] pay confirm clicked');
-        if (confirmBtn.getAttribute('aria-disabled') === 'true') {
-          if (errorEl) errorEl.textContent = 'Payment form not ready.';
-          return;
-        }
-        if (!elements) {
-          if (errorEl) errorEl.textContent = 'Payment form not ready.';
-          return;
-        }
-        confirmBtn.setAttribute('aria-disabled', 'true');
-        const result = await stripe.confirmPayment({
-          elements,
-          confirmParams: {
-            return_url: `${window.location.origin}/bookme/requests`
-          }
-        });
-        if (result.error) {
-          if (errorEl) errorEl.textContent = result.error.message || 'Payment failed.';
-          confirmBtn.setAttribute('aria-disabled', 'false');
-        }
-      });
-    }
-  });
+  document.addEventListener('DOMContentLoaded', initBookmeRequests);
+  window.BeatFundPageInit = initBookmeRequests;
 </script>
 {% endblock %}

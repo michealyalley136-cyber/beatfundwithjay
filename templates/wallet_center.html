@@ -349,6 +349,22 @@
     margin-left: 4px;
   }
 
+  .wallet-kyc-banner {
+    margin: 8px 0 18px;
+    padding: 10px 14px;
+    border-radius: 12px;
+    border: 1px solid rgba(251, 191, 36, 0.5);
+    background: rgba(251, 191, 36, 0.1);
+    color: #fbbf24;
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  .wallet-action-pill:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
   /* Payment Methods Section */
   .wallet-methods-card {
     border-radius: 18px;
@@ -624,7 +640,7 @@
 </style>
 
 <script nonce="{{ csp_nonce }}">
-  document.addEventListener('DOMContentLoaded', function() {
+  function initWalletUI() {
     const actionPills = document.querySelectorAll('.wallet-action-pill');
     const formPanels = document.querySelectorAll('.wallet-form-panel');
     
@@ -675,14 +691,17 @@
         }
       });
     });
-  });
+  }
+
+  document.addEventListener('DOMContentLoaded', initWalletUI);
+  window.BeatFundPageInit = initWalletUI;
 </script>
 {% endblock %}
 
 {% block content %}
 {% set active_tab = (tab if tab is defined and tab else (request.args.get('tab', 'overview') if request is defined else 'overview')) %}
 
-<div class="wallet-shell">
+<div class="wallet-shell" data-refresh-root="wallet">
   <div class="wallet-tabs">
     <a class="wallet-tab {{ 'active' if active_tab != 'transactions' else '' }}"
        href="{{ url_for('wallet_home') }}">
@@ -693,6 +712,12 @@
       Transactions
     </a>
   </div>
+
+  {% if kyc_blocked_payout %}
+    <div class="wallet-kyc-banner">
+      Complete KYC to enable withdrawals and payout actions. You can still browse, book, and pay.
+    </div>
+  {% endif %}
 
   {% set credit_types = [
     EntryType.deposit,
@@ -842,11 +867,11 @@
           <span class="wallet-action-pill-icon">👤</span>
           <span>Send to User</span>
         </button>
-        <button type="button" class="wallet-action-pill" data-action="withdraw">
+        <button type="button" class="wallet-action-pill" data-action="withdraw" {% if kyc_blocked_payout %}disabled aria-disabled="true"{% endif %}>
           <span class="wallet-action-pill-icon">🏦</span>
           <span>Withdraw</span>
         </button>
-        <button type="button" class="wallet-action-pill" data-action="transfer_out">
+        <button type="button" class="wallet-action-pill" data-action="transfer_out" {% if kyc_blocked_payout %}disabled aria-disabled="true"{% endif %}>
           <span class="wallet-action-pill-icon">💸</span>
           <span>Transfer Out</span>
         </button>
@@ -972,7 +997,7 @@
             <div class="wallet-field-row">
               <div class="wallet-field">
                 <label class="wallet-field-label">Bank Account</label>
-                <select name="bank_account" class="wallet-select" required>
+                <select name="bank_account" class="wallet-select" required {% if kyc_blocked_payout %}disabled{% endif %}>
                   <option value="">Select account...</option>
                   <option value="stripe_connected">🏦 Connected Bank Account</option>
                   <option value="demo">Demo Mode</option>
@@ -988,11 +1013,12 @@
                   step="0.01"
                   min="1"
                   required
+                  {% if kyc_blocked_payout %}disabled{% endif %}
                 >
               </div>
             </div>
 
-            <button type="submit" class="wallet-btn">
+            <button type="submit" class="wallet-btn" {% if kyc_blocked_payout %}disabled{% endif %}>
               <span class="wallet-btn-icon">🏦</span>
               <span>Initiate Withdrawal</span>
             </button>
@@ -1017,7 +1043,7 @@
             <div class="wallet-field-row">
               <div class="wallet-field">
                 <label class="wallet-field-label">Destination</label>
-                <select name="destination" class="wallet-select" required>
+                <select name="destination" class="wallet-select" required {% if kyc_blocked_payout %}disabled{% endif %}>
                   <option value="">Select destination...</option>
                   <option value="stripe_bank">🏦 Bank Account (ACH)</option>
                   <option value="stripe_card">💳 Debit Card (Instant)</option>
@@ -1034,11 +1060,12 @@
                   step="0.01"
                   min="1"
                   required
+                  {% if kyc_blocked_payout %}disabled{% endif %}
                 >
               </div>
             </div>
 
-            <button type="submit" class="wallet-btn">
+            <button type="submit" class="wallet-btn" {% if kyc_blocked_payout %}disabled{% endif %}>
               <span class="wallet-btn-icon">💸</span>
               <span>Transfer Funds</span>
             </button>

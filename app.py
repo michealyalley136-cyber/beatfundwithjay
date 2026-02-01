@@ -38,6 +38,7 @@ import uuid
 import secrets
 import pathlib
 import csv
+import mimetypes
 from io import StringIO
 import re
 import json
@@ -148,6 +149,12 @@ BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 
 APP_ENV = os.getenv("APP_ENV", "dev").lower()
 IS_DEV = APP_ENV != "prod"
+KYC_ENFORCE = _env_bool("KYC_ENFORCE", not IS_DEV)
+NOTIF_POLL_SECONDS = _env_int("NOTIF_POLL_SECONDS", 30)
+AFFILIATE_CONTACT_EMAIL = (
+    (os.getenv("AFFILIATE_CONTACT_EMAIL") or os.getenv("SUPPORT_EMAIL") or "support@beatfund.com").strip()
+    or "support@beatfund.com"
+)
 
 # instance/ for sqlite + meta json
 INSTANCE_DIR = os.path.join(BASE_DIR, "instance")
@@ -1617,9 +1624,26 @@ app.jinja_env.globals["RoleEnum"] = RoleEnum
 app.jinja_env.globals["KYCStatus"] = KYCStatus
 app.jinja_env.globals["MAX_PORTFOLIO_ITEMS"] = MAX_PORTFOLIO_ITEMS
 app.jinja_env.globals["get_role_display"] = get_role_display
+app.jinja_env.globals["NOTIF_POLL_SECONDS"] = NOTIF_POLL_SECONDS
+app.jinja_env.globals["AFFILIATE_CONTACT_EMAIL"] = AFFILIATE_CONTACT_EMAIL
 
 # ✅ Needed if your templates use {{ datetime.utcnow().year }}
 app.jinja_env.globals["datetime"] = datetime
+
+
+@app.context_processor
+def inject_kyc_banner_flags():
+    kyc_missing = False
+    try:
+        if current_user.is_authenticated:
+            kyc_missing = not _is_kyc_verified(current_user)
+    except Exception:
+        kyc_missing = False
+    return {
+        "kyc_enforce": KYC_ENFORCE,
+        "kyc_missing": kyc_missing,
+        "kyc_bypass_active": (not KYC_ENFORCE and kyc_missing),
+    }
 
 
 class User(UserMixin, db.Model):
@@ -1667,6 +1691,13 @@ class User(UserMixin, db.Model):
         # - Works even if you don't have static/img/default-avatar.png
         # - Adds a cache-busting query param so new uploads show immediately
         v = self.avatar_path or "0"
+        if self.avatar_path:
+            try:
+                local_path = os.path.join(app.config["UPLOAD_FOLDER"], self.avatar_path)
+                if os.path.exists(local_path):
+                    v = f"{self.avatar_path}-{int(os.path.getmtime(local_path))}"
+            except Exception:
+                pass
         return url_for("user_avatar", user_id=self.id, v=v)
 
     @property
@@ -3276,11 +3307,30 @@ def superadmin_required(f):
     return wrapper
 
 
-def require_kyc_approved():
-    if current_user.kyc_status != KYCStatus.approved:
-        flash("Financial features require approved KYC.", "error")
+def _is_kyc_verified(user: User | None) -> bool:
+    if not user:
         return False
-    return True
+    try:
+        return str(getattr(user, "kyc_status", "")).lower() == KYCStatus.approved.value
+    except Exception:
+        return False
+
+
+def require_kyc_approved(action: str = "payout") -> bool:
+    """
+    Enforce KYC only when configured and only for provider payout actions.
+    action: "payout" enforces for service providers; any other value is non-blocking.
+    """
+    if not KYC_ENFORCE:
+        return True
+    if not current_user.is_authenticated:
+        return False
+    if action == "payout" and not is_service_provider(current_user):
+        return True
+    if _is_kyc_verified(current_user):
+        return True
+    flash("Complete KYC to enable payouts and money-moving actions.", "warning")
+    return False
 
 
 def get_or_create_wallet(user_id: int, *, commit: bool = True, lock: bool = False) -> Wallet:
@@ -5936,6 +5986,19 @@ def payouts():
     return render_template("policies/payouts.html")
 
 
+@app.route("/affiliate-marketing", endpoint="affiliate_marketing")
+def affiliate_marketing():
+    return render_template(
+        "policies/affiliate_marketing.html",
+        contact_email=AFFILIATE_CONTACT_EMAIL,
+    )
+
+
+@app.route("/affiliate/apply", endpoint="affiliate_apply")
+def affiliate_apply():
+    return render_template("affiliate_apply.html")
+
+
 @app.route("/disputes")
 def disputes():
     return render_template("policies/disputes.html")
@@ -6587,7 +6650,42 @@ def media_file(filename):
     # Attach stems/deliverables as downloads; others inline.
     is_deliverable = Beat.query.filter_by(stems_path=filename).first() is not None
     as_attachment = bool(is_deliverable)
-    return send_from_directory(app.config["UPLOAD_FOLDER"], filename, as_attachment=as_attachment)
+    local_path = os.path.join(app.config["UPLOAD_FOLDER"], filename)
+    if not os.path.exists(local_path):
+        abort(404)
+
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    mime_type, _ = mimetypes.guess_type(local_path)
+    if not mime_type:
+        mime_type = "application/octet-stream"
+
+    range_header = request.headers.get("Range")
+    if range_header and ext in ALLOWED_AUDIO:
+        size = os.path.getsize(local_path)
+        match = re.match(r"bytes=(\d+)-(\d*)", range_header)
+        if match:
+            start = int(match.group(1))
+            end = int(match.group(2)) if match.group(2) else size - 1
+            end = min(end, size - 1)
+            if start > end:
+                start = 0
+                end = size - 1
+            length = end - start + 1
+            with open(local_path, "rb") as fh:
+                fh.seek(start)
+                data = fh.read(length)
+            resp = Response(data, status=206, mimetype=mime_type, direct_passthrough=True)
+            resp.headers["Content-Range"] = f"bytes {start}-{end}/{size}"
+            resp.headers["Accept-Ranges"] = "bytes"
+            resp.headers["Content-Length"] = str(length)
+            resp.headers["Access-Control-Allow-Origin"] = "*"
+            return resp
+
+    resp = send_from_directory(app.config["UPLOAD_FOLDER"], filename, as_attachment=as_attachment)
+    if ext in ALLOWED_AUDIO:
+        resp.headers["Accept-Ranges"] = "bytes"
+        resp.headers["Access-Control-Allow-Origin"] = "*"
+    return resp
 
 @app.route("/avatar/<int:user_id>", endpoint="user_avatar")
 def user_avatar(user_id: int):
@@ -6695,9 +6793,6 @@ def opportunities_video_media():
 @app.route("/wallet", endpoint="wallet_home")
 @login_required
 def wallet_page():
-    if not require_kyc_approved():
-        return redirect(url_for("kyc"))
-
     tab = (request.args.get("tab") or "overview").strip().lower()
 
     w = get_or_create_wallet(current_user.id)
@@ -6714,7 +6809,16 @@ def wallet_page():
     # Get recent transactions for overview tab (last 10)
     recent = txns[:10] if txns else []
 
-    return render_template("wallet_center.html", balance=balance, transactions=txns, txns=txns, recent=recent, tab=tab)
+    kyc_blocked_payout = bool(KYC_ENFORCE and is_service_provider(current_user) and not _is_kyc_verified(current_user))
+    return render_template(
+        "wallet_center.html",
+        balance=balance,
+        transactions=txns,
+        txns=txns,
+        recent=recent,
+        tab=tab,
+        kyc_blocked_payout=kyc_blocked_payout,
+    )
 
 
 @app.route("/transactions")
@@ -6726,9 +6830,6 @@ def transactions_redirect():
 @app.route("/wallet/statement", endpoint="wallet_statement")
 @login_required
 def wallet_statement():
-    if not require_kyc_approved():
-        return redirect(url_for("kyc"))
-
     year = request.args.get("year", type=int)
     month = request.args.get("month", type=int)
 
@@ -6779,11 +6880,12 @@ def wallet_statement():
 @app.route("/wallet/action", methods=["POST"])
 @login_required
 def wallet_action():
-    if not require_kyc_approved():
-        return redirect(url_for("kyc"))
-
     action = (request.form.get("action") or "").strip().lower()
     amount_raw = (request.form.get("amount") or "").strip()
+
+    if action in ("withdraw", "transfer_out"):
+        if not require_kyc_approved("payout"):
+            return redirect(url_for("wallet_home"))
 
     if not amount_raw:
         flash("Amount is required.", "error")
@@ -7275,6 +7377,15 @@ def provider_settings():
         exceptions=exceptions,
         DAY_NAMES=DAY_NAMES,
     )
+
+
+@app.route("/availability", endpoint="provider_availability_alias")
+@login_required
+def provider_availability_alias():
+    if not is_service_provider(current_user):
+        flash("Availability settings are only available for providers.", "error")
+        return redirect(url_for("route_to_dashboard"))
+    return redirect(url_for("provider_settings"))
 
 
 @app.route("/provider/availability/add", methods=["POST"], endpoint="provider_availability_add")
@@ -8025,6 +8136,22 @@ def bookme_request_confirm(provider_id):
         flash(reason or "Requested time is not available.", "error")
         return redirect(url_for("bookme_request", provider_id=provider_id))
 
+    dupe_window = datetime.utcnow() - timedelta(minutes=2)
+    existing_req = (
+        BookingRequest.query
+        .filter(
+            BookingRequest.provider_id == provider.id,
+            BookingRequest.client_id == current_user.id,
+            BookingRequest.preferred_time == pref,
+            BookingRequest.created_at >= dupe_window,
+        )
+        .order_by(BookingRequest.created_at.desc())
+        .first()
+    )
+    if existing_req:
+        flash("You already sent a request for this time. Taking you to your requests.", "info")
+        return redirect(url_for("bookme_requests"))
+
     req = BookingRequest(
         provider_id=provider.id,
         client_id=current_user.id,
@@ -8146,6 +8273,7 @@ def bookme_requests():
             booking = booking_map.get(req.booking_id)
             hold_actions.append({
                 "booking_id": req.booking_id,
+                "request_id": req.id,
                 "provider_username": req.provider.username if req.provider else "",
                 "preferred_time": (booking.event_datetime.strftime("%Y-%m-%d %H:%M") if booking and booking.event_datetime else (req.preferred_time or "")),
             })
@@ -8744,6 +8872,11 @@ def booking_detail(booking_id):
         flash("You don't have access to this booking.", "error")
         return redirect(url_for("bookme_requests"))
 
+    provider_user = booking.provider or User.query.get(booking.provider_id)
+    client_user = booking.client or User.query.get(booking.client_id)
+    if not provider_user or not client_user:
+        flash("Some booking participant details are unavailable. If this persists, contact support.", "warning")
+
     if request.method == "POST":
         action = (request.form.get("action") or "").strip().lower()
         
@@ -8986,6 +9119,8 @@ def booking_detail(booking_id):
     return render_template(
         "booking_detail.html",
         booking=booking,
+        provider_user=provider_user,
+        client_user=client_user,
         is_provider=is_provider,
         is_client=is_client,
         is_admin=is_admin,
@@ -9238,6 +9373,7 @@ def admin_dispute_detail(dispute_id: int):
     dispute = BookingDispute.query.get_or_404(dispute_id)
 
     if request.method == "POST":
+        before_status = str(dispute.status)
         new_status = (request.form.get("status") or "").strip().lower()
         if new_status in DISPUTE_STATUSES:
             dispute.status = new_status
@@ -9251,6 +9387,20 @@ def admin_dispute_detail(dispute_id: int):
             )
             db.session.add(msg)
         db.session.commit()
+        try:
+            after_status = str(dispute.status)
+            log_admin_action(
+                ActivityEventType.admin_ticket_updated,
+                actor_admin_id=current_user.id,
+                target_type="dispute",
+                target_id=dispute.id,
+                summary=f"Dispute updated for booking #{dispute.booking_id}",
+                payload_dict={"before": {"status": before_status}, "after": {"status": after_status}, "reply_added": bool(body)},
+                url=url_for("admin_dispute_detail", dispute_id=dispute.id),
+                include_actor=True,
+            )
+        except Exception:
+            pass
         flash("Dispute updated.", "success")
         return redirect(url_for("admin_dispute_detail", dispute_id=dispute.id))
 
@@ -10365,9 +10515,6 @@ def create_checkout_session():
         app.logger.error(f"Stripe check failed: STRIPE_AVAILABLE={STRIPE_AVAILABLE}, STRIPE_SECRET_KEY length={len(STRIPE_SECRET_KEY) if STRIPE_SECRET_KEY else 0}")
         return jsonify({"error": "Stripe is not configured. Please set STRIPE_SECRET_KEY environment variable."}), 500
     
-    if not require_kyc_approved():
-        return jsonify({"error": "KYC verification required"}), 403
-    
     # Get beat_id from request
     beat_id = request.json.get("beat_id") if request.is_json else request.form.get("beat_id")
     if not beat_id:
@@ -10566,49 +10713,87 @@ def create_checkout_session_hold_fee():
     if not STRIPE_SECRET_KEY:
         app.logger.error(f"Stripe check failed: STRIPE_AVAILABLE={STRIPE_AVAILABLE}, STRIPE_SECRET_KEY length={len(STRIPE_SECRET_KEY) if STRIPE_SECRET_KEY else 0}")
         return jsonify({"error": "Stripe is not configured. Please set STRIPE_SECRET_KEY environment variable."}), 500
-    
-    if not require_kyc_approved():
-        return jsonify({"error": "KYC verification required"}), 403
-    
-    # Get booking_request_id from request
-    req_id = request.json.get("booking_request_id") if request.is_json else request.form.get("booking_request_id")
-    if not req_id:
-        return jsonify({"error": "booking_request_id is required"}), 400
-    
-    try:
-        req_id = int(req_id)
-    except (ValueError, TypeError):
-        return jsonify({"error": "Invalid booking_request_id"}), 400
-    
-    # Validate booking request
-    req = BookingRequest.query.get(req_id)
-    if not req:
-        return jsonify({"error": "Booking request not found"}), 404
-    
-    if req.client_id != current_user.id:
-        return jsonify({"error": "You can only pay for your own booking requests"}), 403
-    
-    if req.status != BookingStatus.accepted:
-        return jsonify({"error": "Booking request must be accepted before paying hold fee"}), 400
-    
-    if req.booking_id:
-        return jsonify({"error": "Hold fee already paid for this booking request"}), 400
-    
+
+    data = request.get_json(silent=True) or {}
+    req_id_raw = data.get("booking_request_id") or request.form.get("booking_request_id")
+    booking_id_raw = data.get("booking_id") or request.form.get("booking_id")
+
+    if not req_id_raw and not booking_id_raw:
+        return jsonify({"error": "booking_request_id or booking_id is required"}), 400
+
+    req = None
+    booking = None
+
+    if req_id_raw:
+        try:
+            req_id = int(req_id_raw)
+        except (ValueError, TypeError):
+            return jsonify({"error": "Invalid booking_request_id"}), 400
+        req = BookingRequest.query.get(req_id)
+        if not req:
+            return jsonify({"error": "Booking request not found"}), 404
+        if req.client_id != current_user.id:
+            return jsonify({"error": "You can only pay for your own booking requests"}), 403
+        if req.status not in (BookingStatus.accepted, BookingStatus.confirmed):
+            return jsonify({"error": "Booking request must be accepted before paying hold fee"}), 400
+        if req.booking_id:
+            booking = Booking.query.get(req.booking_id)
+
+    if booking_id_raw and not booking:
+        try:
+            booking_id = int(booking_id_raw)
+        except (ValueError, TypeError):
+            return jsonify({"error": "Invalid booking_id"}), 400
+        booking = Booking.query.get(booking_id)
+        if not booking:
+            return jsonify({"error": "Booking not found"}), 404
+        if booking.client_id != current_user.id:
+            return jsonify({"error": "You can only pay for your own booking"}), 403
+        if not req:
+            try:
+                req = BookingRequest.query.filter_by(booking_id=booking.id).first()
+            except Exception:
+                req = None
+
+    if not booking and not req:
+        return jsonify({"error": "Unable to find booking context for this payment"}), 400
+
+    # Prevent duplicate deposits
+    if booking:
+        sums = sum_successful_payments(booking, req)
+        deposit_base = booking.deposit_base_cents or HOLD_FEE_CENTS
+        if int(sums.get("base_paid_cents", 0)) >= int(deposit_base):
+            return jsonify({"error": "Hold fee already paid for this booking"}), 409
+    elif req:
+        existing = Payment.query.filter_by(booking_request_id=req.id, kind=PaymentKind.deposit, status=PaymentStatus.succeeded).first()
+        if existing:
+            return jsonify({"error": "Hold fee already paid for this booking request"}), 409
+
     # Hold fee amount (deposit base)
     hold_fee_cents = HOLD_FEE_CENTS
     beatfund_fee_cents = BEATFUND_FEE_MIN_CENTS
     total_cents, processing_fee_cents = calc_total_and_processing(hold_fee_cents, beatfund_fee_cents)
-    
+
     # Get base URL for success/cancel URLs (must be publicly accessible)
     base_url = get_stripe_base_url()
     if not base_url:
         return jsonify({"error": "Unable to determine base URL. Please set APP_BASE_URL environment variable."}), 500
-    
+
     # Get provider info
-    provider = User.query.get(req.provider_id)
+    provider_id = booking.provider_id if booking else (req.provider_id if req else None)
+    provider = User.query.get(provider_id) if provider_id else None
     if not provider:
         return jsonify({"error": "Provider not found"}), 404
-    
+
+    preferred_label = None
+    try:
+        if booking and booking.event_datetime:
+            preferred_label = booking.event_datetime.strftime("%Y-%m-%d %H:%M")
+    except Exception:
+        preferred_label = None
+    if not preferred_label and req:
+        preferred_label = req.preferred_time
+
     try:
         # Create Checkout Session for hold fee
         # Mode is set to "payment" for one-time payment (not subscription or setup)
@@ -10622,7 +10807,7 @@ def create_checkout_session_hold_fee():
                         "currency": "usd",
                         "product_data": {
                             "name": "Service payment (deposit)",
-                            "description": f"Hold fee for booking with @{provider.username} on {req.preferred_time}.",
+                            "description": f"Hold fee for booking with @{provider.username} on {preferred_label or 'scheduled time'}.",
                         },
                         "unit_amount": hold_fee_cents,
                     },
@@ -10655,12 +10840,13 @@ def create_checkout_session_hold_fee():
             mode="payment",  # One-time payment (not subscription or setup)
             success_url=f"{base_url}/checkout/hold-fee/success?session_id={{CHECKOUT_SESSION_ID}}",
             cancel_url=f"{base_url}/bookme/requests",
-            client_reference_id=f"hold_fee_req_{req_id}_user_{current_user.id}",
+            client_reference_id=f"hold_fee_{(booking.id if booking else req.id)}_user_{current_user.id}",
             payment_intent_data={
                 "metadata": {
-                    "booking_request_id": str(req_id),
+                    "booking_request_id": str(req.id) if req else "",
+                    "booking_id": str(booking.id) if booking else "",
                     "user_id": str(current_user.id),
-                    "provider_id": str(req.provider_id),
+                    "provider_id": str(provider.id),
                     "hold_fee_cents": str(hold_fee_cents),
                     "beatfund_fee_cents": str(beatfund_fee_cents),
                     "processing_fee_cents": str(processing_fee_cents),
@@ -10670,9 +10856,10 @@ def create_checkout_session_hold_fee():
                 }
             },
             metadata={
-                "booking_request_id": str(req_id),
+                "booking_request_id": str(req.id) if req else "",
+                "booking_id": str(booking.id) if booking else "",
                 "user_id": str(current_user.id),
-                "provider_id": str(req.provider_id),
+                "provider_id": str(provider.id),
                 "hold_fee_cents": str(hold_fee_cents),
                 "beatfund_fee_cents": str(beatfund_fee_cents),
                 "processing_fee_cents": str(processing_fee_cents),
@@ -10701,7 +10888,9 @@ def create_checkout_session_hold_fee():
                  "Please contact support if the problem persists."}
             ), 500
         
-        app.logger.info(f"Hold fee checkout session created: session_id={checkout_session.id}, booking_request_id={req_id}")
+        app.logger.info(
+            f"Hold fee checkout session created: session_id={checkout_session.id}, booking_request_id={getattr(req, 'id', None)}, booking_id={getattr(booking, 'id', None)}"
+        )
         
         return jsonify({
             "sessionId": checkout_session.id,
@@ -11442,9 +11631,6 @@ def wallet_stripe_success():
     Stripe redirect page for wallet top-ups (NOT the source of truth).
     We verify payment server-side and credit wallet idempotently for good UX in dev.
     """
-    if not require_kyc_approved():
-        return redirect(url_for("kyc"))
-
     session_id = (request.args.get("session_id") or "").strip()
     if not session_id:
         flash("Invalid checkout session.", "error")
@@ -11530,9 +11716,6 @@ def _finalize_wallet_topup(*, user_id: int, amount_cents: int, session_id: str |
 @app.route("/connect/stripe/start", methods=["GET"])
 @login_required
 def stripe_connect_start():
-    if not require_kyc_approved():
-        return redirect(url_for("kyc"))
-
     if not STRIPE_AVAILABLE or not STRIPE_SECRET_KEY:
         flash("Stripe is not configured.", "error")
         return redirect(url_for("wallet_home"))
@@ -11577,9 +11760,6 @@ def stripe_connect_start():
 @app.route("/connect/stripe/return", methods=["GET"])
 @login_required
 def stripe_connect_return():
-    if not require_kyc_approved():
-        return redirect(url_for("kyc"))
-
     if not STRIPE_AVAILABLE or not STRIPE_SECRET_KEY:
         flash("Stripe is not configured.", "error")
         return redirect(url_for("wallet_home"))
@@ -11758,18 +11938,245 @@ def checkout_hold_fee_success():
         
         # Extract metadata
         metadata = checkout_session.metadata or {}
-        req_id = metadata.get("booking_request_id")
         purpose = metadata.get("purpose")
-        
-        if purpose != "bookme_hold" or not req_id:
+        req_id_raw = metadata.get("booking_request_id")
+        booking_id_raw = metadata.get("booking_id")
+
+        if purpose != "bookme_hold":
             flash("Invalid checkout session metadata.", "error")
             return redirect(url_for("bookme_requests"))
-        
-        try:
-            req_id = int(req_id)
-        except (ValueError, TypeError):
-            flash("Invalid booking request ID in checkout session.", "error")
+
+        req_id = None
+        booking_id = None
+        if req_id_raw:
+            try:
+                req_id = int(req_id_raw)
+            except (ValueError, TypeError):
+                req_id = None
+        if booking_id_raw:
+            try:
+                booking_id = int(booking_id_raw)
+            except (ValueError, TypeError):
+                booking_id = None
+
+        if not req_id and not booking_id:
+            flash("Invalid checkout session metadata.", "error")
             return redirect(url_for("bookme_requests"))
+
+        hold_fee_cents = int(metadata.get("hold_fee_cents", HOLD_FEE_CENTS))
+        beatfund_fee_cents = int(metadata.get("beatfund_fee_cents", 0) or 0)
+        processing_fee_cents = int(metadata.get("processing_fee_cents", 0) or 0)
+        total_cents = int(metadata.get("total_cents", hold_fee_cents + beatfund_fee_cents + processing_fee_cents) or 0)
+
+        if booking_id:
+            booking = Booking.query.get(booking_id)
+            if not booking:
+                flash("Booking not found.", "error")
+                return redirect(url_for("bookme_requests"))
+            if booking.client_id != current_user.id:
+                flash("You can only pay for your own booking.", "error")
+                return redirect(url_for("bookme_requests"))
+
+            req = None
+            if req_id:
+                req = BookingRequest.query.get(req_id)
+            if not req:
+                req = BookingRequest.query.filter_by(booking_id=booking.id).first()
+
+            provider = User.query.get(booking.provider_id)
+            if not provider:
+                flash("Provider not found.", "error")
+                return redirect(url_for("bookme_requests"))
+
+            # Idempotency for booking-based checkout
+            idempotency_key = generate_idempotency_key(
+                "stripe_hold_fee", current_user.id, booking_id=booking.id, session_id=session_id
+            )
+            existing_result = check_idempotency(idempotency_key, "stripe_hold_fee", current_user.id)
+            if existing_result:
+                flash("This hold fee payment was already processed.", "info")
+                return redirect(url_for("bookme_requests"))
+
+            try:
+                with db_txn():
+                    if db.engine.dialect.name == "postgresql":
+                        booking = Booking.query.filter_by(id=booking.id).with_for_update().first()
+                        client_w = Wallet.query.filter_by(user_id=current_user.id).with_for_update().first()
+                        req_check = BookingRequest.query.filter_by(id=req.id).with_for_update().first() if req else None
+                    else:
+                        booking = Booking.query.filter_by(id=booking.id).first()
+                        client_w = Wallet.query.filter_by(user_id=current_user.id).first()
+                        req_check = BookingRequest.query.filter_by(id=req.id).first() if req else None
+
+                    if not booking:
+                        raise ValueError("booking_not_found")
+
+                    existing_payment = Payment.query.filter_by(
+                        booking_id=booking.id,
+                        kind=PaymentKind.deposit,
+                        status=PaymentStatus.succeeded,
+                    ).first()
+                    if existing_payment:
+                        raise ValueError("already_paid")
+
+                    if not client_w:
+                        client_w = Wallet(user_id=current_user.id)
+                        db.session.add(client_w)
+                        db.session.flush()
+
+                    # Record escrow entry for client
+                    try:
+                        meta_client = f"hold fee for booking #{booking.id} with @{provider.username} (Stripe payment - held in escrow)"
+                        if not LedgerEntry.query.filter_by(
+                            wallet_id=client_w.id, entry_type=EntryType.purchase_spend, meta=meta_client
+                        ).first():
+                            post_ledger(client_w, EntryType.purchase_spend, hold_fee_cents, meta=meta_client)
+                    except Exception:
+                        pass
+
+                    # Credit provider ledger for hold fee
+                    try:
+                        provider_w = Wallet.query.filter_by(user_id=provider.id).first()
+                        if not provider_w:
+                            provider_w = Wallet(user_id=provider.id)
+                            db.session.add(provider_w)
+                            db.session.flush()
+                        meta_income = f"booking #{booking.id} deposit (Stripe)"
+                        if not LedgerEntry.query.filter_by(
+                            wallet_id=provider_w.id, entry_type=EntryType.sale_income, meta=meta_income
+                        ).first():
+                            post_ledger(provider_w, EntryType.sale_income, hold_fee_cents, meta=meta_income)
+                    except Exception:
+                        app.logger.warning("Hold fee: unable to post provider ledger entry")
+
+                    # Store payment breakdown for deposit
+                    try:
+                        payment_intent_id = getattr(checkout_session, "payment_intent", None)
+                        payment = Payment.query.filter_by(
+                            booking_id=booking.id, kind=PaymentKind.deposit
+                        ).order_by(Payment.created_at.desc()).first()
+                        if payment and payment.status in (PaymentStatus.created, PaymentStatus.processing, PaymentStatus.failed):
+                            payment.status = PaymentStatus.succeeded
+                            payment.amount_cents = total_cents
+                            payment.base_amount_cents = hold_fee_cents
+                            payment.beatfund_fee_cents = beatfund_fee_cents
+                            payment.processing_fee_cents = processing_fee_cents
+                            payment.total_paid_cents = total_cents
+                            if payment_intent_id:
+                                payment.stripe_payment_intent_id = str(payment_intent_id)
+                                payment.external_id = str(payment_intent_id)
+                            payment.nonrefundable_processing_kept_cents = int(processing_fee_cents or 0)
+                            payment.nonrefundable_beatfund_kept_cents = int(beatfund_fee_cents or 0)
+                        else:
+                            payment = Payment(
+                                purpose=PaymentPurpose.booking_deposit,
+                                processor=PaymentProcessor.stripe,
+                                status=PaymentStatus.succeeded,
+                                kind=PaymentKind.deposit,
+                                amount_cents=total_cents,
+                                currency="usd",
+                                base_amount_cents=hold_fee_cents,
+                                beatfund_fee_cents=beatfund_fee_cents,
+                                processing_fee_cents=processing_fee_cents,
+                                total_paid_cents=total_cents,
+                                idempotency_key=generate_idempotency_key(
+                                    "booking_deposit", current_user.id, booking_id=booking.id, session_id=session_id
+                                ),
+                                booking_id=booking.id,
+                                booking_request_id=(req_check.id if req_check else None),
+                                stripe_payment_intent_id=str(payment_intent_id) if payment_intent_id else None,
+                                external_id=str(payment_intent_id) if payment_intent_id else None,
+                            )
+                            payment.nonrefundable_processing_kept_cents = int(processing_fee_cents or 0)
+                            payment.nonrefundable_beatfund_kept_cents = int(beatfund_fee_cents or 0)
+                            db.session.add(payment)
+                    except Exception:
+                        pass
+
+                    booking.beatfund_fee_collected_cents = int(booking.beatfund_fee_collected_cents or 0) + int(beatfund_fee_cents or 0)
+                    if booking.status not in (BOOKING_STATUS_COMPLETED, BOOKING_STATUS_CANCELLED):
+                        booking.status = BOOKING_STATUS_HOLD_PAID
+                    if req_check and req_check.status == BookingStatus.accepted:
+                        req_check.status = BookingStatus.confirmed
+
+                    try:
+                        audit_log_event(
+                            action_type="HOLD_CREATED",
+                            actor_user=current_user,
+                            target_type="Booking",
+                            target_id=str(booking.id),
+                            reason="Hold fee paid and held in escrow",
+                            metadata={
+                                "booking_request_id": req_check.id if req_check else None,
+                                "booking_id": booking.id,
+                                "provider_id": provider.id,
+                                "client_id": current_user.id,
+                                "hold_fee_cents": hold_fee_cents,
+                                "stripe_session_id": session_id,
+                            },
+                            commit=False,
+                        )
+                    except Exception:
+                        pass
+
+                    store_idempotency_result(
+                        idempotency_key,
+                        "stripe_hold_fee",
+                        current_user.id,
+                        {"status": "success", "booking_id": booking.id, "req_id": (req_check.id if req_check else None), "stripe_session_id": session_id},
+                        commit=False,
+                    )
+
+                    notify_user(
+                        provider,
+                        kind="success",
+                        title="Hold fee paid - Booking confirmed!",
+                        body=f"@{current_user.username} paid the hold fee. Booking is now confirmed.",
+                        url=url_for("booking_detail", booking_id=booking.id),
+                        actor_user_id=current_user.id,
+                        event_key=f"booking:{booking.id}:deposit_paid",
+                        commit=False,
+                    )
+                    notify_user(
+                        current_user,
+                        kind="success",
+                        title="Deposit paid",
+                        body=f"Your hold fee was received for booking #{booking.id}.",
+                        url=url_for("booking_detail", booking_id=booking.id),
+                        actor_user_id=current_user.id,
+                        event_key=f"booking:{booking.id}:deposit_paid_client",
+                        commit=False,
+                    )
+
+            except ValueError as e:
+                error_msg = str(e)
+                if error_msg == "already_paid":
+                    flash("Hold fee already paid for this booking.", "info")
+                else:
+                    flash("Unable to process hold fee payment.", "error")
+                return redirect(url_for("bookme_requests"))
+            except IntegrityError:
+                flash("This hold fee payment was already processed.", "info")
+                return redirect(url_for("bookme_requests"))
+
+            db.session.refresh(booking)
+            if req:
+                try:
+                    db.session.refresh(req)
+                except Exception:
+                    pass
+
+            return render_template(
+                "checkout_hold_fee_success.html",
+                booking=booking,
+                booking_request=req,
+                provider=provider,
+                hold_fee_cents=hold_fee_cents,
+                beatfund_fee_cents=beatfund_fee_cents,
+                processing_fee_cents=processing_fee_cents,
+                total_cents=total_cents,
+                stripe_session_id=session_id,
+            )
         
         # Get booking request
         req = BookingRequest.query.get(req_id)
@@ -12017,9 +12424,6 @@ def checkout_hold_fee_success():
 @login_required
 def market_confirm(beat_id):
     """Order preview page - shows order details before proceeding to checkout"""
-    if not require_kyc_approved():
-        return redirect(url_for("kyc"))
-
     beat = Beat.query.get_or_404(beat_id)
 
     if hasattr(beat, "is_active") and not beat.is_active:
@@ -12088,9 +12492,6 @@ def market_confirm(beat_id):
 @login_required
 def market_buy(beat_id):
     """Process the purchase - requires confirmation"""
-    if not require_kyc_approved():
-        return redirect(url_for("kyc"))
-
     # Check for confirmation parameter
     confirmed = request.form.get("confirmed") == "true"
     if not confirmed:
@@ -13006,6 +13407,19 @@ def notifications_unread_count_alias():
 # =========================================================
 # Admin Notifications (admins only)
 # =========================================================
+def _admin_bell_event_allowed(ev: ActivityEvent | None, payload: dict | None) -> bool:
+    if not ev:
+        return False
+    et = getattr(ev, "event_type", None)
+    if et in {ActivityEventType.admin_ticket_updated, ActivityEventType.admin_wallet_adjusted, ActivityEventType.admin_refund_issued}:
+        return True
+    if et == ActivityEventType.admin_user_role_changed:
+        data = (payload or {}).get("data") or {}
+        before = data.get("before") or {}
+        after = data.get("after") or {}
+        return ("kyc_status" in before) or ("kyc_status" in after)
+    return False
+
 @app.route("/dashboard/admin/notifications", endpoint="admin_notifications")
 @app.route("/admin/notifications", endpoint="admin_notifications_alias")
 @role_required("admin")
@@ -13026,6 +13440,9 @@ def admin_notifications():
         ev = r.event
         actor = getattr(ev, "actor", None)
         payload = _safe_json_loads(getattr(ev, "payload_json", None))
+
+        if not _admin_bell_event_allowed(ev, payload):
+            continue
 
         title = payload.get("summary") or payload.get("action_type") or (getattr(ev, "event_type", None).value if getattr(ev, "event_type", None) else "Admin event")
         body = ""
@@ -13081,7 +13498,13 @@ def admin_notifications_mark_read(recipient_id: int):
 @app.route("/admin/notifications/unread_count", endpoint="admin_notifications_unread_count_alias")
 @role_required("admin")
 def admin_notifications_unread_count():
-    count = (
+    allowed_types = {
+        ActivityEventType.admin_ticket_updated,
+        ActivityEventType.admin_wallet_adjusted,
+        ActivityEventType.admin_refund_issued,
+        ActivityEventType.admin_user_role_changed,
+    }
+    recs = (
         NotificationRecipient.query
         .filter(
             NotificationRecipient.user_id == current_user.id,
@@ -13089,9 +13512,105 @@ def admin_notifications_unread_count():
         )
         .join(ActivityEvent, NotificationRecipient.event_id == ActivityEvent.id)
         .filter(ActivityEvent.audience == "ADMINS")
-        .count()
+        .filter(ActivityEvent.event_type.in_(list(allowed_types)))
+        .order_by(NotificationRecipient.id.desc())
+        .limit(500)
+        .all()
     )
-    return jsonify({"count": int(count)})
+    count = 0
+    for r in recs:
+        ev = r.event
+        payload = _safe_json_loads(getattr(ev, "payload_json", None))
+        if _admin_bell_event_allowed(ev, payload):
+            count += 1
+    alert_count = 0
+    try:
+        alert_count = Alert.query.filter(Alert.severity == AlertSeverity.high, Alert.resolved_at.is_(None)).count()
+    except Exception:
+        alert_count = 0
+    return jsonify({"count": int(count + alert_count)})
+
+
+@app.route("/admin/notifications/recent", endpoint="admin_notifications_recent")
+@role_required("admin")
+def admin_notifications_recent():
+    limit = request.args.get("limit", type=int) or 8
+    allowed_types = {
+        ActivityEventType.admin_ticket_updated,
+        ActivityEventType.admin_wallet_adjusted,
+        ActivityEventType.admin_refund_issued,
+        ActivityEventType.admin_user_role_changed,
+    }
+    recs = (
+        NotificationRecipient.query
+        .filter(NotificationRecipient.user_id == current_user.id)
+        .join(ActivityEvent, NotificationRecipient.event_id == ActivityEvent.id)
+        .filter(ActivityEvent.audience == "ADMINS")
+        .filter(ActivityEvent.event_type.in_(list(allowed_types)))
+        .order_by(ActivityEvent.created_at.desc(), NotificationRecipient.id.desc())
+        .limit(limit * 5)
+        .all()
+    )
+
+    items = []
+    for r in recs:
+        ev = r.event
+        actor = getattr(ev, "actor", None)
+        payload = _safe_json_loads(getattr(ev, "payload_json", None))
+        if not _admin_bell_event_allowed(ev, payload):
+            continue
+
+        title = payload.get("summary") or payload.get("action_type") or (getattr(ev, "event_type", None).value if getattr(ev, "event_type", None) else "Admin event")
+        body = ""
+        try:
+            data = payload.get("data") or {}
+            if isinstance(data, dict) and (data.get("before") or data.get("after")):
+                body = json.dumps({"before": data.get("before"), "after": data.get("after")}, ensure_ascii=False, default=str)
+        except Exception:
+            body = ""
+
+        url = payload.get("url") if isinstance(payload, dict) else None
+        if not (url and str(url).startswith("/")):
+            url = None
+
+        items.append({
+            "id": r.id,
+            "event_type": payload.get("action_type") or (getattr(ev, "event_type", None).value if getattr(ev, "event_type", None) else None),
+            "title": title,
+            "body": body,
+            "url": url,
+            "created_at": getattr(ev, "created_at", None) or getattr(r, "created_at", None),
+            "is_read": bool(getattr(r, "read_at", None)),
+            "actor_username": payload.get("actor_username") or (getattr(actor, "username", None) if actor else None),
+            "kind": "info",
+        })
+
+    # Critical alerts in admin bell
+    try:
+        alerts = (
+            Alert.query
+            .filter(Alert.severity == AlertSeverity.high, Alert.resolved_at.is_(None))
+            .order_by(Alert.created_at.desc())
+            .limit(limit)
+            .all()
+        )
+        for a in alerts:
+            items.append({
+                "id": f"alert-{a.id}",
+                "event_type": "ALERT",
+                "title": "System alert",
+                "body": a.message,
+                "url": url_for("admin_alerts"),
+                "created_at": a.created_at,
+                "is_read": False,
+                "actor_username": None,
+                "kind": "error",
+            })
+    except Exception:
+        pass
+
+    items.sort(key=lambda x: (x.get("created_at") is not None, x.get("created_at")), reverse=True)
+    return jsonify(items[:limit])
 
 
 # =========================================================
@@ -16877,6 +17396,25 @@ def admin_refunds():
                 booking.beatfund_fee_collected_cents = max(0, int(booking.beatfund_fee_collected_cents or 0) - refundable_bf)
 
             db.session.commit()
+            try:
+                log_admin_action(
+                    ActivityEventType.admin_refund_issued,
+                    actor_admin_id=current_user.id,
+                    target_type="payment",
+                    target_id=payment.id,
+                    summary=f"Refund issued for payment #{payment.id} (${refundable_cents/100.0:.2f})",
+                    payload_dict={
+                        "payment_id": payment.id,
+                        "booking_id": payment.booking_id,
+                        "refund_cents": refundable_cents,
+                        "refund_base_cents": refund_base_cents,
+                        "provider_fault": provider_fault,
+                    },
+                    url=url_for("admin_refunds"),
+                    include_actor=True,
+                )
+            except Exception:
+                pass
             flash("Refund processed successfully.", "success")
             return redirect(url_for("admin_refunds"))
         except Exception as e:
