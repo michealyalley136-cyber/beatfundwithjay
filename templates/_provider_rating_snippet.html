@@ -1,0 +1,15 @@
+{% if provider_rating_summary %}
+  <div class="bf-card" style="margin-top:12px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+      <div>
+        <strong>Rating:</strong>
+        {{ provider_rating_summary.avg }} / 5
+        <span style="opacity:0.7;">({{ provider_rating_summary.count }} review{{ provider_rating_summary.count != 1 and 's' or '' }})</span>
+      </div>
+      <div>
+        <a class="btn btn-secondary" href="{{ url_for('provider_portfolio_public', username=current_user.username) }}">View reviews</a>
+        <a class="btn btn-secondary" href="{{ url_for('provider_settings') }}">Availability</a>
+      </div>
+    </div>
+  </div>
+{% endif %}

@@ -99,6 +99,44 @@
       </div>
 
       <div class="pb-section">
+        <h3 class="pb-section-title">Availability</h3>
+        <div class="pb-hint">
+          Accepting new requests: {{ "Yes" if (settings and settings.accepting_new_requests) else "No" }}
+        </div>
+        <div class="pb-hint">
+          Modes:
+          {% if settings and settings.onsite %}On-site{% endif %}
+          {% if settings and settings.remote %}{% if settings.onsite %} · {% endif %}Remote{% endif %}
+          {% if not settings or (not settings.onsite and not settings.remote) %}Not specified{% endif %}
+        </div>
+        {% if availability_slots %}
+          <ul style="margin:8px 0 0; padding-left:18px;">
+            {% for s in availability_slots %}
+              <li>{{ DAY_NAMES[s.day_of_week] }} · {{ s.start_time.strftime('%H:%M') }} - {{ s.end_time.strftime('%H:%M') }}</li>
+            {% endfor %}
+          </ul>
+        {% else %}
+          <div class="pb-hint">No weekly availability set.</div>
+        {% endif %}
+        {% if availability_exceptions %}
+          <div class="pb-hint" style="margin-top:8px;">Exceptions:</div>
+          <ul style="margin:6px 0 0; padding-left:18px;">
+            {% for e in availability_exceptions %}
+              <li>
+                {{ e.date }} ·
+                {% if e.start_time and e.end_time %}
+                  {{ e.start_time.strftime('%H:%M') }} - {{ e.end_time.strftime('%H:%M') }}
+                {% else %}
+                  All day
+                {% endif %}
+                ({{ "Unavailable" if e.is_unavailable else "Available" }})
+              </li>
+            {% endfor %}
+          </ul>
+        {% endif %}
+      </div>
+
+      <div class="pb-section">
         <h3 class="pb-section-title">Project details</h3>
 
         {% set is_studio = role_val in ["studio"] %}

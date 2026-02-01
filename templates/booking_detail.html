@@ -781,6 +781,42 @@
   </div>
 </div>
 
+<section class="bf-card" style="margin-top:16px;">
+  <h2>Reviews</h2>
+  {% if review %}
+    <div class="bf-meta-row">
+      <div class="bf-meta-label">Your review</div>
+      <div class="bf-meta-value">{{ review.rating }}/5{% if review.title %} · {{ review.title }}{% endif %}</div>
+    </div>
+    {% if review.body %}
+      <div class="bf-meta-value" style="margin-top:6px; white-space:pre-line;">{{ review.body }}</div>
+    {% endif %}
+  {% elif can_leave_review %}
+    <a class="bf-btn bf-btn-primary" href="{{ url_for('booking_review', booking_id=booking.id) }}">Leave a review</a>
+  {% else %}
+    <div class="bf-meta-value">Reviews are available after completion.</div>
+  {% endif %}
+</section>
+
+<section class="bf-card" style="margin-top:16px;">
+  <h2>Dispute</h2>
+  {% if dispute %}
+    <div class="bf-meta-row">
+      <div class="bf-meta-label">Status</div>
+      <div class="bf-meta-value">{{ dispute.status|replace("_"," ")|title }}</div>
+    </div>
+    <div class="bf-meta-row">
+      <div class="bf-meta-label">Reason</div>
+      <div class="bf-meta-value">{{ dispute.reason }}</div>
+    </div>
+    <a class="bf-btn" href="{{ url_for('booking_dispute', booking_id=booking.id) }}">View dispute</a>
+  {% elif can_open_dispute %}
+    <a class="bf-btn bf-btn-primary" href="{{ url_for('booking_dispute', booking_id=booking.id) }}">Open dispute</a>
+  {% else %}
+    <div class="bf-meta-value">No dispute available for this booking.</div>
+  {% endif %}
+</section>
+
 {% if is_provider and booking.duration_minutes %}
 <script nonce="{{ csp_nonce }}">
   (function () {

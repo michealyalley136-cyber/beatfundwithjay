@@ -25,7 +25,7 @@ from sqlalchemy.exc import (
 
 from functools import wraps
 from contextlib import contextmanager
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, time
 from time import time
 from jinja2 import TemplateNotFound
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP, ROUND_UP
@@ -1918,6 +1918,10 @@ BOOKING_STATUS_CANCELLED = "cancelled"
 BOOKING_STATUS_DECLINED = "declined"
 BOOKING_STATUS_DISPUTED = "disputed"
 
+# Dispute window (days after event time)
+DISPUTE_OPEN_WINDOW_DAYS = 30
+DISPUTE_STATUSES = {"open", "under_review", "resolved", "closed"}
+
 # Valid booking statuses set
 VALID_BOOKING_STATUSES = {
     BOOKING_STATUS_PENDING,
@@ -1987,6 +1991,57 @@ class BookingDispute(db.Model):
     booking = db.relationship("Booking", backref=db.backref("disputes", lazy="dynamic"))
     opened_by = db.relationship("User", foreign_keys=[opened_by_id])
 
+
+# ------- Booking Dispute Messages -------
+class BookingDisputeMessage(db.Model):
+    __tablename__ = "booking_dispute_message"
+    id = db.Column(db.Integer, primary_key=True)
+    dispute_id = db.Column(db.Integer, db.ForeignKey("booking_dispute.id"), nullable=False, index=True)
+    author_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    body = db.Column(db.Text, nullable=False)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, index=True)
+
+    dispute = db.relationship("BookingDispute", backref=db.backref("messages", lazy="dynamic"))
+    author = db.relationship("User", foreign_keys=[author_user_id])
+
+
+# ------- Provider Reviews -------
+class ReviewVisibility(str, enum.Enum):
+    visible = "visible"
+    hidden = "hidden"
+
+
+class ProviderReview(db.Model):
+    __tablename__ = "provider_review"
+    __table_args__ = (
+        UniqueConstraint("booking_id", name="uq_provider_review_booking_id"),
+        db.Index("ix_provider_review_provider_user_id", "provider_user_id"),
+        db.Index("ix_provider_review_reviewer_user_id", "reviewer_user_id"),
+        db.Index("ix_provider_review_status", "status"),
+        db.Index("ix_provider_review_created_at", "created_at"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    booking_id = db.Column(db.Integer, db.ForeignKey("booking.id"), nullable=False, unique=True, index=True)
+    reviewer_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    provider_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+
+    rating = db.Column(db.Integer, nullable=False)
+    title = db.Column(db.String(160), nullable=True)
+    body = db.Column(db.Text, nullable=True)
+    status = db.Column(db.Enum(ReviewVisibility), nullable=False, default=ReviewVisibility.visible, index=True)
+    reported_count = db.Column(db.Integer, nullable=False, default=0)
+
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, index=True)
+    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    booking = db.relationship("Booking", foreign_keys=[booking_id])
+    reviewer = db.relationship("User", foreign_keys=[reviewer_user_id])
+    provider = db.relationship("User", foreign_keys=[provider_user_id])
+
+
+# Expose review visibility to templates
+app.jinja_env.globals["ReviewVisibility"] = ReviewVisibility
 
 # =========================================================
 # Booking-Gated Internal Messenger (booking-scoped)
@@ -2360,6 +2415,56 @@ class StudioAvailability(db.Model):
     studio = db.relationship("User", foreign_keys=[studio_id], backref=db.backref("availability_slots", lazy="dynamic"))
 
 
+# ------- Provider Availability (all roles) -------
+class ProviderSettings(db.Model):
+    __tablename__ = "provider_settings"
+    id = db.Column(db.Integer, primary_key=True)
+    provider_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, unique=True, index=True)
+
+    accepting_new_requests = db.Column(db.Boolean, nullable=False, default=True)
+    onsite = db.Column(db.Boolean, nullable=False, default=True)
+    remote = db.Column(db.Boolean, nullable=False, default=True)
+    travel_radius_miles = db.Column(db.Integer, nullable=True)
+    base_location = db.Column(db.String(255), nullable=True)
+    tz = db.Column(db.String(64), nullable=False, default="UTC")
+
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    provider = db.relationship("User", foreign_keys=[provider_user_id])
+
+
+class ProviderAvailability(db.Model):
+    __tablename__ = "provider_availability"
+    id = db.Column(db.Integer, primary_key=True)
+    provider_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    day_of_week = db.Column(db.Integer, nullable=False, index=True)  # 0=Mon .. 6=Sun
+    start_time = db.Column(db.Time, nullable=False)
+    end_time = db.Column(db.Time, nullable=False)
+    tz = db.Column(db.String(64), nullable=False, default="UTC")
+    is_active = db.Column(db.Boolean, nullable=False, default=True)
+
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    provider = db.relationship("User", foreign_keys=[provider_user_id])
+
+
+class ProviderAvailabilityException(db.Model):
+    __tablename__ = "provider_availability_exception"
+    id = db.Column(db.Integer, primary_key=True)
+    provider_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    date = db.Column(db.Date, nullable=False, index=True)
+    start_time = db.Column(db.Time, nullable=True)
+    end_time = db.Column(db.Time, nullable=True)
+    is_unavailable = db.Column(db.Boolean, nullable=False, default=True)
+
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    provider = db.relationship("User", foreign_keys=[provider_user_id])
+
+
 # ------- Audit Log -------
 class AuditLog(db.Model):
     __tablename__ = "audit_log"
@@ -2682,6 +2787,18 @@ class SupportTicketComment(db.Model):
 
     ticket = db.relationship("SupportTicket", backref=db.backref("comments", lazy="dynamic"))
     admin = db.relationship("User")
+
+
+class SupportTicketMessage(db.Model):
+    __tablename__ = "support_ticket_message"
+    id = db.Column(db.Integer, primary_key=True)
+    ticket_id = db.Column(db.Integer, db.ForeignKey("support_ticket.id"), nullable=False, index=True)
+    author_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    body = db.Column(db.Text, nullable=False)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, index=True)
+
+    ticket = db.relationship("SupportTicket", backref=db.backref("messages", lazy="dynamic"))
+    author = db.relationship("User", foreign_keys=[author_user_id])
 
 
 app.jinja_env.globals["TicketStatus"] = TicketStatus
@@ -3667,6 +3784,135 @@ def get_social_counts(user_id: int) -> tuple[int, int]:
     return followers_count, following_count
 
 
+DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+
+
+def get_provider_settings(user_id: int, *, create: bool = False) -> ProviderSettings | None:
+    try:
+        s = ProviderSettings.query.filter_by(provider_user_id=user_id).first()
+        if not s and create:
+            s = ProviderSettings(provider_user_id=user_id)
+            db.session.add(s)
+            db.session.commit()
+        return s
+    except Exception:
+        return None
+
+
+def get_provider_review_summary(provider_id: int, *, include_hidden: bool = False) -> dict:
+    try:
+        q = db.session.query(
+            func.avg(ProviderReview.rating),
+            func.count(ProviderReview.id),
+        ).filter(ProviderReview.provider_user_id == provider_id)
+        if not include_hidden:
+            q = q.filter(ProviderReview.status == ReviewVisibility.visible)
+        avg, count = q.first() or (None, 0)
+        avg_val = float(avg) if avg is not None else 0.0
+        return {"avg": round(avg_val, 2), "count": int(count or 0)}
+    except Exception:
+        return {"avg": 0.0, "count": 0}
+
+
+def _parse_preferred_datetime(preferred_time: str | None) -> datetime | None:
+    if not preferred_time:
+        return None
+    s = str(preferred_time).strip()
+    if not s:
+        return None
+    for fmt in ("%Y-%m-%d %H:%M", "%Y-%m-%d %I:%M %p", "%Y-%m-%dT%H:%M", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(s, fmt)
+        except Exception:
+            continue
+    return None
+
+
+def _time_window_contains(slot_start: time, slot_end: time, req_start: time, req_end: time) -> bool:
+    # Simple same-day containment (no overnight windows)
+    if slot_end <= slot_start:
+        return False
+    if req_end <= req_start:
+        return False
+    return (slot_start <= req_start) and (req_end <= slot_end)
+
+
+def get_provider_availability_summary(provider_id: int) -> tuple[list[ProviderAvailability], list[ProviderAvailabilityException]]:
+    slots = []
+    exceptions = []
+    try:
+        slots = (
+            ProviderAvailability.query
+            .filter_by(provider_user_id=provider_id, is_active=True)
+            .order_by(ProviderAvailability.day_of_week.asc(), ProviderAvailability.start_time.asc())
+            .all()
+        )
+        exceptions = (
+            ProviderAvailabilityException.query
+            .filter_by(provider_user_id=provider_id)
+            .order_by(ProviderAvailabilityException.date.desc())
+            .limit(20)
+            .all()
+        )
+    except Exception:
+        pass
+    return slots, exceptions
+
+
+def provider_is_available(provider_id: int, preferred_time: str, duration_minutes: int | None = None) -> tuple[bool, str]:
+    settings = get_provider_settings(provider_id, create=False)
+    if settings and not settings.accepting_new_requests:
+        return False, "This provider is not accepting new requests right now."
+
+    dt = _parse_preferred_datetime(preferred_time)
+    if not dt:
+        return False, "Please provide a valid date and time (YYYY-MM-DD HH:MM)."
+
+    duration = int(duration_minutes or 60)
+    if duration <= 0:
+        duration = 60
+
+    end_dt = dt + timedelta(minutes=duration)
+    if end_dt.date() != dt.date():
+        return False, "Requested time window crosses midnight. Please choose a same-day time slot."
+
+    req_start = dt.time()
+    req_end = end_dt.time()
+    day = dt.weekday()
+
+    # Check exceptions for that date first
+    exceptions = ProviderAvailabilityException.query.filter_by(
+        provider_user_id=provider_id,
+        date=dt.date(),
+    ).all()
+
+    for ex in exceptions:
+        ex_start = ex.start_time or time(0, 0)
+        ex_end = ex.end_time or time(23, 59)
+        if _time_window_contains(ex_start, ex_end, req_start, req_end):
+            if ex.is_unavailable:
+                return False, "This time is blocked by a provider exception."
+            # Explicitly available exception overrides weekly schedule
+            return True, ""
+
+    # Weekly slots
+    slots = ProviderAvailability.query.filter_by(
+        provider_user_id=provider_id,
+        day_of_week=day,
+        is_active=True,
+    ).all()
+
+    if not slots:
+        # Backward-compatible default: allow if no schedule is configured
+        return True, ""
+
+    for slot in slots:
+        if _time_window_contains(slot.start_time, slot.end_time, req_start, req_end):
+            return True, ""
+
+    return False, "Requested time is outside the provider's availability."
+
+
 @app.before_request
 def _load_my_social_counts():
     """Load social counts for current user, gracefully handle missing tables during bootstrap"""
@@ -3690,6 +3936,23 @@ def inject_social_counts():
     return dict(
         my_followers_count=getattr(g, "my_followers_count", 0),
         my_following_count=getattr(g, "my_following_count", 0),
+    )
+
+
+@app.context_processor
+def inject_provider_review_summary():
+    summary = None
+    settings = None
+    try:
+        if current_user.is_authenticated and is_service_provider(current_user):
+            summary = get_provider_review_summary(current_user.id)
+            settings = get_provider_settings(current_user.id, create=False)
+    except Exception:
+        summary = None
+    return dict(
+        provider_rating_summary=summary,
+        provider_settings=settings,
+        DAY_NAMES=DAY_NAMES,
     )
 
 
@@ -4227,6 +4490,143 @@ def _ensure_sqlite_booking_payment_columns():
             db.session.execute(text("ALTER TABLE booking ADD COLUMN beatfund_fee_collected_cents INTEGER DEFAULT 0"))
 
 
+def _ensure_sqlite_provider_review_table():
+    if db.engine.url.get_backend_name() != "sqlite":
+        return
+    if _sqlite_has_table("provider_review"):
+        return
+    db.session.execute(text("""
+        CREATE TABLE provider_review (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            booking_id INTEGER NOT NULL UNIQUE,
+            reviewer_user_id INTEGER NOT NULL,
+            provider_user_id INTEGER NOT NULL,
+            rating INTEGER NOT NULL,
+            title VARCHAR(160),
+            body TEXT,
+            status VARCHAR(20) NOT NULL DEFAULT 'visible',
+            reported_count INTEGER NOT NULL DEFAULT 0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
+            FOREIGN KEY (booking_id) REFERENCES booking (id),
+            FOREIGN KEY (reviewer_user_id) REFERENCES user (id),
+            FOREIGN KEY (provider_user_id) REFERENCES user (id)
+        )
+    """))
+    db.session.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_provider_review_booking_id ON provider_review (booking_id)"))
+    db.session.execute(text("CREATE INDEX IF NOT EXISTS ix_provider_review_provider_user_id ON provider_review (provider_user_id)"))
+    db.session.execute(text("CREATE INDEX IF NOT EXISTS ix_provider_review_reviewer_user_id ON provider_review (reviewer_user_id)"))
+    db.session.execute(text("CREATE INDEX IF NOT EXISTS ix_provider_review_status ON provider_review (status)"))
+    db.session.execute(text("CREATE INDEX IF NOT EXISTS ix_provider_review_created_at ON provider_review (created_at)"))
+    db.session.commit()
+
+
+def _ensure_sqlite_provider_availability_tables():
+    if db.engine.url.get_backend_name() != "sqlite":
+        return
+
+    if not _sqlite_has_table("provider_settings"):
+        db.session.execute(text("""
+            CREATE TABLE provider_settings (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                provider_user_id INTEGER NOT NULL UNIQUE,
+                accepting_new_requests BOOLEAN NOT NULL DEFAULT 1,
+                onsite BOOLEAN NOT NULL DEFAULT 1,
+                remote BOOLEAN NOT NULL DEFAULT 1,
+                travel_radius_miles INTEGER,
+                base_location VARCHAR(255),
+                tz VARCHAR(64) NOT NULL DEFAULT 'UTC',
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
+                FOREIGN KEY (provider_user_id) REFERENCES user (id)
+            )
+        """))
+        db.session.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_provider_settings_user_id ON provider_settings (provider_user_id)"))
+        db.session.execute(text("CREATE INDEX IF NOT EXISTS ix_provider_settings_user_id ON provider_settings (provider_user_id)"))
+        db.session.commit()
+
+    if not _sqlite_has_table("provider_availability"):
+        db.session.execute(text("""
+            CREATE TABLE provider_availability (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                provider_user_id INTEGER NOT NULL,
+                day_of_week INTEGER NOT NULL,
+                start_time TIME NOT NULL,
+                end_time TIME NOT NULL,
+                tz VARCHAR(64) NOT NULL DEFAULT 'UTC',
+                is_active BOOLEAN NOT NULL DEFAULT 1,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
+                FOREIGN KEY (provider_user_id) REFERENCES user (id)
+            )
+        """))
+        db.session.execute(text("CREATE INDEX IF NOT EXISTS ix_provider_availability_provider_user_id ON provider_availability (provider_user_id)"))
+        db.session.execute(text("CREATE INDEX IF NOT EXISTS ix_provider_availability_day_of_week ON provider_availability (day_of_week)"))
+        db.session.commit()
+
+    if not _sqlite_has_table("provider_availability_exception"):
+        db.session.execute(text("""
+            CREATE TABLE provider_availability_exception (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                provider_user_id INTEGER NOT NULL,
+                date DATE NOT NULL,
+                start_time TIME,
+                end_time TIME,
+                is_unavailable BOOLEAN NOT NULL DEFAULT 1,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
+                FOREIGN KEY (provider_user_id) REFERENCES user (id)
+            )
+        """))
+        db.session.execute(text("CREATE INDEX IF NOT EXISTS ix_provider_availability_exception_user_id ON provider_availability_exception (provider_user_id)"))
+        db.session.execute(text("CREATE INDEX IF NOT EXISTS ix_provider_availability_exception_date ON provider_availability_exception (date)"))
+        db.session.commit()
+
+
+def _ensure_sqlite_support_ticket_message_table():
+    if db.engine.url.get_backend_name() != "sqlite":
+        return
+    if _sqlite_has_table("support_ticket_message"):
+        return
+    db.session.execute(text("""
+        CREATE TABLE support_ticket_message (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ticket_id INTEGER NOT NULL,
+            author_user_id INTEGER NOT NULL,
+            body TEXT NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
+            FOREIGN KEY (ticket_id) REFERENCES support_ticket (id),
+            FOREIGN KEY (author_user_id) REFERENCES user (id)
+        )
+    """))
+    db.session.execute(text("CREATE INDEX IF NOT EXISTS ix_support_ticket_message_ticket_id ON support_ticket_message (ticket_id)"))
+    db.session.execute(text("CREATE INDEX IF NOT EXISTS ix_support_ticket_message_author_user_id ON support_ticket_message (author_user_id)"))
+    db.session.execute(text("CREATE INDEX IF NOT EXISTS ix_support_ticket_message_created_at ON support_ticket_message (created_at)"))
+    db.session.commit()
+
+
+def _ensure_sqlite_booking_dispute_message_table():
+    if db.engine.url.get_backend_name() != "sqlite":
+        return
+    if _sqlite_has_table("booking_dispute_message"):
+        return
+    db.session.execute(text("""
+        CREATE TABLE booking_dispute_message (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            dispute_id INTEGER NOT NULL,
+            author_user_id INTEGER NOT NULL,
+            body TEXT NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
+            FOREIGN KEY (dispute_id) REFERENCES booking_dispute (id),
+            FOREIGN KEY (author_user_id) REFERENCES user (id)
+        )
+    """))
+    db.session.execute(text("CREATE INDEX IF NOT EXISTS ix_booking_dispute_message_dispute_id ON booking_dispute_message (dispute_id)"))
+    db.session.execute(text("CREATE INDEX IF NOT EXISTS ix_booking_dispute_message_author_user_id ON booking_dispute_message (author_user_id)"))
+    db.session.execute(text("CREATE INDEX IF NOT EXISTS ix_booking_dispute_message_created_at ON booking_dispute_message (created_at)"))
+    db.session.commit()
+
+
 def _ensure_postgres_booking_fee_columns():
     """Add booking fee columns in Postgres if missing (safe, idempotent)."""
     try:
@@ -4474,6 +4874,154 @@ def _ensure_postgres_notification_columns():
         app.logger.warning(f"[DB] Postgres notification patch skipped: {type(e).__name__}: {e}")
 
 
+def _ensure_postgres_provider_review_table():
+    try:
+        if db.engine.url.get_backend_name() != "postgresql":
+            return
+    except Exception:
+        return
+    try:
+        with db.engine.begin() as conn:
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS provider_review (
+                    id SERIAL PRIMARY KEY,
+                    booking_id INTEGER NOT NULL UNIQUE,
+                    reviewer_user_id INTEGER NOT NULL,
+                    provider_user_id INTEGER NOT NULL,
+                    rating INTEGER NOT NULL,
+                    title VARCHAR(160),
+                    body TEXT,
+                    status VARCHAR(20) NOT NULL DEFAULT 'visible',
+                    reported_count INTEGER NOT NULL DEFAULT 0,
+                    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                    updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                    FOREIGN KEY (booking_id) REFERENCES booking (id),
+                    FOREIGN KEY (reviewer_user_id) REFERENCES "user" (id),
+                    FOREIGN KEY (provider_user_id) REFERENCES "user" (id)
+                )
+            """))
+            conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_provider_review_booking_id ON provider_review (booking_id)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_provider_review_provider_user_id ON provider_review (provider_user_id)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_provider_review_reviewer_user_id ON provider_review (reviewer_user_id)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_provider_review_status ON provider_review (status)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_provider_review_created_at ON provider_review (created_at)"))
+    except Exception as e:
+        app.logger.warning(f"[DB] Postgres provider_review patch skipped: {type(e).__name__}: {e}")
+
+
+def _ensure_postgres_provider_availability_tables():
+    try:
+        if db.engine.url.get_backend_name() != "postgresql":
+            return
+    except Exception:
+        return
+    try:
+        with db.engine.begin() as conn:
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS provider_settings (
+                    id SERIAL PRIMARY KEY,
+                    provider_user_id INTEGER NOT NULL UNIQUE,
+                    accepting_new_requests BOOLEAN NOT NULL DEFAULT TRUE,
+                    onsite BOOLEAN NOT NULL DEFAULT TRUE,
+                    remote BOOLEAN NOT NULL DEFAULT TRUE,
+                    travel_radius_miles INTEGER,
+                    base_location VARCHAR(255),
+                    tz VARCHAR(64) NOT NULL DEFAULT 'UTC',
+                    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                    updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                    FOREIGN KEY (provider_user_id) REFERENCES "user" (id)
+                )
+            """))
+            conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_provider_settings_user_id ON provider_settings (provider_user_id)"))
+
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS provider_availability (
+                    id SERIAL PRIMARY KEY,
+                    provider_user_id INTEGER NOT NULL,
+                    day_of_week INTEGER NOT NULL,
+                    start_time TIME NOT NULL,
+                    end_time TIME NOT NULL,
+                    tz VARCHAR(64) NOT NULL DEFAULT 'UTC',
+                    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+                    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                    updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                    FOREIGN KEY (provider_user_id) REFERENCES "user" (id)
+                )
+            """))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_provider_availability_provider_user_id ON provider_availability (provider_user_id)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_provider_availability_day_of_week ON provider_availability (day_of_week)"))
+
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS provider_availability_exception (
+                    id SERIAL PRIMARY KEY,
+                    provider_user_id INTEGER NOT NULL,
+                    date DATE NOT NULL,
+                    start_time TIME,
+                    end_time TIME,
+                    is_unavailable BOOLEAN NOT NULL DEFAULT TRUE,
+                    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                    updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                    FOREIGN KEY (provider_user_id) REFERENCES "user" (id)
+                )
+            """))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_provider_availability_exception_user_id ON provider_availability_exception (provider_user_id)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_provider_availability_exception_date ON provider_availability_exception (date)"))
+    except Exception as e:
+        app.logger.warning(f"[DB] Postgres provider availability patch skipped: {type(e).__name__}: {e}")
+
+
+def _ensure_postgres_support_ticket_message_table():
+    try:
+        if db.engine.url.get_backend_name() != "postgresql":
+            return
+    except Exception:
+        return
+    try:
+        with db.engine.begin() as conn:
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS support_ticket_message (
+                    id SERIAL PRIMARY KEY,
+                    ticket_id INTEGER NOT NULL,
+                    author_user_id INTEGER NOT NULL,
+                    body TEXT NOT NULL,
+                    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                    FOREIGN KEY (ticket_id) REFERENCES support_ticket (id),
+                    FOREIGN KEY (author_user_id) REFERENCES "user" (id)
+                )
+            """))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_support_ticket_message_ticket_id ON support_ticket_message (ticket_id)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_support_ticket_message_author_user_id ON support_ticket_message (author_user_id)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_support_ticket_message_created_at ON support_ticket_message (created_at)"))
+    except Exception as e:
+        app.logger.warning(f"[DB] Postgres support_ticket_message patch skipped: {type(e).__name__}: {e}")
+
+
+def _ensure_postgres_booking_dispute_message_table():
+    try:
+        if db.engine.url.get_backend_name() != "postgresql":
+            return
+    except Exception:
+        return
+    try:
+        with db.engine.begin() as conn:
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS booking_dispute_message (
+                    id SERIAL PRIMARY KEY,
+                    dispute_id INTEGER NOT NULL,
+                    author_user_id INTEGER NOT NULL,
+                    body TEXT NOT NULL,
+                    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                    FOREIGN KEY (dispute_id) REFERENCES booking_dispute (id),
+                    FOREIGN KEY (author_user_id) REFERENCES "user" (id)
+                )
+            """))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_booking_dispute_message_dispute_id ON booking_dispute_message (dispute_id)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_booking_dispute_message_author_user_id ON booking_dispute_message (author_user_id)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_booking_dispute_message_created_at ON booking_dispute_message (created_at)"))
+    except Exception as e:
+        app.logger.warning(f"[DB] Postgres booking_dispute_message patch skipped: {type(e).__name__}: {e}")
+
+
 def _ensure_sqlite_careers_tables():
     """Create careers tables (job_post and job_application) if missing"""
     if db.engine.url.get_backend_name() != "sqlite":
@@ -4563,6 +5111,10 @@ def _bootstrap_schema_once():
             _ensure_postgres_booking_request_duration_column()
             _ensure_postgres_payment_fee_columns()
             _ensure_postgres_notification_columns()
+            _ensure_postgres_provider_review_table()
+            _ensure_postgres_provider_availability_tables()
+            _ensure_postgres_support_ticket_message_table()
+            _ensure_postgres_booking_dispute_message_table()
         except Exception:
             pass
         
@@ -4592,10 +5144,18 @@ def _bootstrap_schema_once():
         _ensure_sqlite_beat_stripe_columns()
         _ensure_sqlite_order_payment_columns()
         _ensure_sqlite_booking_payment_columns()
+        _ensure_sqlite_provider_review_table()
+        _ensure_sqlite_provider_availability_tables()
+        _ensure_sqlite_support_ticket_message_table()
+        _ensure_sqlite_booking_dispute_message_table()
         _ensure_postgres_booking_fee_columns()
         _ensure_postgres_booking_request_duration_column()
         _ensure_postgres_payment_fee_columns()
         _ensure_postgres_notification_columns()
+        _ensure_postgres_provider_review_table()
+        _ensure_postgres_provider_availability_tables()
+        _ensure_postgres_support_ticket_message_table()
+        _ensure_postgres_booking_dispute_message_table()
     except Exception as e:
         app.logger.error(f"SQLite auto-migration failed: {type(e).__name__}: {str(e)}", exc_info=True)
         try:
@@ -6655,6 +7215,175 @@ def update_avatar():
 
 
 # =========================================================
+# Provider Settings & Availability
+# =========================================================
+def _parse_time_hhmm(value: str | None) -> time | None:
+    if not value:
+        return None
+    s = str(value).strip()
+    if not s:
+        return None
+    try:
+        return datetime.strptime(s, "%H:%M").time()
+    except Exception:
+        return None
+
+
+@app.route("/provider/settings", methods=["GET", "POST"], endpoint="provider_settings")
+@login_required
+def provider_settings():
+    if not is_service_provider(current_user):
+        flash("Only service providers can edit availability settings.", "error")
+        return redirect(url_for("route_to_dashboard"))
+
+    settings = get_provider_settings(current_user.id, create=True)
+    slots, exceptions = get_provider_availability_summary(current_user.id)
+
+    if request.method == "POST":
+        accepting_new_requests = request.form.get("accepting_new_requests") == "on"
+        onsite = request.form.get("onsite") == "on"
+        remote = request.form.get("remote") == "on"
+        tz = sanitize_input((request.form.get("tz") or "").strip(), max_length=64) or "UTC"
+
+        travel_radius_raw = (request.form.get("travel_radius_miles") or "").strip()
+        travel_radius = None
+        if travel_radius_raw:
+            try:
+                travel_radius = int(travel_radius_raw)
+                if travel_radius < 0:
+                    travel_radius = None
+            except Exception:
+                travel_radius = None
+
+        base_location = sanitize_input((request.form.get("base_location") or "").strip(), max_length=255) or None
+
+        settings.accepting_new_requests = accepting_new_requests
+        settings.onsite = onsite
+        settings.remote = remote
+        settings.travel_radius_miles = travel_radius
+        settings.base_location = base_location
+        settings.tz = tz
+
+        db.session.commit()
+        flash("Settings updated.", "success")
+        return redirect(url_for("provider_settings"))
+
+    return render_template(
+        "provider_settings.html",
+        settings=settings,
+        slots=slots,
+        exceptions=exceptions,
+        DAY_NAMES=DAY_NAMES,
+    )
+
+
+@app.route("/provider/availability/add", methods=["POST"], endpoint="provider_availability_add")
+@login_required
+def provider_availability_add():
+    if not is_service_provider(current_user):
+        abort(403)
+
+    day_raw = (request.form.get("day_of_week") or "").strip()
+    start_raw = (request.form.get("start_time") or "").strip()
+    end_raw = (request.form.get("end_time") or "").strip()
+
+    try:
+        day = int(day_raw)
+    except Exception:
+        day = -1
+
+    start_time = _parse_time_hhmm(start_raw)
+    end_time = _parse_time_hhmm(end_raw)
+
+    if day < 0 or day > 6 or not start_time or not end_time:
+        flash("Please provide a valid day and time range.", "error")
+        return redirect(url_for("provider_settings"))
+    if end_time <= start_time:
+        flash("End time must be after start time.", "error")
+        return redirect(url_for("provider_settings"))
+
+    tz = sanitize_input((request.form.get("tz") or "").strip(), max_length=64) or "UTC"
+    slot = ProviderAvailability(
+        provider_user_id=current_user.id,
+        day_of_week=day,
+        start_time=start_time,
+        end_time=end_time,
+        tz=tz,
+        is_active=True,
+    )
+    db.session.add(slot)
+    db.session.commit()
+    flash("Availability slot added.", "success")
+    return redirect(url_for("provider_settings"))
+
+
+@app.route("/provider/availability/<int:slot_id>/delete", methods=["POST"], endpoint="provider_availability_delete")
+@login_required
+def provider_availability_delete(slot_id: int):
+    slot = ProviderAvailability.query.get_or_404(slot_id)
+    if slot.provider_user_id != current_user.id:
+        abort(403)
+    db.session.delete(slot)
+    db.session.commit()
+    flash("Availability slot removed.", "success")
+    return redirect(url_for("provider_settings"))
+
+
+@app.route("/provider/availability/exception", methods=["POST"], endpoint="provider_availability_exception_add")
+@login_required
+def provider_availability_exception_add():
+    if not is_service_provider(current_user):
+        abort(403)
+
+    date_raw = (request.form.get("date") or "").strip()
+    start_raw = (request.form.get("start_time") or "").strip()
+    end_raw = (request.form.get("end_time") or "").strip()
+    is_unavailable = request.form.get("is_unavailable") == "on"
+
+    try:
+        ex_date = datetime.strptime(date_raw, "%Y-%m-%d").date()
+    except Exception:
+        ex_date = None
+
+    if not ex_date:
+        flash("Please provide a valid date.", "error")
+        return redirect(url_for("provider_settings"))
+
+    start_time = _parse_time_hhmm(start_raw)
+    end_time = _parse_time_hhmm(end_raw)
+    if (start_raw or end_raw) and (not start_time or not end_time):
+        flash("Please provide a valid time range.", "error")
+        return redirect(url_for("provider_settings"))
+    if start_time and end_time and end_time <= start_time:
+        flash("End time must be after start time.", "error")
+        return redirect(url_for("provider_settings"))
+
+    ex = ProviderAvailabilityException(
+        provider_user_id=current_user.id,
+        date=ex_date,
+        start_time=start_time,
+        end_time=end_time,
+        is_unavailable=is_unavailable,
+    )
+    db.session.add(ex)
+    db.session.commit()
+    flash("Exception added.", "success")
+    return redirect(url_for("provider_settings"))
+
+
+@app.route("/provider/availability/exception/<int:exc_id>/delete", methods=["POST"], endpoint="provider_availability_exception_delete")
+@login_required
+def provider_availability_exception_delete(exc_id: int):
+    ex = ProviderAvailabilityException.query.get_or_404(exc_id)
+    if ex.provider_user_id != current_user.id:
+        abort(403)
+    db.session.delete(ex)
+    db.session.commit()
+    flash("Exception removed.", "success")
+    return redirect(url_for("provider_settings"))
+
+
+# =========================================================
 # Follow APIs (JSON + redirect versions)
 # =========================================================
 @app.route("/users/<int:user_id>/toggle-follow", methods=["POST"])
@@ -7177,6 +7906,17 @@ def provider_portfolio_public(username):
         UserFollow.query.filter_by(follower_id=current_user.id, followed_id=user.id).first() is not None
     )
 
+    rating_summary = get_provider_review_summary(user.id)
+    reviews = (
+        ProviderReview.query
+        .filter_by(provider_user_id=user.id, status=ReviewVisibility.visible)
+        .order_by(ProviderReview.created_at.desc())
+        .limit(20)
+        .all()
+    )
+    settings = get_provider_settings(user.id, create=False)
+    availability_slots, availability_exceptions = get_provider_availability_summary(user.id)
+
     return render_template(
         "provider_portfolio_public.html",
         provider=user,
@@ -7186,6 +7926,11 @@ def provider_portfolio_public(username):
         followers_count=followers_count,
         following_count=following_count,
         is_following=is_following,
+        rating_summary=rating_summary,
+        reviews=reviews,
+        settings=settings,
+        availability_slots=availability_slots,
+        availability_exceptions=availability_exceptions,
     )
 
 
@@ -7229,12 +7974,21 @@ def bookme_request_confirm(provider_id):
             except (ValueError, AttributeError):
                 pass
 
+        availability_ok, availability_reason = provider_is_available(provider.id, pref, None)
+        settings = get_provider_settings(provider.id, create=False)
+        availability_slots, availability_exceptions = get_provider_availability_summary(provider.id)
+
         return render_template(
             "bookme_request_confirm.html",
             provider=provider,
             message=msg,
             preferred_time=pref,
             time_blocked=time_blocked,
+            availability_ok=availability_ok,
+            availability_reason=availability_reason,
+            settings=settings,
+            availability_slots=availability_slots,
+            availability_exceptions=availability_exceptions,
             BookingStatus=BookingStatus,
         )
 
@@ -7265,6 +8019,11 @@ def bookme_request_confirm(provider_id):
                 return redirect(url_for("bookme_request", provider_id=provider_id))
         except (ValueError, AttributeError):
             pass
+
+    ok, reason = provider_is_available(provider.id, pref, None)
+    if not ok:
+        flash(reason or "Requested time is not available.", "error")
+        return redirect(url_for("bookme_request", provider_id=provider_id))
 
     req = BookingRequest(
         provider_id=provider.id,
@@ -7318,7 +8077,16 @@ def bookme_request(provider_id):
         # Redirect to confirmation with form data
         return redirect(url_for("bookme_request_confirm", provider_id=provider_id, message=msg, preferred_time=pref))
 
-    return render_template("bookme_request.html", provider=provider, BookingStatus=BookingStatus)
+    settings = get_provider_settings(provider.id, create=False)
+    availability_slots, availability_exceptions = get_provider_availability_summary(provider.id)
+    return render_template(
+        "bookme_request.html",
+        provider=provider,
+        BookingStatus=BookingStatus,
+        settings=settings,
+        availability_slots=availability_slots,
+        availability_exceptions=availability_exceptions,
+    )
 
 
 @app.route("/bookme/requests")
@@ -8194,6 +8962,25 @@ def booking_detail(booking_id):
                     f"Balance must be paid at least {BOOKING_BALANCE_DEADLINE_HOURS} hours before the booking time."
                 )
 
+    # Reviews & disputes
+    review = None
+    can_leave_review = False
+    if is_client:
+        review = ProviderReview.query.filter_by(booking_id=booking.id).first()
+        if booking.status == BOOKING_STATUS_COMPLETED and not review:
+            can_leave_review = True
+
+    dispute = BookingDispute.query.filter_by(booking_id=booking.id).order_by(BookingDispute.created_at.desc()).first()
+    can_open_dispute = False
+    dispute_window_ok = True
+    if (is_client or is_provider) and not dispute:
+        # Only allow disputes within a window after event datetime (if known)
+        if booking.event_datetime:
+            dispute_deadline = booking.event_datetime + timedelta(days=DISPUTE_OPEN_WINDOW_DAYS)
+            dispute_window_ok = datetime.utcnow() <= dispute_deadline
+        if booking.status in [BOOKING_STATUS_CONFIRMED, BOOKING_STATUS_PAID, BOOKING_STATUS_COMPLETED, BOOKING_STATUS_ACCEPTED]:
+            can_open_dispute = dispute_window_ok
+
     stripe_enabled = bool(STRIPE_AVAILABLE and STRIPE_SECRET_KEY and STRIPE_PUBLISHABLE_KEY)
 
     return render_template(
@@ -8222,8 +9009,258 @@ def booking_detail(booking_id):
         stripe_enabled=stripe_enabled,
         stripe_publishable_key=STRIPE_PUBLISHABLE_KEY,
         BOOKING_BALANCE_DEADLINE_HOURS=BOOKING_BALANCE_DEADLINE_HOURS,
+        review=review,
+        can_leave_review=can_leave_review,
+        dispute=dispute,
+        can_open_dispute=can_open_dispute,
+        dispute_window_ok=dispute_window_ok,
+        DISPUTE_OPEN_WINDOW_DAYS=DISPUTE_OPEN_WINDOW_DAYS,
     )
 
+
+@app.route("/bookings/<int:booking_id>/review", methods=["GET", "POST"])
+@login_required
+def booking_review(booking_id: int):
+    booking = Booking.query.get_or_404(booking_id)
+    is_client = current_user.id == booking.client_id
+    is_admin = current_user.role == RoleEnum.admin
+
+    if not (is_client or is_admin):
+        abort(403)
+
+    if booking.status != BOOKING_STATUS_COMPLETED:
+        flash("Reviews are only available after a booking is completed.", "error")
+        return redirect(url_for("booking_detail", booking_id=booking.id))
+
+    existing = ProviderReview.query.filter_by(booking_id=booking.id).first()
+    if existing:
+        flash("You already submitted a review for this booking.", "info")
+        return redirect(url_for("booking_detail", booking_id=booking.id))
+
+    if request.method == "GET":
+        return render_template(
+            "booking_review_form.html",
+            booking=booking,
+            provider=booking.provider,
+        )
+
+    rating_raw = (request.form.get("rating") or "").strip()
+    title = sanitize_input((request.form.get("title") or "").strip(), max_length=160) or None
+    body = sanitize_input((request.form.get("body") or "").strip(), max_length=2000) or None
+
+    try:
+        rating = int(rating_raw)
+    except Exception:
+        rating = 0
+    if rating < 1 or rating > 5:
+        flash("Rating must be between 1 and 5.", "error")
+        return redirect(url_for("booking_review", booking_id=booking.id))
+
+    review = ProviderReview(
+        booking_id=booking.id,
+        reviewer_user_id=current_user.id,
+        provider_user_id=booking.provider_id,
+        rating=rating,
+        title=title,
+        body=body,
+        status=ReviewVisibility.visible,
+        reported_count=0,
+    )
+    db.session.add(review)
+    db.session.commit()
+
+    flash("Review submitted. Thank you!", "success")
+    return redirect(url_for("booking_detail", booking_id=booking.id))
+
+
+@app.route("/reviews/<int:review_id>/report", methods=["POST"])
+@login_required
+def review_report(review_id: int):
+    review = ProviderReview.query.get_or_404(review_id)
+    review.reported_count = int(review.reported_count or 0) + 1
+    if review.reported_count >= 3:
+        review.status = ReviewVisibility.hidden
+    db.session.commit()
+    flash("Review reported. Thank you for helping keep the community safe.", "success")
+    return redirect(request.referrer or url_for("provider_portfolio_public", username=review.provider.username))
+
+
+@app.route("/admin/reviews", endpoint="admin_reviews")
+@app.route("/dashboard/admin/reviews", endpoint="admin_reviews_dashboard")
+@role_required("admin")
+def admin_reviews():
+    status = (request.args.get("status") or "").strip().lower()
+    q = (request.args.get("q") or "").strip().lstrip("@")
+
+    query = ProviderReview.query
+    if status in ("visible", "hidden"):
+        query = query.filter(ProviderReview.status == ReviewVisibility(status))
+    if q:
+        provider = User.query.filter(func.lower(User.username) == q.lower()).first()
+        if provider:
+            query = query.filter(ProviderReview.provider_user_id == provider.id)
+        else:
+            query = query.filter(ProviderReview.id == -1)
+
+    reviews = query.order_by(ProviderReview.created_at.desc()).limit(200).all()
+    return render_template("admin_reviews.html", reviews=reviews, status=status, q=q)
+
+
+@app.route("/admin/reviews/<int:review_id>/hide", methods=["POST"])
+@role_required("admin")
+def admin_review_hide(review_id: int):
+    review = ProviderReview.query.get_or_404(review_id)
+    review.status = ReviewVisibility.hidden
+    db.session.commit()
+    flash("Review hidden.", "success")
+    return redirect(request.referrer or url_for("admin_reviews"))
+
+
+@app.route("/admin/reviews/<int:review_id>/show", methods=["POST"])
+@role_required("admin")
+def admin_review_show(review_id: int):
+    review = ProviderReview.query.get_or_404(review_id)
+    review.status = ReviewVisibility.visible
+    db.session.commit()
+    flash("Review visible.", "success")
+    return redirect(request.referrer or url_for("admin_reviews"))
+
+
+@app.route("/bookings/<int:booking_id>/dispute", methods=["GET", "POST"])
+@login_required
+def booking_dispute(booking_id: int):
+    booking = Booking.query.get_or_404(booking_id)
+    is_provider = current_user.id == booking.provider_id
+    is_client = current_user.id == booking.client_id
+    is_admin = current_user.role == RoleEnum.admin
+
+    if not (is_provider or is_client or is_admin):
+        abort(403)
+
+    dispute = BookingDispute.query.filter_by(booking_id=booking.id).order_by(BookingDispute.created_at.desc()).first()
+
+    if request.method == "POST":
+        if dispute:
+            flash("A dispute already exists for this booking.", "error")
+            return redirect(url_for("booking_dispute", booking_id=booking.id))
+
+        # Window check
+        if booking.event_datetime:
+            deadline = booking.event_datetime + timedelta(days=DISPUTE_OPEN_WINDOW_DAYS)
+            if datetime.utcnow() > deadline:
+                flash("Dispute window has closed for this booking.", "error")
+                return redirect(url_for("booking_detail", booking_id=booking.id))
+
+        reason = sanitize_input((request.form.get("reason") or "").strip(), max_length=300)
+        details = sanitize_input((request.form.get("details") or "").strip(), max_length=2000)
+        if not reason:
+            flash("Please provide a dispute reason.", "error")
+            return redirect(url_for("booking_dispute", booking_id=booking.id))
+
+        dispute = BookingDispute(
+            booking_id=booking.id,
+            opened_by_id=current_user.id,
+            reason=reason,
+            details=details or None,
+            status="open",
+        )
+        db.session.add(dispute)
+        db.session.flush()
+
+        if details:
+            msg = BookingDisputeMessage(
+                dispute_id=dispute.id,
+                author_user_id=current_user.id,
+                body=details,
+            )
+            db.session.add(msg)
+        db.session.commit()
+
+        flash("Dispute opened. Our team will review it shortly.", "success")
+        return redirect(url_for("booking_dispute", booking_id=booking.id))
+
+    messages = []
+    if dispute:
+        messages = dispute.messages.order_by(BookingDisputeMessage.created_at.asc()).all()
+
+    return render_template(
+        "booking_dispute.html",
+        booking=booking,
+        dispute=dispute,
+        messages=messages,
+        DISPUTE_STATUSES=DISPUTE_STATUSES,
+    )
+
+
+@app.route("/disputes/<int:dispute_id>/reply", methods=["POST"])
+@login_required
+def dispute_reply(dispute_id: int):
+    dispute = BookingDispute.query.get_or_404(dispute_id)
+    booking = dispute.booking
+    is_provider = current_user.id == booking.provider_id
+    is_client = current_user.id == booking.client_id
+    is_admin = current_user.role == RoleEnum.admin
+
+    if not (is_provider or is_client or is_admin):
+        abort(403)
+
+    body = sanitize_input((request.form.get("body") or "").strip(), max_length=2000)
+    if not body:
+        flash("Reply cannot be empty.", "error")
+        return redirect(url_for("booking_dispute", booking_id=booking.id))
+
+    msg = BookingDisputeMessage(
+        dispute_id=dispute.id,
+        author_user_id=current_user.id,
+        body=body,
+    )
+    db.session.add(msg)
+    db.session.commit()
+    flash("Reply sent.", "success")
+    return redirect(url_for("booking_dispute", booking_id=booking.id))
+
+
+@app.route("/admin/disputes", endpoint="admin_disputes")
+@app.route("/dashboard/admin/disputes", endpoint="admin_disputes_dashboard")
+@role_required("admin")
+def admin_disputes():
+    status = (request.args.get("status") or "").strip().lower()
+    query = BookingDispute.query
+    if status in DISPUTE_STATUSES:
+        query = query.filter(BookingDispute.status == status)
+    disputes = query.order_by(BookingDispute.created_at.desc()).limit(200).all()
+    return render_template("admin_disputes.html", disputes=disputes, status=status, DISPUTE_STATUSES=DISPUTE_STATUSES)
+
+
+@app.route("/admin/disputes/<int:dispute_id>", methods=["GET", "POST"], endpoint="admin_dispute_detail")
+@role_required("admin")
+def admin_dispute_detail(dispute_id: int):
+    dispute = BookingDispute.query.get_or_404(dispute_id)
+
+    if request.method == "POST":
+        new_status = (request.form.get("status") or "").strip().lower()
+        if new_status in DISPUTE_STATUSES:
+            dispute.status = new_status
+
+        body = sanitize_input((request.form.get("body") or "").strip(), max_length=2000)
+        if body:
+            msg = BookingDisputeMessage(
+                dispute_id=dispute.id,
+                author_user_id=current_user.id,
+                body=body,
+            )
+            db.session.add(msg)
+        db.session.commit()
+        flash("Dispute updated.", "success")
+        return redirect(url_for("admin_dispute_detail", dispute_id=dispute.id))
+
+    messages = dispute.messages.order_by(BookingDisputeMessage.created_at.asc()).all()
+    return render_template(
+        "admin_dispute_detail.html",
+        dispute=dispute,
+        messages=messages,
+        DISPUTE_STATUSES=DISPUTE_STATUSES,
+    )
 
 @app.route("/bookings/<int:booking_id>/quote", methods=["POST"])
 @login_required
@@ -8571,7 +9608,10 @@ def bookme_book_provider(username):
     if prof and not prof.is_visible:
         flash("This studio profile is currently inactive and not accepting new bookings. You can still follow and view their portfolio.", "error")
         return redirect(url_for("provider_portfolio_public", username=username))
-    
+
+    settings = get_provider_settings(provider.id, create=False)
+    availability_slots, availability_exceptions = get_provider_availability_summary(provider.id)
+
     # Get follower count and follow status for template
     follower_count = UserFollow.query.filter_by(followed_id=provider.id).count()
     is_following = current_user.is_authenticated and UserFollow.query.filter_by(
@@ -8579,6 +9619,19 @@ def bookme_book_provider(username):
     ).first() is not None
     
     if request.method == "POST":
+        if settings and not settings.accepting_new_requests:
+            flash("This provider is not accepting new requests right now.", "error")
+            return render_template(
+                "bookme_book_provider.html",
+                provider=provider,
+                form_data=request.form,
+                follower_count=follower_count,
+                is_following=is_following,
+                settings=settings,
+                availability_slots=availability_slots,
+                availability_exceptions=availability_exceptions,
+            )
+
         # Collect all form fields
         event_date = (request.form.get("event_date") or "").strip()
         event_time = (request.form.get("event_time") or "").strip()
@@ -8848,10 +9901,28 @@ def bookme_book_provider(username):
                         provider=provider,
                         form_data=request.form,
                         follower_count=follower_count,
-                        is_following=is_following
+                        is_following=is_following,
+                        settings=settings,
+                        availability_slots=availability_slots,
+                        availability_exceptions=availability_exceptions,
                     )
             except (ValueError, AttributeError):
                 pass
+
+        # Availability check for all provider roles
+        ok, reason = provider_is_available(provider.id, preferred_time, total_duration_minutes)
+        if not ok:
+            flash(reason or "Requested time is not available.", "error")
+            return render_template(
+                "bookme_book_provider.html",
+                provider=provider,
+                form_data=request.form,
+                follower_count=follower_count,
+                is_following=is_following,
+                settings=settings,
+                availability_slots=availability_slots,
+                availability_exceptions=availability_exceptions,
+            )
         
         # Create booking request
         req = BookingRequest(
@@ -8882,7 +9953,10 @@ def bookme_book_provider(username):
         provider=provider,
         form_data={},
         follower_count=follower_count,
-        is_following=is_following
+        is_following=is_following,
+        settings=settings,
+        availability_slots=availability_slots,
+        availability_exceptions=availability_exceptions,
     )
 
 
@@ -12023,22 +13097,148 @@ def admin_notifications_unread_count():
 # =========================================================
 # Tickets (User-facing)
 # =========================================================
-@app.route("/tickets", endpoint="my_tickets")
+def _support_thread(ticket: SupportTicket) -> list[dict]:
+    """Merge user/admin messages and legacy admin comments into a single timeline."""
+    items: list[dict] = []
+    try:
+        for msg in SupportTicketMessage.query.filter_by(ticket_id=ticket.id).all():
+            items.append({
+                "created_at": msg.created_at,
+                "author": msg.author,
+                "body": msg.body,
+                "internal": False,
+            })
+    except Exception:
+        pass
+    try:
+        for c in ticket.comments.all():
+            items.append({
+                "created_at": c.created_at,
+                "author": c.admin,
+                "body": c.body,
+                "internal": True,
+            })
+    except Exception:
+        pass
+    items.sort(key=lambda i: i.get("created_at") or datetime.min)
+    return items
+
+
+@app.route("/support", endpoint="support_home")
 @login_required
-def my_tickets():
+def support_home():
     tickets = SupportTicket.query.filter(SupportTicket.user_id == current_user.id).order_by(SupportTicket.created_at.desc()).all()
-    return render_template("my_tickets.html", tickets=tickets, TicketStatus=TicketStatus, TicketType=TicketType)
+    return render_template("support_home.html", tickets=tickets, TicketStatus=TicketStatus, TicketType=TicketType)
 
 
-@app.route("/tickets/<int:ticket_id>", endpoint="my_ticket_detail")
+@app.route("/support/new", methods=["GET", "POST"], endpoint="support_new")
 @login_required
-def my_ticket_detail(ticket_id):
+def support_new():
+    if request.method == "POST":
+        subject = sanitize_input((request.form.get("subject") or "").strip(), max_length=200)
+        description = sanitize_input((request.form.get("description") or "").strip(), max_length=4000)
+        type_raw = (request.form.get("type") or "").strip()
+
+        if not subject:
+            flash("Subject is required.", "error")
+            return redirect(url_for("support_new"))
+        if not description:
+            flash("Description is required.", "error")
+            return redirect(url_for("support_new"))
+
+        try:
+            ticket_type = TicketType(type_raw) if type_raw else TicketType.other
+        except Exception:
+            ticket_type = TicketType.other
+
+        creator_admin_id = _system_audit_admin_id()
+        if not creator_admin_id:
+            # Fallback to current user if no admin exists (dev/test)
+            creator_admin_id = int(current_user.id)
+
+        ticket = SupportTicket(
+            user_id=current_user.id,
+            created_by_admin_id=creator_admin_id,
+            type=ticket_type,
+            status=TicketStatus.open,
+            subject=subject,
+            description=description,
+        )
+        db.session.add(ticket)
+        db.session.flush()
+
+        msg = SupportTicketMessage(
+            ticket_id=ticket.id,
+            author_user_id=current_user.id,
+            body=description,
+        )
+        db.session.add(msg)
+        db.session.commit()
+
+        flash("Support ticket created.", "success")
+        return redirect(url_for("support_ticket_detail", ticket_id=ticket.id))
+
+    return render_template("support_search.html", TicketType=TicketType)
+
+
+@app.route("/support/<int:ticket_id>", endpoint="support_ticket_detail")
+@login_required
+def support_ticket_detail(ticket_id: int):
     ticket = SupportTicket.query.get_or_404(ticket_id)
     if (ticket.user_id != current_user.id) and (current_user.role != RoleEnum.admin):
         abort(403)
 
-    comments = ticket.comments.order_by(SupportTicketComment.created_at.asc()).all()
-    return render_template("my_ticket_detail.html", ticket=ticket, comments=comments, TicketStatus=TicketStatus, TicketType=TicketType)
+    thread = _support_thread(ticket)
+    return render_template(
+        "support_user_detail.html",
+        ticket=ticket,
+        thread=thread,
+        TicketStatus=TicketStatus,
+        TicketType=TicketType,
+    )
+
+
+@app.route("/support/<int:ticket_id>/reply", methods=["POST"], endpoint="support_ticket_reply")
+@login_required
+def support_ticket_reply(ticket_id: int):
+    ticket = SupportTicket.query.get_or_404(ticket_id)
+    if (ticket.user_id != current_user.id) and (current_user.role != RoleEnum.admin):
+        abort(403)
+
+    body = sanitize_input((request.form.get("body") or "").strip(), max_length=4000)
+    if not body:
+        flash("Reply cannot be empty.", "error")
+        return redirect(url_for("support_ticket_detail", ticket_id=ticket.id))
+
+    msg = SupportTicketMessage(
+        ticket_id=ticket.id,
+        author_user_id=current_user.id,
+        body=body,
+    )
+    db.session.add(msg)
+
+    if current_user.role != RoleEnum.admin:
+        # Move to in_review when user replies
+        try:
+            ticket.status = TicketStatus.in_review
+        except Exception:
+            pass
+
+    db.session.commit()
+    flash("Reply sent.", "success")
+    return redirect(url_for("support_ticket_detail", ticket_id=ticket.id))
+
+
+@app.route("/tickets", endpoint="my_tickets")
+@login_required
+def my_tickets():
+    return redirect(url_for("support_home"))
+
+
+@app.route("/tickets/<int:ticket_id>", endpoint="my_ticket_detail")
+@login_required
+def my_ticket_detail(ticket_id: int):
+    return redirect(url_for("support_ticket_detail", ticket_id=ticket_id))
 
 
 # =========================================================
@@ -15975,8 +17175,18 @@ def admin_ticket_detail(ticket_id: int):
         if new_priority in ["low", "normal", "high"]:
             ticket.priority = new_priority
         
-        # Add comment if provided
-        comment_body = (request.form.get("comment_body") or "").strip()
+        # Add reply to user (public)
+        reply_body = sanitize_input((request.form.get("reply_body") or "").strip(), max_length=4000)
+        if reply_body:
+            msg = SupportTicketMessage(
+                ticket_id=ticket.id,
+                author_user_id=current_user.id,
+                body=reply_body,
+            )
+            db.session.add(msg)
+
+        # Add internal comment if provided
+        comment_body = sanitize_input((request.form.get("comment_body") or "").strip(), max_length=2000)
         if comment_body:
             comment = SupportTicketComment(
                 ticket_id=ticket.id,
@@ -15995,7 +17205,7 @@ def admin_ticket_detail(ticket_id: int):
                 target_type="ticket",
                 target_id=ticket.id,
                 summary=f"Updated ticket #{ticket.id}: {ticket.subject}",
-                payload_dict={"before": before, "after": after, "comment_added": bool(comment_body)},
+                payload_dict={"before": before, "after": after, "comment_added": bool(comment_body), "reply_added": bool(reply_body)},
                 url=url_for("admin_ticket_detail", ticket_id=ticket.id),
                 include_actor=True,
             )
@@ -16005,16 +17215,53 @@ def admin_ticket_detail(ticket_id: int):
         flash("Ticket updated successfully.", "success")
         return redirect(url_for("admin_ticket_detail", ticket_id=ticket.id))
     
-    # Get comments
+    # Get thread + internal notes
+    thread = _support_thread(ticket)
     comments = ticket.comments.order_by(SupportTicketComment.created_at.asc()).all()
     
     return render_template(
         "admin_ticket_detail.html",
         ticket=ticket,
+        thread=thread,
         comments=comments,
         TicketStatus=TicketStatus,
         TicketType=TicketType,
     )
+
+
+@app.route("/admin/tickets/<int:ticket_id>/reply", methods=["POST"], endpoint="admin_ticket_reply")
+@role_required("admin")
+def admin_ticket_reply(ticket_id: int):
+    ticket = SupportTicket.query.get_or_404(ticket_id)
+    body = sanitize_input((request.form.get("body") or "").strip(), max_length=4000)
+    if not body:
+        flash("Reply cannot be empty.", "error")
+        return redirect(url_for("admin_ticket_detail", ticket_id=ticket.id))
+    msg = SupportTicketMessage(
+        ticket_id=ticket.id,
+        author_user_id=current_user.id,
+        body=body,
+    )
+    db.session.add(msg)
+    db.session.commit()
+    flash("Reply sent.", "success")
+    return redirect(url_for("admin_ticket_detail", ticket_id=ticket.id))
+
+
+@app.route("/admin/tickets/<int:ticket_id>/status", methods=["POST"], endpoint="admin_ticket_status")
+@role_required("admin")
+def admin_ticket_status(ticket_id: int):
+    ticket = SupportTicket.query.get_or_404(ticket_id)
+    new_status = (request.form.get("status") or "").strip().lower()
+    if new_status:
+        try:
+            ticket.status = TicketStatus(new_status)
+            db.session.commit()
+            flash("Status updated.", "success")
+        except Exception:
+            db.session.rollback()
+            flash("Invalid status value.", "error")
+    return redirect(url_for("admin_ticket_detail", ticket_id=ticket.id))
 
 
 @app.route("/dashboard/admin/audit", endpoint="admin_audit_log")

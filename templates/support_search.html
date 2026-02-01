@@ -1,76 +1,32 @@
 {% extends "base.html" %}
-{% block title %}Support · User Search{% endblock %}
+{% block title %}New Support Ticket{% endblock %}
 {% block content %}
+<div class="page" style="max-width:720px;margin:0 auto;padding:24px 16px;">
+  <div class="card">
+    <h2 style="margin-top:0;">New support ticket</h2>
+    <form method="POST" action="{{ url_for('support_new') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
-<h2>Support Portal · Search User</h2>
+      <label style="display:block;font-weight:600;">Subject</label>
+      <input type="text" name="subject" maxlength="200" required
+             style="width:100%;padding:10px;border-radius:8px;border:1px solid #ddd;">
 
-<form method="POST" action="{{ url_for('support_search') }}"
-      style="display:flex;gap:10px;align-items:center;margin:16px 0">
-  <input type="text" name="query"
-         placeholder="Search username or ID"
-         value="{{ query or '' }}" required
-         style="flex:1;padding:10px;border-radius:6px;border:1px solid #ccc">
-  <button type="submit">Search</button>
-</form>
+      <label style="display:block;font-weight:600;margin-top:10px;">Category</label>
+      <select name="type" style="width:100%;padding:10px;border-radius:8px;border:1px solid #ddd;">
+        {% for t in TicketType %}
+          <option value="{{ t.value }}">{{ t.value|replace('_',' ')|title }}</option>
+        {% endfor %}
+      </select>
 
-{% if user %}
-  <div style="margin-top:24px;padding:16px;border-radius:8px;
-              background:#fff;box-shadow:0 1px 4px rgba(0,0,0,0.1)">
-    <h3>Result</h3>
-    <p><strong>Username:</strong> {{ user.username }}</p>
-    <p><strong>Role:</strong> {{ user.role }}</p>
-    <p><strong>KYC:</strong> {{ user.kyc_status }}</p>
-    <p><strong>Active:</strong> {{ 'Yes' if user.is_active_col else 'No' }}</p>
+      <label style="display:block;font-weight:600;margin-top:10px;">Description</label>
+      <textarea name="description" rows="6" maxlength="4000" required
+                style="width:100%;padding:10px;border-radius:8px;border:1px solid #ddd;"></textarea>
 
-    <p style="margin-top:14px">
-      <a href="{{ url_for('support_user_access', user_id=user.id) }}"
-         style="background:#00d4ff;color:#000;text-decoration:none;
-                padding:8px 14px;border-radius:6px;font-weight:600;">
-        View User (Requires Reason)
-      </a>
-      {% if current_user.role == 'admin' %}
-        &nbsp;|&nbsp;
-        <a href="{{ url_for('admin_user_detail', user_id=user.id) }}"
-           style="color:#0077ff;text-decoration:none;font-weight:600;">
-          Open in Admin Manage
-        </a>
-      {% endif %}
-    </p>
+      <div style="margin-top:12px;">
+        <button type="submit" class="btn btn-primary">Create ticket</button>
+        <a href="{{ url_for('support_home') }}" class="btn btn-secondary">Cancel</a>
+      </div>
+    </form>
   </div>
-
-{% elif query %}
-  <p style="color:#999;margin-top:20px">
-    No user found for “{{ query }}”.
-  </p>
-{% endif %}
-
-{% if users %}
-  <div style="margin-top:24px">
-    <h3>Results</h3>
-    <ul style="list-style:none;padding:0;margin:0;">
-      {% for u in users %}
-      <li style="background:#fff;border-radius:8px;
-                 padding:10px 14px;margin-bottom:10px;
-                 box-shadow:0 1px 3px rgba(0,0,0,0.08);">
-        <strong>{{ u.username }}</strong> · {{ u.role }}
-        <span style="color:#888;margin-left:10px;">KYC: {{ u.kyc_status }}</span>
-        <div style="margin-top:8px;">
-          <a href="{{ url_for('support_user_access', user_id=u.id) }}"
-             style="color:#0077ff;font-weight:600;">
-            View (Requires Reason)
-          </a>
-          {% if current_user.role == 'admin' %}
-            &nbsp;|&nbsp;
-            <a href="{{ url_for('admin_user_detail', user_id=u.id) }}"
-               style="color:#00aaff;text-decoration:none;">
-              Open in Admin Manage
-            </a>
-          {% endif %}
-        </div>
-      </li>
-      {% endfor %}
-    </ul>
-  </div>
-{% endif %}
-
+</div>
 {% endblock %}

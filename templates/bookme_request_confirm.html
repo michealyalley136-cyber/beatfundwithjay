@@ -165,7 +165,13 @@
 
     {% if time_blocked %}
       <div class="warning-box">
-        ⚠ This time slot is blocked and may not be available. The provider will review your request.
+        Warning: This time slot is blocked and may not be available.
+      </div>
+    {% endif %}
+
+    {% if availability_ok is defined and not availability_ok %}
+      <div class="warning-box">
+        {{ availability_reason or "Requested time is not available." }}
       </div>
     {% endif %}
 
@@ -182,6 +188,23 @@
       {% endif %}
     </div>
 
+    {% if settings %}
+      <div class="booking-details">
+        <div class="detail-row">
+          <span class="detail-label">Accepting new requests</span>
+          <span class="detail-value">{{ "Yes" if settings.accepting_new_requests else "No" }}</span>
+        </div>
+        <div class="detail-row">
+          <span class="detail-label">Modes</span>
+          <span class="detail-value">
+            {% if settings.onsite %}On-site{% endif %}
+            {% if settings.remote %}{% if settings.onsite %} · {% endif %}Remote{% endif %}
+            {% if not settings.onsite and not settings.remote %}Not specified{% endif %}
+          </span>
+        </div>
+      </div>
+    {% endif %}
+
     <div class="confirm-actions">
       <form method="POST" action="{{ url_for('bookme_request_confirm', provider_id=provider.id) }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -195,4 +218,3 @@
   </div>
 </div>
 {% endblock %}
-

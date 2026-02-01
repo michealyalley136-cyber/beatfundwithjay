@@ -15,6 +15,7 @@ packaging==25.0
 pillow==10.4.0
 psycopg[binary]==3.2.2
 python-dotenv==1.2.1
+pytest==8.3.4
 reportlab==4.2.2
 SQLAlchemy==2.0.44
 stripe==14.2.0
