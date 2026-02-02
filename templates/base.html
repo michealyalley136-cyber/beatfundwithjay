@@ -24,6 +24,64 @@
 <body data-role="{{ current_user.role if current_user.is_authenticated else '' }}">
 <header class="top-nav{% if current_user.is_authenticated and current_user.role == RoleEnum.admin %} top-nav-admin{% endif %}">
   <div class="nav-left">
+  <div class="mobile-actions">
+    <button id="mobileRefreshBtn" class="mobile-refresh" type="button" aria-label="Refresh">⟳</button>
+    {% if current_user.is_authenticated %}
+      {% if current_user.role == RoleEnum.admin %}
+        <div class="notifications-bell-container" data-notifications data-count-url="{{ url_for('admin_notifications_unread_count') }}" data-recent-url="{{ url_for('admin_notifications_recent') }}" data-read-url-prefix="/admin/notifications" data-view-url="{{ url_for('admin_notifications') }}">
+          <button class="notifications-bell" type="button" aria-label="Notifications">
+            <span class="bell-icon">🔔</span>
+            <span class="notifications-badge" data-badge>0</span>
+          </button>
+          <div class="notifications-dropdown notifications-panel" data-dropdown>
+            <div class="notifications-dropdown-header">
+              <strong>Admin alerts</strong>
+              <span class="notifications-subtitle">Critical + ticket/KYC events</span>
+            </div>
+            <div class="notifications-list" data-list>
+              <div class="notifications-loading">Loading...</div>
+            </div>
+            <div class="notifications-dropdown-footer">
+              <a href="{{ url_for('admin_notifications') }}">View all admin notifications</a>
+            </div>
+          </div>
+        </div>
+      {% else %}
+        <div class="notifications-bell-container" data-notifications data-count-url="{{ url_for('api_notifications_unread_count') }}" data-recent-url="{{ url_for('api_notifications_recent') }}" data-read-url-prefix="/notifications" data-view-url="{{ url_for('notifications_page') }}">
+          <button class="notifications-bell" type="button" aria-label="Notifications">
+            <span class="bell-icon">🔔</span>
+            <span class="notifications-badge" data-badge>0</span>
+          </button>
+          <div class="notifications-dropdown notifications-panel" data-dropdown>
+            <div class="notifications-dropdown-header">
+              <strong>Notifications</strong>
+              <form method="POST" action="{{ url_for('mark_all_notifications_read_route') }}" style="display: inline; margin: 0;">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="notifications-mark-read">Mark all read</button>
+              </form>
+            </div>
+            <div class="notifications-list" data-list>
+              <div class="notifications-loading">Loading...</div>
+            </div>
+            <div class="notifications-dropdown-footer">
+              <a href="{{ url_for('notifications_page') }}">View all notifications</a>
+            </div>
+          </div>
+        </div>
+      {% endif %}
+    {% endif %}
+  </div>
+
+  </div>
+
+  <div class="nav-center">
+    <button class="nav-toggle" type="button" aria-controls="mobileMenu" aria-expanded="false">
+      <span class="nav-toggle-icon" aria-hidden="true"></span>
+      <span class="nav-toggle-label">Menu</span>
+    </button>
+  </div>
+
+  <div class="nav-brand">
     <a href="{% if current_user.is_authenticated %}{{ url_for('route_to_dashboard') }}{% else %}{{ url_for('home') }}{% endif %}" style="text-decoration: none; color: inherit; display: block; cursor: pointer; transition: opacity 0.2s;" onmouseover="this.style.opacity='0.8'" onmouseout="this.style.opacity='1'">
       <div class="brand-text">
         <div class="brand-main">BEATFUND</div>
@@ -39,7 +97,7 @@
   </div>
 
   {# Desktop admin nav (hidden on mobile by CSS) #}
-  <nav class="nav-center">
+  <nav class="nav-links">
     {% if current_user.is_authenticated and current_user.role == RoleEnum.admin %}
       <a href="{{ url_for('admin_dashboard') }}">Admin Dashboard</a>
       <a href="{{ url_for('admin_users') }}">Users</a>
@@ -77,7 +135,7 @@
             <span class="bell-icon">🔔</span>
             <span class="notifications-badge" data-badge>0</span>
           </button>
-          <div class="notifications-dropdown" data-dropdown>
+          <div class="notifications-dropdown notifications-panel" data-dropdown>
             <div class="notifications-dropdown-header">
               <strong>Notifications</strong>
               <form method="POST" action="{{ url_for('mark_all_notifications_read_route') }}" style="display: inline; margin: 0;">
@@ -106,53 +164,7 @@
     {% endif %}
   </div>
 
-  <div class="mobile-actions">
-    <button id="mobileRefreshBtn" class="mobile-refresh" type="button" aria-label="Refresh">⟳</button>
-    {% if current_user.is_authenticated %}
-      {% if current_user.role == RoleEnum.admin %}
-        <div class="notifications-bell-container" data-notifications data-count-url="{{ url_for('admin_notifications_unread_count') }}" data-recent-url="{{ url_for('admin_notifications_recent') }}" data-read-url-prefix="/admin/notifications" data-view-url="{{ url_for('admin_notifications') }}">
-          <button class="notifications-bell" type="button" aria-label="Notifications">
-            <span class="bell-icon">🔔</span>
-            <span class="notifications-badge" data-badge>0</span>
-          </button>
-          <div class="notifications-dropdown" data-dropdown>
-            <div class="notifications-dropdown-header">
-              <strong>Admin alerts</strong>
-              <span class="notifications-subtitle">Critical + ticket/KYC events</span>
-            </div>
-            <div class="notifications-list" data-list>
-              <div class="notifications-loading">Loading...</div>
-            </div>
-            <div class="notifications-dropdown-footer">
-              <a href="{{ url_for('admin_notifications') }}">View all admin notifications</a>
-            </div>
-          </div>
-        </div>
-      {% else %}
-        <div class="notifications-bell-container" data-notifications data-count-url="{{ url_for('api_notifications_unread_count') }}" data-recent-url="{{ url_for('api_notifications_recent') }}" data-read-url-prefix="/notifications" data-view-url="{{ url_for('notifications_page') }}">
-          <button class="notifications-bell" type="button" aria-label="Notifications">
-            <span class="bell-icon">🔔</span>
-            <span class="notifications-badge" data-badge>0</span>
-          </button>
-          <div class="notifications-dropdown" data-dropdown>
-            <div class="notifications-dropdown-header">
-              <strong>Notifications</strong>
-              <form method="POST" action="{{ url_for('mark_all_notifications_read_route') }}" style="display: inline; margin: 0;">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <button type="submit" class="notifications-mark-read">Mark all read</button>
-              </form>
-            </div>
-            <div class="notifications-list" data-list>
-              <div class="notifications-loading">Loading...</div>
-            </div>
-            <div class="notifications-dropdown-footer">
-              <a href="{{ url_for('notifications_page') }}">View all notifications</a>
-            </div>
-          </div>
-        </div>
-      {% endif %}
-    {% endif %}
-  </div>
+
 
   <div class="pwa-install{% if current_user.is_authenticated and current_user.role == RoleEnum.admin %} admin-install{% endif %}">
     <button id="installBtn" class="btn btn-primary" style="display:none;">Install BeatFund</button>
@@ -165,7 +177,7 @@
             <span class="bell-icon">🔔</span>
             <span class="notifications-badge" data-badge>0</span>
           </button>
-          <div class="notifications-dropdown" data-dropdown>
+          <div class="notifications-dropdown notifications-panel" data-dropdown>
             <div class="notifications-dropdown-header">
               <strong>Admin alerts</strong>
               <span class="notifications-subtitle">Critical + ticket/KYC events</span>
@@ -186,11 +198,6 @@
     {% endif %}
   </div>
 
-  {# Mobile hamburger button (shown on mobile by CSS) #}
-  <button class="nav-toggle" type="button" aria-controls="mobileMenu" aria-expanded="false">
-    <span class="nav-toggle-icon" aria-hidden="true"></span>
-    <span class="nav-toggle-label">Menu</span>
-  </button>
 </header>
 
 {# Mobile menu overlay #}
@@ -399,6 +406,22 @@
         .catch(() => {});
     }
 
+    function clampDropdown(dropdown) {
+      if (!dropdown) return;
+      const isMobile = window.innerWidth <= 900;
+      if (!isMobile) {
+        dropdown.style.left = '';
+        dropdown.style.right = '';
+        dropdown.style.width = '';
+        return;
+      }
+      const padding = 12;
+      const maxWidth = Math.min(360, Math.floor(window.innerWidth * 0.92));
+      dropdown.style.width = `${maxWidth}px`;
+      dropdown.style.left = `${padding}px`;
+      dropdown.style.right = 'auto';
+    }
+
     function getKindColor(kind) {
       switch (kind) {
         case 'success': return '#10b981';
@@ -554,6 +577,7 @@
         closeAllDropdowns(container);
         dropdown.style.display = isOpen ? 'none' : 'block';
         if (!isOpen) {
+          clampDropdown(dropdown);
           updateUnreadCount();
           loadRecentNotifications(container);
         }
@@ -567,6 +591,15 @@
         if (!dropdown || !bell) return;
         if (!dropdown.contains(e.target) && !bell.contains(e.target)) {
           dropdown.style.display = 'none';
+        }
+      });
+    });
+
+    window.addEventListener('resize', () => {
+      containers.forEach((container) => {
+        const dropdown = container.querySelector('[data-dropdown]');
+        if (dropdown && dropdown.style.display === 'block') {
+          clampDropdown(dropdown);
         }
       });
     });
