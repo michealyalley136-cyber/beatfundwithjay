@@ -29,7 +29,8 @@
 
 ### Production Settings
 1. **SQLite auto-migrations disabled in prod** - Use Alembic only in production
-2. **CSP improvements** - Stricter Content Security Policy in production
+2. **Postgres safe auto-migrations (optional)** - Set `PG_AUTO_MIGRATE=1` to apply add-only schema fixes (creates missing tables + login-critical user columns) at app startup.
+3. **CSP improvements** - Stricter Content Security Policy in production
 
 ---
 

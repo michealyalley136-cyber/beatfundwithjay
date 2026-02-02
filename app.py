@@ -110,6 +110,7 @@ BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 
 APP_ENV = os.getenv("APP_ENV", "dev").lower()
 IS_DEV = APP_ENV != "prod"
+PG_AUTO_MIGRATE = os.getenv("PG_AUTO_MIGRATE", "1").strip().lower() not in {"0", "false", "no"}
 
 # instance/ for sqlite + meta json
 INSTANCE_DIR = os.path.join(BASE_DIR, "instance")
@@ -3725,6 +3726,70 @@ def _ensure_sqlite_careers_tables():
     db.session.commit()
 
 
+# =========================================================
+# Postgres Safe Auto-Migrations (idempotent, opt-out)
+# =========================================================
+_PG_MIGRATIONS_DONE = False
+
+
+def _ensure_pg_schema_migrations_table() -> None:
+    db.session.execute(text("""
+        CREATE TABLE IF NOT EXISTS schema_migrations (
+            name VARCHAR(160) PRIMARY KEY,
+            applied_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+    """))
+    db.session.commit()
+
+
+def _pg_migration_applied(name: str) -> bool:
+    row = db.session.execute(
+        text("SELECT 1 FROM schema_migrations WHERE name = :name LIMIT 1"),
+        {"name": name},
+    ).fetchone()
+    return bool(row)
+
+
+def _record_pg_migration(name: str) -> None:
+    db.session.execute(
+        text("INSERT INTO schema_migrations (name) VALUES (:name) ON CONFLICT DO NOTHING"),
+        {"name": name},
+    )
+    db.session.commit()
+
+
+def _run_pg_migration(name: str, fn) -> None:
+    if _pg_migration_applied(name):
+        return
+    fn()
+    _record_pg_migration(name)
+
+
+def _pg_create_missing_tables() -> None:
+    db.create_all()
+
+
+def _pg_add_user_login_columns() -> None:
+    if not inspect(db.engine).has_table("user"):
+        return
+    statements = [
+        'ALTER TABLE "user" ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE',
+        'ALTER TABLE "user" ADD COLUMN IF NOT EXISTS is_superadmin BOOLEAN NOT NULL DEFAULT FALSE',
+        'ALTER TABLE "user" ADD COLUMN IF NOT EXISTS password_changed_at TIMESTAMP',
+        'ALTER TABLE "user" ADD COLUMN IF NOT EXISTS password_reset_token VARCHAR(255)',
+        'ALTER TABLE "user" ADD COLUMN IF NOT EXISTS password_reset_sent_at TIMESTAMP',
+        'ALTER TABLE "user" ADD COLUMN IF NOT EXISTS email_notifications_enabled BOOLEAN NOT NULL DEFAULT TRUE',
+        'ALTER TABLE "user" ADD COLUMN IF NOT EXISTS stripe_account_id VARCHAR(255)',
+        'ALTER TABLE "user" ADD COLUMN IF NOT EXISTS avatar_path VARCHAR(255)',
+        'ALTER TABLE "user" ADD COLUMN IF NOT EXISTS full_name VARCHAR(150)',
+        'ALTER TABLE "user" ADD COLUMN IF NOT EXISTS artist_name VARCHAR(150)',
+        'ALTER TABLE "user" ADD COLUMN IF NOT EXISTS referred_by_affiliate_id INTEGER',
+    ]
+    for stmt in statements:
+        db.session.execute(text(stmt))
+    db.session.commit()
+
+
 @app.before_request
 def _bootstrap_schema_once():
     """Run SQLite auto-migrations only in dev or if explicitly allowed"""
@@ -3761,6 +3826,27 @@ def _bootstrap_schema_once():
         _ensure_sqlite_waitlist_table()
         _ensure_sqlite_beat_stripe_columns()
         _ensure_sqlite_order_payment_columns()
+    except Exception:
+        db.session.rollback()
+
+
+@app.before_request
+def _bootstrap_postgres_migrations():
+    """Run safe, idempotent Postgres migrations when enabled."""
+    global _PG_MIGRATIONS_DONE
+    if _PG_MIGRATIONS_DONE:
+        return
+    if db.engine.url.get_backend_name() != "postgresql":
+        _PG_MIGRATIONS_DONE = True
+        return
+    if not PG_AUTO_MIGRATE:
+        _PG_MIGRATIONS_DONE = True
+        return
+    _PG_MIGRATIONS_DONE = True
+    try:
+        _ensure_pg_schema_migrations_table()
+        _run_pg_migration("2026_02_02_create_tables", _pg_create_missing_tables)
+        _run_pg_migration("2026_02_02_user_login_columns", _pg_add_user_login_columns)
     except Exception:
         db.session.rollback()
 
@@ -10476,7 +10562,7 @@ def superadmin_dashboard():
 @app.route("/dashboard")
 @login_required
 def route_to_dashboard():
-    role = current_user.role.value
+    role = current_user.role.value if isinstance(current_user.role, RoleEnum) else str(current_user.role or "")
 
     if role == "admin":
         endpoint = "admin_dashboard"
