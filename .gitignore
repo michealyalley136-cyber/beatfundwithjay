@@ -23,3 +23,7 @@ uploads/
 .DS_Store
 Thumbs.db
 .vscode/
+~$*
+
+# Local docs/artifacts
+docs/BeatFund_Business_Plan.pdf

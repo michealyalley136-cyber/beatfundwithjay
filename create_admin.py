@@ -23,7 +23,7 @@ with app.app_context():
     if admin:
         # Reset existing admin password
         print(f"Found existing admin account: {admin.username}")
-        print(f"Current role: {admin.role.value}")
+        print(f"Current role: {admin.role}")
         
         # Update password
         admin.password_hash = generate_password_hash(ADMIN_PASSWORD)
@@ -31,7 +31,7 @@ with app.app_context():
         # Ensure admin role
         if admin.role != RoleEnum.admin:
             admin.role = RoleEnum.admin
-            print(f"Updated role to: {admin.role.value}")
+            print(f"Updated role to: {admin.role}")
         
         # Make superadmin if not already
         if not admin.is_superadmin:

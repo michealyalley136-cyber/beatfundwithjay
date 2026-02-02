@@ -480,7 +480,7 @@
   {% endif %}
 </div>
 
-<script>
+<script nonce="{{ csp_nonce }}">
   // Quick amount buttons
   document.querySelectorAll('.quick-amount-btn').forEach(btn => {
     btn.addEventListener('click', function() {

@@ -16,7 +16,7 @@ with app.app_context():
     
     for user in users:
         print(f"\nUser: {user.username} (ID: {user.id})")
-        print(f"  Role: {user.role.value if user.role else 'None'}")
+        print(f"  Role: {user.role if user.role else 'None'}")
         print(f"  Password Changed At: {user.password_changed_at}")
         
         if user.password_changed_at:
@@ -28,7 +28,7 @@ with app.app_context():
         is_expired = is_password_expired(user)
         print(f"  Is Expired: {'⚠️ YES' if is_expired else '✅ NO'}")
         
-        if is_expired and user.role.value == 'admin':
+        if is_expired and user.role == 'admin':
             print(f"  ⚠️  Admin password is expired - user will be redirected to password reset after login")
     
     print("\n" + "=" * 60)

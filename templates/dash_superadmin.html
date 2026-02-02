@@ -213,7 +213,7 @@
 
 <!-- Chart.js (if not already loaded in base.html) -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<script>
+<script nonce="{{ csp_nonce }}">
   (function () {
     const barLabels = {{ bar_labels|tojson }};
     const barValues = {{ bar_values|tojson }};

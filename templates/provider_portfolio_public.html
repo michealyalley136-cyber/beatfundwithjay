@@ -19,7 +19,7 @@
       </div>
 
       {% if current_user.is_authenticated and current_user.id != provider.id %}
-        {% if prof and not prof.is_visible %}
+        {% if (prof and not prof.is_visible) or (settings and not settings.accepting_new_requests) %}
           <span class="btn" style="opacity: 0.6; cursor: not-allowed; background: rgba(239,68,68,.2); border-color: rgba(239,68,68,.4);">Not accepting bookings</span>
         {% else %}
           <a class="btn" href="{{ url_for('bookme_book_provider', username=provider.username) }}">Request booking</a>
@@ -47,6 +47,33 @@
       <div style="margin-top:10px;" class="muted">{{ prof.bio }}</div>
     {% else %}
       <div class="muted">No bio provided yet.</div>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0;">Ratings</h3>
+    <div>
+      <strong>{{ rating_summary.avg }}</strong> / 5
+      <span class="muted">({{ rating_summary.count }} review{{ rating_summary.count != 1 and 's' or '' }})</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0;">Availability & Modes</h3>
+    <div class="muted">
+      Accepting new requests: {{ "Yes" if (settings and settings.accepting_new_requests) else "No" }}
+    </div>
+    <div class="muted" style="margin-top:6px;">
+      Modes:
+      {% if settings and settings.onsite %}On-site{% endif %}
+      {% if settings and settings.remote %}{% if settings.onsite %} · {% endif %}Remote{% endif %}
+      {% if not settings or (not settings.onsite and not settings.remote) %}Not specified{% endif %}
+    </div>
+    {% if settings and settings.travel_radius_miles %}
+      <div class="muted" style="margin-top:6px;">Travel radius: {{ settings.travel_radius_miles }} miles</div>
+    {% endif %}
+    {% if settings and settings.base_location %}
+      <div class="muted" style="margin-top:6px;">Base location: {{ settings.base_location }}</div>
     {% endif %}
   </div>
 
@@ -88,6 +115,25 @@
       </div>
     {% else %}
       <div class="muted">No portfolio items yet.</div>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0;">Reviews</h3>
+    {% if reviews %}
+      {% for r in reviews %}
+        <div style="border-top:1px solid #eee;padding-top:8px;margin-top:8px;">
+          <div style="font-weight:600;">{{ r.rating }}/5{% if r.title %} · {{ r.title }}{% endif %}</div>
+          <div class="muted" style="font-size:0.85rem;">
+            @{{ r.reviewer.username }} · {{ r.created_at.strftime('%Y-%m-%d') }}
+          </div>
+          {% if r.body %}
+            <div style="margin-top:6px;white-space:pre-line;">{{ r.body }}</div>
+          {% endif %}
+        </div>
+      {% endfor %}
+    {% else %}
+      <div class="muted">No reviews yet.</div>
     {% endif %}
   </div>
 

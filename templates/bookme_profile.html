@@ -150,8 +150,8 @@
 
       <div style="display:flex; align-items:center; gap:16px; margin-bottom:16px;">
         <div class="bf-avatar-large">
-          {% if current_user.avatar_path %}
-            <img src="{{ url_for('media_file', filename=current_user.avatar_path) }}" alt="Avatar">
+          {% if current_user.avatar_url %}
+            <img src="{{ current_user.avatar_url }}" alt="Avatar">
           {% else %}
             {{ current_user.username[0]|upper }}
           {% endif %}
@@ -161,7 +161,7 @@
             @{{ current_user.username }}
           </div>
           <div style="margin-top:4px;">
-            <span class="bf-pill">{{ current_user.role.value.replace('_',' ').title() }}</span>
+            <span class="bf-pill">{{ current_user.role.replace('_',' ').title() }}</span>
           </div>
           <p class="bf-small" style="margin-top:8px;">
             This avatar is shared across your dashboards and BookMe listing.
@@ -350,6 +350,7 @@
 
         <p class="bf-small" style="margin-top:-6px; margin-bottom:12px;">
           Tip: adding latitude &amp; longitude makes your pin show on the BookMe map.
+          Use a minus sign for west longitudes (e.g., -83.561523) or add W/E/N/S.
           After clicking “Use my current location”, click “Save BookMe profile”.
         </p>
 
@@ -361,7 +362,7 @@
   </div>
 </div>
 
-<script>
+<script nonce="{{ csp_nonce }}">
   (function () {
     const btn = document.getElementById("useMyLocation");
     const statusEl = document.getElementById("geoStatus");
@@ -416,3 +417,4 @@
   })();
 </script>
 {% endblock %}
+

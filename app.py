@@ -16,7 +16,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 from werkzeug.exceptions import RequestEntityTooLarge
 
-from sqlalchemy import UniqueConstraint, inspect, text, or_
+from sqlalchemy import UniqueConstraint, inspect, text, or_, func
 from sqlalchemy.sql import func
 from sqlalchemy.exc import (
     IntegrityError, ProgrammingError, OperationalError,
@@ -25,18 +25,20 @@ from sqlalchemy.exc import (
 
 from functools import wraps
 from contextlib import contextmanager
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, time
 from time import time
 from jinja2 import TemplateNotFound
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP, ROUND_UP
 from collections import Counter
 from calendar import monthrange
 from typing import Optional
 import enum
 import os
 import uuid
+import secrets
 import pathlib
 import csv
+import mimetypes
 from io import StringIO
 import re
 import json
@@ -89,7 +91,6 @@ except ImportError:
 # =========================================================
 # Constants
 # =========================================================
-HOLD_FEE_CENTS = 2000               # $20 hold fee for accepted bookings
 MAX_TXN_DOLLARS = 10_000            # safety cap: max $10k per wallet action in dev
 MAX_PORTFOLIO_ITEMS = 8             # max portfolio items per provider
 
@@ -97,10 +98,53 @@ PASSWORD_MAX_AGE_DAYS = 90          # admins must change password every 90 days
 RESET_TOKEN_MAX_AGE_HOURS = 1       # reset links valid for 1 hour
 
 # Platform service fees
-BEAT_FEE_RATE = 0.12                # 12% of beat price
-BEAT_FEE_MIN_CENTS = 129            # $1.29 minimum
-BEAT_FEE_MAX_CENTS = 517            # $5.17 maximum
 # Note: SERVICE_FEE_RULES and DEFAULT_SERVICE_FEE_RULE are defined after RoleEnum
+
+# BeatFund service fee + processing fee config (service bookings)
+def _env_decimal(name: str, default: str) -> Decimal:
+    raw = (os.getenv(name) or "").strip()
+    if not raw:
+        return Decimal(str(default))
+    try:
+        return Decimal(raw)
+    except (InvalidOperation, ValueError):
+        return Decimal(str(default))
+
+
+def _env_int(name: str, default: int) -> int:
+    raw = (os.getenv(name) or "").strip()
+    if raw == "":
+        return int(default)
+    try:
+        return int(Decimal(raw))
+    except (InvalidOperation, ValueError):
+        return int(default)
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    raw = (os.getenv(name) or "").strip().lower()
+    if raw == "":
+        return bool(default)
+    return raw in {"1", "true", "yes", "y", "on"}
+
+STRIPE_PLATFORM_FEE_PCT = _env_decimal("STRIPE_PLATFORM_FEE_PCT", "0.02")
+STRIPE_BOOKING_HOLD_FEE = _env_decimal("STRIPE_BOOKING_HOLD_FEE", "5.17")
+AFFILIATE_DEFAULT_PCT = _env_decimal("AFFILIATE_DEFAULT_PCT", "0.30")
+AFFILIATE_PAYOUT_DELAY_DAYS = _env_int("AFFILIATE_PAYOUT_DELAY_DAYS", 14)
+
+HOLD_FEE_CENTS = int((STRIPE_BOOKING_HOLD_FEE * 100).to_integral_value(rounding=ROUND_HALF_UP))
+BEAT_FEE_FLAT_CENTS = 0  # Legacy placeholder; platform fee is now percentage-based.
+
+BEATFUND_FEE_RATE = _env_decimal("BEATFUND_FEE_RATE", str(STRIPE_PLATFORM_FEE_PCT))
+BEATFUND_FEE_MIN_CENTS = _env_int("BEATFUND_FEE_MIN_CENTS", HOLD_FEE_CENTS)
+BEATFUND_FEE_CAP_CENTS = _env_int("BEATFUND_FEE_CAP_CENTS", 0)
+if BEATFUND_FEE_CAP_CENTS <= 0:
+    BEATFUND_FEE_CAP_CENTS = 0  # disabled
+
+STRIPE_PROC_RATE = _env_decimal("STRIPE_PROC_RATE", "0.029")
+STRIPE_PROC_FIXED_CENTS = _env_int("STRIPE_PROC_FIXED_CENTS", 30)
+ALLOW_REFUND_BF_FEE_ON_PROVIDER_FAULT = _env_bool("ALLOW_REFUND_BF_FEE_ON_PROVIDER_FAULT", True)
+BOOKING_BALANCE_DEADLINE_HOURS = _env_int("BOOKING_BALANCE_DEADLINE_HOURS", 48)
 
 
 # =========================================================
@@ -111,6 +155,12 @@ BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 APP_ENV = os.getenv("APP_ENV", "dev").lower()
 IS_DEV = APP_ENV != "prod"
 PG_AUTO_MIGRATE = os.getenv("PG_AUTO_MIGRATE", "1").strip().lower() not in {"0", "false", "no"}
+KYC_ENFORCE = _env_bool("KYC_ENFORCE", not IS_DEV)
+NOTIF_POLL_SECONDS = _env_int("NOTIF_POLL_SECONDS", 30)
+AFFILIATE_CONTACT_EMAIL = (
+    (os.getenv("AFFILIATE_CONTACT_EMAIL") or os.getenv("SUPPORT_EMAIL") or "support@beatfund.com").strip()
+    or "support@beatfund.com"
+)
 
 # instance/ for sqlite + meta json
 INSTANCE_DIR = os.path.join(BASE_DIR, "instance")
@@ -191,11 +241,31 @@ def ensure_session():
     if not session:
         session['_initialized'] = True
 
+
+@app.before_request
+def test_db_connection_before_request():
+    """Test database connection at the start of each request"""
+    try:
+        # Simple test query to ensure DB is responsive
+        db.session.execute(text("SELECT 1"))
+    except Exception as e:
+        app.logger.error(f"DB connection test failed at start of request {request.path}: {type(e).__name__}: {str(e)}")
+        # Don't block the request, let it fail naturally so we can see the real error
+        pass
+
 @app.after_request
 def add_request_id_header(response):
     """Add request ID to response header"""
     if hasattr(g, 'request_id'):
         response.headers['X-Request-ID'] = g.request_id
+    path = request.path or ""
+    if path.endswith(".webmanifest"):
+        response.headers["Content-Type"] = "application/manifest+json"
+        response.headers["Cache-Control"] = "public, max-age=3600"
+    elif path == "/static/sw.js":
+        response.headers["Cache-Control"] = "no-cache"
+    elif path.startswith("/static/"):
+        response.headers.setdefault("Cache-Control", "public, max-age=86400")
     return response
 
 # ---------------------------------------------------------
@@ -257,6 +327,10 @@ def setup_logging():
 setup_logging()
 app.logger = logging.getLogger(__name__)
 
+@app.before_request
+def set_csp_nonce():
+    g.csp_nonce = secrets.token_urlsafe(16)
+
 # ---------------------------------------------------------
 # Security Headers Middleware
 # ---------------------------------------------------------
@@ -274,14 +348,18 @@ def set_security_headers(response):
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     
     # Content Security Policy - use nonce in production if possible
+    nonce = getattr(g, 'csp_nonce', '')
+    nonce_src = f"'nonce-{nonce}' " if nonce else ""
     if IS_DEV:
         csp_policy = (
             "default-src 'self'; "
-            "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+            f"script-src 'self' 'unsafe-inline' {nonce_src}https://cdn.jsdelivr.net https://js.stripe.com; "
+            "script-src-attr 'unsafe-inline'; "
             "style-src 'self' 'unsafe-inline'; "
             "img-src 'self' data: https:; "
             "font-src 'self' data:; "
-            "connect-src 'self'; "
+            "connect-src 'self' https://api.stripe.com; "
+            "frame-src 'self' https://js.stripe.com https://hooks.stripe.com; "
             "frame-ancestors 'none'; "
             "base-uri 'self'; "
             "form-action 'self';"
@@ -290,17 +368,19 @@ def set_security_headers(response):
         # Production: stricter CSP with additional security directives
         csp_policy = (
             "default-src 'self'; "
-            "script-src 'self' https://cdn.jsdelivr.net; "
+            f"script-src 'self' {nonce_src}https://cdn.jsdelivr.net https://js.stripe.com; "
+            "script-src-attr 'unsafe-inline'; "
             "style-src 'self' 'unsafe-inline'; "  # Allow inline styles for compatibility
             "img-src 'self' data: https:; "
             "font-src 'self' data: https:; "
-            "connect-src 'self'; "
+            "connect-src 'self' https://api.stripe.com; "
+            "frame-src 'self' https://js.stripe.com https://hooks.stripe.com; "
             "frame-ancestors 'none'; "
             "base-uri 'self'; "
             "form-action 'self'; "
             "object-src 'none'; "  # Block plugins (Flash, etc.)
             "media-src 'self'; "  # Allow media from same origin
-            "worker-src 'none'; "  # Block web workers for security
+            "worker-src 'self'; "  # Block web workers for security
             "manifest-src 'self'; "  # Allow web app manifests
             "upgrade-insecure-requests;"  # Upgrade HTTP to HTTPS
         )
@@ -312,7 +392,7 @@ def set_security_headers(response):
     
     # Permissions Policy (Feature Policy)
     response.headers["Permissions-Policy"] = (
-        "geolocation=(), microphone=(), camera=(), payment=(), usb=()"
+        "geolocation=(self), microphone=(), camera=(), payment=(), usb=()"
     )
     
     return response
@@ -321,7 +401,7 @@ def set_security_headers(response):
 @app.context_processor
 def inject_csrf_token():
     # templates can do: {{ csrf_token() }}
-    return dict(csrf_token=generate_csrf)
+    return dict(csrf_token=generate_csrf, csp_nonce=getattr(g, "csp_nonce", ""))
 
 
 @app.errorhandler(CSRFError)
@@ -503,11 +583,18 @@ def log_security_event(event_type: str, details: str, severity: str = "info"):
 @app.errorhandler(500)
 def handle_500_error(e):
     """Handle 500 errors without exposing sensitive information"""
+    # Log full error with traceback for debugging
+    import traceback
+    tb_str = traceback.format_exc()
+    app.logger.error(f"500 ERROR FULL TRACEBACK:\n{tb_str}")
+    app.logger.error(f"500 ERROR TYPE: {type(e).__name__}")
+    app.logger.error(f"500 ERROR STR: {str(e)}")
+    
     try:
         db.session.rollback()
-    except Exception:
+    except Exception as rollback_err:
         # db might not be initialized yet, ignore rollback errors
-        pass
+        app.logger.warning(f"Could not rollback DB session: {rollback_err}")
     
     try:
         log_security_event("server_error", f"Internal server error: {type(e).__name__}", "error")
@@ -565,86 +652,61 @@ def jinja_is_None(value):
 
 
 # =========================================================
-# Database (Neon Postgres in prod, SQLite locally)
+# Database (Railway Postgres in prod, SQLite locally)
 # =========================================================
 def normalize_database_url(url: str) -> str:
     """
-    Normalize database URL to use postgresql+psycopg2:// format.
-    Handles postgres:// and postgresql:// formats.
+    Normalize database URL to use postgresql+psycopg:// format (psycopg v3).
+    Handles postgres:// and postgresql:// formats from Railway.
+    Railway provides DATABASE_URL like:
+      - postgres://... or postgresql://...
+    We convert to postgresql+psycopg:// for SQLAlchemy + psycopg3.
+    SSL will be configured via engine options instead of URL to avoid parsing issues.
     """
     if not url:
         return url
     
-    # Convert postgres:// to postgresql://
+    # Step 1: Convert postgres:// to postgresql://
     if url.startswith("postgres://"):
         url = url.replace("postgres://", "postgresql://", 1)
     
-    # Ensure we're using psycopg2 driver
-    if url.startswith("postgresql://") and not url.startswith("postgresql+psycopg2://"):
-        url = url.replace("postgresql://", "postgresql+psycopg2://", 1)
+    # Step 2: Replace postgresql:// with postgresql+psycopg:// (psycopg v3)
+    if url.startswith("postgresql://"):
+        url = url.replace("postgresql://", "postgresql+psycopg://", 1)
     
     return url
 
 
 def get_database_config():
     """
-    Configure database connection with proper SSL for Neon Postgres.
+    Configure database connection for Railway Postgres or local SQLite.
     Returns tuple: (database_url, engine_options)
     """
-db_url = os.getenv("DATABASE_URL", "").strip()
-
-<<<<<<< HEAD
-if db_url:
-    if db_url.startswith("postgres://"):
-        db_url = db_url.replace("postgres://", "postgresql://", 1)
-
-    # Prefer psycopg (psycopg3) if available, otherwise fall back to psycopg2
-    preferred_driver = None
-    try:
-        import psycopg  # psycopg3
-        preferred_driver = "psycopg"
-    except Exception:
-        try:
-            import psycopg2  # psycopg2
-            preferred_driver = "psycopg2"
-        except Exception:
-            preferred_driver = None
-
-    if db_url.startswith("postgresql://") and preferred_driver:
-        db_url = db_url.replace("postgresql://", f"postgresql+{preferred_driver}://", 1)
-
-    app.config["SQLALCHEMY_DATABASE_URI"] = db_url
-    # Connection pool settings for production
-    app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
-=======
+    db_url = os.getenv("DATABASE_URL", "").strip()
+    
     if not db_url:
         # Fallback to SQLite for local development
-        sqlite_path = os.path.join(INSTANCE_DIR, 'app.db')
+        sqlite_path = os.path.join(INSTANCE_DIR, "app.db")
         return f"sqlite:///{sqlite_path}", {}
     
-    # Normalize URL format
+    # Normalize URL format for Railway or any Postgres provider
     db_url = normalize_database_url(db_url)
     
-    # Determine if this is a Neon database (check for neon.tech in hostname)
-    is_neon = "neon.tech" in db_url or "neon.tech" in db_url.lower()
-    
-    # Engine options for PostgreSQL
+    # Engine options for PostgreSQL connections with psycopg v3
     engine_options = {
->>>>>>> 3c985bedfa16159bcf6ec7f3e1384c00e11d0f98
         "pool_pre_ping": True,  # Verify connections before using
         "pool_recycle": 300,    # Recycle connections after 5 minutes
         "pool_size": 5,         # Connection pool size
         "max_overflow": 10,     # Max overflow connections
         "connect_args": {
-            "connect_timeout": 10,  # 10 second connection timeout
-        }
+            "connect_timeout": 10,
+            "sslmode": "require",  # Required for Railway Postgres
+        },
+        # Use psycopg3's default statement cache settings
+        "execution_options": {
+            "isolation_level": "READ_COMMITTED",  # Standard transaction level
+        },
     }
-    
-    # Neon requires SSL connections
-    if is_neon:
-        engine_options["connect_args"]["sslmode"] = "require"
-        # Optionally, you can use 'verify-full' for stricter SSL verification
-        # engine_options["connect_args"]["sslmode"] = "verify-full"
     
     return db_url, engine_options
 
@@ -655,32 +717,23 @@ try:
     app.config["SQLALCHEMY_DATABASE_URI"] = db_url
     app.config["SQLALCHEMY_ENGINE_OPTIONS"] = engine_options
     
-    # Log database configuration (safely, without exposing credentials)
-    if IS_DEV:
-        # Mask password in URL for logging
-        safe_url = db_url
-        try:
-            from urllib.parse import urlparse, urlunparse
-            parsed = urlparse(db_url)
-            if parsed.password:
-                safe_url = urlunparse(parsed._replace(password="***"))
-        except Exception:
-            pass
-        app.logger.info(f"Database configured: {safe_url}")
-        if "neon.tech" in db_url.lower():
-            app.logger.info("Neon Postgres detected - SSL enabled")
+    # Log database backend info (safe, no credentials exposed)
+    if "postgresql+psycopg://" in db_url:
+        app.logger.info("DB: postgres (Railway/Postgres with psycopg v3)")
+    else:
+        app.logger.info("DB: sqlite (local development)")
+        
 except Exception as e:
     app.logger.error(f"Failed to configure database: {e}", exc_info=True)
     # Fallback to SQLite on configuration error
     app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{os.path.join(INSTANCE_DIR, 'app.db')}"
     app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {}
+    app.logger.warning("DB: sqlite (fallback after configuration error)")
 
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
 db = SQLAlchemy(app)
 
-<<<<<<< HEAD
-=======
 
 def test_database_connection() -> tuple[bool, str]:
     """
@@ -728,13 +781,13 @@ if IS_DEV and os.getenv("DATABASE_URL"):
         with app.app_context():
             success, message = test_database_connection()
             if success:
-                app.logger.info(f"✅ {message}")
+                app.logger.info(f"[DB] {message}")
             else:
-                app.logger.warning(f"⚠️  {message}")
+                app.logger.warning(f"[DB] {message}")
     except Exception as e:
         app.logger.warning(f"Could not test database connection: {e}")
 
->>>>>>> 3c985bedfa16159bcf6ec7f3e1384c00e11d0f98
+
 def _early_sqlite_bootstrap_columns() -> None:
     """
     Ensure critical SQLite columns exist BEFORE Flask-Login loads current_user.
@@ -804,11 +857,10 @@ _early_sqlite_bootstrap_columns()
 login_manager = LoginManager(app)
 login_manager.login_view = "login"
 
-# One-time DB bootstrap (only when explicitly enabled)
-if os.getenv("BOOTSTRAP_DB") == "1":
-    with app.app_context():
-        db.create_all()
-        print("[OK] BOOTSTRAP_DB=1 -> db.create_all() completed")
+
+
+
+
 
 
 # =========================================================
@@ -818,7 +870,12 @@ if os.getenv("BOOTSTRAP_DB") == "1":
 # Prefer UPLOAD_PROVIDER (new), fall back to STORAGE_BACKEND (legacy).
 STORAGE_BACKEND = (os.getenv("UPLOAD_PROVIDER") or os.getenv("STORAGE_BACKEND") or "local").lower().strip()
 
-UPLOAD_ROOT = os.path.join(BASE_DIR, "uploads")
+# Allow Railway volume path (or any custom path) via env.
+UPLOAD_ROOT = (
+    os.getenv("UPLOAD_ROOT")
+    or os.getenv("RAILWAY_VOLUME_MOUNT")
+    or os.path.join(BASE_DIR, "uploads")
+)
 os.makedirs(UPLOAD_ROOT, exist_ok=True)
 app.config["UPLOAD_FOLDER"] = UPLOAD_ROOT
 
@@ -984,6 +1041,83 @@ def _is_production_mode() -> bool:
     return env_mode == "production"
 
 
+def _parse_coord(raw: str) -> float:
+    """
+    Parse a latitude/longitude string.
+    Accepts decimal degrees, optional N/S/E/W suffix, or DMS-style values.
+    """
+    if raw is None:
+        raise ValueError("empty coordinate")
+
+    s = raw.strip().upper()
+    if not s:
+        raise ValueError("empty coordinate")
+
+    direction = None
+    for d in ("N", "S", "E", "W"):
+        if d in s:
+            direction = d
+            s = s.replace(d, "")
+
+    # If decimal uses comma (e.g., 35,868145), normalize to dot.
+    if "," in s and "." not in s:
+        s = s.replace(",", ".")
+
+    nums = re.findall(r"[-+]?\d+(?:\.\d+)?", s)
+    if not nums:
+        raise ValueError("no numeric coordinate")
+
+    if len(nums) >= 3:
+        deg = float(nums[0])
+        minutes = float(nums[1])
+        seconds = float(nums[2])
+        val = abs(deg) + minutes / 60.0 + seconds / 3600.0
+        if deg < 0:
+            val = -val
+    elif len(nums) == 2:
+        deg = float(nums[0])
+        minutes = float(nums[1])
+        val = abs(deg) + minutes / 60.0
+        if deg < 0:
+            val = -val
+    else:
+        val = float(nums[0])
+
+    if direction:
+        if direction in ("S", "W"):
+            val = -abs(val)
+        else:
+            val = abs(val)
+
+    return val
+
+
+def _parse_lat_lng(lat_raw: str, lng_raw: str) -> tuple[float, float]:
+    """
+    Parse latitude/longitude pair with basic validation.
+    Allows "lat, lng" in a single field if the other is blank.
+    """
+    lat_raw = (lat_raw or "").strip()
+    lng_raw = (lng_raw or "").strip()
+
+    if lat_raw and not lng_raw:
+        parts = [p.strip() for p in re.split(r"[;,]", lat_raw) if p.strip()]
+        if len(parts) == 2:
+            lat_raw, lng_raw = parts[0], parts[1]
+
+    lat = _parse_coord(lat_raw)
+    lng = _parse_coord(lng_raw)
+
+    # If user swapped lat/lng, attempt to fix.
+    if abs(lat) > 90 and abs(lng) <= 90:
+        lat, lng = lng, lat
+
+    if abs(lat) > 90 or abs(lng) > 180:
+        raise ValueError("coordinate out of range")
+
+    return lat, lng
+
+
 def _scan_file_local(path: str) -> tuple[ScanStatus, str | None]:
     """
     Scan a local file using ClamAV if enabled.
@@ -1140,9 +1274,14 @@ def _save_file(
             except Exception:
                 pass
     else:
-        saved_ok = bool(storage_backend.save_file(fs, fname))
+        try:
+            saved_ok = bool(storage_backend.save_file(fs, fname))
+        except Exception as save_err:
+            app.logger.error(f"Storage backend failed to save {fname}: {type(save_err).__name__}: {str(save_err)}", exc_info=True)
+            saved_ok = False
 
     if not saved_ok:
+        app.logger.error(f"File save failed for {fname} (saved_ok={saved_ok}, storage_backend={STORAGE_BACKEND})")
         return None
 
     # Create UploadedFile record + scan status (best-effort).
@@ -1195,8 +1334,11 @@ def _save_file(
         if scan_status == ScanStatus.infected:
             log_security_event("upload_infected", f"Infected upload blocked: {fname}", "error")
             return None
-    except Exception:
+    except Exception as db_err:
         db.session.rollback()
+        app.logger.error(f"Failed to create UploadedFile record for {fname}: {type(db_err).__name__}: {str(db_err)}", exc_info=True)
+        # Don't return None here - the file was already saved successfully, just log the metadata error
+        # Return the filename so the upload is considered successful even if the metadata record fails
     
     log_security_event("file_upload_success", f"File uploaded: {fname} ({size} bytes)", "info")
     return fname
@@ -1488,9 +1630,27 @@ app.jinja_env.globals["RoleEnum"] = RoleEnum
 app.jinja_env.globals["KYCStatus"] = KYCStatus
 app.jinja_env.globals["MAX_PORTFOLIO_ITEMS"] = MAX_PORTFOLIO_ITEMS
 app.jinja_env.globals["get_role_display"] = get_role_display
+app.jinja_env.globals["NOTIF_POLL_SECONDS"] = NOTIF_POLL_SECONDS
+app.jinja_env.globals["AFFILIATE_CONTACT_EMAIL"] = AFFILIATE_CONTACT_EMAIL
+app.jinja_env.globals["AFFILIATE_DEFAULT_PCT"] = AFFILIATE_DEFAULT_PCT
 
 # ✅ Needed if your templates use {{ datetime.utcnow().year }}
 app.jinja_env.globals["datetime"] = datetime
+
+
+@app.context_processor
+def inject_kyc_banner_flags():
+    kyc_missing = False
+    try:
+        if current_user.is_authenticated:
+            kyc_missing = not _is_kyc_verified(current_user)
+    except Exception:
+        kyc_missing = False
+    return {
+        "kyc_enforce": KYC_ENFORCE,
+        "kyc_missing": kyc_missing,
+        "kyc_bypass_active": (not KYC_ENFORCE and kyc_missing),
+    }
 
 
 class User(UserMixin, db.Model):
@@ -1503,8 +1663,8 @@ class User(UserMixin, db.Model):
     artist_name = db.Column(db.String(150), nullable=True)
 
     password_hash = db.Column(db.String(255), nullable=False)
-    role = db.Column(db.Enum(RoleEnum), nullable=False, default=RoleEnum.artist)
-    kyc_status = db.Column(db.Enum(KYCStatus), nullable=False, default=KYCStatus.not_started)
+    role = db.Column(db.String(40), nullable=False, default=RoleEnum.artist.value)  # String for flexibility with new roles
+    kyc_status = db.Column(db.String(40), nullable=False, default=KYCStatus.not_started.value)  # String for flexibility
     is_active_col = db.Column("is_active", db.Boolean, nullable=False, default=True)
 
     is_superadmin = db.Column(db.Boolean, nullable=False, default=False)
@@ -1518,6 +1678,9 @@ class User(UserMixin, db.Model):
 
     # Stripe Connect (Express) account for payouts/withdrawals
     stripe_account_id = db.Column(db.String(255), nullable=True, index=True)
+    referred_by_affiliate_id = db.Column(db.Integer, db.ForeignKey("affiliate.id"), nullable=True, index=True)
+
+    referred_by_affiliate = db.relationship("Affiliate", foreign_keys=[referred_by_affiliate_id])
 
     @property
     def is_active(self):
@@ -1538,11 +1701,48 @@ class User(UserMixin, db.Model):
         # - Works even if you don't have static/img/default-avatar.png
         # - Adds a cache-busting query param so new uploads show immediately
         v = self.avatar_path or "0"
+        if self.avatar_path:
+            try:
+                local_path = os.path.join(app.config["UPLOAD_FOLDER"], self.avatar_path)
+                if os.path.exists(local_path):
+                    v = f"{self.avatar_path}-{int(os.path.getmtime(local_path))}"
+            except Exception:
+                pass
         return url_for("user_avatar", user_id=self.id, v=v)
 
     @property
     def display_name(self) -> str:
         return self.artist_name or self.full_name or self.username
+    
+    # Make role and kyc_status properties that support .value for backward compatibility
+    # since they're now stored as strings instead of enums
+    class _StringEnumProxy:
+        """Helper to make string fields behave like enum objects with .value property"""
+        def __init__(self, value: str):
+            self.value = value
+        
+        def __str__(self):
+            return self.value
+        
+        def __eq__(self, other):
+            if isinstance(other, str):
+                return self.value == other
+            elif hasattr(other, 'value'):
+                return self.value == other.value
+            return False
+        
+        def __hash__(self):
+            return hash(self.value)
+    
+    @property 
+    def role_obj(self):
+        """Get role as object with .value property for backward compatibility"""
+        return self._StringEnumProxy(self.role) if isinstance(self.role, str) else self.role
+    
+    @property
+    def kyc_status_obj(self):
+        """Get kyc_status as object with .value property for backward compatibility"""
+        return self._StringEnumProxy(self.kyc_status) if isinstance(self.kyc_status, str) else self.kyc_status
 
 
 # ------- Follows -------
@@ -1622,10 +1822,20 @@ class Beat(db.Model):
 
 
 class OrderStatus(str, enum.Enum):
-    pending = "pending"
+    draft = "draft"
+    pending_payment = "pending_payment"
+    pending = "pending"  # legacy
+    partially_paid = "partially_paid"
     paid = "paid"
     failed = "failed"
     refunded = "refunded"
+    canceled = "canceled"
+
+
+class OrderType(str, enum.Enum):
+    booking = "booking"
+    beat_purchase = "beat_purchase"
+    other = "other"
 
 
 class Order(db.Model):
@@ -1655,6 +1865,172 @@ class Order(db.Model):
     seller = db.relationship("User", foreign_keys=[seller_id])
 
 
+# ------- Stripe Orders + Ledger (new payout system) -------
+class PaymentLedgerPhase(str, enum.Enum):
+    holding = "holding"
+    balance = "balance"
+    full = "full"
+
+
+class PaymentLedgerStatus(str, enum.Enum):
+    created = "created"
+    succeeded = "succeeded"
+    refunded = "refunded"
+    disputed = "disputed"
+    failed = "failed"
+
+
+class PaymentOrder(db.Model):
+    __tablename__ = "payment_order"
+    __table_args__ = (
+        db.Index("ix_payment_order_type_status", "order_type", "status"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    order_type = db.Column(db.Enum(OrderType), nullable=False, index=True)
+    status = db.Column(db.Enum(OrderStatus), nullable=False, default=OrderStatus.pending_payment, index=True)
+
+    client_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    provider_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True, index=True)
+    provider_stripe_acct_id = db.Column(db.String(255), nullable=True)
+
+    total_amount_cents = db.Column(db.Integer, nullable=False)
+    currency = db.Column(db.String(8), nullable=False, default="usd")
+
+    affiliate_id = db.Column(db.Integer, db.ForeignKey("affiliate.id"), nullable=True, index=True)
+    beat_id = db.Column(db.Integer, db.ForeignKey("beat.id"), nullable=True, index=True)
+    booking_id = db.Column(db.Integer, db.ForeignKey("booking.id"), nullable=True, index=True)
+
+    created_at = db.Column(db.DateTime, server_default=func.now())
+    updated_at = db.Column(db.DateTime, server_default=func.now(), onupdate=func.now())
+
+    client = db.relationship("User", foreign_keys=[client_user_id], backref=db.backref("payment_orders", lazy="dynamic"))
+    provider = db.relationship("User", foreign_keys=[provider_user_id])
+    affiliate = db.relationship("Affiliate", foreign_keys=[affiliate_id])
+    beat = db.relationship("Beat")
+    booking = db.relationship("Booking")
+
+    @property
+    def amount_cents(self) -> int:
+        return int(self.total_amount_cents or 0)
+
+    @property
+    def total_cents(self) -> int:
+        return int(self.total_amount_cents or 0)
+
+    @property
+    def platform_fee_cents(self) -> int:
+        if self.order_type == OrderType.beat_purchase:
+            return calc_beat_platform_fee_cents(int(self.total_amount_cents or 0))
+        return 0
+
+
+class PaymentLedger(db.Model):
+    __tablename__ = "payment_ledger"
+    __table_args__ = (
+        db.Index("ix_payment_ledger_order_phase", "order_id", "phase"),
+        db.Index("ix_payment_ledger_status", "status"),
+        db.Index("ix_payment_ledger_created_at", "created_at"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    order_id = db.Column(db.Integer, db.ForeignKey("payment_order.id"), nullable=False, index=True)
+    phase = db.Column(db.Enum(PaymentLedgerPhase), nullable=False)
+
+    gross_amount_cents = db.Column(db.Integer, nullable=False)
+    platform_fee_collected_cents = db.Column(db.Integer, nullable=False, default=0)
+    provider_amount_routed_cents = db.Column(db.Integer, nullable=False, default=0)
+
+    stripe_checkout_session_id = db.Column(db.String(255), nullable=True, unique=True, index=True)
+    stripe_payment_intent_id = db.Column(db.String(255), nullable=True, unique=True, index=True)
+    stripe_charge_id = db.Column(db.String(255), nullable=True, unique=True, index=True)
+
+    status = db.Column(db.Enum(PaymentLedgerStatus), nullable=False, default=PaymentLedgerStatus.created, index=True)
+    created_at = db.Column(db.DateTime, server_default=func.now())
+
+    order = db.relationship("PaymentOrder", backref=db.backref("ledger_entries", lazy="dynamic"))
+
+
+class ProviderStripeAccount(db.Model):
+    __tablename__ = "provider_stripe_account"
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, unique=True, index=True)
+    stripe_account_id = db.Column(db.String(255), nullable=True, unique=True, index=True)
+    charges_enabled = db.Column(db.Boolean, nullable=False, default=False)
+    payouts_enabled = db.Column(db.Boolean, nullable=False, default=False)
+    details_submitted = db.Column(db.Boolean, nullable=False, default=False)
+    updated_at = db.Column(db.DateTime, server_default=func.now(), onupdate=func.now())
+
+    user = db.relationship("User", foreign_keys=[user_id], backref=db.backref("stripe_account", uselist=False))
+
+
+class AffiliateStatus(str, enum.Enum):
+    pending = "pending"
+    active = "active"
+    suspended = "suspended"
+
+
+class Affiliate(db.Model):
+    __tablename__ = "affiliate"
+    id = db.Column(db.Integer, primary_key=True)
+    code = db.Column(db.String(40), nullable=False, unique=True, index=True)
+    display_name = db.Column(db.String(160), nullable=False)
+    address_line1 = db.Column(db.String(255), nullable=True)
+    address_line2 = db.Column(db.String(255), nullable=True)
+    city = db.Column(db.String(120), nullable=True)
+    state = db.Column(db.String(120), nullable=True)
+    postal_code = db.Column(db.String(20), nullable=True)
+    country = db.Column(db.String(2), nullable=True)
+    status = db.Column(db.Enum(AffiliateStatus), nullable=False, default=AffiliateStatus.pending)
+    stripe_account_id = db.Column(db.String(255), nullable=True)
+    commission_pct = db.Column(db.Numeric(6, 4), nullable=True)
+    created_at = db.Column(db.DateTime, server_default=func.now())
+
+
+class AffiliateInvite(db.Model):
+    __tablename__ = "affiliate_invite"
+    id = db.Column(db.Integer, primary_key=True)
+    token = db.Column(db.String(120), nullable=False, unique=True, index=True)
+    expires_at = db.Column(db.DateTime, nullable=True)
+    used_at = db.Column(db.DateTime, nullable=True)
+    created_by_admin_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    created_at = db.Column(db.DateTime, server_default=func.now())
+
+    admin = db.relationship("User", foreign_keys=[created_by_admin_user_id])
+
+
+class AffiliateEarningStatus(str, enum.Enum):
+    pending = "pending"
+    available = "available"
+    paid = "paid"
+    reversed = "reversed"
+
+
+class AffiliateEarning(db.Model):
+    __tablename__ = "affiliate_earning"
+    __table_args__ = (
+        UniqueConstraint("affiliate_id", "payment_ledger_id", name="uq_affiliate_earning_affiliate_ledger"),
+        db.Index("ix_affiliate_earning_status", "status"),
+        db.Index("ix_affiliate_earning_available_at", "available_at"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    affiliate_id = db.Column(db.Integer, db.ForeignKey("affiliate.id"), nullable=False, index=True)
+    order_id = db.Column(db.Integer, db.ForeignKey("payment_order.id"), nullable=False, index=True)
+    payment_ledger_id = db.Column(db.Integer, db.ForeignKey("payment_ledger.id"), nullable=False, index=True)
+
+    base_platform_fee_cents = db.Column(db.Integer, nullable=False)
+    commission_cents = db.Column(db.Integer, nullable=False)
+
+    status = db.Column(db.Enum(AffiliateEarningStatus), nullable=False, default=AffiliateEarningStatus.pending)
+    available_at = db.Column(db.DateTime, nullable=True)
+    created_at = db.Column(db.DateTime, server_default=func.now())
+
+    affiliate = db.relationship("Affiliate", foreign_keys=[affiliate_id], backref=db.backref("earnings", lazy="dynamic"))
+    order = db.relationship("PaymentOrder", foreign_keys=[order_id])
+    ledger = db.relationship("PaymentLedger", foreign_keys=[payment_ledger_id])
+
+
 # ------- Transaction Idempotency -------
 class TransactionIdempotency(db.Model):
     __tablename__ = "transaction_idempotency"
@@ -1673,15 +2049,26 @@ class Notification(db.Model):
     __tablename__ = "notification"
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    actor_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True, index=True)
     kind = db.Column(db.String(50), nullable=False, default="info")  # info, success, warning, error
     title = db.Column(db.String(160), nullable=False)
     body = db.Column(db.Text, nullable=True)
     url = db.Column(db.String(400), nullable=True)  # where to send user when clicked
+    event_key = db.Column(db.String(120), nullable=True, index=True)
     is_read = db.Column(db.Boolean, nullable=False, default=False, index=True)
     created_at = db.Column(db.DateTime, server_default=func.now(), index=True)
     emailed_at = db.Column(db.DateTime, nullable=True)
 
-    user = db.relationship("User", backref=db.backref("notifications", lazy="dynamic"))
+    user = db.relationship(
+        "User",
+        foreign_keys=[user_id],
+        backref=db.backref("notifications", lazy="dynamic"),
+    )
+    actor = db.relationship(
+        "User",
+        foreign_keys=[actor_user_id],
+        backref=db.backref("notifications_sent", lazy="dynamic"),
+    )
 
 
 # ------- Marketplace Activity Broadcast (event-driven) -------
@@ -1739,17 +2126,27 @@ class NotificationRecipient(db.Model):
 # Standard Booking status values (string constants for consistency)
 BOOKING_STATUS_PENDING = "pending"
 BOOKING_STATUS_ACCEPTED = "accepted"
+BOOKING_STATUS_QUOTED = "quoted"
 BOOKING_STATUS_CONFIRMED = "confirmed"
+BOOKING_STATUS_HOLD_PAID = "hold_paid"
+BOOKING_STATUS_PAID = "paid"
 BOOKING_STATUS_COMPLETED = "completed"
 BOOKING_STATUS_CANCELLED = "cancelled"
 BOOKING_STATUS_DECLINED = "declined"
 BOOKING_STATUS_DISPUTED = "disputed"
 
+# Dispute window (days after event time)
+DISPUTE_OPEN_WINDOW_DAYS = 30
+DISPUTE_STATUSES = {"open", "under_review", "resolved", "closed"}
+
 # Valid booking statuses set
 VALID_BOOKING_STATUSES = {
     BOOKING_STATUS_PENDING,
     BOOKING_STATUS_ACCEPTED,
+    BOOKING_STATUS_QUOTED,
     BOOKING_STATUS_CONFIRMED,
+    BOOKING_STATUS_HOLD_PAID,
+    BOOKING_STATUS_PAID,
     BOOKING_STATUS_COMPLETED,
     BOOKING_STATUS_CANCELLED,
     BOOKING_STATUS_DECLINED,
@@ -1763,7 +2160,7 @@ class Booking(db.Model):
     provider_id = db.Column("artist_id", db.Integer, db.ForeignKey("user.id"), nullable=False)
     client_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
 
-    provider_role = db.Column(db.Enum(RoleEnum), nullable=False)
+    provider_role = db.Column(db.String(40), nullable=False)  # String for flexibility
 
     event_title = db.Column(db.String(160), nullable=False)
     event_datetime = db.Column(db.DateTime, nullable=False)
@@ -1771,6 +2168,14 @@ class Booking(db.Model):
     location_text = db.Column(db.String(255), nullable=True)
 
     total_cents = db.Column(db.Integer, nullable=True)
+    quoted_total_cents = db.Column(db.Integer, nullable=True)
+    quote_hourly_rate_cents = db.Column(db.Integer, nullable=True)
+    quote_billable_minutes = db.Column(db.Integer, nullable=True)
+    quote_calculation_text = db.Column(db.Text, nullable=True)
+    quote_breakdown_text = db.Column(db.Text, nullable=True)
+    deposit_base_cents = db.Column(db.Integer, nullable=True)
+    beatfund_fee_total_cents = db.Column(db.Integer, nullable=True)
+    beatfund_fee_collected_cents = db.Column(db.Integer, nullable=False, default=0)
     status = db.Column(db.String(32), nullable=False, default=BOOKING_STATUS_PENDING)
 
     notes_from_client = db.Column(db.Text, nullable=True)
@@ -1803,6 +2208,57 @@ class BookingDispute(db.Model):
     booking = db.relationship("Booking", backref=db.backref("disputes", lazy="dynamic"))
     opened_by = db.relationship("User", foreign_keys=[opened_by_id])
 
+
+# ------- Booking Dispute Messages -------
+class BookingDisputeMessage(db.Model):
+    __tablename__ = "booking_dispute_message"
+    id = db.Column(db.Integer, primary_key=True)
+    dispute_id = db.Column(db.Integer, db.ForeignKey("booking_dispute.id"), nullable=False, index=True)
+    author_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    body = db.Column(db.Text, nullable=False)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, index=True)
+
+    dispute = db.relationship("BookingDispute", backref=db.backref("messages", lazy="dynamic"))
+    author = db.relationship("User", foreign_keys=[author_user_id])
+
+
+# ------- Provider Reviews -------
+class ReviewVisibility(str, enum.Enum):
+    visible = "visible"
+    hidden = "hidden"
+
+
+class ProviderReview(db.Model):
+    __tablename__ = "provider_review"
+    __table_args__ = (
+        UniqueConstraint("booking_id", name="uq_provider_review_booking_id"),
+        db.Index("ix_provider_review_provider_user_id", "provider_user_id"),
+        db.Index("ix_provider_review_reviewer_user_id", "reviewer_user_id"),
+        db.Index("ix_provider_review_status", "status"),
+        db.Index("ix_provider_review_created_at", "created_at"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    booking_id = db.Column(db.Integer, db.ForeignKey("booking.id"), nullable=False, unique=True, index=True)
+    reviewer_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    provider_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+
+    rating = db.Column(db.Integer, nullable=False)
+    title = db.Column(db.String(160), nullable=True)
+    body = db.Column(db.Text, nullable=True)
+    status = db.Column(db.Enum(ReviewVisibility), nullable=False, default=ReviewVisibility.visible, index=True)
+    reported_count = db.Column(db.Integer, nullable=False, default=0)
+
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, index=True)
+    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    booking = db.relationship("Booking", foreign_keys=[booking_id])
+    reviewer = db.relationship("User", foreign_keys=[reviewer_user_id])
+    provider = db.relationship("User", foreign_keys=[provider_user_id])
+
+
+# Expose review visibility to templates
+app.jinja_env.globals["ReviewVisibility"] = ReviewVisibility
 
 # =========================================================
 # Booking-Gated Internal Messenger (booking-scoped)
@@ -1896,6 +2352,7 @@ class MessageModerationLog(db.Model):
 class BookingStatus(str, enum.Enum):
     pending = "pending"
     accepted = "accepted"
+    confirmed = "confirmed"
     declined = "declined"
     cancelled = "cancelled"
 
@@ -1910,6 +2367,7 @@ class BookingRequest(db.Model):
 
     message = db.Column(db.Text, nullable=True)
     preferred_time = db.Column(db.String(120), nullable=False)
+    duration_minutes = db.Column(db.Integer, nullable=True)
 
     status = db.Column(db.Enum(BookingStatus), nullable=False, default=BookingStatus.pending, index=True)
     created_at = db.Column(db.DateTime, server_default=func.now(), index=True)
@@ -1970,11 +2428,20 @@ class PaymentStatus(str, enum.Enum):
     succeeded = "succeeded"
     failed = "failed"
     cancelled = "cancelled"
+    partially_refunded = "partially_refunded"
+    refunded = "refunded"
 
 
 class PaymentPurpose(str, enum.Enum):
     bookme_hold = "bookme_hold"
     beat_purchase = "beat_purchase"
+    booking_deposit = "booking_deposit"
+    booking_balance = "booking_balance"
+
+
+class PaymentKind(str, enum.Enum):
+    deposit = "deposit"
+    balance = "balance"
 
 
 class Payment(db.Model):
@@ -1983,15 +2450,29 @@ class Payment(db.Model):
     purpose = db.Column(db.Enum(PaymentPurpose), nullable=False)
     processor = db.Column(db.Enum(PaymentProcessor), nullable=False, default=PaymentProcessor.wallet)
     status = db.Column(db.Enum(PaymentStatus), nullable=False, default=PaymentStatus.created)
+    kind = db.Column(db.Enum(PaymentKind), nullable=True)
 
     amount_cents = db.Column(db.Integer, nullable=False)
     currency = db.Column(db.String(8), nullable=False, default="usd")
+
+    base_amount_cents = db.Column(db.Integer, nullable=True)
+    beatfund_fee_cents = db.Column(db.Integer, nullable=True)
+    processing_fee_cents = db.Column(db.Integer, nullable=True)
+    total_paid_cents = db.Column(db.Integer, nullable=True)
+    refunded_base_cents = db.Column(db.Integer, nullable=False, default=0)
+    nonrefundable_processing_kept_cents = db.Column(db.Integer, nullable=False, default=0)
+    nonrefundable_beatfund_kept_cents = db.Column(db.Integer, nullable=False, default=0)
 
     idempotency_key = db.Column(db.String(120), nullable=False, unique=True)
     external_id = db.Column(db.String(120), nullable=True, unique=True)
 
     booking_request_id = db.Column(db.Integer, db.ForeignKey("booking_request.id"), nullable=True, unique=True)
     booking_request = db.relationship("BookingRequest", foreign_keys=[booking_request_id])
+    booking_id = db.Column(db.Integer, db.ForeignKey("booking.id"), nullable=True, index=True)
+    booking = db.relationship("Booking", foreign_keys=[booking_id])
+
+    stripe_payment_intent_id = db.Column(db.String(255), nullable=True, index=True)
+    stripe_charge_id = db.Column(db.String(255), nullable=True, index=True)
 
     created_at = db.Column(db.DateTime, server_default=func.now())
     updated_at = db.Column(db.DateTime, server_default=func.now(), onupdate=func.now())
@@ -2149,6 +2630,56 @@ class StudioAvailability(db.Model):
     updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
     
     studio = db.relationship("User", foreign_keys=[studio_id], backref=db.backref("availability_slots", lazy="dynamic"))
+
+
+# ------- Provider Availability (all roles) -------
+class ProviderSettings(db.Model):
+    __tablename__ = "provider_settings"
+    id = db.Column(db.Integer, primary_key=True)
+    provider_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, unique=True, index=True)
+
+    accepting_new_requests = db.Column(db.Boolean, nullable=False, default=True)
+    onsite = db.Column(db.Boolean, nullable=False, default=True)
+    remote = db.Column(db.Boolean, nullable=False, default=True)
+    travel_radius_miles = db.Column(db.Integer, nullable=True)
+    base_location = db.Column(db.String(255), nullable=True)
+    tz = db.Column(db.String(64), nullable=False, default="UTC")
+
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    provider = db.relationship("User", foreign_keys=[provider_user_id])
+
+
+class ProviderAvailability(db.Model):
+    __tablename__ = "provider_availability"
+    id = db.Column(db.Integer, primary_key=True)
+    provider_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    day_of_week = db.Column(db.Integer, nullable=False, index=True)  # 0=Mon .. 6=Sun
+    start_time = db.Column(db.Time, nullable=False)
+    end_time = db.Column(db.Time, nullable=False)
+    tz = db.Column(db.String(64), nullable=False, default="UTC")
+    is_active = db.Column(db.Boolean, nullable=False, default=True)
+
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    provider = db.relationship("User", foreign_keys=[provider_user_id])
+
+
+class ProviderAvailabilityException(db.Model):
+    __tablename__ = "provider_availability_exception"
+    id = db.Column(db.Integer, primary_key=True)
+    provider_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    date = db.Column(db.Date, nullable=False, index=True)
+    start_time = db.Column(db.Time, nullable=True)
+    end_time = db.Column(db.Time, nullable=True)
+    is_unavailable = db.Column(db.Boolean, nullable=False, default=True)
+
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    provider = db.relationship("User", foreign_keys=[provider_user_id])
 
 
 # ------- Audit Log -------
@@ -2387,7 +2918,7 @@ def audit_log_event(
     actor_id = getattr(actor_user, "id", None) if actor_user else None
     actor_role = None
     try:
-        actor_role = actor_user.role.value if actor_user and getattr(actor_user, "role", None) else ("system" if actor_user is None else None)
+        actor_role = actor_user.role if actor_user and getattr(actor_user, "role", None) else ("system" if actor_user is None else None)
     except Exception:
         actor_role = "system" if actor_user is None else None
 
@@ -2473,6 +3004,18 @@ class SupportTicketComment(db.Model):
 
     ticket = db.relationship("SupportTicket", backref=db.backref("comments", lazy="dynamic"))
     admin = db.relationship("User")
+
+
+class SupportTicketMessage(db.Model):
+    __tablename__ = "support_ticket_message"
+    id = db.Column(db.Integer, primary_key=True)
+    ticket_id = db.Column(db.Integer, db.ForeignKey("support_ticket.id"), nullable=False, index=True)
+    author_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    body = db.Column(db.Text, nullable=False)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, index=True)
+
+    ticket = db.relationship("SupportTicket", backref=db.backref("messages", lazy="dynamic"))
+    author = db.relationship("User", foreign_keys=[author_user_id])
 
 
 app.jinja_env.globals["TicketStatus"] = TicketStatus
@@ -2771,6 +3314,119 @@ class WaitlistEntry(db.Model):
     created_at = db.Column(db.DateTime, server_default=func.now(), nullable=False, index=True)
 
 
+# =========================================================
+# One-time DB Bootstrap (AFTER all models are defined)
+# =========================================================
+# This must run AFTER all model classes are defined so they're in db.metadata
+
+# Clean up missing avatar paths on startup (handles file loss after deploys)
+def _cleanup_missing_avatars():
+    """Remove avatar_path from database if files don't exist (e.g., after deploy with local storage)"""
+    if STORAGE_BACKEND != "local":
+        return  # Only relevant for local storage
+    
+    try:
+        with app.app_context():
+            missing_count = 0
+            users_with_avatars = User.query.filter(User.avatar_path != None).all()
+            for user in users_with_avatars:
+                avatar_path = os.path.join(app.config["UPLOAD_FOLDER"], user.avatar_path)
+                if not os.path.exists(avatar_path):
+                    user.avatar_path = None
+                    missing_count += 1
+            
+            if missing_count > 0:
+                db.session.commit()
+                app.logger.info(f"Cleaned up {missing_count} missing avatar paths on startup")
+    except Exception as e:
+        app.logger.warning(f"Could not cleanup missing avatars: {e}")
+
+
+def _migrate_role_enum_to_string():
+    """Migrate role and kyc_status columns from ENUM to STRING if PostgreSQL."""
+    try:
+        with app.app_context():
+            is_postgres = db.engine.url.get_backend_name() == "postgresql"
+            if not is_postgres:
+                return
+
+            with db.engine.begin() as conn:
+                # Check if we need to migrate (role column is still ENUM)
+                result = conn.execute(text("""
+                    SELECT data_type, udt_name
+                    FROM information_schema.columns 
+                    WHERE table_name = 'user' AND column_name = 'role'
+                """))
+                row = result.first()
+                if row:
+                    data_type = str(row[0] or "").lower()
+                    udt_name = str(row[1] or "").lower()
+                    is_enum = (data_type == "user-defined") or ("enum" in data_type) or ("roleenum" in udt_name)
+                    if is_enum:
+                        app.logger.info(
+                            f"Migrating role column from ENUM to VARCHAR (data_type={data_type}, udt_name={udt_name})..."
+                        )
+                        # Convert ENUM to varchar explicitly via USING to avoid datatype mismatch
+                        conn.execute(text(
+                            "ALTER TABLE \"user\" ALTER COLUMN role TYPE varchar(40) USING role::text"
+                        ))
+                        conn.execute(text(
+                            "ALTER TABLE booking ALTER COLUMN provider_role TYPE varchar(40) USING provider_role::text"
+                        ))
+                        conn.execute(text(
+                            "ALTER TABLE \"user\" ALTER COLUMN kyc_status TYPE varchar(40) USING kyc_status::text"
+                        ))
+                        app.logger.info("Successfully migrated role columns to VARCHAR")
+    except Exception as e:
+        app.logger.warning(f"Could not migrate ENUM to VARCHAR: {type(e).__name__}: {str(e)}")
+
+_cleanup_missing_avatars()
+_migrate_role_enum_to_string()
+
+if os.getenv("BOOTSTRAP_DB") == "1":
+    with app.app_context():
+        try:
+            # Use engine.begin() which properly supports context manager
+            # This ensures DDL statements are committed
+            with db.engine.begin() as conn:
+                db.metadata.create_all(bind=conn)
+                app.logger.info("All table DDL statements executed")
+            
+            print("[OK] BOOTSTRAP_DB=1 -> db.create_all() completed")
+            app.logger.info("Database tables creation attempted")
+            
+            # Verification: count tables created
+            from time import sleep as time_sleep
+            time_sleep(0.5)
+            
+            try:
+                with db.engine.begin() as conn:
+                    result = conn.execute(text("""
+                        SELECT COUNT(*) as table_count
+                        FROM information_schema.tables 
+                        WHERE table_schema = 'public'
+                    """))
+                    count = result.scalar()
+                    app.logger.info(f"✓ Database has {count} tables created")
+                    
+                    if count > 0:
+                        # List the tables
+                        result2 = conn.execute(text("""
+                            SELECT string_agg(table_name, ', ' ORDER BY table_name)
+                            FROM information_schema.tables 
+                            WHERE table_schema = 'public'
+                        """))
+                        tables = result2.scalar()
+                        app.logger.info(f"Tables: {tables}")
+                    
+            except Exception as verify_err:
+                app.logger.warning(f"Could not verify tables: {verify_err}")
+                
+        except Exception as bootstrap_err:
+            print(f"[ERROR] BOOTSTRAP_DB=1 failed: {bootstrap_err}")
+            app.logger.error(f"Database bootstrap failed: {bootstrap_err}", exc_info=True)
+
+
 # Roles that can use project vaults
 VAULT_ELIGIBLE_ROLES: set[RoleEnum] = {
     RoleEnum.artist,
@@ -2806,7 +3462,7 @@ def load_user(user_id):
 
 
 def is_password_expired(user: User) -> bool:
-    if user.role != RoleEnum.admin:
+    if user.role != "admin":
         return False
     if not user.password_changed_at:
         return True
@@ -2818,7 +3474,7 @@ def role_required(*roles):
         @wraps(f)
         @login_required
         def wrapper(*args, **kwargs):
-            if current_user.role.value not in roles:
+            if current_user.role not in roles:
                 flash("You don't have access to that page.", "error")
                 return redirect(url_for("home"))
             return f(*args, **kwargs)
@@ -2837,11 +3493,30 @@ def superadmin_required(f):
     return wrapper
 
 
-def require_kyc_approved():
-    if current_user.kyc_status != KYCStatus.approved:
-        flash("Financial features require approved KYC.", "error")
+def _is_kyc_verified(user: User | None) -> bool:
+    if not user:
         return False
-    return True
+    try:
+        return str(getattr(user, "kyc_status", "")).lower() == KYCStatus.approved.value
+    except Exception:
+        return False
+
+
+def require_kyc_approved(action: str = "payout") -> bool:
+    """
+    Enforce KYC only when configured and only for provider payout actions.
+    action: "payout" enforces for service providers; any other value is non-blocking.
+    """
+    if not KYC_ENFORCE:
+        return True
+    if not current_user.is_authenticated:
+        return False
+    if action == "payout" and not is_service_provider(current_user):
+        return True
+    if _is_kyc_verified(current_user):
+        return True
+    flash("Complete KYC to enable payouts and money-moving actions.", "warning")
+    return False
 
 
 def get_or_create_wallet(user_id: int, *, commit: bool = True, lock: bool = False) -> Wallet:
@@ -2915,27 +3590,13 @@ def clamp_cents(x: int, lo: int, hi: int) -> int:
 
 def calc_beat_platform_fee_cents(subtotal_cents: int) -> int:
     """
-    Calculate platform fee for beat purchase: 12% min $1.29 max $5.17
-    
-    Rules:
-    - If subtotal_cents <= 0: return 0
-    - fee = round(subtotal_cents * BEAT_FEE_RATE)
-    - fee = clamp(fee, BEAT_FEE_MIN_CENTS, BEAT_FEE_MAX_CENTS)
-    - Safety: fee cannot exceed subtotal_cents
+    Calculate platform fee for beat purchase (percentage of total).
     """
     if subtotal_cents <= 0:
         return 0
-    
-    # Calculate fee: 12% of subtotal, rounded
-    fee_cents = round(subtotal_cents * BEAT_FEE_RATE)
-    
-    # Apply min/max constraints
-    fee_cents = clamp_cents(fee_cents, BEAT_FEE_MIN_CENTS, BEAT_FEE_MAX_CENTS)
-    
-    # Safety check: fee cannot exceed subtotal
-    fee_cents = min(fee_cents, subtotal_cents)
-    
-    return fee_cents
+    fee = (Decimal(subtotal_cents) * STRIPE_PLATFORM_FEE_PCT).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+    fee_cents = int(fee)
+    return min(fee_cents, subtotal_cents)
 
 
 def calc_service_platform_fee_cents(subtotal_cents: int, provider_role: RoleEnum | str) -> int:
@@ -2970,6 +3631,50 @@ def calc_service_platform_fee_cents(subtotal_cents: int, provider_role: RoleEnum
     return fee_cents
 
 
+def calc_beatfund_fee_cents(service_cents: int) -> int:
+    """
+    BeatFund service fee percentage for bookings (hold fee handled separately).
+    """
+    if service_cents <= 0:
+        return 0
+    fee = (Decimal(service_cents) * STRIPE_PLATFORM_FEE_PCT).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+    fee_cents = int(fee)
+    fee_cents = min(fee_cents, service_cents)
+    return fee_cents
+
+
+def calc_beatfund_fee_total(service_total_cents: int) -> int:
+    """Booking BeatFund fee total: hold fee + percentage fee (capped to total)."""
+    if service_total_cents <= 0:
+        return 0
+    pct_fee_cents = calc_beatfund_fee_cents(service_total_cents)
+    total_fee = HOLD_FEE_CENTS + pct_fee_cents
+    return min(total_fee, service_total_cents)
+
+
+def calc_total_and_processing(base_cents: int, beatfund_fee_cents: int) -> tuple[int, int]:
+    """
+    Compute total charge and processing fee so that after Stripe fees:
+    base + beatfund_fee remain. Uses ceil on total.
+    """
+    if base_cents < 0 or beatfund_fee_cents < 0:
+        raise ValueError("Amounts must be non-negative")
+    gross = Decimal(base_cents + beatfund_fee_cents + STRIPE_PROC_FIXED_CENTS)
+    denom = Decimal("1") - STRIPE_PROC_RATE
+    if denom <= 0:
+        raise ValueError("Invalid Stripe processing rate")
+    total_cents = int((gross / denom).to_integral_value(rounding=ROUND_UP))
+    processing_cents = total_cents - (base_cents + beatfund_fee_cents)
+    return total_cents, processing_cents
+
+
+def allocate_fee_between_deposit_and_balance(beatfund_fee_total_cents: int) -> tuple[int, int]:
+    """Collect minimum fee on deposit, remainder on balance."""
+    fee_deposit = min(beatfund_fee_total_cents, BEATFUND_FEE_MIN_CENTS)
+    fee_balance = max(0, beatfund_fee_total_cents - fee_deposit)
+    return fee_deposit, fee_balance
+
+
 def estimate_processing_fee_cents(amount_cents: int, method: str = "card") -> int:
     """Estimate payment processing fee. Returns 0 for now since Stripe is not enabled yet."""
     return 0  # Stripe not enabled yet
@@ -2982,7 +3687,7 @@ def fee_breakdown_for_beat(subtotal_cents: int) -> dict:
     """
     platform_fee_cents = calc_beat_platform_fee_cents(subtotal_cents)
     processing_fee_cents = estimate_processing_fee_cents(subtotal_cents)
-    total_cents = subtotal_cents + platform_fee_cents + processing_fee_cents
+    total_cents = subtotal_cents
     
     return {
         "subtotal_cents": subtotal_cents,
@@ -2992,20 +3697,183 @@ def fee_breakdown_for_beat(subtotal_cents: int) -> dict:
     }
 
 
+def planned_platform_fee_cents(order_type: OrderType, total_cents: int) -> int:
+    """Compute total platform fee planned for an order (cap at total)."""
+    if total_cents <= 0:
+        return 0
+    pct_fee = calc_beatfund_fee_cents(total_cents)
+    if order_type == OrderType.booking:
+        return min(total_cents, HOLD_FEE_CENTS + pct_fee)
+    return min(total_cents, pct_fee)
+
+
+def ledger_sum_platform_fees(order_id: int) -> int:
+    """Sum platform fees collected so far for an order (succeeded only)."""
+    try:
+        rows = PaymentLedger.query.filter_by(
+            order_id=order_id,
+            status=PaymentLedgerStatus.succeeded,
+        ).all()
+        return sum(int(r.platform_fee_collected_cents or 0) for r in rows)
+    except (ProgrammingError, OperationalError):
+        db.session.rollback()
+        return 0
+    except Exception:
+        return 0
+
+
+def ledger_sum_gross(order_id: int, *, phase: PaymentLedgerPhase | None = None) -> int:
+    """Sum gross amounts for succeeded ledger rows (optionally by phase)."""
+    try:
+        q = PaymentLedger.query.filter_by(
+            order_id=order_id,
+            status=PaymentLedgerStatus.succeeded,
+        )
+        if phase is not None:
+            q = q.filter_by(phase=phase)
+        rows = q.all()
+        return sum(int(r.gross_amount_cents or 0) for r in rows)
+    except (ProgrammingError, OperationalError):
+        db.session.rollback()
+        return 0
+    except Exception:
+        return 0
+
+
+def fee_remaining_cents(order: PaymentOrder) -> int:
+    planned = planned_platform_fee_cents(order.order_type, int(order.total_amount_cents or 0))
+    collected = ledger_sum_platform_fees(order.id)
+    return max(0, planned - collected)
+
+
+def booking_hold_fee_effective(total_cents: int) -> int:
+    if total_cents <= 0:
+        return 0
+    return min(int(HOLD_FEE_CENTS), int(total_cents))
+
+
 def fee_breakdown_for_service(subtotal_cents: int, provider_role: RoleEnum | str) -> dict:
     """
     Calculate complete fee breakdown for service booking.
     Returns dict with: subtotal_cents, platform_fee_cents, processing_fee_cents, total_cents
     """
-    platform_fee_cents = calc_service_platform_fee_cents(subtotal_cents, provider_role)
-    processing_fee_cents = estimate_processing_fee_cents(subtotal_cents)
-    total_cents = subtotal_cents + platform_fee_cents + processing_fee_cents
-    
+    platform_fee_cents = calc_beatfund_fee_cents(subtotal_cents)
+    processing_fee_cents = 0
+    total_cents = subtotal_cents
     return {
         "subtotal_cents": subtotal_cents,
         "platform_fee_cents": platform_fee_cents,
         "processing_fee_cents": processing_fee_cents,
         "total_cents": total_cents,
+    }
+
+
+def _resolve_booking_fee_fields(booking: "Booking") -> tuple[dict, bool]:
+    """Return normalized fee context and whether booking fields were updated."""
+    changed = False
+    quoted_total_cents = booking.quoted_total_cents
+    if quoted_total_cents is None and booking.total_cents is not None:
+        quoted_total_cents = int(booking.total_cents)
+        booking.quoted_total_cents = quoted_total_cents
+        changed = True
+
+    deposit_base_cents = booking.deposit_base_cents
+    if deposit_base_cents is None:
+        deposit_base_cents = HOLD_FEE_CENTS
+        booking.deposit_base_cents = int(deposit_base_cents)
+        changed = True
+
+    beatfund_fee_total_cents = booking.beatfund_fee_total_cents
+    if beatfund_fee_total_cents is None and quoted_total_cents is not None:
+        beatfund_fee_total_cents = calc_beatfund_fee_total(int(quoted_total_cents))
+        booking.beatfund_fee_total_cents = int(beatfund_fee_total_cents)
+        changed = True
+
+    beatfund_fee_collected_cents = booking.beatfund_fee_collected_cents or 0
+    return (
+        {
+            "quoted_total_cents": quoted_total_cents,
+            "deposit_base_cents": deposit_base_cents,
+            "beatfund_fee_total_cents": beatfund_fee_total_cents,
+            "beatfund_fee_collected_cents": beatfund_fee_collected_cents,
+        },
+        changed,
+    )
+
+
+def compute_booking_payment_breakdown(
+    booking: "Booking",
+    kind: PaymentKind,
+    *,
+    base_paid_cents: int | None = None,
+    bf_paid_cents: int | None = None,
+) -> dict | None:
+    ctx, _ = _resolve_booking_fee_fields(booking)
+    quoted_total_cents = ctx["quoted_total_cents"]
+
+    deposit_base_cents = HOLD_FEE_CENTS
+
+    if kind == PaymentKind.deposit:
+        base_cents = deposit_base_cents
+        beatfund_fee_cents = 0
+        if base_cents <= 0:
+            return None
+        total_cents, processing_fee_cents = calc_total_and_processing(base_cents, beatfund_fee_cents)
+        return {
+            "base_cents": base_cents,
+            "beatfund_fee_cents": beatfund_fee_cents,
+            "processing_fee_cents": processing_fee_cents,
+            "total_cents": total_cents,
+            "quoted_total_cents": quoted_total_cents,
+            "deposit_base_cents": deposit_base_cents,
+            "beatfund_fee_total_cents": int(ctx.get("beatfund_fee_total_cents") or 0),
+            "beatfund_fee_collected_cents": int(ctx.get("beatfund_fee_collected_cents") or 0),
+        }
+
+    if quoted_total_cents is None or quoted_total_cents <= 0:
+        return None
+
+    beatfund_fee_total_cents = int(ctx.get("beatfund_fee_total_cents") or calc_beatfund_fee_total(int(quoted_total_cents)))
+    beatfund_fee_collected_cents = int(ctx.get("beatfund_fee_collected_cents") or 0)
+    if bf_paid_cents is not None:
+        beatfund_fee_collected_cents = max(0, int(bf_paid_cents))
+
+    paid_base = deposit_base_cents if base_paid_cents is None else max(0, int(base_paid_cents))
+    base_cents = max(0, int(quoted_total_cents) - paid_base)
+    beatfund_fee_cents = max(0, beatfund_fee_total_cents - beatfund_fee_collected_cents)
+
+    if base_cents <= 0 and beatfund_fee_cents <= 0:
+        return None
+
+    total_cents, processing_fee_cents = calc_total_and_processing(base_cents, beatfund_fee_cents)
+    return {
+        "base_cents": base_cents,
+        "beatfund_fee_cents": beatfund_fee_cents,
+        "processing_fee_cents": processing_fee_cents,
+        "total_cents": total_cents,
+        "quoted_total_cents": quoted_total_cents,
+        "deposit_base_cents": deposit_base_cents,
+        "beatfund_fee_total_cents": beatfund_fee_total_cents,
+        "beatfund_fee_collected_cents": beatfund_fee_collected_cents,
+    }
+
+
+def sum_successful_payments(booking: "Booking", booking_request: "BookingRequest" | None = None) -> dict:
+    """Sum successful payments for a booking (includes legacy booking_request payments)."""
+    filters = [Payment.status == PaymentStatus.succeeded]
+    if booking_request:
+        filters.append(or_(Payment.booking_id == booking.id, Payment.booking_request_id == booking_request.id))
+    else:
+        filters.append(Payment.booking_id == booking.id)
+
+    payments = Payment.query.filter(*filters).all()
+    base_paid = sum(int(p.base_amount_cents or 0) for p in payments)
+    bf_paid = sum(int(p.beatfund_fee_cents or 0) for p in payments)
+    total_paid = sum(int(p.total_paid_cents or p.amount_cents or 0) for p in payments)
+    return {
+        "base_paid_cents": base_paid,
+        "bf_paid_cents": bf_paid,
+        "total_paid_cents": total_paid,
     }
 
 
@@ -3030,6 +3898,7 @@ def get_platform_fee_wallet_user_id() -> Optional[int]:
 
 # Expose fee calculation functions to Jinja templates
 app.jinja_env.globals["calc_beat_platform_fee_cents"] = calc_beat_platform_fee_cents
+app.jinja_env.globals["calc_beatfund_fee_cents"] = calc_beatfund_fee_cents
 app.jinja_env.globals["format_cents_dollars"] = format_cents_dollars
 app.jinja_env.globals["cents_to_dollars"] = cents_to_dollars
 
@@ -3180,16 +4049,32 @@ def store_idempotency_result(key: str, scope: str, user_id: int, result: dict, c
 
 
 def _user_has_paid_for_beat(user_id: int, beat_id: int) -> bool:
-    return (
+    legacy = (
         db.session.query(Order.id)
         .filter_by(buyer_id=user_id, beat_id=beat_id, status=OrderStatus.paid)
         .first()
         is not None
     )
+    if legacy:
+        return True
+    try:
+        return (
+            PaymentOrder.query
+            .filter_by(
+                order_type=OrderType.beat_purchase,
+                client_user_id=user_id,
+                beat_id=beat_id,
+                status=OrderStatus.paid,
+            )
+            .first()
+            is not None
+        )
+    except Exception:
+        return False
 
 
 def _is_admin() -> bool:
-    return current_user.is_authenticated and current_user.role == RoleEnum.admin
+    return current_user.is_authenticated and current_user.role == "admin"
 
 
 def get_social_counts(user_id: int) -> tuple[int, int]:
@@ -3198,11 +4083,150 @@ def get_social_counts(user_id: int) -> tuple[int, int]:
     return followers_count, following_count
 
 
+DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+
+
+def get_provider_settings(user_id: int, *, create: bool = False) -> ProviderSettings | None:
+    try:
+        s = ProviderSettings.query.filter_by(provider_user_id=user_id).first()
+        if not s and create:
+            s = ProviderSettings(provider_user_id=user_id)
+            db.session.add(s)
+            db.session.commit()
+        return s
+    except Exception:
+        return None
+
+
+def get_provider_review_summary(provider_id: int, *, include_hidden: bool = False) -> dict:
+    try:
+        q = db.session.query(
+            func.avg(ProviderReview.rating),
+            func.count(ProviderReview.id),
+        ).filter(ProviderReview.provider_user_id == provider_id)
+        if not include_hidden:
+            q = q.filter(ProviderReview.status == ReviewVisibility.visible)
+        avg, count = q.first() or (None, 0)
+        avg_val = float(avg) if avg is not None else 0.0
+        return {"avg": round(avg_val, 2), "count": int(count or 0)}
+    except Exception:
+        return {"avg": 0.0, "count": 0}
+
+
+def _parse_preferred_datetime(preferred_time: str | None) -> datetime | None:
+    if not preferred_time:
+        return None
+    s = str(preferred_time).strip()
+    if not s:
+        return None
+    for fmt in ("%Y-%m-%d %H:%M", "%Y-%m-%d %I:%M %p", "%Y-%m-%dT%H:%M", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(s, fmt)
+        except Exception:
+            continue
+    return None
+
+
+def _time_window_contains(slot_start: time, slot_end: time, req_start: time, req_end: time) -> bool:
+    # Simple same-day containment (no overnight windows)
+    if slot_end <= slot_start:
+        return False
+    if req_end <= req_start:
+        return False
+    return (slot_start <= req_start) and (req_end <= slot_end)
+
+
+def get_provider_availability_summary(provider_id: int) -> tuple[list[ProviderAvailability], list[ProviderAvailabilityException]]:
+    slots = []
+    exceptions = []
+    try:
+        slots = (
+            ProviderAvailability.query
+            .filter_by(provider_user_id=provider_id, is_active=True)
+            .order_by(ProviderAvailability.day_of_week.asc(), ProviderAvailability.start_time.asc())
+            .all()
+        )
+        exceptions = (
+            ProviderAvailabilityException.query
+            .filter_by(provider_user_id=provider_id)
+            .order_by(ProviderAvailabilityException.date.desc())
+            .limit(20)
+            .all()
+        )
+    except Exception:
+        pass
+    return slots, exceptions
+
+
+def provider_is_available(provider_id: int, preferred_time: str, duration_minutes: int | None = None) -> tuple[bool, str]:
+    settings = get_provider_settings(provider_id, create=False)
+    if settings and not settings.accepting_new_requests:
+        return False, "This provider is not accepting new requests right now."
+
+    dt = _parse_preferred_datetime(preferred_time)
+    if not dt:
+        return False, "Please provide a valid date and time (YYYY-MM-DD HH:MM)."
+
+    duration = int(duration_minutes or 60)
+    if duration <= 0:
+        duration = 60
+
+    end_dt = dt + timedelta(minutes=duration)
+    if end_dt.date() != dt.date():
+        return False, "Requested time window crosses midnight. Please choose a same-day time slot."
+
+    req_start = dt.time()
+    req_end = end_dt.time()
+    day = dt.weekday()
+
+    # Check exceptions for that date first
+    exceptions = ProviderAvailabilityException.query.filter_by(
+        provider_user_id=provider_id,
+        date=dt.date(),
+    ).all()
+
+    for ex in exceptions:
+        ex_start = ex.start_time or time(0, 0)
+        ex_end = ex.end_time or time(23, 59)
+        if _time_window_contains(ex_start, ex_end, req_start, req_end):
+            if ex.is_unavailable:
+                return False, "This time is blocked by a provider exception."
+            # Explicitly available exception overrides weekly schedule
+            return True, ""
+
+    # Weekly slots
+    slots = ProviderAvailability.query.filter_by(
+        provider_user_id=provider_id,
+        day_of_week=day,
+        is_active=True,
+    ).all()
+
+    if not slots:
+        # Backward-compatible default: allow if no schedule is configured
+        return True, ""
+
+    for slot in slots:
+        if _time_window_contains(slot.start_time, slot.end_time, req_start, req_end):
+            return True, ""
+
+    return False, "Requested time is outside the provider's availability."
+
+
 @app.before_request
 def _load_my_social_counts():
-    if current_user.is_authenticated:
-        g.my_followers_count, g.my_following_count = get_social_counts(current_user.id)
-    else:
+    """Load social counts for current user, gracefully handle missing tables during bootstrap"""
+    try:
+        if current_user.is_authenticated:
+            try:
+                g.my_followers_count, g.my_following_count = get_social_counts(current_user.id)
+            except Exception as e:
+                # If table doesn't exist yet (during bootstrap), use defaults
+                app.logger.warning(f"Could not load social counts (table might not exist yet): {type(e).__name__}")
+                g.my_followers_count, g.my_following_count = 0, 0
+        else:
+            g.my_followers_count, g.my_following_count = 0, 0
+    except Exception as e:
+        app.logger.warning(f"Could not load social counts: {type(e).__name__}")
         g.my_followers_count, g.my_following_count = 0, 0
 
 
@@ -3211,6 +4235,23 @@ def inject_social_counts():
     return dict(
         my_followers_count=getattr(g, "my_followers_count", 0),
         my_following_count=getattr(g, "my_following_count", 0),
+    )
+
+
+@app.context_processor
+def inject_provider_review_summary():
+    summary = None
+    settings = None
+    try:
+        if current_user.is_authenticated and is_service_provider(current_user):
+            summary = get_provider_review_summary(current_user.id)
+            settings = get_provider_settings(current_user.id, create=False)
+    except Exception:
+        summary = None
+    return dict(
+        provider_rating_summary=summary,
+        provider_settings=settings,
+        DAY_NAMES=DAY_NAMES,
     )
 
 
@@ -3241,17 +4282,18 @@ def _ensure_sqlite_booking_request_booking_id():
     if not _sqlite_has_table("booking_request"):
         return
     cols = _sqlite_columns("booking_request")
-    if "booking_id" in cols:
-        return
-
-    db.session.execute(text("ALTER TABLE booking_request ADD COLUMN booking_id INTEGER"))
-    db.session.execute(text(
-        "CREATE UNIQUE INDEX IF NOT EXISTS uq_booking_request_booking_id ON booking_request (booking_id)"
-    ))
-    db.session.execute(text(
-        "CREATE INDEX IF NOT EXISTS ix_booking_request_booking_id ON booking_request (booking_id)"
-    ))
-    db.session.commit()
+    if "booking_id" not in cols:
+        db.session.execute(text("ALTER TABLE booking_request ADD COLUMN booking_id INTEGER"))
+        db.session.execute(text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_booking_request_booking_id ON booking_request (booking_id)"
+        ))
+        db.session.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_booking_request_booking_id ON booking_request (booking_id)"
+        ))
+        db.session.commit()
+    if "duration_minutes" not in cols:
+        db.session.execute(text("ALTER TABLE booking_request ADD COLUMN duration_minutes INTEGER"))
+        db.session.commit()
 
 
 def _ensure_sqlite_follow_table_name_and_indexes():
@@ -3288,10 +4330,12 @@ def _ensure_sqlite_notifications_table():
             CREATE TABLE notification (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER NOT NULL,
+                actor_user_id INTEGER,
                 kind VARCHAR(50) NOT NULL DEFAULT 'info',
                 title VARCHAR(160) NOT NULL,
                 body TEXT,
                 url VARCHAR(400),
+                event_key VARCHAR(120),
                 is_read BOOLEAN NOT NULL DEFAULT 0,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 emailed_at DATETIME,
@@ -3299,8 +4343,19 @@ def _ensure_sqlite_notifications_table():
             )
         """))
         db.session.execute(text("CREATE INDEX IF NOT EXISTS ix_notification_user_id ON notification (user_id)"))
+        db.session.execute(text("CREATE INDEX IF NOT EXISTS ix_notification_actor_user_id ON notification (actor_user_id)"))
+        db.session.execute(text("CREATE INDEX IF NOT EXISTS ix_notification_event_key ON notification (event_key)"))
         db.session.execute(text("CREATE INDEX IF NOT EXISTS ix_notification_is_read ON notification (is_read)"))
         db.session.execute(text("CREATE INDEX IF NOT EXISTS ix_notification_created_at ON notification (created_at)"))
+        db.session.commit()
+    else:
+        cols = _sqlite_columns("notification")
+        if "actor_user_id" not in cols:
+            db.session.execute(text("ALTER TABLE notification ADD COLUMN actor_user_id INTEGER"))
+        if "event_key" not in cols:
+            db.session.execute(text("ALTER TABLE notification ADD COLUMN event_key VARCHAR(120)"))
+        db.session.execute(text("CREATE INDEX IF NOT EXISTS ix_notification_actor_user_id ON notification (actor_user_id)"))
+        db.session.execute(text("CREATE INDEX IF NOT EXISTS ix_notification_event_key ON notification (event_key)"))
         db.session.commit()
     
     # Add email_notifications_enabled to user table if missing
@@ -3674,6 +4729,751 @@ def _ensure_sqlite_order_payment_columns():
         db.session.commit()
 
 
+def _ensure_sqlite_booking_payment_columns():
+    """Add booking/payment fee columns for new booking payments (SQLite only)."""
+    if db.engine.url.get_backend_name() != "sqlite":
+        return
+
+    # Ensure payment table exists
+    if not _sqlite_has_table("payment"):
+        try:
+            Payment.__table__.create(db.engine)
+        except Exception:
+            pass
+
+    if _sqlite_has_table("payment"):
+        cols = _sqlite_columns("payment")
+        if "booking_id" not in cols:
+            db.session.execute(text("ALTER TABLE payment ADD COLUMN booking_id INTEGER"))
+            db.session.execute(text("CREATE INDEX IF NOT EXISTS ix_payment_booking_id ON payment (booking_id)"))
+        if "kind" not in cols:
+            db.session.execute(text("ALTER TABLE payment ADD COLUMN kind VARCHAR(20)"))
+        if "base_amount_cents" not in cols:
+            db.session.execute(text("ALTER TABLE payment ADD COLUMN base_amount_cents INTEGER"))
+        if "beatfund_fee_cents" not in cols:
+            db.session.execute(text("ALTER TABLE payment ADD COLUMN beatfund_fee_cents INTEGER"))
+        if "processing_fee_cents" not in cols:
+            db.session.execute(text("ALTER TABLE payment ADD COLUMN processing_fee_cents INTEGER"))
+        if "total_paid_cents" not in cols:
+            db.session.execute(text("ALTER TABLE payment ADD COLUMN total_paid_cents INTEGER"))
+        if "refunded_base_cents" not in cols:
+            db.session.execute(text("ALTER TABLE payment ADD COLUMN refunded_base_cents INTEGER DEFAULT 0"))
+        if "nonrefundable_processing_kept_cents" not in cols:
+            db.session.execute(text("ALTER TABLE payment ADD COLUMN nonrefundable_processing_kept_cents INTEGER DEFAULT 0"))
+        if "nonrefundable_beatfund_kept_cents" not in cols:
+            db.session.execute(text("ALTER TABLE payment ADD COLUMN nonrefundable_beatfund_kept_cents INTEGER DEFAULT 0"))
+        if "stripe_payment_intent_id" not in cols:
+            db.session.execute(text("ALTER TABLE payment ADD COLUMN stripe_payment_intent_id VARCHAR(255)"))
+            db.session.execute(text("CREATE INDEX IF NOT EXISTS ix_payment_stripe_payment_intent_id ON payment (stripe_payment_intent_id)"))
+        if "stripe_charge_id" not in cols:
+            db.session.execute(text("ALTER TABLE payment ADD COLUMN stripe_charge_id VARCHAR(255)"))
+            db.session.execute(text("CREATE INDEX IF NOT EXISTS ix_payment_stripe_charge_id ON payment (stripe_charge_id)"))
+
+    if _sqlite_has_table("booking"):
+        cols = _sqlite_columns("booking")
+        if "quoted_total_cents" not in cols:
+            db.session.execute(text("ALTER TABLE booking ADD COLUMN quoted_total_cents INTEGER"))
+        if "quote_hourly_rate_cents" not in cols:
+            db.session.execute(text("ALTER TABLE booking ADD COLUMN quote_hourly_rate_cents INTEGER"))
+        if "quote_billable_minutes" not in cols:
+            db.session.execute(text("ALTER TABLE booking ADD COLUMN quote_billable_minutes INTEGER"))
+        if "quote_calculation_text" not in cols:
+            db.session.execute(text("ALTER TABLE booking ADD COLUMN quote_calculation_text TEXT"))
+        if "quote_breakdown_text" not in cols:
+            db.session.execute(text("ALTER TABLE booking ADD COLUMN quote_breakdown_text TEXT"))
+        if "deposit_base_cents" not in cols:
+            db.session.execute(text("ALTER TABLE booking ADD COLUMN deposit_base_cents INTEGER"))
+        if "beatfund_fee_total_cents" not in cols:
+            db.session.execute(text("ALTER TABLE booking ADD COLUMN beatfund_fee_total_cents INTEGER"))
+        if "beatfund_fee_collected_cents" not in cols:
+            db.session.execute(text("ALTER TABLE booking ADD COLUMN beatfund_fee_collected_cents INTEGER DEFAULT 0"))
+
+
+def _ensure_sqlite_payout_affiliate_tables():
+    """Create Stripe payout + affiliate tables if missing (SQLite only)."""
+    if db.engine.url.get_backend_name() != "sqlite":
+        return
+
+    # Affiliate
+    if not _sqlite_has_table("affiliate"):
+        db.session.execute(text("""
+            CREATE TABLE affiliate (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                code VARCHAR(40) NOT NULL UNIQUE,
+                display_name VARCHAR(160) NOT NULL,
+                address_line1 VARCHAR(255),
+                address_line2 VARCHAR(255),
+                city VARCHAR(120),
+                state VARCHAR(120),
+                postal_code VARCHAR(20),
+                country VARCHAR(2),
+                status VARCHAR(20) NOT NULL DEFAULT 'pending',
+                stripe_account_id VARCHAR(255),
+                commission_pct NUMERIC(6,4),
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """))
+        db.session.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_affiliate_code ON affiliate (code)"))
+        db.session.execute(text("CREATE INDEX IF NOT EXISTS ix_affiliate_status ON affiliate (status)"))
+        db.session.commit()
+
+    # Affiliate invite
+    if not _sqlite_has_table("affiliate_invite"):
+        db.session.execute(text("""
+            CREATE TABLE affiliate_invite (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                token VARCHAR(120) NOT NULL UNIQUE,
+                expires_at DATETIME,
+                used_at DATETIME,
+                created_by_admin_user_id INTEGER NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (created_by_admin_user_id) REFERENCES user (id)
+            )
+        """))
+        db.session.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_affiliate_invite_token ON affiliate_invite (token)"))
+        db.session.execute(text("CREATE INDEX IF NOT EXISTS ix_affiliate_invite_expires_at ON affiliate_invite (expires_at)"))
+        db.session.commit()
+
+    # Payment orders
+    if not _sqlite_has_table("payment_order"):
+        db.session.execute(text("""
+            CREATE TABLE payment_order (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                order_type VARCHAR(20) NOT NULL,
+                status VARCHAR(20) NOT NULL DEFAULT 'pending_payment',
+                client_user_id INTEGER NOT NULL,
+                provider_user_id INTEGER,
+                provider_stripe_acct_id VARCHAR(255),
+                total_amount_cents INTEGER NOT NULL,
+                currency VARCHAR(8) NOT NULL DEFAULT 'usd',
+                affiliate_id INTEGER,
+                beat_id INTEGER,
+                booking_id INTEGER,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (client_user_id) REFERENCES user (id),
+                FOREIGN KEY (provider_user_id) REFERENCES user (id),
+                FOREIGN KEY (affiliate_id) REFERENCES affiliate (id),
+                FOREIGN KEY (beat_id) REFERENCES beat (id),
+                FOREIGN KEY (booking_id) REFERENCES booking (id)
+            )
+        """))
+        db.session.execute(text("CREATE INDEX IF NOT EXISTS ix_payment_order_type ON payment_order (order_type)"))
+        db.session.execute(text("CREATE INDEX IF NOT EXISTS ix_payment_order_status ON payment_order (status)"))
+        db.session.execute(text("CREATE INDEX IF NOT EXISTS ix_payment_order_client_user_id ON payment_order (client_user_id)"))
+        db.session.execute(text("CREATE INDEX IF NOT EXISTS ix_payment_order_provider_user_id ON payment_order (provider_user_id)"))
+        db.session.execute(text("CREATE INDEX IF NOT EXISTS ix_payment_order_affiliate_id ON payment_order (affiliate_id)"))
+        db.session.execute(text("CREATE INDEX IF NOT EXISTS ix_payment_order_beat_id ON payment_order (beat_id)"))
+        db.session.execute(text("CREATE INDEX IF NOT EXISTS ix_payment_order_booking_id ON payment_order (booking_id)"))
+        db.session.commit()
+
+    # Payment ledger
+    if not _sqlite_has_table("payment_ledger"):
+        db.session.execute(text("""
+            CREATE TABLE payment_ledger (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                order_id INTEGER NOT NULL,
+                phase VARCHAR(20) NOT NULL,
+                gross_amount_cents INTEGER NOT NULL,
+                platform_fee_collected_cents INTEGER NOT NULL DEFAULT 0,
+                provider_amount_routed_cents INTEGER NOT NULL DEFAULT 0,
+                stripe_checkout_session_id VARCHAR(255) UNIQUE,
+                stripe_payment_intent_id VARCHAR(255) UNIQUE,
+                stripe_charge_id VARCHAR(255) UNIQUE,
+                status VARCHAR(20) NOT NULL DEFAULT 'created',
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (order_id) REFERENCES payment_order (id)
+            )
+        """))
+        db.session.execute(text("CREATE INDEX IF NOT EXISTS ix_payment_ledger_order_id ON payment_ledger (order_id)"))
+        db.session.execute(text("CREATE INDEX IF NOT EXISTS ix_payment_ledger_phase ON payment_ledger (phase)"))
+        db.session.execute(text("CREATE INDEX IF NOT EXISTS ix_payment_ledger_status ON payment_ledger (status)"))
+        db.session.execute(text("CREATE INDEX IF NOT EXISTS ix_payment_ledger_created_at ON payment_ledger (created_at)"))
+        db.session.commit()
+
+    # Provider Stripe account status
+    if not _sqlite_has_table("provider_stripe_account"):
+        db.session.execute(text("""
+            CREATE TABLE provider_stripe_account (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL UNIQUE,
+                stripe_account_id VARCHAR(255) UNIQUE,
+                charges_enabled BOOLEAN NOT NULL DEFAULT 0,
+                payouts_enabled BOOLEAN NOT NULL DEFAULT 0,
+                details_submitted BOOLEAN NOT NULL DEFAULT 0,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES user (id)
+            )
+        """))
+        db.session.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_provider_stripe_account_user_id ON provider_stripe_account (user_id)"))
+        db.session.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_provider_stripe_account_stripe_id ON provider_stripe_account (stripe_account_id)"))
+        db.session.commit()
+
+    # Affiliate earnings
+    if not _sqlite_has_table("affiliate_earning"):
+        db.session.execute(text("""
+            CREATE TABLE affiliate_earning (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                affiliate_id INTEGER NOT NULL,
+                order_id INTEGER NOT NULL,
+                payment_ledger_id INTEGER NOT NULL,
+                base_platform_fee_cents INTEGER NOT NULL,
+                commission_cents INTEGER NOT NULL,
+                status VARCHAR(20) NOT NULL DEFAULT 'pending',
+                available_at DATETIME,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (affiliate_id) REFERENCES affiliate (id),
+                FOREIGN KEY (order_id) REFERENCES payment_order (id),
+                FOREIGN KEY (payment_ledger_id) REFERENCES payment_ledger (id),
+                CONSTRAINT uq_affiliate_earning_affiliate_ledger UNIQUE (affiliate_id, payment_ledger_id)
+            )
+        """))
+        db.session.execute(text("CREATE INDEX IF NOT EXISTS ix_affiliate_earning_affiliate_id ON affiliate_earning (affiliate_id)"))
+        db.session.execute(text("CREATE INDEX IF NOT EXISTS ix_affiliate_earning_status ON affiliate_earning (status)"))
+        db.session.execute(text("CREATE INDEX IF NOT EXISTS ix_affiliate_earning_available_at ON affiliate_earning (available_at)"))
+        db.session.commit()
+
+    # Add referred_by_affiliate_id to user table if missing
+    if _sqlite_has_table("user"):
+        cols = _sqlite_columns("user")
+        if "referred_by_affiliate_id" not in cols:
+            db.session.execute(text("ALTER TABLE user ADD COLUMN referred_by_affiliate_id INTEGER"))
+            db.session.execute(text("CREATE INDEX IF NOT EXISTS ix_user_referred_by_affiliate_id ON user (referred_by_affiliate_id)"))
+            db.session.commit()
+
+
+def _ensure_sqlite_provider_review_table():
+    if db.engine.url.get_backend_name() != "sqlite":
+        return
+    if _sqlite_has_table("provider_review"):
+        return
+    db.session.execute(text("""
+        CREATE TABLE provider_review (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            booking_id INTEGER NOT NULL UNIQUE,
+            reviewer_user_id INTEGER NOT NULL,
+            provider_user_id INTEGER NOT NULL,
+            rating INTEGER NOT NULL,
+            title VARCHAR(160),
+            body TEXT,
+            status VARCHAR(20) NOT NULL DEFAULT 'visible',
+            reported_count INTEGER NOT NULL DEFAULT 0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
+            FOREIGN KEY (booking_id) REFERENCES booking (id),
+            FOREIGN KEY (reviewer_user_id) REFERENCES user (id),
+            FOREIGN KEY (provider_user_id) REFERENCES user (id)
+        )
+    """))
+    db.session.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_provider_review_booking_id ON provider_review (booking_id)"))
+    db.session.execute(text("CREATE INDEX IF NOT EXISTS ix_provider_review_provider_user_id ON provider_review (provider_user_id)"))
+    db.session.execute(text("CREATE INDEX IF NOT EXISTS ix_provider_review_reviewer_user_id ON provider_review (reviewer_user_id)"))
+    db.session.execute(text("CREATE INDEX IF NOT EXISTS ix_provider_review_status ON provider_review (status)"))
+    db.session.execute(text("CREATE INDEX IF NOT EXISTS ix_provider_review_created_at ON provider_review (created_at)"))
+    db.session.commit()
+
+
+def _ensure_sqlite_provider_availability_tables():
+    if db.engine.url.get_backend_name() != "sqlite":
+        return
+
+    if not _sqlite_has_table("provider_settings"):
+        db.session.execute(text("""
+            CREATE TABLE provider_settings (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                provider_user_id INTEGER NOT NULL UNIQUE,
+                accepting_new_requests BOOLEAN NOT NULL DEFAULT 1,
+                onsite BOOLEAN NOT NULL DEFAULT 1,
+                remote BOOLEAN NOT NULL DEFAULT 1,
+                travel_radius_miles INTEGER,
+                base_location VARCHAR(255),
+                tz VARCHAR(64) NOT NULL DEFAULT 'UTC',
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
+                FOREIGN KEY (provider_user_id) REFERENCES user (id)
+            )
+        """))
+        db.session.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_provider_settings_user_id ON provider_settings (provider_user_id)"))
+        db.session.execute(text("CREATE INDEX IF NOT EXISTS ix_provider_settings_user_id ON provider_settings (provider_user_id)"))
+        db.session.commit()
+
+    if not _sqlite_has_table("provider_availability"):
+        db.session.execute(text("""
+            CREATE TABLE provider_availability (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                provider_user_id INTEGER NOT NULL,
+                day_of_week INTEGER NOT NULL,
+                start_time TIME NOT NULL,
+                end_time TIME NOT NULL,
+                tz VARCHAR(64) NOT NULL DEFAULT 'UTC',
+                is_active BOOLEAN NOT NULL DEFAULT 1,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
+                FOREIGN KEY (provider_user_id) REFERENCES user (id)
+            )
+        """))
+        db.session.execute(text("CREATE INDEX IF NOT EXISTS ix_provider_availability_provider_user_id ON provider_availability (provider_user_id)"))
+        db.session.execute(text("CREATE INDEX IF NOT EXISTS ix_provider_availability_day_of_week ON provider_availability (day_of_week)"))
+        db.session.commit()
+
+    if not _sqlite_has_table("provider_availability_exception"):
+        db.session.execute(text("""
+            CREATE TABLE provider_availability_exception (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                provider_user_id INTEGER NOT NULL,
+                date DATE NOT NULL,
+                start_time TIME,
+                end_time TIME,
+                is_unavailable BOOLEAN NOT NULL DEFAULT 1,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
+                FOREIGN KEY (provider_user_id) REFERENCES user (id)
+            )
+        """))
+        db.session.execute(text("CREATE INDEX IF NOT EXISTS ix_provider_availability_exception_user_id ON provider_availability_exception (provider_user_id)"))
+        db.session.execute(text("CREATE INDEX IF NOT EXISTS ix_provider_availability_exception_date ON provider_availability_exception (date)"))
+        db.session.commit()
+
+
+def _ensure_sqlite_support_ticket_message_table():
+    if db.engine.url.get_backend_name() != "sqlite":
+        return
+    if _sqlite_has_table("support_ticket_message"):
+        return
+    db.session.execute(text("""
+        CREATE TABLE support_ticket_message (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ticket_id INTEGER NOT NULL,
+            author_user_id INTEGER NOT NULL,
+            body TEXT NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
+            FOREIGN KEY (ticket_id) REFERENCES support_ticket (id),
+            FOREIGN KEY (author_user_id) REFERENCES user (id)
+        )
+    """))
+    db.session.execute(text("CREATE INDEX IF NOT EXISTS ix_support_ticket_message_ticket_id ON support_ticket_message (ticket_id)"))
+    db.session.execute(text("CREATE INDEX IF NOT EXISTS ix_support_ticket_message_author_user_id ON support_ticket_message (author_user_id)"))
+    db.session.execute(text("CREATE INDEX IF NOT EXISTS ix_support_ticket_message_created_at ON support_ticket_message (created_at)"))
+    db.session.commit()
+
+
+def _ensure_sqlite_booking_dispute_message_table():
+    if db.engine.url.get_backend_name() != "sqlite":
+        return
+    if _sqlite_has_table("booking_dispute_message"):
+        return
+    db.session.execute(text("""
+        CREATE TABLE booking_dispute_message (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            dispute_id INTEGER NOT NULL,
+            author_user_id INTEGER NOT NULL,
+            body TEXT NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
+            FOREIGN KEY (dispute_id) REFERENCES booking_dispute (id),
+            FOREIGN KEY (author_user_id) REFERENCES user (id)
+        )
+    """))
+    db.session.execute(text("CREATE INDEX IF NOT EXISTS ix_booking_dispute_message_dispute_id ON booking_dispute_message (dispute_id)"))
+    db.session.execute(text("CREATE INDEX IF NOT EXISTS ix_booking_dispute_message_author_user_id ON booking_dispute_message (author_user_id)"))
+    db.session.execute(text("CREATE INDEX IF NOT EXISTS ix_booking_dispute_message_created_at ON booking_dispute_message (created_at)"))
+    db.session.commit()
+
+
+def _ensure_postgres_booking_fee_columns():
+    """Add booking fee columns in Postgres if missing (safe, idempotent)."""
+    try:
+        if db.engine.url.get_backend_name() != "postgresql":
+            return
+    except Exception:
+        return
+
+    try:
+        with db.engine.begin() as conn:
+            rows = conn.execute(text("""
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_schema = 'public' AND table_name = 'booking'
+            """)).fetchall()
+            existing = {r[0] for r in rows}
+            required = {
+                "quoted_total_cents",
+                "quote_hourly_rate_cents",
+                "quote_billable_minutes",
+                "quote_calculation_text",
+                "quote_breakdown_text",
+                "deposit_base_cents",
+                "beatfund_fee_total_cents",
+                "beatfund_fee_collected_cents",
+            }
+            missing = sorted(required - existing)
+
+            if missing:
+                conn.execute(text("""
+                    ALTER TABLE booking
+                      ADD COLUMN IF NOT EXISTS quoted_total_cents INTEGER,
+                      ADD COLUMN IF NOT EXISTS quote_hourly_rate_cents INTEGER,
+                      ADD COLUMN IF NOT EXISTS quote_billable_minutes INTEGER,
+                      ADD COLUMN IF NOT EXISTS quote_calculation_text TEXT,
+                      ADD COLUMN IF NOT EXISTS quote_breakdown_text TEXT,
+                      ADD COLUMN IF NOT EXISTS deposit_base_cents INTEGER,
+                      ADD COLUMN IF NOT EXISTS beatfund_fee_total_cents INTEGER,
+                      ADD COLUMN IF NOT EXISTS beatfund_fee_collected_cents INTEGER;
+                """))
+                app.logger.warning(f"[DB] Added booking fee columns: {', '.join(missing)}")
+            else:
+                app.logger.info("[DB] Booking fee columns already present")
+
+            needs_backfill = conn.execute(text("""
+                SELECT 1
+                FROM booking
+                WHERE deposit_base_cents IS NULL
+                   OR beatfund_fee_total_cents IS NULL
+                   OR beatfund_fee_collected_cents IS NULL
+                LIMIT 1
+            """)).first() is not None
+
+            if needs_backfill:
+                conn.execute(text("""
+                    UPDATE booking
+                    SET deposit_base_cents = COALESCE(deposit_base_cents, :deposit_default),
+                        beatfund_fee_total_cents = COALESCE(beatfund_fee_total_cents, 0),
+                        beatfund_fee_collected_cents = COALESCE(beatfund_fee_collected_cents, 0)
+                    WHERE deposit_base_cents IS NULL
+                       OR beatfund_fee_total_cents IS NULL
+                       OR beatfund_fee_collected_cents IS NULL
+                """), {"deposit_default": HOLD_FEE_CENTS})
+                app.logger.info("[DB] Backfilled booking fee columns (defaults applied)")
+    except Exception as e:
+        app.logger.warning(f"[DB] Postgres booking fee patch skipped: {type(e).__name__}: {e}")
+
+
+def _ensure_postgres_booking_request_duration_column():
+    """Add duration_minutes to booking_request in Postgres if missing (safe, idempotent)."""
+    try:
+        if db.engine.url.get_backend_name() != "postgresql":
+            return
+    except Exception:
+        return
+
+    try:
+        with db.engine.begin() as conn:
+            rows = conn.execute(text("""
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_schema = 'public' AND table_name = 'booking_request'
+            """)).fetchall()
+            existing = {r[0] for r in rows}
+            if "duration_minutes" not in existing:
+                conn.execute(text("""
+                    ALTER TABLE booking_request
+                      ADD COLUMN IF NOT EXISTS duration_minutes INTEGER;
+                """))
+                app.logger.warning("[DB] Added booking_request.duration_minutes column")
+            else:
+                app.logger.info("[DB] booking_request.duration_minutes already present")
+    except Exception as e:
+        app.logger.warning(f"[DB] Postgres booking_request patch skipped: {type(e).__name__}: {e}")
+
+
+def _ensure_postgres_payment_fee_columns():
+    """Add payment fee columns in Postgres if missing (safe, idempotent)."""
+    try:
+        if db.engine.url.get_backend_name() != "postgresql":
+            return
+    except Exception:
+        return
+
+    try:
+        with db.engine.begin() as conn:
+            rows = conn.execute(text("""
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_schema = 'public' AND table_name = 'payment'
+            """)).fetchall()
+            existing = {r[0] for r in rows}
+            required = {
+                "kind",
+                "base_amount_cents",
+                "beatfund_fee_cents",
+                "processing_fee_cents",
+                "total_paid_cents",
+                "refunded_base_cents",
+                "nonrefundable_processing_kept_cents",
+                "nonrefundable_beatfund_kept_cents",
+                "idempotency_key",
+                "external_id",
+                "booking_request_id",
+                "booking_id",
+                "stripe_payment_intent_id",
+                "stripe_charge_id",
+            }
+            missing = sorted(required - existing)
+
+            if missing:
+                conn.execute(text("""
+                    ALTER TABLE payment
+                      ADD COLUMN IF NOT EXISTS kind TEXT,
+                      ADD COLUMN IF NOT EXISTS base_amount_cents INTEGER,
+                      ADD COLUMN IF NOT EXISTS beatfund_fee_cents INTEGER,
+                      ADD COLUMN IF NOT EXISTS processing_fee_cents INTEGER,
+                      ADD COLUMN IF NOT EXISTS total_paid_cents INTEGER,
+                      ADD COLUMN IF NOT EXISTS refunded_base_cents INTEGER DEFAULT 0,
+                      ADD COLUMN IF NOT EXISTS nonrefundable_processing_kept_cents INTEGER DEFAULT 0,
+                      ADD COLUMN IF NOT EXISTS nonrefundable_beatfund_kept_cents INTEGER DEFAULT 0,
+                      ADD COLUMN IF NOT EXISTS idempotency_key TEXT,
+                      ADD COLUMN IF NOT EXISTS external_id TEXT,
+                      ADD COLUMN IF NOT EXISTS booking_request_id INTEGER,
+                      ADD COLUMN IF NOT EXISTS booking_id INTEGER,
+                      ADD COLUMN IF NOT EXISTS stripe_payment_intent_id TEXT,
+                      ADD COLUMN IF NOT EXISTS stripe_charge_id TEXT;
+                """))
+                app.logger.warning(f"[DB] Added payment fee columns: {', '.join(missing)}")
+                try:
+                    conn.execute(text("CREATE INDEX IF NOT EXISTS ix_payment_booking_id ON payment (booking_id)"))
+                except Exception:
+                    pass
+            else:
+                app.logger.info("[DB] Payment fee columns already present")
+
+            needs_backfill = conn.execute(text("""
+                SELECT 1
+                FROM payment
+                WHERE base_amount_cents IS NULL
+                   OR beatfund_fee_cents IS NULL
+                   OR processing_fee_cents IS NULL
+                   OR total_paid_cents IS NULL
+                   OR refunded_base_cents IS NULL
+                   OR nonrefundable_processing_kept_cents IS NULL
+                   OR nonrefundable_beatfund_kept_cents IS NULL
+                LIMIT 1
+            """)).first() is not None
+
+            if needs_backfill:
+                conn.execute(text("""
+                    UPDATE payment
+                    SET base_amount_cents = COALESCE(base_amount_cents, amount_cents),
+                        beatfund_fee_cents = COALESCE(beatfund_fee_cents, 0),
+                        processing_fee_cents = COALESCE(processing_fee_cents, 0),
+                        total_paid_cents = COALESCE(total_paid_cents, amount_cents),
+                        refunded_base_cents = COALESCE(refunded_base_cents, 0),
+                        nonrefundable_processing_kept_cents = COALESCE(nonrefundable_processing_kept_cents, processing_fee_cents),
+                        nonrefundable_beatfund_kept_cents = COALESCE(nonrefundable_beatfund_kept_cents, beatfund_fee_cents)
+                    WHERE base_amount_cents IS NULL
+                       OR beatfund_fee_cents IS NULL
+                       OR processing_fee_cents IS NULL
+                       OR total_paid_cents IS NULL
+                       OR refunded_base_cents IS NULL
+                       OR nonrefundable_processing_kept_cents IS NULL
+                       OR nonrefundable_beatfund_kept_cents IS NULL
+                """))
+                app.logger.info("[DB] Backfilled payment fee columns (defaults applied)")
+            try:
+                conn.execute(text("""
+                    UPDATE payment p
+                    SET booking_id = br.booking_id
+                    FROM booking_request br
+                    WHERE p.booking_request_id = br.id
+                      AND p.booking_id IS NULL
+                      AND br.booking_id IS NOT NULL
+                """))
+                app.logger.info("[DB] Backfilled payment.booking_id from booking_request")
+            except Exception:
+                pass
+    except Exception as e:
+        app.logger.warning(f"[DB] Postgres payment fee patch skipped: {type(e).__name__}: {e}")
+
+
+def _ensure_postgres_notification_columns():
+    """Add notification columns in Postgres if missing (safe, idempotent)."""
+    try:
+        if db.engine.url.get_backend_name() != "postgresql":
+            return
+    except Exception:
+        return
+
+    try:
+        with db.engine.begin() as conn:
+            rows = conn.execute(text("""
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_schema = 'public' AND table_name = 'notification'
+            """)).fetchall()
+            existing = {r[0] for r in rows}
+            missing = []
+            if "actor_user_id" not in existing:
+                missing.append("actor_user_id")
+            if "event_key" not in existing:
+                missing.append("event_key")
+
+            if missing:
+                conn.execute(text("""
+                    ALTER TABLE notification
+                      ADD COLUMN IF NOT EXISTS actor_user_id INTEGER,
+                      ADD COLUMN IF NOT EXISTS event_key TEXT;
+                """))
+                try:
+                    conn.execute(text("CREATE INDEX IF NOT EXISTS ix_notification_actor_user_id ON notification (actor_user_id)"))
+                except Exception:
+                    pass
+                try:
+                    conn.execute(text("CREATE INDEX IF NOT EXISTS ix_notification_event_key ON notification (event_key)"))
+                except Exception:
+                    pass
+                app.logger.warning(f"[DB] Added notification columns: {', '.join(missing)}")
+            else:
+                app.logger.info("[DB] Notification columns already present")
+    except Exception as e:
+        app.logger.warning(f"[DB] Postgres notification patch skipped: {type(e).__name__}: {e}")
+
+
+def _ensure_postgres_provider_review_table():
+    try:
+        if db.engine.url.get_backend_name() != "postgresql":
+            return
+    except Exception:
+        return
+    try:
+        with db.engine.begin() as conn:
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS provider_review (
+                    id SERIAL PRIMARY KEY,
+                    booking_id INTEGER NOT NULL UNIQUE,
+                    reviewer_user_id INTEGER NOT NULL,
+                    provider_user_id INTEGER NOT NULL,
+                    rating INTEGER NOT NULL,
+                    title VARCHAR(160),
+                    body TEXT,
+                    status VARCHAR(20) NOT NULL DEFAULT 'visible',
+                    reported_count INTEGER NOT NULL DEFAULT 0,
+                    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                    updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                    FOREIGN KEY (booking_id) REFERENCES booking (id),
+                    FOREIGN KEY (reviewer_user_id) REFERENCES "user" (id),
+                    FOREIGN KEY (provider_user_id) REFERENCES "user" (id)
+                )
+            """))
+            conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_provider_review_booking_id ON provider_review (booking_id)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_provider_review_provider_user_id ON provider_review (provider_user_id)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_provider_review_reviewer_user_id ON provider_review (reviewer_user_id)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_provider_review_status ON provider_review (status)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_provider_review_created_at ON provider_review (created_at)"))
+    except Exception as e:
+        app.logger.warning(f"[DB] Postgres provider_review patch skipped: {type(e).__name__}: {e}")
+
+
+def _ensure_postgres_provider_availability_tables():
+    try:
+        if db.engine.url.get_backend_name() != "postgresql":
+            return
+    except Exception:
+        return
+    try:
+        with db.engine.begin() as conn:
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS provider_settings (
+                    id SERIAL PRIMARY KEY,
+                    provider_user_id INTEGER NOT NULL UNIQUE,
+                    accepting_new_requests BOOLEAN NOT NULL DEFAULT TRUE,
+                    onsite BOOLEAN NOT NULL DEFAULT TRUE,
+                    remote BOOLEAN NOT NULL DEFAULT TRUE,
+                    travel_radius_miles INTEGER,
+                    base_location VARCHAR(255),
+                    tz VARCHAR(64) NOT NULL DEFAULT 'UTC',
+                    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                    updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                    FOREIGN KEY (provider_user_id) REFERENCES "user" (id)
+                )
+            """))
+            conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_provider_settings_user_id ON provider_settings (provider_user_id)"))
+
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS provider_availability (
+                    id SERIAL PRIMARY KEY,
+                    provider_user_id INTEGER NOT NULL,
+                    day_of_week INTEGER NOT NULL,
+                    start_time TIME NOT NULL,
+                    end_time TIME NOT NULL,
+                    tz VARCHAR(64) NOT NULL DEFAULT 'UTC',
+                    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+                    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                    updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                    FOREIGN KEY (provider_user_id) REFERENCES "user" (id)
+                )
+            """))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_provider_availability_provider_user_id ON provider_availability (provider_user_id)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_provider_availability_day_of_week ON provider_availability (day_of_week)"))
+
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS provider_availability_exception (
+                    id SERIAL PRIMARY KEY,
+                    provider_user_id INTEGER NOT NULL,
+                    date DATE NOT NULL,
+                    start_time TIME,
+                    end_time TIME,
+                    is_unavailable BOOLEAN NOT NULL DEFAULT TRUE,
+                    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                    updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                    FOREIGN KEY (provider_user_id) REFERENCES "user" (id)
+                )
+            """))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_provider_availability_exception_user_id ON provider_availability_exception (provider_user_id)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_provider_availability_exception_date ON provider_availability_exception (date)"))
+    except Exception as e:
+        app.logger.warning(f"[DB] Postgres provider availability patch skipped: {type(e).__name__}: {e}")
+
+
+def _ensure_postgres_support_ticket_message_table():
+    try:
+        if db.engine.url.get_backend_name() != "postgresql":
+            return
+    except Exception:
+        return
+    try:
+        with db.engine.begin() as conn:
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS support_ticket_message (
+                    id SERIAL PRIMARY KEY,
+                    ticket_id INTEGER NOT NULL,
+                    author_user_id INTEGER NOT NULL,
+                    body TEXT NOT NULL,
+                    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                    FOREIGN KEY (ticket_id) REFERENCES support_ticket (id),
+                    FOREIGN KEY (author_user_id) REFERENCES "user" (id)
+                )
+            """))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_support_ticket_message_ticket_id ON support_ticket_message (ticket_id)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_support_ticket_message_author_user_id ON support_ticket_message (author_user_id)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_support_ticket_message_created_at ON support_ticket_message (created_at)"))
+    except Exception as e:
+        app.logger.warning(f"[DB] Postgres support_ticket_message patch skipped: {type(e).__name__}: {e}")
+
+
+def _ensure_postgres_booking_dispute_message_table():
+    try:
+        if db.engine.url.get_backend_name() != "postgresql":
+            return
+    except Exception:
+        return
+    try:
+        with db.engine.begin() as conn:
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS booking_dispute_message (
+                    id SERIAL PRIMARY KEY,
+                    dispute_id INTEGER NOT NULL,
+                    author_user_id INTEGER NOT NULL,
+                    body TEXT NOT NULL,
+                    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                    FOREIGN KEY (dispute_id) REFERENCES booking_dispute (id),
+                    FOREIGN KEY (author_user_id) REFERENCES "user" (id)
+                )
+            """))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_booking_dispute_message_dispute_id ON booking_dispute_message (dispute_id)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_booking_dispute_message_author_user_id ON booking_dispute_message (author_user_id)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_booking_dispute_message_created_at ON booking_dispute_message (created_at)"))
+    except Exception as e:
+        app.logger.warning(f"[DB] Postgres booking_dispute_message patch skipped: {type(e).__name__}: {e}")
+
+
 def _ensure_sqlite_careers_tables():
     """Create careers tables (job_post and job_application) if missing"""
     if db.engine.url.get_backend_name() != "sqlite":
@@ -3799,8 +5599,41 @@ def _bootstrap_schema_once():
     
     # Disable auto-migrations in production
     # In production with Postgres, rely on Alembic migrations only
-    is_sqlite = db.engine.url.get_backend_name() == "sqlite"
+    try:
+        is_sqlite = db.engine.url.get_backend_name() == "sqlite"
+    except Exception as e:
+        app.logger.warning(f"Could not determine database backend: {e}")
+        is_sqlite = False
+    
     if APP_ENV == "prod" and not is_sqlite:
+        # Production Postgres: check if tables exist, create if not (safety check)
+        try:
+            with db.engine.begin() as conn:
+                result = conn.execute(text("""
+                    SELECT COUNT(*) as table_count
+                    FROM information_schema.tables 
+                    WHERE table_schema = 'public'
+                """))
+                count = result.scalar() or 0
+                if count == 0:
+                    app.logger.warning("No tables found in Postgres - creating all tables now")
+                    db.metadata.create_all(bind=conn)
+                    app.logger.info("✓ Database tables created successfully in production")
+        except Exception as e:
+            app.logger.warning(f"Could not auto-create tables in production: {type(e).__name__}: {str(e)}")
+
+        try:
+            _ensure_postgres_booking_fee_columns()
+            _ensure_postgres_booking_request_duration_column()
+            _ensure_postgres_payment_fee_columns()
+            _ensure_postgres_notification_columns()
+            _ensure_postgres_provider_review_table()
+            _ensure_postgres_provider_availability_tables()
+            _ensure_postgres_support_ticket_message_table()
+            _ensure_postgres_booking_dispute_message_table()
+        except Exception:
+            pass
+        
         _SCHEMA_BOOTSTRAP_DONE = True
         return
     
@@ -3826,8 +5659,26 @@ def _bootstrap_schema_once():
         _ensure_sqlite_waitlist_table()
         _ensure_sqlite_beat_stripe_columns()
         _ensure_sqlite_order_payment_columns()
-    except Exception:
-        db.session.rollback()
+        _ensure_sqlite_booking_payment_columns()
+        _ensure_sqlite_payout_affiliate_tables()
+        _ensure_sqlite_provider_review_table()
+        _ensure_sqlite_provider_availability_tables()
+        _ensure_sqlite_support_ticket_message_table()
+        _ensure_sqlite_booking_dispute_message_table()
+        _ensure_postgres_booking_fee_columns()
+        _ensure_postgres_booking_request_duration_column()
+        _ensure_postgres_payment_fee_columns()
+        _ensure_postgres_notification_columns()
+        _ensure_postgres_provider_review_table()
+        _ensure_postgres_provider_availability_tables()
+        _ensure_postgres_support_ticket_message_table()
+        _ensure_postgres_booking_dispute_message_table()
+    except Exception as e:
+        app.logger.error(f"SQLite auto-migration failed: {type(e).__name__}: {str(e)}", exc_info=True)
+        try:
+            db.session.rollback()
+        except Exception:
+            pass
 
 
 @app.before_request
@@ -3854,17 +5705,33 @@ def _bootstrap_postgres_migrations():
 # =========================================================
 # Notifications System
 # =========================================================
-def create_notification(user_id: int, kind: str, title: str, body: str = None, url: str = None, *, commit: bool = False) -> Notification:
-    """Create a notification for a user. Never commits by default - must be committed at route level."""
+def create_notification(
+    user_id: int,
+    kind: str,
+    title: str,
+    body: str = None,
+    url: str = None,
+    *,
+    actor_user_id: int | None = None,
+    event_key: str | None = None,
+    commit: bool = False,
+) -> Notification:
+    """Create a notification for a user (dedupe by event_key if provided)."""
+    if event_key:
+        existing = Notification.query.filter_by(user_id=user_id, event_key=event_key).first()
+        if existing:
+            return existing
+
     notif = Notification(
         user_id=user_id,
+        actor_user_id=actor_user_id,
         kind=kind,
         title=title,
         body=body,
-        url=url
+        url=url,
+        event_key=event_key,
     )
     db.session.add(notif)
-    # Note: commit=False by default - caller must commit in transaction
     if commit:
         db.session.commit()
     return notif
@@ -4094,7 +5961,7 @@ def notify_chat_message(
         "conversation_id": int(conversation_id),
         "message_id": int(message_id),
         "sender_name": (getattr(sender, "display_name", None) or getattr(sender, "username", None) or "Someone") if sender else "Someone",
-        "sender_role": (sender.role.value if sender and getattr(sender, "role", None) else None),
+        "sender_role": (sender.role if sender and getattr(sender, "role", None) else None),
         "preview": _chat_message_preview(message_text, max_len=80),
         "url": url_for("booking_chat", booking_id=int(booking_id)),
     }
@@ -4162,7 +6029,7 @@ def log_admin_action(
     db.session.add(ev)
     db.session.flush()
 
-    q = db.session.query(User.id).filter(User.role == RoleEnum.admin)
+    q = db.session.query(User.id).filter(User.role == "admin")
     if not include_actor:
         q = q.filter(User.id != int(actor_admin_id))
     admin_ids = [row[0] for row in q.all()]
@@ -4210,11 +6077,7 @@ def broadcast_event(
     aud = (audience or "ALL").strip().upper()
     if aud.startswith("ROLE:"):
         role_raw = aud.split(":", 1)[1].strip().lower()
-        try:
-            q = q.filter(User.role == RoleEnum(role_raw))
-        except Exception:
-            # Unknown role -> no recipients
-            q = q.filter(text("1=0"))
+        q = q.filter(User.role == role_raw)
 
     if exclude_actor:
         q = q.filter(User.id != int(actor_user_id))
@@ -4236,6 +6099,8 @@ CHAT_ALLOWED_BOOKING_STATUSES: set[str] = {
     BOOKING_STATUS_PENDING,
     BOOKING_STATUS_ACCEPTED,
     BOOKING_STATUS_CONFIRMED,
+    BOOKING_STATUS_HOLD_PAID,
+    BOOKING_STATUS_PAID,
     BOOKING_STATUS_COMPLETED,
 }
 
@@ -4338,7 +6203,7 @@ def get_or_create_booking_conversation(booking_id: int) -> Conversation:
             db.session.add(ConversationParticipant(
                 conversation_id=conv.id,
                 user_id=uid,
-                role_at_time=(u.role.value if u and getattr(u, "role", None) else None),
+                role_at_time=(u.role if u and getattr(u, "role", None) else None),
             ))
 
     db.session.commit()
@@ -4404,14 +6269,14 @@ def send_email(to_email: str, subject: str, text_body: str) -> bool:
         from email.message import EmailMessage
         
         smtp_host = os.getenv("SMTP_HOST", "").strip()
+        smtp_from = os.getenv("SMTP_FROM", "").strip()
+        smtp_port = int(os.getenv("SMTP_PORT", "587"))
+        smtp_tls = os.getenv("SMTP_TLS", "true").lower() == "true"
+        smtp_user = os.getenv("SMTP_USER", "").strip()
+        smtp_pass = os.getenv("SMTP_PASS", "").strip()
         if not smtp_host:
             if IS_DEV:
                 print(f"[DEV] Email not sent - SMTP_HOST not configured")
-            return False
-        
-        if not smtp_host:
-            if IS_DEV:
-                app.logger.warning("Email not sent - SMTP_HOST not configured")
             return False
         
         
@@ -4435,12 +6300,29 @@ def send_email(to_email: str, subject: str, text_body: str) -> bool:
         return False
 
 
-def notify_user(user: User, kind: str, title: str, body: str = None, url: str = None, *, email: bool = False, commit: bool = False) -> Notification:
+def notify_user(
+    user: User,
+    kind: str,
+    title: str,
+    body: str = None,
+    url: str = None,
+    *,
+    actor_user_id: int | None = None,
+    event_key: str | None = None,
+    email: bool = False,
+    commit: bool = False,
+) -> Notification:
     """Create a notification and optionally send email. Never commits by default - must be committed at route level."""
-    notif = create_notification(user.id, kind, title, body, url, commit=commit)
-    
-    # Email sending should happen AFTER transaction commit, not during
-    # This function only creates the notification row
+    notif = create_notification(
+        user.id,
+        kind,
+        title,
+        body,
+        url,
+        actor_user_id=actor_user_id,
+        event_key=event_key,
+        commit=commit,
+    )
     return notif
 
 
@@ -4562,6 +6444,11 @@ def terms():
     return render_template("policies/terms.html")
 
 
+@app.route("/offline")
+def offline():
+    return render_template("offline.html")
+
+
 @app.route("/privacy")
 def privacy():
     return render_template("policies/privacy.html")
@@ -4585,6 +6472,19 @@ def refunds():
 @app.route("/payouts")
 def payouts():
     return render_template("policies/payouts.html")
+
+
+@app.route("/affiliate-marketing", endpoint="affiliate_marketing")
+def affiliate_marketing():
+    return render_template(
+        "policies/affiliate_marketing.html",
+        contact_email=AFFILIATE_CONTACT_EMAIL,
+    )
+
+
+@app.route("/affiliate/apply", endpoint="affiliate_apply")
+def affiliate_apply():
+    return render_template("affiliate_apply.html")
 
 
 @app.route("/disputes")
@@ -4753,6 +6653,7 @@ def register():
         email = (request.form.get("email") or "").strip().lower()
         raw_username = (request.form.get("username") or "").strip()
         username = raw_username.lstrip("@").lower()
+        referral_code = (request.form.get("referral_code") or request.args.get("ref") or "").strip()
 
         password = request.form.get("password") or ""
         confirm = request.form.get("confirm_password") or ""
@@ -4802,28 +6703,53 @@ def register():
             flash("Invalid account type. Please pick a role from the list.", "error")
             return redirect(url_for("register"))
 
-        user = User(
-            username=username,
-            email=email,
-            full_name=full_name or None,
-            artist_name=artist_name or None,
-            role=chosen_role,
-        )
+        try:
+            user = User(
+                username=username,
+                email=email,
+                full_name=full_name or None,
+                artist_name=artist_name or None,
+                role=chosen_role.value,
+            )
 
-        if IS_DEV:
-            user.kyc_status = KYCStatus.approved
+            if referral_code:
+                try:
+                    affiliate = Affiliate.query.filter(
+                        func.lower(Affiliate.code) == referral_code.lower(),
+                        Affiliate.status == AffiliateStatus.active,
+                    ).first()
+                except Exception:
+                    affiliate = None
+                if affiliate:
+                    user.referred_by_affiliate_id = affiliate.id
 
-        user.set_password(password)
-        db.session.add(user)
-        db.session.commit()
+            if IS_DEV:
+                user.kyc_status = KYCStatus.approved.value
 
-        get_or_create_wallet(user.id)
+            user.set_password(password)
+            db.session.add(user)
+            db.session.flush()
+
+            get_or_create_wallet(user.id, commit=False)
+            db.session.commit()
+        except IntegrityError:
+            db.session.rollback()
+            flash("That email or username is already registered.", "error")
+            return redirect(url_for("register"))
+        except Exception as e:
+            db.session.rollback()
+            app.logger.error(
+                f"Register failed for {email or 'unknown'}: {type(e).__name__}: {e}",
+                exc_info=True,
+            )
+            flash("We couldn't create your account. Please try again.", "error")
+            return redirect(url_for("register"))
 
         login_user(user)
         flash("Account created!", "success")
         return redirect(url_for("route_to_dashboard"))
 
-    return render_template("register.html")
+    return render_template("register.html", referral_code=(request.args.get("ref") or "").strip())
 
 
 # Simple login rate limiting
@@ -4864,74 +6790,90 @@ def login():
         return redirect(url_for("route_to_dashboard"))
     
     if request.method == "POST":
-        remote_addr = request.remote_addr or "unknown"
+        try:
+            remote_addr = request.remote_addr or "unknown"
 
-        if _too_many_failed_logins(remote_addr):
-            flash("Too many failed login attempts. Please wait a few minutes and try again.", "error")
-            return redirect(url_for("login"))
+            if _too_many_failed_logins(remote_addr):
+                flash("Too many failed login attempts. Please wait a few minutes and try again.", "error")
+                return redirect(url_for("login"))
 
-        raw_identifier = (
-            (request.form.get("identifier") or "").strip()
-            or (request.form.get("username") or "").strip()
-        )
-        password = (request.form.get("password") or "").strip()
+            raw_identifier = (
+                (request.form.get("identifier") or "").strip()
+                or (request.form.get("username") or "").strip()
+            )
+            password = (request.form.get("password") or "").strip()
 
-        # Security: Sanitize input
-        raw_identifier = sanitize_input(raw_identifier, max_length=255)
-        password = sanitize_input(password, max_length=500)
+            # Security: Sanitize input
+            raw_identifier = sanitize_input(raw_identifier, max_length=255)
+            password = sanitize_input(password, max_length=500)
 
-        if not raw_identifier or not password:
-            flash("Please enter your email/username and password.", "error")
-            return redirect(url_for("login"))
-        
-        # Security: Additional rate limiting on login attempts
-        if not check_rate_limit("login", max_requests=5, window_seconds=300):
-            log_security_event("login_rate_limit", f"Rate limited login attempt from {remote_addr}", "warning")
-            flash("Too many login attempts. Please wait a few minutes and try again.", "error")
-            return redirect(url_for("login"))
+            if not raw_identifier or not password:
+                flash("Please enter your email/username and password.", "error")
+                return redirect(url_for("login"))
+            
+            # Security: Additional rate limiting on login attempts
+            if not check_rate_limit("login", max_requests=5, window_seconds=300):
+                log_security_event("login_rate_limit", f"Rate limited login attempt from {remote_addr}", "warning")
+                flash("Too many login attempts. Please wait a few minutes and try again.", "error")
+                return redirect(url_for("login"))
 
-        identifier = raw_identifier.lower().strip()
+            identifier = raw_identifier.lower().strip()
 
-        if "@" in identifier and "." in identifier:
-            user = User.query.filter(func.lower(User.email) == identifier).first()
-            lookup_type = "email"
-        else:
-            handle = identifier.lstrip("@")
-            user = User.query.filter(func.lower(User.username) == handle).first()
-            lookup_type = "username"
+            app.logger.info(f"[LOGIN] Starting login attempt for identifier: {identifier}")
+            
+            if "@" in identifier and "." in identifier:
+                app.logger.info(f"[LOGIN] Looking up by email: {identifier}")
+                user = User.query.filter(func.lower(User.email) == identifier).first()
+                lookup_type = "email"
+            else:
+                handle = identifier.lstrip("@")
+                app.logger.info(f"[LOGIN] Looking up by username: {handle}")
+                user = User.query.filter(func.lower(User.username) == handle).first()
+                lookup_type = "username"
 
-        # Debug logging for login attempts
-        if IS_DEV:
-            app.logger.debug(f"Login attempt: identifier='{identifier}' (type={lookup_type}), user_found={user is not None}")
-            if user:
-                app.logger.debug(f"User found: id={user.id}, username={user.username}, email={user.email}, has_password_hash={bool(user.password_hash)}")
-
-        if not user:
-            _register_failed_login(remote_addr)
+            app.logger.info(f"[LOGIN] User query completed. User found: {user is not None}")
+            
+            # Debug logging for login attempts
             if IS_DEV:
-                app.logger.warning(f"Login failed: User not found for identifier '{identifier}' (type={lookup_type})")
-            flash("Invalid credentials.", "error")
+                app.logger.debug(f"Login attempt: identifier='{identifier}' (type={lookup_type}), user_found={user is not None}")
+                if user:
+                    app.logger.debug(f"User found: id={user.id}, username={user.username}, email={user.email}, has_password_hash={bool(user.password_hash)}")
+
+            if not user:
+                _register_failed_login(remote_addr)
+                if IS_DEV:
+                    app.logger.warning(f"Login failed: User not found for identifier '{identifier}' (type={lookup_type})")
+                flash("Invalid credentials.", "error")
+                return redirect(url_for("login"))
+            
+            app.logger.info(f"[LOGIN] Checking password for user: {user.username}")
+            if not user.check_password(password):
+                _register_failed_login(remote_addr)
+                if IS_DEV:
+                    app.logger.warning(f"Login failed: Password mismatch for user '{user.username}' (ID: {user.id})")
+                flash("Invalid credentials.", "error")
+                return redirect(url_for("login"))
+
+            app.logger.info(f"[LOGIN] Password matched. Checking if account is active")
+            if not user.is_active_col:
+                flash("This account is disabled.", "error")
+                return redirect(url_for("login"))
+
+            _clear_failed_logins(remote_addr)
+            app.logger.info(f"[LOGIN] Logging in user: {user.username}")
+            login_user(user)
+
+            if is_password_expired(user):
+                flash("For security, your admin password must be updated before continuing.", "error")
+                return redirect(url_for("force_password_reset"))
+
+            app.logger.info(f"[LOGIN] Login successful for user: {user.username}")
+            return redirect(url_for("route_to_dashboard"))
+            
+        except Exception as login_error:
+            app.logger.error(f"[LOGIN] EXCEPTION during login: {type(login_error).__name__}: {str(login_error)}", exc_info=True)
+            flash("An error occurred during login. Please try again.", "error")
             return redirect(url_for("login"))
-        
-        if not user.check_password(password):
-            _register_failed_login(remote_addr)
-            if IS_DEV:
-                app.logger.warning(f"Login failed: Password mismatch for user '{user.username}' (ID: {user.id})")
-            flash("Invalid credentials.", "error")
-            return redirect(url_for("login"))
-
-        if not user.is_active_col:
-            flash("This account is disabled.", "error")
-            return redirect(url_for("login"))
-
-        _clear_failed_logins(remote_addr)
-        login_user(user)
-
-        if is_password_expired(user):
-            flash("For security, your admin password must be updated before continuing.", "error")
-            return redirect(url_for("force_password_reset"))
-
-        return redirect(url_for("route_to_dashboard"))
 
     return render_template("login.html")
 
@@ -5208,7 +7150,42 @@ def media_file(filename):
     # Attach stems/deliverables as downloads; others inline.
     is_deliverable = Beat.query.filter_by(stems_path=filename).first() is not None
     as_attachment = bool(is_deliverable)
-    return send_from_directory(app.config["UPLOAD_FOLDER"], filename, as_attachment=as_attachment)
+    local_path = os.path.join(app.config["UPLOAD_FOLDER"], filename)
+    if not os.path.exists(local_path):
+        abort(404)
+
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    mime_type, _ = mimetypes.guess_type(local_path)
+    if not mime_type:
+        mime_type = "application/octet-stream"
+
+    range_header = request.headers.get("Range")
+    if range_header and ext in ALLOWED_AUDIO:
+        size = os.path.getsize(local_path)
+        match = re.match(r"bytes=(\d+)-(\d*)", range_header)
+        if match:
+            start = int(match.group(1))
+            end = int(match.group(2)) if match.group(2) else size - 1
+            end = min(end, size - 1)
+            if start > end:
+                start = 0
+                end = size - 1
+            length = end - start + 1
+            with open(local_path, "rb") as fh:
+                fh.seek(start)
+                data = fh.read(length)
+            resp = Response(data, status=206, mimetype=mime_type, direct_passthrough=True)
+            resp.headers["Content-Range"] = f"bytes {start}-{end}/{size}"
+            resp.headers["Accept-Ranges"] = "bytes"
+            resp.headers["Content-Length"] = str(length)
+            resp.headers["Access-Control-Allow-Origin"] = "*"
+            return resp
+
+    resp = send_from_directory(app.config["UPLOAD_FOLDER"], filename, as_attachment=as_attachment)
+    if ext in ALLOWED_AUDIO:
+        resp.headers["Accept-Ranges"] = "bytes"
+        resp.headers["Access-Control-Allow-Origin"] = "*"
+    return resp
 
 @app.route("/avatar/<int:user_id>", endpoint="user_avatar")
 def user_avatar(user_id: int):
@@ -5221,10 +7198,21 @@ def user_avatar(user_id: int):
         if ext in ALLOWED_IMAGE:
             avatar_path = os.path.join(app.config["UPLOAD_FOLDER"], user.avatar_path)
             if os.path.exists(avatar_path):
-                resp = send_from_directory(app.config["UPLOAD_FOLDER"], user.avatar_path, as_attachment=False)
-                # In dev, avoid stale caching so new uploads show immediately
-                resp.headers["Cache-Control"] = "no-store"
-                return resp
+                try:
+                    resp = send_from_directory(app.config["UPLOAD_FOLDER"], user.avatar_path, as_attachment=False)
+                    # In dev, avoid stale caching so new uploads show immediately
+                    resp.headers["Cache-Control"] = "no-store"
+                    return resp
+                except Exception as e:
+                    app.logger.warning(f"Error serving avatar {user.avatar_path}: {e}")
+            else:
+                # File doesn't exist - it was probably lost after a deploy
+                # Clear it from DB so we don't keep trying to serve a ghost file
+                try:
+                    user.avatar_path = None
+                    db.session.commit()
+                except Exception as cleanup_err:
+                    app.logger.warning(f"Could not clear missing avatar path: {cleanup_err}")
 
     # Fallback: generate a simple SVG placeholder with initials
     name = (user.display_name or user.username or "U").strip()
@@ -5305,9 +7293,6 @@ def opportunities_video_media():
 @app.route("/wallet", endpoint="wallet_home")
 @login_required
 def wallet_page():
-    if not require_kyc_approved():
-        return redirect(url_for("kyc"))
-
     tab = (request.args.get("tab") or "overview").strip().lower()
 
     w = get_or_create_wallet(current_user.id)
@@ -5324,7 +7309,16 @@ def wallet_page():
     # Get recent transactions for overview tab (last 10)
     recent = txns[:10] if txns else []
 
-    return render_template("wallet_center.html", balance=balance, transactions=txns, txns=txns, recent=recent, tab=tab)
+    kyc_blocked_payout = bool(KYC_ENFORCE and is_service_provider(current_user) and not _is_kyc_verified(current_user))
+    return render_template(
+        "wallet_center.html",
+        balance=balance,
+        transactions=txns,
+        txns=txns,
+        recent=recent,
+        tab=tab,
+        kyc_blocked_payout=kyc_blocked_payout,
+    )
 
 
 @app.route("/transactions")
@@ -5336,9 +7330,6 @@ def transactions_redirect():
 @app.route("/wallet/statement", endpoint="wallet_statement")
 @login_required
 def wallet_statement():
-    if not require_kyc_approved():
-        return redirect(url_for("kyc"))
-
     year = request.args.get("year", type=int)
     month = request.args.get("month", type=int)
 
@@ -5389,11 +7380,12 @@ def wallet_statement():
 @app.route("/wallet/action", methods=["POST"])
 @login_required
 def wallet_action():
-    if not require_kyc_approved():
-        return redirect(url_for("kyc"))
-
     action = (request.form.get("action") or "").strip().lower()
     amount_raw = (request.form.get("amount") or "").strip()
+
+    if action in ("withdraw", "transfer_out"):
+        if not require_kyc_approved("payout"):
+            return redirect(url_for("wallet_home"))
 
     if not amount_raw:
         flash("Amount is required.", "error")
@@ -5468,6 +7460,24 @@ def wallet_action():
             app.logger.info(
                 f"Wallet add-money: Stripe Checkout session created id={getattr(checkout_session,'id',None)} has_url={bool(getattr(checkout_session,'url',None))}"
             )
+            
+            # Validate that the session was created successfully with a checkout URL
+            if not checkout_session.id:
+                app.logger.error(f"Stripe checkout session created but has no ID: {checkout_session}")
+                flash("Stripe session creation failed. Please contact support.", "error")
+                return redirect(url_for("wallet_home"))
+            
+            if not checkout_session.url:
+                app.logger.error(
+                    f"Stripe checkout session created but has no URL. "
+                    f"Session ID: {checkout_session.id}, "
+                    f"Status: {getattr(checkout_session, 'status', 'unknown')}, "
+                    f"Payment Status: {getattr(checkout_session, 'payment_status', 'unknown')}, "
+                    f"Session data: {checkout_session}"
+                )
+                flash("Stripe checkout URL is missing. This may be a configuration issue. Please contact support.", "error")
+                return redirect(url_for("wallet_home"))
+            
             # Some browsers/extensions can be weird about POST -> 3rd-party redirects.
             # Render an interstitial that both auto-redirects and provides a click-through link.
             return render_template("redirect_to_stripe.html", stripe_url=checkout_session.url)
@@ -5807,14 +7817,191 @@ def update_avatar():
 
 
 # =========================================================
+# Provider Settings & Availability
+# =========================================================
+def _parse_time_hhmm(value: str | None) -> time | None:
+    if not value:
+        return None
+    s = str(value).strip()
+    if not s:
+        return None
+    try:
+        return datetime.strptime(s, "%H:%M").time()
+    except Exception:
+        return None
+
+
+@app.route("/provider/settings", methods=["GET", "POST"], endpoint="provider_settings")
+@login_required
+def provider_settings():
+    if not is_service_provider(current_user):
+        flash("Only service providers can edit availability settings.", "error")
+        return redirect(url_for("route_to_dashboard"))
+
+    settings = get_provider_settings(current_user.id, create=True)
+    slots, exceptions = get_provider_availability_summary(current_user.id)
+
+    if request.method == "POST":
+        accepting_new_requests = request.form.get("accepting_new_requests") == "on"
+        onsite = request.form.get("onsite") == "on"
+        remote = request.form.get("remote") == "on"
+        tz = sanitize_input((request.form.get("tz") or "").strip(), max_length=64) or "UTC"
+
+        travel_radius_raw = (request.form.get("travel_radius_miles") or "").strip()
+        travel_radius = None
+        if travel_radius_raw:
+            try:
+                travel_radius = int(travel_radius_raw)
+                if travel_radius < 0:
+                    travel_radius = None
+            except Exception:
+                travel_radius = None
+
+        base_location = sanitize_input((request.form.get("base_location") or "").strip(), max_length=255) or None
+
+        settings.accepting_new_requests = accepting_new_requests
+        settings.onsite = onsite
+        settings.remote = remote
+        settings.travel_radius_miles = travel_radius
+        settings.base_location = base_location
+        settings.tz = tz
+
+        db.session.commit()
+        flash("Settings updated.", "success")
+        return redirect(url_for("provider_settings"))
+
+    return render_template(
+        "provider_settings.html",
+        settings=settings,
+        slots=slots,
+        exceptions=exceptions,
+        DAY_NAMES=DAY_NAMES,
+    )
+
+
+@app.route("/availability", endpoint="provider_availability_alias")
+@login_required
+def provider_availability_alias():
+    if not is_service_provider(current_user):
+        flash("Availability settings are only available for providers.", "error")
+        return redirect(url_for("route_to_dashboard"))
+    return redirect(url_for("provider_settings"))
+
+
+@app.route("/provider/availability/add", methods=["POST"], endpoint="provider_availability_add")
+@login_required
+def provider_availability_add():
+    if not is_service_provider(current_user):
+        abort(403)
+
+    day_raw = (request.form.get("day_of_week") or "").strip()
+    start_raw = (request.form.get("start_time") or "").strip()
+    end_raw = (request.form.get("end_time") or "").strip()
+
+    try:
+        day = int(day_raw)
+    except Exception:
+        day = -1
+
+    start_time = _parse_time_hhmm(start_raw)
+    end_time = _parse_time_hhmm(end_raw)
+
+    if day < 0 or day > 6 or not start_time or not end_time:
+        flash("Please provide a valid day and time range.", "error")
+        return redirect(url_for("provider_settings"))
+    if end_time <= start_time:
+        flash("End time must be after start time.", "error")
+        return redirect(url_for("provider_settings"))
+
+    tz = sanitize_input((request.form.get("tz") or "").strip(), max_length=64) or "UTC"
+    slot = ProviderAvailability(
+        provider_user_id=current_user.id,
+        day_of_week=day,
+        start_time=start_time,
+        end_time=end_time,
+        tz=tz,
+        is_active=True,
+    )
+    db.session.add(slot)
+    db.session.commit()
+    flash("Availability slot added.", "success")
+    return redirect(url_for("provider_settings"))
+
+
+@app.route("/provider/availability/<int:slot_id>/delete", methods=["POST"], endpoint="provider_availability_delete")
+@login_required
+def provider_availability_delete(slot_id: int):
+    slot = ProviderAvailability.query.get_or_404(slot_id)
+    if slot.provider_user_id != current_user.id:
+        abort(403)
+    db.session.delete(slot)
+    db.session.commit()
+    flash("Availability slot removed.", "success")
+    return redirect(url_for("provider_settings"))
+
+
+@app.route("/provider/availability/exception", methods=["POST"], endpoint="provider_availability_exception_add")
+@login_required
+def provider_availability_exception_add():
+    if not is_service_provider(current_user):
+        abort(403)
+
+    date_raw = (request.form.get("date") or "").strip()
+    start_raw = (request.form.get("start_time") or "").strip()
+    end_raw = (request.form.get("end_time") or "").strip()
+    is_unavailable = request.form.get("is_unavailable") == "on"
+
+    try:
+        ex_date = datetime.strptime(date_raw, "%Y-%m-%d").date()
+    except Exception:
+        ex_date = None
+
+    if not ex_date:
+        flash("Please provide a valid date.", "error")
+        return redirect(url_for("provider_settings"))
+
+    start_time = _parse_time_hhmm(start_raw)
+    end_time = _parse_time_hhmm(end_raw)
+    if (start_raw or end_raw) and (not start_time or not end_time):
+        flash("Please provide a valid time range.", "error")
+        return redirect(url_for("provider_settings"))
+    if start_time and end_time and end_time <= start_time:
+        flash("End time must be after start time.", "error")
+        return redirect(url_for("provider_settings"))
+
+    ex = ProviderAvailabilityException(
+        provider_user_id=current_user.id,
+        date=ex_date,
+        start_time=start_time,
+        end_time=end_time,
+        is_unavailable=is_unavailable,
+    )
+    db.session.add(ex)
+    db.session.commit()
+    flash("Exception added.", "success")
+    return redirect(url_for("provider_settings"))
+
+
+@app.route("/provider/availability/exception/<int:exc_id>/delete", methods=["POST"], endpoint="provider_availability_exception_delete")
+@login_required
+def provider_availability_exception_delete(exc_id: int):
+    ex = ProviderAvailabilityException.query.get_or_404(exc_id)
+    if ex.provider_user_id != current_user.id:
+        abort(403)
+    db.session.delete(ex)
+    db.session.commit()
+    flash("Exception removed.", "success")
+    return redirect(url_for("provider_settings"))
+
+
+# =========================================================
 # Follow APIs (JSON + redirect versions)
 # =========================================================
 @app.route("/users/<int:user_id>/toggle-follow", methods=["POST"])
 @login_required
 def toggle_follow(user_id: int):
     target = User.query.get_or_404(user_id)
-
-    if target.role == RoleEnum.admin:
+    if target.role == "admin":
         return jsonify({"ok": False, "error": "You can't follow an admin account."}), 403
     if target.id == current_user.id:
         return jsonify({"ok": False, "error": "You can't follow yourself."}), 400
@@ -5859,7 +8046,7 @@ def toggle_follow(user_id: int):
 def user_profile(username):
     profile_user = User.query.filter(func.lower(User.username) == username.lower()).first_or_404()
 
-    if profile_user.role == RoleEnum.producer:
+    if profile_user.role == "producer":
         return redirect(url_for("producer_catalog_detail", username=profile_user.username))
 
     if is_service_provider(profile_user):
@@ -5908,7 +8095,7 @@ def api_followers(user_id):
                 "username": user.username,
                 "display_name": user.display_name or user.username,
                 "avatar_url": user.avatar_url,
-                "role": user.role.value if user.role else None,
+                "role": user.role if user.role else None,
             })
     
     return jsonify({"followers": result})
@@ -5937,7 +8124,7 @@ def api_following(user_id):
                 "username": user.username,
                 "display_name": user.display_name or user.username,
                 "avatar_url": user.avatar_url,
-                "role": user.role.value if user.role else None,
+                "role": user.role if user.role else None,
             })
     
     return jsonify({"following": result})
@@ -5995,10 +8182,7 @@ def bookme_search():
     )
 
     if role:
-        try:
-            query = query.filter(User.role == RoleEnum(role))
-        except ValueError:
-            pass
+        query = query.filter(User.role == role)
 
     if zip_code:
         query = query.filter(BookMeProfile.zip.ilike(f"{zip_code}%"))
@@ -6026,7 +8210,7 @@ def bookme_search():
         providers_payload.append({
             "username": p.user.username if p.user else None,
             "display_name": p.display_name,
-            "role": p.user.role.value if getattr(p.user, "role", None) else "",
+            "role": p.user.role if getattr(p.user, "role", None) else "",
             "city": p.city or "",
             "state": p.state or "",
             "lat": p.lat,
@@ -6062,10 +8246,7 @@ def bookme_data():
     )
 
     if role:
-        try:
-            query = query.filter(User.role == RoleEnum(role))
-        except ValueError:
-            pass
+        query = query.filter(User.role == role)
 
     if zip_code:
         query = query.filter(BookMeProfile.zip.ilike(f"{zip_code}%"))
@@ -6135,12 +8316,11 @@ def bookme_profile():
         if lat_raw or lng_raw:
             try:
                 if lat_raw != "" and lng_raw != "":
-                    lat = float(lat_raw)
-                    lng = float(lng_raw)
+                    lat, lng = _parse_lat_lng(lat_raw, lng_raw)
                 else:
                     raise ValueError()
             except Exception:
-                flash("Latitude/Longitude must be numbers (or leave both blank).", "error")
+                flash("Latitude/Longitude must be valid coordinates (e.g., 35.868145 and -83.561523).", "error")
                 return redirect(url_for("bookme_profile"))
 
         if not prof:
@@ -6337,6 +8517,17 @@ def provider_portfolio_public(username):
         UserFollow.query.filter_by(follower_id=current_user.id, followed_id=user.id).first() is not None
     )
 
+    rating_summary = get_provider_review_summary(user.id)
+    reviews = (
+        ProviderReview.query
+        .filter_by(provider_user_id=user.id, status=ReviewVisibility.visible)
+        .order_by(ProviderReview.created_at.desc())
+        .limit(20)
+        .all()
+    )
+    settings = get_provider_settings(user.id, create=False)
+    availability_slots, availability_exceptions = get_provider_availability_summary(user.id)
+
     return render_template(
         "provider_portfolio_public.html",
         provider=user,
@@ -6346,6 +8537,11 @@ def provider_portfolio_public(username):
         followers_count=followers_count,
         following_count=following_count,
         is_following=is_following,
+        rating_summary=rating_summary,
+        reviews=reviews,
+        settings=settings,
+        availability_slots=availability_slots,
+        availability_exceptions=availability_exceptions,
     )
 
 
@@ -6376,7 +8572,7 @@ def bookme_request_confirm(provider_id):
         
         # Check if the requested time is blocked (for studios)
         time_blocked = False
-        if provider.role == RoleEnum.studio:
+        if provider.role == "studio":
             try:
                 if " " in pref:
                     date_part = pref.split(" ", 1)[0]
@@ -6389,12 +8585,21 @@ def bookme_request_confirm(provider_id):
             except (ValueError, AttributeError):
                 pass
 
+        availability_ok, availability_reason = provider_is_available(provider.id, pref, None)
+        settings = get_provider_settings(provider.id, create=False)
+        availability_slots, availability_exceptions = get_provider_availability_summary(provider.id)
+
         return render_template(
             "bookme_request_confirm.html",
             provider=provider,
             message=msg,
             preferred_time=pref,
             time_blocked=time_blocked,
+            availability_ok=availability_ok,
+            availability_reason=availability_reason,
+            settings=settings,
+            availability_slots=availability_slots,
+            availability_exceptions=availability_exceptions,
             BookingStatus=BookingStatus,
         )
 
@@ -6426,6 +8631,27 @@ def bookme_request_confirm(provider_id):
         except (ValueError, AttributeError):
             pass
 
+    ok, reason = provider_is_available(provider.id, pref, None)
+    if not ok:
+        flash(reason or "Requested time is not available.", "error")
+        return redirect(url_for("bookme_request", provider_id=provider_id))
+
+    dupe_window = datetime.utcnow() - timedelta(minutes=2)
+    existing_req = (
+        BookingRequest.query
+        .filter(
+            BookingRequest.provider_id == provider.id,
+            BookingRequest.client_id == current_user.id,
+            BookingRequest.preferred_time == pref,
+            BookingRequest.created_at >= dupe_window,
+        )
+        .order_by(BookingRequest.created_at.desc())
+        .first()
+    )
+    if existing_req:
+        flash("You already sent a request for this time. Taking you to your requests.", "info")
+        return redirect(url_for("bookme_requests"))
+
     req = BookingRequest(
         provider_id=provider.id,
         client_id=current_user.id,
@@ -6441,7 +8667,10 @@ def bookme_request_confirm(provider_id):
         kind="info",
         title="New booking request",
         body=f"@{current_user.username} requested {pref}",
-        url=url_for("bookme_requests")
+        url=url_for("bookme_requests"),
+        actor_user_id=current_user.id,
+        event_key=f"bookme_request_created:{req.id}",
+        commit=True,
     )
     
     flash("Booking request sent.", "success")
@@ -6475,7 +8704,16 @@ def bookme_request(provider_id):
         # Redirect to confirmation with form data
         return redirect(url_for("bookme_request_confirm", provider_id=provider_id, message=msg, preferred_time=pref))
 
-    return render_template("bookme_request.html", provider=provider, BookingStatus=BookingStatus)
+    settings = get_provider_settings(provider.id, create=False)
+    availability_slots, availability_exceptions = get_provider_availability_summary(provider.id)
+    return render_template(
+        "bookme_request.html",
+        provider=provider,
+        BookingStatus=BookingStatus,
+        settings=settings,
+        availability_slots=availability_slots,
+        availability_exceptions=availability_exceptions,
+    )
 
 
 @app.route("/bookme/requests")
@@ -6483,10 +8721,7 @@ def bookme_request(provider_id):
 def bookme_requests():
     incoming_requests = (
         BookingRequest.query
-        .filter(
-            BookingRequest.provider_id == current_user.id,
-            BookingRequest.status == BookingStatus.pending,
-        )
+        .filter(BookingRequest.provider_id == current_user.id)
         .order_by(BookingRequest.created_at.desc())
         .all()
     )
@@ -6512,14 +8747,68 @@ def bookme_requests():
         .all()
     )
 
+    request_ids = [r.id for r in (incoming_requests + outgoing_requests)]
+    booking_ids = [r.booking_id for r in (incoming_requests + outgoing_requests) if r.booking_id]
+    request_deposit_paid = {}
+    if request_ids or booking_ids:
+        payments = Payment.query.filter(
+            Payment.kind == PaymentKind.deposit,
+            Payment.status == PaymentStatus.succeeded,
+            or_(
+                Payment.booking_request_id.in_(request_ids or [0]),
+                Payment.booking_id.in_(booking_ids or [0]),
+            ),
+        ).all()
+        booking_to_request = {r.booking_id: r.id for r in (incoming_requests + outgoing_requests) if r.booking_id}
+        for p in payments:
+            if p.booking_request_id:
+                request_deposit_paid[int(p.booking_request_id)] = True
+            if p.booking_id and p.booking_id in booking_to_request:
+                request_deposit_paid[int(booking_to_request[p.booking_id])] = True
+
+    booking_map = {b.id: b for b in outgoing_bookings}
+    hold_actions = []
+    for req in outgoing_requests:
+        if req.status == BookingStatus.accepted and req.booking_id and not request_deposit_paid.get(req.id, False):
+            booking = booking_map.get(req.booking_id)
+            hold_actions.append({
+                "booking_id": req.booking_id,
+                "request_id": req.id,
+                "provider_username": req.provider.username if req.provider else "",
+                "preferred_time": (booking.event_datetime.strftime("%Y-%m-%d %H:%M") if booking and booking.event_datetime else (req.preferred_time or "")),
+            })
+
+    booking_payment_meta = {}
+    for b in (incoming_bookings + outgoing_bookings):
+        req = BookingRequest.query.filter_by(booking_id=b.id).first()
+        sums = sum_successful_payments(b, req)
+        base_paid = sums.get("base_paid_cents", 0)
+        service_total = b.quoted_total_cents or b.total_cents
+        deposit_base = b.deposit_base_cents or HOLD_FEE_CENTS
+        if service_total:
+            deposit_base = min(int(deposit_base), int(service_total))
+        deposit_paid = bool(service_total and base_paid >= int(deposit_base)) if service_total else bool(base_paid >= int(deposit_base))
+        remaining_base = max(0, int(service_total) - int(base_paid)) if service_total else None
+        booking_payment_meta[b.id] = {
+            "deposit_paid": deposit_paid,
+            "remaining_base_cents": remaining_base,
+        }
+
+    stripe_enabled = bool(STRIPE_AVAILABLE and STRIPE_SECRET_KEY and STRIPE_PUBLISHABLE_KEY)
+
     return render_template(
         "bookme_requests.html",
-        incoming_requests=incoming_requests,
-        outgoing_requests=outgoing_requests,
-        incoming_bookings=incoming_bookings,
-        outgoing_bookings=outgoing_bookings,
+        requests_incoming=incoming_requests,
+        requests_sent=outgoing_requests,
+        bookings_as_provider=incoming_bookings,
+        bookings_as_client=outgoing_bookings,
+        request_deposit_paid=request_deposit_paid,
+        booking_payment_meta=booking_payment_meta,
+        hold_actions=hold_actions,
         HOLD_FEE_CENTS=HOLD_FEE_CENTS,
         BookingStatus=BookingStatus,
+        stripe_enabled=stripe_enabled,
+        stripe_publishable_key=STRIPE_PUBLISHABLE_KEY,
     )
 
 
@@ -6588,7 +8877,10 @@ def bookme_request_status(req_id):
                             kind="warning",
                             title="Booking request declined",
                             body=f"@{current_user.username} declined your request.",
-                            url=url_for("bookme_requests")
+                            url=url_for("bookme_requests"),
+                            actor_user_id=current_user.id,
+                            event_key=f"bookme_request_declined:{req.id}",
+                            commit=True,
                         )
             
             flash("Booking request declined." if updated else "This request is no longer pending.",
@@ -6632,7 +8924,43 @@ def bookme_request_status(req_id):
 
         # Notify client
         req = BookingRequest.query.get(req_id)
+        booking = None
         if req:
+            if not req.booking_id:
+                event_datetime = None
+                try:
+                    if " " in req.preferred_time:
+                        event_datetime = datetime.strptime(req.preferred_time, "%Y-%m-%d %H:%M")
+                    else:
+                        event_datetime = datetime.strptime(req.preferred_time, "%Y-%m-%d")
+                except Exception:
+                    event_datetime = datetime.utcnow()
+
+                booking = Booking(
+                    provider_id=req.provider_id,
+                    provider_role=current_user.role,
+                    client_id=req.client_id,
+                    event_title=f"Booking with @{current_user.username}",
+                    event_datetime=event_datetime,
+                    duration_minutes=req.duration_minutes,
+                    total_cents=None,
+                    quoted_total_cents=None,
+                    deposit_base_cents=HOLD_FEE_CENTS,
+                    beatfund_fee_total_cents=None,
+                    status=BOOKING_STATUS_ACCEPTED,
+                    notes_from_client=req.message,
+                )
+                db.session.add(booking)
+                db.session.flush()
+                req.booking_id = booking.id
+                try:
+                    get_or_create_booking_conversation(booking.id)
+                except Exception:
+                    pass
+                db.session.commit()
+            else:
+                booking = Booking.query.get(req.booking_id)
+
             client = User.query.get(req.client_id)
             if client:
                 notify_user(
@@ -6640,8 +8968,11 @@ def bookme_request_status(req_id):
                     kind="success",
                     title="Booking request accepted",
                     body=f"@{current_user.username} accepted your request for {req.preferred_time}",
-                    url=url_for("bookme_requests"),
-                    email=True
+                    url=url_for("booking_detail", booking_id=booking.id) if booking else url_for("bookme_requests"),
+                    actor_user_id=current_user.id,
+                    event_key=f"bookme_request_accepted:{req.id}",
+                    email=True,
+                    commit=True,
                 )
 
         flash("Accepted. Waiting for client to confirm & pay the hold fee.", "success")
@@ -6666,7 +8997,10 @@ def bookme_request_status(req_id):
                     kind="warning",
                     title="Booking request cancelled",
                     body=f"@{current_user.username} cancelled the request.",
-                    url=url_for("bookme_requests")
+                    url=url_for("bookme_requests"),
+                    actor_user_id=current_user.id,
+                    event_key=f"bookme_request_cancelled:{req.id}",
+                    commit=True,
                 )
             
             flash("Booking request cancelled.", "success")
@@ -6677,6 +9011,369 @@ def bookme_request_status(req_id):
 
     flash("Unknown action.", "error")
     return redirect(url_for("bookme_requests"))
+
+
+@app.route("/bookings/<int:booking_id>/payment-intent", methods=["POST"])
+@login_required
+def booking_payment_intent(booking_id: int):
+    if not STRIPE_AVAILABLE or not STRIPE_SECRET_KEY:
+        return jsonify({"error": "Stripe is not configured. Please set STRIPE_SECRET_KEY."}), 500
+
+    booking = Booking.query.get_or_404(booking_id)
+    is_client = current_user.id == booking.client_id
+    is_admin = current_user.role == RoleEnum.admin
+    if not (is_client or is_admin):
+        return jsonify({"error": "Not authorized to pay for this booking."}), 403
+
+    kind_raw = ""
+    if request.is_json:
+        kind_raw = (request.json.get("kind") or "").strip().lower()
+    else:
+        kind_raw = (request.form.get("kind") or "").strip().lower()
+
+    try:
+        kind = PaymentKind(kind_raw)
+    except Exception:
+        return jsonify({"error": "Invalid payment kind."}), 400
+
+    payload, status = _create_booking_payment_intent_for_kind(booking, kind)
+    return jsonify(payload), status
+
+
+def _get_booking_request_for_payment(booking: "Booking") -> "BookingRequest" | None:
+    try:
+        return BookingRequest.query.filter_by(booking_id=booking.id).first()
+    except Exception:
+        return None
+
+
+def _get_booking_service_total_ctx(booking: "Booking") -> tuple[int | None, dict]:
+    ctx, changed = _resolve_booking_fee_fields(booking)
+    if changed:
+        db.session.commit()
+    service_total_cents = ctx.get("quoted_total_cents")
+    if service_total_cents is None or int(service_total_cents) <= 0:
+        return None, ctx
+    return int(service_total_cents), ctx
+
+
+def _find_existing_booking_payment(
+    booking: "Booking",
+    kind: PaymentKind,
+    booking_request: "BookingRequest" | None = None,
+) -> "Payment" | None:
+    filters = [
+        Payment.kind == kind,
+        Payment.status.in_([PaymentStatus.created, PaymentStatus.processing, PaymentStatus.succeeded]),
+    ]
+    if booking_request:
+        filters.append(or_(Payment.booking_id == booking.id, Payment.booking_request_id == booking_request.id))
+    else:
+        filters.append(Payment.booking_id == booking.id)
+    return Payment.query.filter(*filters).order_by(Payment.created_at.desc()).first()
+
+
+def _reuse_payment_intent(payment: "Payment") -> tuple[str | None, str | None]:
+    if not payment or not payment.stripe_payment_intent_id:
+        return None, None
+    try:
+        intent = stripe.PaymentIntent.retrieve(payment.stripe_payment_intent_id)
+    except Exception:
+        return None, None
+    intent_status = getattr(intent, "status", None) or intent.get("status")
+    if intent_status in ("succeeded", "canceled"):
+        return None, intent_status
+    client_secret = getattr(intent, "client_secret", None) or intent.get("client_secret")
+    return client_secret, intent_status
+
+
+def _payment_breakdown_response(kind: PaymentKind, base_cents: int, beatfund_fee_cents: int, processing_fee_cents: int, total_cents: int) -> dict:
+    breakdown = {
+        "base_cents": int(base_cents),
+        "beatfund_fee_cents": int(beatfund_fee_cents),
+        "processing_fee_cents": int(processing_fee_cents),
+        "total_cents": int(total_cents),
+    }
+    if kind == PaymentKind.deposit:
+        breakdown["hold_base_cents"] = int(base_cents)
+    if kind == PaymentKind.balance:
+        breakdown["remaining_base_cents"] = int(base_cents)
+    return breakdown
+
+
+def _create_booking_payment_intent_for_kind(booking: "Booking", kind: PaymentKind) -> tuple[dict, int]:
+    service_total_cents, ctx = _get_booking_service_total_ctx(booking)
+
+    booking_request = _get_booking_request_for_payment(booking)
+    sums = sum_successful_payments(booking, booking_request)
+    base_paid_cents = sums.get("base_paid_cents", 0)
+    bf_paid_cents = sums.get("bf_paid_cents", 0)
+
+    deposit_base_cents = HOLD_FEE_CENTS
+
+    if not service_total_cents:
+        if kind != PaymentKind.deposit:
+            return {"error": "Booking total must be set before payment."}, 400
+        service_total_cents = int(deposit_base_cents or HOLD_FEE_CENTS)
+
+    beatfund_fee_total_cents = int(ctx.get("beatfund_fee_total_cents") or 0)
+    if service_total_cents and beatfund_fee_total_cents <= 0:
+        beatfund_fee_total_cents = calc_beatfund_fee_total(int(service_total_cents))
+    if kind == PaymentKind.balance and service_total_cents:
+        beatfund_fee_total_cents = calc_beatfund_fee_total(int(service_total_cents))
+
+    def fallback_breakdown() -> dict:
+        if kind == PaymentKind.deposit:
+            base_c = deposit_base_cents
+            bf_c = 0
+        else:
+            base_c = max(0, int(service_total_cents) - int(base_paid_cents or 0))
+            bf_c = max(0, int(beatfund_fee_total_cents) - int(bf_paid_cents or 0))
+        if base_c <= 0 and bf_c <= 0:
+            return _payment_breakdown_response(kind, 0, 0, 0, 0)
+        total_c, proc_c = calc_total_and_processing(base_c, bf_c)
+        return _payment_breakdown_response(kind, base_c, bf_c, proc_c, total_c)
+
+    if kind == PaymentKind.balance:
+        if booking.event_datetime:
+            now = datetime.utcnow()
+            balance_due_by = booking.event_datetime - timedelta(hours=BOOKING_BALANCE_DEADLINE_HOURS)
+            if now >= booking.event_datetime:
+                return {"error": "Balance payment is no longer available after the booking time."}, 400
+            if now >= balance_due_by:
+                return {
+                    "error": (
+                        f"Balance must be paid at least {BOOKING_BALANCE_DEADLINE_HOURS} hours before the booking time."
+                    )
+                }, 400
+
+    existing = _find_existing_booking_payment(booking, kind, booking_request)
+    if existing:
+        if existing.status == PaymentStatus.succeeded:
+            if kind == PaymentKind.deposit:
+                return {"error": "deposit_already_paid"}, 409
+            return {"error": "no_balance_due"}, 409
+        reused_secret, intent_status = _reuse_payment_intent(existing)
+        if reused_secret:
+            breakdown = _payment_breakdown_response(
+                kind,
+                int(existing.base_amount_cents or 0),
+                int(existing.beatfund_fee_cents or 0),
+                int(existing.processing_fee_cents or 0),
+                int(existing.total_paid_cents or existing.amount_cents or 0),
+            )
+            if not breakdown or int(breakdown.get("total_cents") or 0) <= 0:
+                breakdown = fallback_breakdown()
+            return {
+                "client_secret": reused_secret,
+                "payment_id": existing.id,
+                "payment_intent_id": existing.stripe_payment_intent_id,
+                "breakdown": breakdown,
+                "reuse": True,
+            }, 200
+        if intent_status == "canceled":
+            try:
+                existing.status = PaymentStatus.failed
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
+        else:
+            return {"error": "payment_in_progress"}, 409
+
+    if kind == PaymentKind.deposit:
+        if booking.event_datetime and datetime.utcnow() >= booking.event_datetime:
+            return {"error": "Deposit payment is no longer available after the booking time."}, 400
+        base_cents = deposit_base_cents
+        beatfund_fee_cents = 0
+    else:
+        if deposit_base_cents > 0 and base_paid_cents < deposit_base_cents:
+            return {"error": "deposit_required"}, 400
+        remaining_base = max(0, int(service_total_cents) - int(base_paid_cents or 0))
+        remaining_bf = max(0, int(beatfund_fee_total_cents) - int(bf_paid_cents or 0))
+        if remaining_base <= 0 and remaining_bf <= 0:
+            return {"error": "no_balance_due"}, 409
+        base_cents = remaining_base
+        beatfund_fee_cents = remaining_bf
+
+    total_cents, processing_fee_cents = calc_total_and_processing(base_cents, beatfund_fee_cents)
+    breakdown = _payment_breakdown_response(kind, base_cents, beatfund_fee_cents, processing_fee_cents, total_cents)
+
+    idempotency_key = generate_idempotency_key(
+        "booking_payment", current_user.id, booking_id=booking.id, kind=kind.value, total=total_cents
+    )
+    existing_by_key = Payment.query.filter_by(idempotency_key=idempotency_key).first()
+    if existing_by_key and existing_by_key.status in (PaymentStatus.created, PaymentStatus.processing, PaymentStatus.succeeded):
+        reused_secret, intent_status = _reuse_payment_intent(existing_by_key)
+        if reused_secret:
+            breakdown = _payment_breakdown_response(
+                kind,
+                int(existing_by_key.base_amount_cents or 0),
+                int(existing_by_key.beatfund_fee_cents or 0),
+                int(existing_by_key.processing_fee_cents or 0),
+                int(existing_by_key.total_paid_cents or existing_by_key.amount_cents or 0),
+            )
+            if not breakdown or int(breakdown.get("total_cents") or 0) <= 0:
+                breakdown = fallback_breakdown()
+            return {
+                "client_secret": reused_secret,
+                "payment_id": existing_by_key.id,
+                "payment_intent_id": existing_by_key.stripe_payment_intent_id,
+                "breakdown": breakdown,
+                "reuse": True,
+            }, 200
+        if intent_status == "canceled":
+            try:
+                existing_by_key.status = PaymentStatus.failed
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
+        else:
+            return {"error": "payment_in_progress"}, 409
+
+    payment = Payment(
+        purpose=PaymentPurpose.booking_deposit if kind == PaymentKind.deposit else PaymentPurpose.booking_balance,
+        processor=PaymentProcessor.stripe,
+        status=PaymentStatus.processing,
+        kind=kind,
+        amount_cents=total_cents,
+        currency="usd",
+        base_amount_cents=base_cents,
+        beatfund_fee_cents=beatfund_fee_cents,
+        processing_fee_cents=processing_fee_cents,
+        total_paid_cents=total_cents,
+        idempotency_key=idempotency_key,
+        booking_id=booking.id,
+    )
+    if booking_request and kind == PaymentKind.deposit:
+        if not Payment.query.filter_by(booking_request_id=booking_request.id).first():
+            payment.booking_request_id = booking_request.id
+
+    try:
+        db.session.add(payment)
+        db.session.flush()
+
+        metadata = {
+            "booking_id": str(booking.id),
+            "payment_kind": kind.value,
+            "base_cents": str(base_cents),
+            "beatfund_fee_cents": str(beatfund_fee_cents),
+            "processing_fee_cents": str(processing_fee_cents),
+            "total_cents": str(total_cents),
+            "payment_id": str(payment.id),
+        }
+
+        intent = stripe.PaymentIntent.create(
+            amount=total_cents,
+            currency="usd",
+            payment_method_types=["card"],
+            metadata=metadata,
+            idempotency_key=f"booking:{booking.id}:{kind.value}:{total_cents}",
+        )
+
+        payment.stripe_payment_intent_id = str(intent.id)
+        payment.external_id = str(intent.id)
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Booking payment intent error: {type(e).__name__}: {e}")
+        return {"error": "Unable to start payment. Please try again."}, 500
+
+    return {
+        "client_secret": intent.client_secret,
+        "payment_id": payment.id,
+        "payment_intent_id": payment.stripe_payment_intent_id,
+        "breakdown": breakdown,
+    }, 200
+
+
+def _refund_hold_deposit_for_provider_cancel(booking: "Booking") -> bool:
+    """Refund the hold deposit base only (processing fees are non-refundable)."""
+    if not STRIPE_AVAILABLE or not STRIPE_SECRET_KEY:
+        return False
+
+    deposit_payment = Payment.query.filter_by(
+        booking_id=booking.id, kind=PaymentKind.deposit, status=PaymentStatus.succeeded
+    ).first()
+    if not deposit_payment:
+        return False
+
+    refundable = int(deposit_payment.base_amount_cents or 0) - int(deposit_payment.refunded_base_cents or 0)
+    refundable = min(refundable, HOLD_FEE_CENTS)
+    if refundable <= 0:
+        return False
+
+    refund_kwargs = {"amount": refundable, "reason": "requested_by_customer"}
+    if deposit_payment.stripe_payment_intent_id:
+        refund_kwargs["payment_intent"] = deposit_payment.stripe_payment_intent_id
+    elif deposit_payment.stripe_charge_id:
+        refund_kwargs["charge"] = deposit_payment.stripe_charge_id
+    else:
+        return False
+
+    try:
+        stripe.Refund.create(**refund_kwargs)
+    except Exception as e:
+        app.logger.warning(f"Provider cancel refund failed: {type(e).__name__}: {e}")
+        return False
+
+    deposit_payment.refunded_base_cents = int(deposit_payment.refunded_base_cents or 0) + refundable
+    deposit_payment.nonrefundable_processing_kept_cents = int(deposit_payment.processing_fee_cents or 0)
+    deposit_payment.nonrefundable_beatfund_kept_cents = int(deposit_payment.beatfund_fee_cents or 0)
+    if deposit_payment.refunded_base_cents >= int(deposit_payment.base_amount_cents or 0):
+        deposit_payment.status = PaymentStatus.refunded
+    else:
+        deposit_payment.status = PaymentStatus.partially_refunded
+    db.session.commit()
+    return True
+
+
+@app.route("/api/bookings/<int:booking_id>/pay/deposit", methods=["POST"])
+@login_required
+def api_pay_booking_deposit(booking_id: int):
+    if not STRIPE_AVAILABLE or not STRIPE_SECRET_KEY:
+        return jsonify({"error": "Stripe is not configured. Please set STRIPE_SECRET_KEY."}), 500
+
+    booking = Booking.query.get_or_404(booking_id)
+    is_client = current_user.id == booking.client_id
+    is_admin = current_user.role == RoleEnum.admin
+    if not (is_client or is_admin):
+        return jsonify({"error": "Not authorized to pay for this booking."}), 403
+
+    if booking.event_datetime and datetime.utcnow() >= booking.event_datetime:
+        return jsonify({"error": "Deposit payment is no longer available after the booking time."}), 400
+
+    order, err = get_or_create_payment_order_for_booking(booking)
+    if err:
+        return jsonify({"error": err}), 400
+    payload, status = _create_checkout_session_for_order(order, PaymentLedgerPhase.holding)
+    return jsonify(payload), status
+
+
+@app.route("/api/bookings/<int:booking_id>/pay/balance", methods=["POST"])
+@login_required
+def api_pay_booking_balance(booking_id: int):
+    if not STRIPE_AVAILABLE or not STRIPE_SECRET_KEY:
+        return jsonify({"error": "Stripe is not configured. Please set STRIPE_SECRET_KEY."}), 500
+
+    booking = Booking.query.get_or_404(booking_id)
+    is_client = current_user.id == booking.client_id
+    is_admin = current_user.role == RoleEnum.admin
+    if not (is_client or is_admin):
+        return jsonify({"error": "Not authorized to pay for this booking."}), 403
+
+    if booking.event_datetime:
+        now = datetime.utcnow()
+        balance_due_by = booking.event_datetime - timedelta(hours=BOOKING_BALANCE_DEADLINE_HOURS)
+        if now >= booking.event_datetime:
+            return jsonify({"error": "Balance payment is no longer available after the booking time."}), 400
+        if now >= balance_due_by:
+            return jsonify({"error": f"Balance must be paid at least {BOOKING_BALANCE_DEADLINE_HOURS} hours before the booking time."}), 400
+
+    order, err = get_or_create_payment_order_for_booking(booking)
+    if err:
+        return jsonify({"error": err}), 400
+    payload, status = _create_checkout_session_for_order(order, PaymentLedgerPhase.balance)
+    return jsonify(payload), status
 
 
 @app.route("/bookings/<int:booking_id>", methods=["GET", "POST"])
@@ -6692,6 +9389,11 @@ def booking_detail(booking_id):
         flash("You don't have access to this booking.", "error")
         return redirect(url_for("bookme_requests"))
 
+    provider_user = booking.provider or User.query.get(booking.provider_id)
+    client_user = booking.client or User.query.get(booking.client_id)
+    if not provider_user or not client_user:
+        flash("Some booking participant details are unavailable. If this persists, contact support.", "warning")
+
     if request.method == "POST":
         action = (request.form.get("action") or "").strip().lower()
         
@@ -6700,49 +9402,61 @@ def booking_detail(booking_id):
             if booking.status in [BOOKING_STATUS_COMPLETED, BOOKING_STATUS_CANCELLED, BOOKING_STATUS_DISPUTED]:
                 flash("Cannot edit bookings that are completed, cancelled, or disputed.", "error")
                 return redirect(url_for("booking_detail", booking_id=booking.id))
-            
-            # Update event title
-            event_title = (request.form.get("event_title") or "").strip()
-            if event_title:
-                booking.event_title = event_title
-            
-            # Update date/time
-            event_date = (request.form.get("event_date") or "").strip()
-            event_time = (request.form.get("event_time") or "").strip()
-            if event_date and event_time:
-                try:
-                    booking.event_datetime = datetime.strptime(f"{event_date} {event_time}", "%Y-%m-%d %H:%M")
-                except ValueError:
-                    flash("Invalid date/time format.", "error")
+            if is_client or is_admin:
+                # Update event title
+                event_title = (request.form.get("event_title") or "").strip()
+                if event_title:
+                    booking.event_title = event_title
+
+                # Update date/time
+                event_date = (request.form.get("event_date") or "").strip()
+                event_time = (request.form.get("event_time") or "").strip()
+                if event_date and event_time:
+                    try:
+                        booking.event_datetime = datetime.strptime(f"{event_date} {event_time}", "%Y-%m-%d %H:%M")
+                    except ValueError:
+                        flash("Invalid date/time format.", "error")
+                        return redirect(url_for("booking_detail", booking_id=booking.id))
+                elif event_date or event_time:
+                    flash("Both date and time are required.", "error")
                     return redirect(url_for("booking_detail", booking_id=booking.id))
-            elif event_date or event_time:
-                flash("Both date and time are required.", "error")
-                return redirect(url_for("booking_detail", booking_id=booking.id))
-            
-            # Update duration
-            duration_minutes_raw = (request.form.get("duration_minutes") or "").strip()
-            if duration_minutes_raw:
+
+                # Update duration
+                duration_minutes_raw = (request.form.get("duration_minutes") or "").strip()
+                if not duration_minutes_raw:
+                    flash("Duration is required.", "error")
+                    return redirect(url_for("booking_detail", booking_id=booking.id))
                 try:
-                    booking.duration_minutes = int(duration_minutes_raw) if duration_minutes_raw else None
+                    booking.duration_minutes = int(duration_minutes_raw)
                 except ValueError:
                     flash("Duration must be a number.", "error")
                     return redirect(url_for("booking_detail", booking_id=booking.id))
-            
-            # Update location
-            location_text = (request.form.get("location_text") or "").strip()
-            booking.location_text = location_text or None
-            
-            # Update total amount
-            total_dollars_raw = (request.form.get("total_dollars") or "").strip()
-            if total_dollars_raw:
-                try:
-                    total_dollars = float(total_dollars_raw)
-                    booking.total_cents = int(total_dollars * 100) if total_dollars >= 0 else None
-                except ValueError:
-                    flash("Total amount must be a valid number.", "error")
+                if booking.duration_minutes <= 0:
+                    flash("Duration must be greater than 0 minutes.", "error")
                     return redirect(url_for("booking_detail", booking_id=booking.id))
-            elif total_dollars_raw == "":
-                booking.total_cents = None
+
+                # Update location
+                location_text = (request.form.get("location_text") or "").strip()
+                booking.location_text = location_text or None
+
+                # Update total amount (client-only)
+                total_dollars_raw = (request.form.get("total_dollars") or "").strip()
+                if total_dollars_raw:
+                    try:
+                        total_dollars = float(total_dollars_raw)
+                        booking.total_cents = int(total_dollars * 100) if total_dollars >= 0 else None
+                        if booking.total_cents is not None:
+                            booking.quoted_total_cents = booking.total_cents
+                            booking.beatfund_fee_total_cents = calc_beatfund_fee_total(booking.total_cents)
+                            if booking.deposit_base_cents is None:
+                                booking.deposit_base_cents = HOLD_FEE_CENTS
+                    except ValueError:
+                        flash("Total amount must be a valid number.", "error")
+                        return redirect(url_for("booking_detail", booking_id=booking.id))
+                elif total_dollars_raw == "":
+                    booking.total_cents = None
+                    booking.quoted_total_cents = None
+                    booking.beatfund_fee_total_cents = None
             
             # Update notes (provider can update provider notes, client can update client notes)
             if is_provider:
@@ -6754,10 +9468,12 @@ def booking_detail(booking_id):
             
             # Status updates (only provider can change status to accepted/confirmed/cancelled)
             if is_provider:
+                refund_hold = False
                 new_status = (request.form.get("status") or "").strip().lower()
                 if new_status and new_status in [BOOKING_STATUS_PENDING, BOOKING_STATUS_ACCEPTED, BOOKING_STATUS_CONFIRMED, BOOKING_STATUS_CANCELLED]:
                     booking.status = new_status
                     if new_status == BOOKING_STATUS_CANCELLED:
+                        refund_hold = True
                         flash("Booking has been cancelled.", "success")
                     elif new_status == BOOKING_STATUS_ACCEPTED:
                         flash("Booking has been accepted.", "success")
@@ -6765,6 +9481,11 @@ def booking_detail(booking_id):
                         flash("Booking has been confirmed.", "success")
             
             db.session.commit()
+            if is_provider and locals().get("refund_hold"):
+                try:
+                    _refund_hold_deposit_for_provider_cancel(booking)
+                except Exception:
+                    pass
             flash("Booking updated successfully.", "success")
             return redirect(url_for("booking_detail", booking_id=booking.id))
         
@@ -6794,7 +9515,495 @@ def booking_detail(booking_id):
             db.session.commit()
             return redirect(url_for("booking_detail", booking_id=booking.id))
 
-    return render_template("booking_detail.html", booking=booking, is_provider=is_provider, is_client=is_client)
+    try:
+        req = BookingRequest.query.filter_by(booking_id=booking.id).first()
+    except Exception:
+        req = None
+
+    deposit_payment = None
+    balance_payment = None
+    payment_order = None
+
+    deposit_breakdown = None
+    balance_breakdown = None
+    deposit_due = False
+    balance_due = False
+    balance_blocked = False
+    balance_blocked_reason = None
+    balance_due_by = None
+    service_total_cents = None
+    deposit_base_cents = None
+    deposit_credit_cents = None
+    remaining_service_cents = None
+    base_paid_cents = 0
+    bf_paid_cents = 0
+    beatfund_fee_total_cents = None
+    beatfund_fee_remaining_cents = None
+
+    if is_client:
+        ctx, changed = _resolve_booking_fee_fields(booking)
+        if changed:
+            db.session.commit()
+        service_total_cents = ctx.get("quoted_total_cents")
+        if service_total_cents is not None:
+            service_total_cents = int(service_total_cents)
+
+        if service_total_cents:
+            payment_order, order_err = get_or_create_payment_order_for_booking(booking)
+            if order_err:
+                app.logger.warning(f"Booking order setup failed: {order_err}")
+            elif payment_order:
+                service_total_cents = int(payment_order.total_amount_cents or service_total_cents)
+
+        deposit_base_cents = booking_hold_fee_effective(int(service_total_cents or 0))
+
+        if payment_order:
+            base_paid_cents = ledger_sum_gross(payment_order.id, phase=PaymentLedgerPhase.holding)
+            bf_paid_cents = ledger_sum_platform_fees(payment_order.id)
+
+        if service_total_cents:
+            deposit_credit_cents = min(deposit_base_cents or 0, base_paid_cents or 0)
+            remaining_service_cents = max(0, int(service_total_cents) - int(deposit_credit_cents or 0))
+            beatfund_fee_total_cents = planned_platform_fee_cents(OrderType.booking, int(service_total_cents))
+            beatfund_fee_remaining_cents = max(0, int(beatfund_fee_total_cents) - int(bf_paid_cents or 0))
+
+        if service_total_cents is not None:
+            deposit_breakdown = {
+                "base_cents": int(deposit_base_cents or 0),
+                "beatfund_fee_cents": 0,
+                "processing_fee_cents": 0,
+                "total_cents": int(deposit_base_cents or 0),
+            }
+            if (deposit_base_cents or 0) > 0 and base_paid_cents < (deposit_base_cents or 0):
+                deposit_due = True
+
+            balance_breakdown = {
+                "base_cents": int(remaining_service_cents or 0),
+                "beatfund_fee_cents": 0,
+                "processing_fee_cents": 0,
+                "total_cents": int(remaining_service_cents or 0),
+            }
+            balance_paid = payment_order and _ledger_phase_succeeded(payment_order.id, PaymentLedgerPhase.balance)
+            if (remaining_service_cents or 0) > 0 and not deposit_due and not balance_paid:
+                balance_due = True
+
+        if booking.event_datetime and balance_due:
+            now = datetime.utcnow()
+            balance_due_by = booking.event_datetime - timedelta(hours=BOOKING_BALANCE_DEADLINE_HOURS)
+            if now >= booking.event_datetime:
+                balance_blocked = True
+                balance_blocked_reason = "Balance payment is no longer available after the booking time."
+            elif now >= balance_due_by:
+                balance_blocked = True
+                balance_blocked_reason = (
+                    f"Balance must be paid at least {BOOKING_BALANCE_DEADLINE_HOURS} hours before the booking time."
+                )
+
+    # Reviews & disputes
+    review = None
+    can_leave_review = False
+    if is_client:
+        review = ProviderReview.query.filter_by(booking_id=booking.id).first()
+        if booking.status == BOOKING_STATUS_COMPLETED and not review:
+            can_leave_review = True
+
+    dispute = BookingDispute.query.filter_by(booking_id=booking.id).order_by(BookingDispute.created_at.desc()).first()
+    can_open_dispute = False
+    dispute_window_ok = True
+    if (is_client or is_provider) and not dispute:
+        # Only allow disputes within a window after event datetime (if known)
+        if booking.event_datetime:
+            dispute_deadline = booking.event_datetime + timedelta(days=DISPUTE_OPEN_WINDOW_DAYS)
+            dispute_window_ok = datetime.utcnow() <= dispute_deadline
+        if booking.status in [BOOKING_STATUS_CONFIRMED, BOOKING_STATUS_PAID, BOOKING_STATUS_COMPLETED, BOOKING_STATUS_ACCEPTED]:
+            can_open_dispute = dispute_window_ok
+
+    stripe_enabled = bool(STRIPE_AVAILABLE and STRIPE_SECRET_KEY and STRIPE_PUBLISHABLE_KEY)
+
+    return render_template(
+        "booking_detail.html",
+        booking=booking,
+        provider_user=provider_user,
+        client_user=client_user,
+        is_provider=is_provider,
+        is_client=is_client,
+        is_admin=is_admin,
+        deposit_breakdown=deposit_breakdown,
+        balance_breakdown=balance_breakdown,
+        deposit_due=deposit_due,
+        balance_due=balance_due,
+        balance_blocked=balance_blocked,
+        balance_blocked_reason=balance_blocked_reason,
+        balance_due_by=balance_due_by,
+        deposit_payment=deposit_payment,
+        balance_payment=balance_payment,
+        payment_order_id=(payment_order.id if payment_order else None),
+        service_total_cents=service_total_cents,
+        deposit_base_cents=deposit_base_cents,
+        deposit_credit_cents=deposit_credit_cents,
+        remaining_service_cents=remaining_service_cents,
+        base_paid_cents=base_paid_cents,
+        bf_paid_cents=bf_paid_cents,
+        beatfund_fee_total_cents=beatfund_fee_total_cents,
+        beatfund_fee_remaining_cents=beatfund_fee_remaining_cents,
+        stripe_enabled=stripe_enabled,
+        stripe_publishable_key=STRIPE_PUBLISHABLE_KEY,
+        BOOKING_BALANCE_DEADLINE_HOURS=BOOKING_BALANCE_DEADLINE_HOURS,
+        review=review,
+        can_leave_review=can_leave_review,
+        dispute=dispute,
+        can_open_dispute=can_open_dispute,
+        dispute_window_ok=dispute_window_ok,
+        DISPUTE_OPEN_WINDOW_DAYS=DISPUTE_OPEN_WINDOW_DAYS,
+    )
+
+
+@app.route("/bookings/<int:booking_id>/review", methods=["GET", "POST"])
+@login_required
+def booking_review(booking_id: int):
+    booking = Booking.query.get_or_404(booking_id)
+    is_client = current_user.id == booking.client_id
+    is_admin = current_user.role == RoleEnum.admin
+
+    if not (is_client or is_admin):
+        abort(403)
+
+    if booking.status != BOOKING_STATUS_COMPLETED:
+        flash("Reviews are only available after a booking is completed.", "error")
+        return redirect(url_for("booking_detail", booking_id=booking.id))
+
+    existing = ProviderReview.query.filter_by(booking_id=booking.id).first()
+    if existing:
+        flash("You already submitted a review for this booking.", "info")
+        return redirect(url_for("booking_detail", booking_id=booking.id))
+
+    if request.method == "GET":
+        return render_template(
+            "booking_review_form.html",
+            booking=booking,
+            provider=booking.provider,
+        )
+
+    rating_raw = (request.form.get("rating") or "").strip()
+    title = sanitize_input((request.form.get("title") or "").strip(), max_length=160) or None
+    body = sanitize_input((request.form.get("body") or "").strip(), max_length=2000) or None
+
+    try:
+        rating = int(rating_raw)
+    except Exception:
+        rating = 0
+    if rating < 1 or rating > 5:
+        flash("Rating must be between 1 and 5.", "error")
+        return redirect(url_for("booking_review", booking_id=booking.id))
+
+    review = ProviderReview(
+        booking_id=booking.id,
+        reviewer_user_id=current_user.id,
+        provider_user_id=booking.provider_id,
+        rating=rating,
+        title=title,
+        body=body,
+        status=ReviewVisibility.visible,
+        reported_count=0,
+    )
+    db.session.add(review)
+    db.session.commit()
+
+    flash("Review submitted. Thank you!", "success")
+    return redirect(url_for("booking_detail", booking_id=booking.id))
+
+
+@app.route("/reviews/<int:review_id>/report", methods=["POST"])
+@login_required
+def review_report(review_id: int):
+    review = ProviderReview.query.get_or_404(review_id)
+    review.reported_count = int(review.reported_count or 0) + 1
+    if review.reported_count >= 3:
+        review.status = ReviewVisibility.hidden
+    db.session.commit()
+    flash("Review reported. Thank you for helping keep the community safe.", "success")
+    return redirect(request.referrer or url_for("provider_portfolio_public", username=review.provider.username))
+
+
+@app.route("/admin/reviews", endpoint="admin_reviews")
+@app.route("/dashboard/admin/reviews", endpoint="admin_reviews_dashboard")
+@role_required("admin")
+def admin_reviews():
+    status = (request.args.get("status") or "").strip().lower()
+    q = (request.args.get("q") or "").strip().lstrip("@")
+
+    query = ProviderReview.query
+    if status in ("visible", "hidden"):
+        query = query.filter(ProviderReview.status == ReviewVisibility(status))
+    if q:
+        provider = User.query.filter(func.lower(User.username) == q.lower()).first()
+        if provider:
+            query = query.filter(ProviderReview.provider_user_id == provider.id)
+        else:
+            query = query.filter(ProviderReview.id == -1)
+
+    reviews = query.order_by(ProviderReview.created_at.desc()).limit(200).all()
+    return render_template("admin_reviews.html", reviews=reviews, status=status, q=q)
+
+
+@app.route("/admin/reviews/<int:review_id>/hide", methods=["POST"])
+@role_required("admin")
+def admin_review_hide(review_id: int):
+    review = ProviderReview.query.get_or_404(review_id)
+    review.status = ReviewVisibility.hidden
+    db.session.commit()
+    flash("Review hidden.", "success")
+    return redirect(request.referrer or url_for("admin_reviews"))
+
+
+@app.route("/admin/reviews/<int:review_id>/show", methods=["POST"])
+@role_required("admin")
+def admin_review_show(review_id: int):
+    review = ProviderReview.query.get_or_404(review_id)
+    review.status = ReviewVisibility.visible
+    db.session.commit()
+    flash("Review visible.", "success")
+    return redirect(request.referrer or url_for("admin_reviews"))
+
+
+@app.route("/bookings/<int:booking_id>/dispute", methods=["GET", "POST"])
+@login_required
+def booking_dispute(booking_id: int):
+    booking = Booking.query.get_or_404(booking_id)
+    is_provider = current_user.id == booking.provider_id
+    is_client = current_user.id == booking.client_id
+    is_admin = current_user.role == RoleEnum.admin
+
+    if not (is_provider or is_client or is_admin):
+        abort(403)
+
+    dispute = BookingDispute.query.filter_by(booking_id=booking.id).order_by(BookingDispute.created_at.desc()).first()
+
+    if request.method == "POST":
+        if dispute:
+            flash("A dispute already exists for this booking.", "error")
+            return redirect(url_for("booking_dispute", booking_id=booking.id))
+
+        # Window check
+        if booking.event_datetime:
+            deadline = booking.event_datetime + timedelta(days=DISPUTE_OPEN_WINDOW_DAYS)
+            if datetime.utcnow() > deadline:
+                flash("Dispute window has closed for this booking.", "error")
+                return redirect(url_for("booking_detail", booking_id=booking.id))
+
+        reason = sanitize_input((request.form.get("reason") or "").strip(), max_length=300)
+        details = sanitize_input((request.form.get("details") or "").strip(), max_length=2000)
+        if not reason:
+            flash("Please provide a dispute reason.", "error")
+            return redirect(url_for("booking_dispute", booking_id=booking.id))
+
+        dispute = BookingDispute(
+            booking_id=booking.id,
+            opened_by_id=current_user.id,
+            reason=reason,
+            details=details or None,
+            status="open",
+        )
+        db.session.add(dispute)
+        db.session.flush()
+
+        if details:
+            msg = BookingDisputeMessage(
+                dispute_id=dispute.id,
+                author_user_id=current_user.id,
+                body=details,
+            )
+            db.session.add(msg)
+        db.session.commit()
+
+        flash("Dispute opened. Our team will review it shortly.", "success")
+        return redirect(url_for("booking_dispute", booking_id=booking.id))
+
+    messages = []
+    if dispute:
+        messages = dispute.messages.order_by(BookingDisputeMessage.created_at.asc()).all()
+
+    return render_template(
+        "booking_dispute.html",
+        booking=booking,
+        dispute=dispute,
+        messages=messages,
+        DISPUTE_STATUSES=DISPUTE_STATUSES,
+    )
+
+
+@app.route("/disputes/<int:dispute_id>/reply", methods=["POST"])
+@login_required
+def dispute_reply(dispute_id: int):
+    dispute = BookingDispute.query.get_or_404(dispute_id)
+    booking = dispute.booking
+    is_provider = current_user.id == booking.provider_id
+    is_client = current_user.id == booking.client_id
+    is_admin = current_user.role == RoleEnum.admin
+
+    if not (is_provider or is_client or is_admin):
+        abort(403)
+
+    body = sanitize_input((request.form.get("body") or "").strip(), max_length=2000)
+    if not body:
+        flash("Reply cannot be empty.", "error")
+        return redirect(url_for("booking_dispute", booking_id=booking.id))
+
+    msg = BookingDisputeMessage(
+        dispute_id=dispute.id,
+        author_user_id=current_user.id,
+        body=body,
+    )
+    db.session.add(msg)
+    db.session.commit()
+    flash("Reply sent.", "success")
+    return redirect(url_for("booking_dispute", booking_id=booking.id))
+
+
+@app.route("/admin/disputes", endpoint="admin_disputes")
+@app.route("/dashboard/admin/disputes", endpoint="admin_disputes_dashboard")
+@role_required("admin")
+def admin_disputes():
+    status = (request.args.get("status") or "").strip().lower()
+    query = BookingDispute.query
+    if status in DISPUTE_STATUSES:
+        query = query.filter(BookingDispute.status == status)
+    disputes = query.order_by(BookingDispute.created_at.desc()).limit(200).all()
+    return render_template("admin_disputes.html", disputes=disputes, status=status, DISPUTE_STATUSES=DISPUTE_STATUSES)
+
+
+@app.route("/admin/disputes/<int:dispute_id>", methods=["GET", "POST"], endpoint="admin_dispute_detail")
+@role_required("admin")
+def admin_dispute_detail(dispute_id: int):
+    dispute = BookingDispute.query.get_or_404(dispute_id)
+
+    if request.method == "POST":
+        before_status = str(dispute.status)
+        new_status = (request.form.get("status") or "").strip().lower()
+        if new_status in DISPUTE_STATUSES:
+            dispute.status = new_status
+
+        body = sanitize_input((request.form.get("body") or "").strip(), max_length=2000)
+        if body:
+            msg = BookingDisputeMessage(
+                dispute_id=dispute.id,
+                author_user_id=current_user.id,
+                body=body,
+            )
+            db.session.add(msg)
+        db.session.commit()
+        try:
+            after_status = str(dispute.status)
+            log_admin_action(
+                ActivityEventType.admin_ticket_updated,
+                actor_admin_id=current_user.id,
+                target_type="dispute",
+                target_id=dispute.id,
+                summary=f"Dispute updated for booking #{dispute.booking_id}",
+                payload_dict={"before": {"status": before_status}, "after": {"status": after_status}, "reply_added": bool(body)},
+                url=url_for("admin_dispute_detail", dispute_id=dispute.id),
+                include_actor=True,
+            )
+        except Exception:
+            pass
+        flash("Dispute updated.", "success")
+        return redirect(url_for("admin_dispute_detail", dispute_id=dispute.id))
+
+    messages = dispute.messages.order_by(BookingDisputeMessage.created_at.asc()).all()
+    return render_template(
+        "admin_dispute_detail.html",
+        dispute=dispute,
+        messages=messages,
+        DISPUTE_STATUSES=DISPUTE_STATUSES,
+    )
+
+@app.route("/bookings/<int:booking_id>/quote", methods=["POST"])
+@login_required
+def booking_quote(booking_id: int):
+    booking = Booking.query.get_or_404(booking_id)
+    is_provider = current_user.id == booking.provider_id
+    is_admin = current_user.role == RoleEnum.admin
+
+    if not (is_provider or is_admin):
+        flash("You are not allowed to quote this booking.", "error")
+        return redirect(url_for("booking_detail", booking_id=booking.id))
+
+    duration_minutes = int(booking.duration_minutes or 0)
+    if duration_minutes <= 0:
+        flash("Duration is required before sending a quote.", "error")
+        return redirect(url_for("booking_detail", booking_id=booking.id))
+
+    hourly_rate_raw = (request.form.get("hourly_rate_dollars") or "").strip()
+    billable_hours_raw = (request.form.get("billable_hours") or "").strip()
+    breakdown_text = (request.form.get("quote_breakdown_text") or "").strip()
+    calculation_text = (request.form.get("quote_calculation_text") or "").strip()
+
+    if not billable_hours_raw:
+        flash("Billable hours are required.", "error")
+        return redirect(url_for("booking_detail", booking_id=booking.id))
+
+    if not hourly_rate_raw:
+        flash("Hourly rate is required.", "error")
+        return redirect(url_for("booking_detail", booking_id=booking.id))
+
+    try:
+        billable_hours_decimal = Decimal(billable_hours_raw)
+    except Exception:
+        flash("Billable hours must be a valid number.", "error")
+        return redirect(url_for("booking_detail", booking_id=booking.id))
+
+    try:
+        rate_decimal = Decimal(hourly_rate_raw)
+    except Exception:
+        flash("Hourly rate must be a valid number.", "error")
+        return redirect(url_for("booking_detail", booking_id=booking.id))
+
+    if billable_hours_decimal <= 0:
+        flash("Billable hours must be greater than 0.", "error")
+        return redirect(url_for("booking_detail", booking_id=booking.id))
+
+    if rate_decimal <= 0:
+        flash("Hourly rate must be greater than 0.", "error")
+        return redirect(url_for("booking_detail", booking_id=booking.id))
+
+    if not breakdown_text:
+        flash("Please provide a quote breakdown.", "error")
+        return redirect(url_for("booking_detail", booking_id=booking.id))
+
+    hourly_rate_cents = int((rate_decimal * 100).to_integral_value(rounding=ROUND_UP))
+    billable_minutes = int((billable_hours_decimal * 60).to_integral_value(rounding=ROUND_UP))
+    quoted_total_cents = int(
+        (Decimal(billable_minutes) * Decimal(hourly_rate_cents) / Decimal(60)).to_integral_value(rounding=ROUND_UP)
+    )
+
+    booking.quote_hourly_rate_cents = hourly_rate_cents
+    booking.quote_billable_minutes = billable_minutes
+    booking.quote_calculation_text = calculation_text or None
+    booking.quoted_total_cents = quoted_total_cents
+    booking.total_cents = quoted_total_cents
+    booking.quote_breakdown_text = breakdown_text
+    booking.deposit_base_cents = HOLD_FEE_CENTS
+    booking.beatfund_fee_total_cents = calc_beatfund_fee_total(quoted_total_cents)
+    booking.status = BOOKING_STATUS_QUOTED
+
+    db.session.commit()
+    try:
+        client = User.query.get(booking.client_id)
+        if client:
+            notify_user(
+                client,
+                kind="success",
+                title="Quote ready",
+                body=f"@{current_user.username} sent you a quote for booking #{booking.id}.",
+                url=url_for("booking_detail", booking_id=booking.id),
+                actor_user_id=current_user.id,
+                event_key=f"booking:{booking.id}:quote_sent",
+                commit=True,
+            )
+    except Exception:
+        pass
+    flash("Quote sent to client.", "success")
+    return redirect(url_for("booking_detail", booking_id=booking.id))
 
 
 # =========================================================
@@ -7054,7 +10263,10 @@ def bookme_book_provider(username):
     if prof and not prof.is_visible:
         flash("This studio profile is currently inactive and not accepting new bookings. You can still follow and view their portfolio.", "error")
         return redirect(url_for("provider_portfolio_public", username=username))
-    
+
+    settings = get_provider_settings(provider.id, create=False)
+    availability_slots, availability_exceptions = get_provider_availability_summary(provider.id)
+
     # Get follower count and follow status for template
     follower_count = UserFollow.query.filter_by(followed_id=provider.id).count()
     is_following = current_user.is_authenticated and UserFollow.query.filter_by(
@@ -7062,12 +10274,27 @@ def bookme_book_provider(username):
     ).first() is not None
     
     if request.method == "POST":
+        if settings and not settings.accepting_new_requests:
+            flash("This provider is not accepting new requests right now.", "error")
+            return render_template(
+                "bookme_book_provider.html",
+                provider=provider,
+                form_data=request.form,
+                follower_count=follower_count,
+                is_following=is_following,
+                settings=settings,
+                availability_slots=availability_slots,
+                availability_exceptions=availability_exceptions,
+            )
+
         # Collect all form fields
         event_date = (request.form.get("event_date") or "").strip()
         event_time = (request.form.get("event_time") or "").strip()
         preferred_time_fallback = (request.form.get("preferred_time") or "").strip()
         budget = (request.form.get("budget") or "").strip()
         message = (request.form.get("message") or "").strip()
+        duration_hours_raw = (request.form.get("duration_hours") or "").strip()
+        duration_minutes_raw = (request.form.get("duration_minutes") or "").strip()
         
         # Build preferred_time from date/time or use fallback
         preferred_time = preferred_time_fallback
@@ -7087,13 +10314,61 @@ def bookme_book_provider(username):
                 follower_count=follower_count,
                 is_following=is_following
             )
+
+        duration_hours = 0
+        duration_minutes = 0
+        try:
+            if duration_hours_raw:
+                duration_hours = int(duration_hours_raw)
+            if duration_minutes_raw:
+                duration_minutes = int(duration_minutes_raw)
+        except ValueError:
+            flash("Duration must be a valid number of hours/minutes.", "error")
+            return render_template(
+                "bookme_book_provider.html",
+                provider=provider,
+                form_data=request.form,
+                follower_count=follower_count,
+                is_following=is_following
+            )
+
+        if duration_hours < 0 or duration_minutes < 0 or duration_minutes > 59:
+            flash("Duration minutes must be between 0 and 59.", "error")
+            return render_template(
+                "bookme_book_provider.html",
+                provider=provider,
+                form_data=request.form,
+                follower_count=follower_count,
+                is_following=is_following
+            )
+
+        total_duration_minutes = (duration_hours * 60) + duration_minutes
+        if total_duration_minutes <= 0:
+            flash("Duration is required.", "error")
+            return render_template(
+                "bookme_book_provider.html",
+                provider=provider,
+                form_data=request.form,
+                follower_count=follower_count,
+                is_following=is_following
+            )
+        if total_duration_minutes < 30 or total_duration_minutes > (12 * 60):
+            flash("Duration must be between 30 minutes and 12 hours.", "error")
+            return render_template(
+                "bookme_book_provider.html",
+                provider=provider,
+                form_data=request.form,
+                follower_count=follower_count,
+                is_following=is_following
+            )
         
         # Build comprehensive message from role-specific fields
-        role_val = (provider.role.value if provider.role and hasattr(provider.role, 'value') else str(provider.role)).lower()
+        role_val = (provider.role if provider.role else str(provider.role)).lower()
         message_parts = []
         
         if budget:
             message_parts.append(f"Budget: {budget}")
+        message_parts.append(f"Duration: {total_duration_minutes} minutes")
         
         # Studio-specific fields
         if role_val in ["studio"]:
@@ -7281,10 +10556,28 @@ def bookme_book_provider(username):
                         provider=provider,
                         form_data=request.form,
                         follower_count=follower_count,
-                        is_following=is_following
+                        is_following=is_following,
+                        settings=settings,
+                        availability_slots=availability_slots,
+                        availability_exceptions=availability_exceptions,
                     )
             except (ValueError, AttributeError):
                 pass
+
+        # Availability check for all provider roles
+        ok, reason = provider_is_available(provider.id, preferred_time, total_duration_minutes)
+        if not ok:
+            flash(reason or "Requested time is not available.", "error")
+            return render_template(
+                "bookme_book_provider.html",
+                provider=provider,
+                form_data=request.form,
+                follower_count=follower_count,
+                is_following=is_following,
+                settings=settings,
+                availability_slots=availability_slots,
+                availability_exceptions=availability_exceptions,
+            )
         
         # Create booking request
         req = BookingRequest(
@@ -7292,6 +10585,7 @@ def bookme_book_provider(username):
             client_id=current_user.id,
             message=full_message or None,
             preferred_time=preferred_time,
+            duration_minutes=total_duration_minutes,
         )
         db.session.add(req)
         db.session.commit()
@@ -7302,7 +10596,8 @@ def bookme_book_provider(username):
             kind="info",
             title="New booking request",
             body=f"@{current_user.username} requested {preferred_time}",
-            url=url_for("bookme_requests")
+            url=url_for("bookme_requests"),
+            commit=True,
         )
         
         flash("Booking request sent successfully.", "success")
@@ -7313,7 +10608,10 @@ def bookme_book_provider(username):
         provider=provider,
         form_data={},
         follower_count=follower_count,
-        is_following=is_following
+        is_following=is_following,
+        settings=settings,
+        availability_slots=availability_slots,
+        availability_exceptions=availability_exceptions,
     )
 
 
@@ -7355,6 +10653,14 @@ def book_artist(username):
                 duration_minutes = int(duration_minutes_raw)
             except ValueError:
                 errors.append("Duration must be a number of minutes.")
+        else:
+            errors.append("Duration is required.")
+
+        if duration_minutes is not None:
+            if duration_minutes <= 0:
+                errors.append("Duration must be greater than 0 minutes.")
+            elif duration_minutes < 30 or duration_minutes > (12 * 60):
+                errors.append("Duration must be between 30 minutes and 12 hours.")
 
         total_cents = None
         if price_dollars_raw:
@@ -7381,6 +10687,9 @@ def book_artist(username):
             duration_minutes=duration_minutes,
             location_text=location_text or None,
             total_cents=total_cents,
+            quoted_total_cents=total_cents,
+            deposit_base_cents=HOLD_FEE_CENTS,
+            beatfund_fee_total_cents=calc_beatfund_fee_total(total_cents) if total_cents else None,
             notes_from_client=notes_from_client or None,
             status=BOOKING_STATUS_PENDING,
         )
@@ -7405,38 +10714,53 @@ def book_artist(username):
 @app.route("/market", endpoint="market_index")
 @login_required
 def market_index():
-    items = Beat.query.filter_by(is_active=True).order_by(Beat.is_featured.desc(), Beat.id.desc()).all()
+    try:
+        items = Beat.query.filter_by(is_active=True).order_by(Beat.is_featured.desc(), Beat.id.desc()).all()
 
-    provider_profiles = (
-        BookMeProfile.query
-        .join(User, BookMeProfile.user_id == User.id)
-        .filter(User.role.in_(list(BOOKME_PROVIDER_ROLES)))
-        .order_by(BookMeProfile.city.asc(), BookMeProfile.display_name.asc())
-        .all()
-    )
+        provider_profiles = (
+            BookMeProfile.query
+            .join(User, BookMeProfile.user_id == User.id)
+            .filter(User.role.in_(list(BOOKME_PROVIDER_ROLES)))
+            .order_by(BookMeProfile.city.asc(), BookMeProfile.display_name.asc())
+            .all()
+        )
 
-    def profile_has_role(profile, roles: set[RoleEnum]):
-        u = profile.user
-        return (u is not None) and (u.role in roles)
+        def profile_has_role(profile, roles: set[RoleEnum]):
+            u = profile.user
+            return (u is not None) and (u.role in roles)
 
-    studios = [p for p in provider_profiles if profile_has_role(p, {RoleEnum.studio})]
-    videographers = [p for p in provider_profiles if profile_has_role(p, {RoleEnum.videographer})]
-    talent_roles = {RoleEnum.artist, RoleEnum.dancer_choreographer, RoleEnum.emcee_host_hypeman, RoleEnum.dj}
-    talent_profiles = [p for p in provider_profiles if profile_has_role(p, talent_roles)]
+        studios = [p for p in provider_profiles if profile_has_role(p, {RoleEnum.studio})]
+        videographers = [p for p in provider_profiles if profile_has_role(p, {RoleEnum.videographer})]
+        talent_roles = {RoleEnum.artist, RoleEnum.dancer_choreographer, RoleEnum.emcee_host_hypeman, RoleEnum.dj}
+        talent_profiles = [p for p in provider_profiles if profile_has_role(p, talent_roles)]
 
-    used_ids = {p.id for p in studios + videographers + talent_profiles}
-    other_providers = [p for p in provider_profiles if p.id not in used_ids]
+        used_ids = {p.id for p in studios + videographers + talent_profiles}
+        other_providers = [p for p in provider_profiles if p.id not in used_ids]
 
-    return render_template(
-        "market_index.html",
-        items=items,
-        provider_profiles=provider_profiles,
-        studios=studios,
-        videographers=videographers,
-        talent_profiles=talent_profiles,
-        other_providers=other_providers,
-        RoleEnum=RoleEnum,
-    )
+        return render_template(
+            "market_index.html",
+            items=items,
+            provider_profiles=provider_profiles,
+            studios=studios,
+            videographers=videographers,
+            talent_profiles=talent_profiles,
+            other_providers=other_providers,
+            RoleEnum=RoleEnum,
+        )
+    except Exception as market_err:
+        app.logger.error(f"Market page error: {type(market_err).__name__}: {str(market_err)}", exc_info=True)
+        # Return empty market with error message
+        flash("The marketplace is temporarily unavailable. Please try again.", "warning")
+        return render_template(
+            "market_index.html",
+            items=[],
+            provider_profiles=[],
+            studios=[],
+            videographers=[],
+            talent_profiles=[],
+            other_providers=[],
+            RoleEnum=RoleEnum,
+        )
 
 
 @app.route("/market/my-purchases")
@@ -7450,7 +10774,7 @@ def market_my_purchases():
     # Expire any cached queries to ensure we get fresh data
     db.session.expire_all()
     
-    orders = (
+    legacy_orders = (
         Order.query
         .options(joinedload(Order.beat))
         .filter(Order.buyer_id == current_user.id)
@@ -7458,13 +10782,29 @@ def market_my_purchases():
         .order_by(Order.created_at.desc())
         .all()
     )
-    
+
+    payout_orders = (
+        PaymentOrder.query
+        .options(joinedload(PaymentOrder.beat))
+        .filter(PaymentOrder.client_user_id == current_user.id)
+        .filter(PaymentOrder.order_type == OrderType.beat_purchase)
+        .filter(PaymentOrder.status == OrderStatus.paid)
+        .order_by(PaymentOrder.created_at.desc())
+        .all()
+    )
+
     # Debug logging - also check raw count
     raw_count = Order.query.filter_by(buyer_id=current_user.id, status=OrderStatus.paid).count()
-    app.logger.info(f"My Purchases: Found {len(orders)} orders (raw count: {raw_count}) for user {current_user.id}")
-    
+    app.logger.info(
+        f"My Purchases: Found {len(legacy_orders)} legacy orders and {len(payout_orders)} payout orders "
+        f"(raw count: {raw_count}) for user {current_user.id}"
+    )
+
+    combined = list(legacy_orders) + list(payout_orders)
+    combined.sort(key=lambda o: (o.created_at or datetime.min), reverse=True)
+
     purchases = []
-    for o in orders:
+    for o in combined:
         # Only include orders that have a valid beat
         if o.beat_id:
             # Try to load beat if not already loaded
@@ -7486,17 +10826,36 @@ def market_my_purchases():
 # =========================================================
 # Stripe Configuration
 # =========================================================
-STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "").strip()
-STRIPE_PUBLISHABLE_KEY = os.getenv("STRIPE_PUBLISHABLE_KEY", "").strip()
-STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "").strip()
+def _clean_env(name: str) -> str:
+    value = os.getenv(name, "")
+    return value.strip() if value else ""
 
-# Validate that Stripe keys are set and not placeholders
-if STRIPE_SECRET_KEY and STRIPE_SECRET_KEY.startswith("sk_test_your_secret_key"):
-    STRIPE_SECRET_KEY = ""  # Treat placeholder as not set
-if STRIPE_PUBLISHABLE_KEY and STRIPE_PUBLISHABLE_KEY.startswith("pk_test_your_publishable_key"):
-    STRIPE_PUBLISHABLE_KEY = ""  # Treat placeholder as not set
-if STRIPE_WEBHOOK_SECRET and STRIPE_WEBHOOK_SECRET.startswith("whsec_your_webhook_secret"):
-    STRIPE_WEBHOOK_SECRET = ""  # Treat placeholder as not set
+
+def _is_placeholder(value: str) -> bool:
+    if not value:
+        return False
+    lowered = value.lower()
+    if "placeholder" in lowered or "your_" in lowered:
+        return True
+    if lowered in {"sk_test_placeholder", "pk_test_placeholder", "whsec_test_placeholder"}:
+        return True
+    return False
+
+
+STRIPE_SECRET_KEY = _clean_env("STRIPE_SECRET_KEY")
+STRIPE_PUBLISHABLE_KEY = _clean_env("STRIPE_PUBLISHABLE_KEY")
+STRIPE_WEBHOOK_SECRET = _clean_env("STRIPE_WEBHOOK_SECRET")
+CONNECT_ONBOARDING_RETURN_URL = _clean_env("CONNECT_ONBOARDING_RETURN_URL")
+CONNECT_ONBOARDING_REFRESH_URL = _clean_env("CONNECT_ONBOARDING_REFRESH_URL")
+
+if _is_placeholder(STRIPE_SECRET_KEY):
+    STRIPE_SECRET_KEY = ""
+if _is_placeholder(STRIPE_PUBLISHABLE_KEY):
+    STRIPE_PUBLISHABLE_KEY = ""
+if _is_placeholder(STRIPE_WEBHOOK_SECRET):
+    STRIPE_WEBHOOK_SECRET = ""
+
+stripe_enabled = bool(STRIPE_SECRET_KEY and STRIPE_PUBLISHABLE_KEY)
 
 # Base URL for Stripe checkout success/cancel URLs
 # Use APP_BASE_URL if set (for production), otherwise fall back to request.host_url
@@ -7514,20 +10873,352 @@ def get_stripe_base_url() -> str:
 
     app_base_url = os.getenv("APP_BASE_URL", "").strip()
     if app_base_url:
+        if not re.match(r"^https?://", app_base_url, re.IGNORECASE):
+            app_base_url = f"https://{app_base_url}"
         return app_base_url.rstrip("/")
     # Fallback to request.host_url (works in dev, but should set APP_BASE_URL in production)
     return request.host_url.rstrip("/") if request else ""
 
-if STRIPE_AVAILABLE and STRIPE_SECRET_KEY:
+if stripe_enabled and STRIPE_AVAILABLE:
     stripe.api_key = STRIPE_SECRET_KEY
-    app.logger.info(f"Stripe initialized with API key (key length: {len(STRIPE_SECRET_KEY)})")
-elif STRIPE_SECRET_KEY:
+elif stripe_enabled and not STRIPE_AVAILABLE:
     app.logger.warning("STRIPE_SECRET_KEY is set but stripe package is not installed. Install with: pip install stripe")
-else:
-    app.logger.warning(f"Stripe not configured: STRIPE_AVAILABLE={STRIPE_AVAILABLE}, STRIPE_SECRET_KEY length={len(STRIPE_SECRET_KEY) if STRIPE_SECRET_KEY else 0}")
+elif not stripe_enabled:
+    app.logger.warning("Stripe not configured: missing STRIPE_SECRET_KEY or STRIPE_PUBLISHABLE_KEY")
 
-# Safe startup diagnostics (do NOT log secrets)
-app.logger.info(f"Stripe env: STRIPE_SECRET_KEY_set={bool(STRIPE_SECRET_KEY)} STRIPE_WEBHOOK_SECRET_set={bool(STRIPE_WEBHOOK_SECRET)}")
+pub_prefix = STRIPE_PUBLISHABLE_KEY[:7] if STRIPE_PUBLISHABLE_KEY else ""
+app.logger.info(
+    f"Stripe config: enabled={stripe_enabled} "
+    f"publishable_set={bool(STRIPE_PUBLISHABLE_KEY)} "
+    f"secret_set={bool(STRIPE_SECRET_KEY)} "
+    f"webhook_set={bool(STRIPE_WEBHOOK_SECRET)} "
+    f"pub_prefix={pub_prefix}"
+)
+
+
+def _get_active_affiliate_id(user: User | None) -> int | None:
+    if not user:
+        return None
+    try:
+        aff_id = int(user.referred_by_affiliate_id or 0)
+    except Exception:
+        aff_id = 0
+    if not aff_id:
+        return None
+    try:
+        affiliate = Affiliate.query.get(aff_id)
+    except Exception:
+        affiliate = None
+    if not affiliate or affiliate.status != AffiliateStatus.active:
+        return None
+    return affiliate.id
+
+
+def _get_or_refresh_provider_stripe_account(provider_user_id: int, *, refresh: bool = False) -> ProviderStripeAccount | None:
+    acct_row = ProviderStripeAccount.query.filter_by(user_id=provider_user_id).first()
+    acct_id = acct_row.stripe_account_id if acct_row else None
+    if not acct_id:
+        try:
+            provider = User.query.get(int(provider_user_id))
+        except Exception:
+            provider = None
+        acct_id = (getattr(provider, "stripe_account_id", None) or "").strip() if provider else None
+        if acct_id:
+            acct_row = ProviderStripeAccount(
+                user_id=int(provider_user_id),
+                stripe_account_id=acct_id,
+                charges_enabled=False,
+                payouts_enabled=False,
+                details_submitted=False,
+            )
+            try:
+                db.session.add(acct_row)
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
+
+    if refresh and acct_id and STRIPE_AVAILABLE and STRIPE_SECRET_KEY:
+        try:
+            acct = stripe.Account.retrieve(acct_id)
+            charges_enabled = bool(getattr(acct, "charges_enabled", False) or acct.get("charges_enabled"))
+            payouts_enabled = bool(getattr(acct, "payouts_enabled", False) or acct.get("payouts_enabled"))
+            details_submitted = bool(getattr(acct, "details_submitted", False) or acct.get("details_submitted"))
+            if acct_row:
+                acct_row.charges_enabled = charges_enabled
+                acct_row.payouts_enabled = payouts_enabled
+                acct_row.details_submitted = details_submitted
+                db.session.commit()
+        except Exception:
+            db.session.rollback()
+    return acct_row
+
+
+def _get_provider_acct_id_or_error(provider_user_id: int) -> tuple[str | None, str | None]:
+    acct_row = _get_or_refresh_provider_stripe_account(provider_user_id, refresh=KYC_ENFORCE)
+    acct_id = (acct_row.stripe_account_id if acct_row else None) or ""
+    acct_id = acct_id.strip()
+    if not acct_id:
+        return None, "Provider has not connected a Stripe account."
+    if KYC_ENFORCE and acct_row and not (acct_row.charges_enabled and acct_row.payouts_enabled):
+        return None, "Provider Stripe account is not ready for charges/payouts."
+    return acct_id, None
+
+
+def get_or_create_payment_order_for_booking(booking: Booking) -> tuple[PaymentOrder | None, str | None]:
+    if not booking:
+        return None, "booking_not_found"
+    total_cents = booking.quoted_total_cents or booking.total_cents
+    if total_cents is None or int(total_cents) <= 0:
+        return None, "Booking total must be set before payment."
+    total_cents = int(total_cents)
+    client_id = int(booking.client_id)
+    provider_id = int(booking.provider_id)
+    affiliate_id = _get_active_affiliate_id(User.query.get(client_id))
+
+    existing = (
+        PaymentOrder.query
+        .filter_by(order_type=OrderType.booking, booking_id=booking.id, client_user_id=client_id)
+        .order_by(PaymentOrder.created_at.desc())
+        .first()
+    )
+    acct_id, _ = _get_provider_acct_id_or_error(provider_id)
+
+    if existing:
+        existing.total_amount_cents = total_cents
+        existing.provider_user_id = provider_id
+        existing.provider_stripe_acct_id = acct_id or existing.provider_stripe_acct_id
+        existing.affiliate_id = affiliate_id
+        if existing.status == OrderStatus.draft:
+            existing.status = OrderStatus.pending_payment
+        db.session.commit()
+        return existing, None
+
+    order = PaymentOrder(
+        order_type=OrderType.booking,
+        status=OrderStatus.pending_payment,
+        client_user_id=client_id,
+        provider_user_id=provider_id,
+        provider_stripe_acct_id=acct_id or None,
+        total_amount_cents=total_cents,
+        currency="usd",
+        affiliate_id=affiliate_id,
+        booking_id=booking.id,
+    )
+    db.session.add(order)
+    db.session.commit()
+    return order, None
+
+
+def get_or_create_payment_order_for_beat(beat: Beat, buyer: User) -> tuple[PaymentOrder | None, str | None]:
+    if not beat or not buyer:
+        return None, "beat_or_user_missing"
+    total_cents = int(beat.price_cents or 0)
+    if total_cents < 0:
+        return None, "Invalid beat price."
+    affiliate_id = _get_active_affiliate_id(buyer)
+    provider_id = int(beat.owner_id) if beat.owner_id else None
+    acct_id, _ = _get_provider_acct_id_or_error(provider_id) if provider_id else (None, None)
+
+    existing = (
+        PaymentOrder.query
+        .filter_by(order_type=OrderType.beat_purchase, beat_id=beat.id, client_user_id=buyer.id)
+        .order_by(PaymentOrder.created_at.desc())
+        .first()
+    )
+    if existing and existing.status == OrderStatus.paid:
+        return existing, None
+    if existing and existing.status in (OrderStatus.pending_payment, OrderStatus.partially_paid):
+        existing.total_amount_cents = total_cents
+        existing.provider_user_id = provider_id
+        existing.provider_stripe_acct_id = acct_id or existing.provider_stripe_acct_id
+        existing.affiliate_id = affiliate_id
+        db.session.commit()
+        return existing, None
+
+    order = PaymentOrder(
+        order_type=OrderType.beat_purchase,
+        status=OrderStatus.pending_payment,
+        client_user_id=int(buyer.id),
+        provider_user_id=provider_id,
+        provider_stripe_acct_id=acct_id or None,
+        total_amount_cents=total_cents,
+        currency="usd",
+        affiliate_id=affiliate_id,
+        beat_id=beat.id,
+    )
+    db.session.add(order)
+    db.session.commit()
+    return order, None
+
+
+def _ledger_phase_succeeded(order_id: int, phase: PaymentLedgerPhase) -> bool:
+    try:
+        return (
+            PaymentLedger.query
+            .filter_by(order_id=order_id, phase=phase, status=PaymentLedgerStatus.succeeded)
+            .first()
+            is not None
+        )
+    except Exception:
+        return False
+
+
+def _create_checkout_session_for_order(order: PaymentOrder, phase: PaymentLedgerPhase) -> tuple[dict, int]:
+    if not STRIPE_AVAILABLE:
+        return {"error": "Stripe is not available. Please install the stripe package."}, 500
+    if not STRIPE_SECRET_KEY:
+        return {"error": "Stripe is not configured. Please set STRIPE_SECRET_KEY."}, 500
+
+    if not order:
+        return {"error": "Order not found."}, 404
+
+    base_url = get_stripe_base_url()
+    if not base_url:
+        return {"error": "Unable to determine base URL. Please set APP_BASE_URL."}, 500
+
+    if phase == PaymentLedgerPhase.holding and order.order_type != OrderType.booking:
+        return {"error": "Invalid order phase."}, 400
+    if phase == PaymentLedgerPhase.balance and order.order_type != OrderType.booking:
+        return {"error": "Invalid order phase."}, 400
+    if phase == PaymentLedgerPhase.full and order.order_type != OrderType.beat_purchase:
+        return {"error": "Invalid order phase."}, 400
+
+    if _ledger_phase_succeeded(order.id, phase):
+        return {"error": "Payment already completed for this phase."}, 409
+
+    metadata = {
+        "order_id": str(order.id),
+        "phase": phase.value,
+        "order_type": order.order_type.value,
+        "client_user_id": str(order.client_user_id),
+        "provider_user_id": str(order.provider_user_id or ""),
+        "booking_id": str(order.booking_id or ""),
+        "beat_id": str(order.beat_id or ""),
+    }
+
+    client_ref = f"order_{order.id}_user_{order.client_user_id}"
+
+    if phase == PaymentLedgerPhase.holding:
+        amount_cents = booking_hold_fee_effective(int(order.total_amount_cents or 0))
+        if amount_cents <= 0:
+            return {"error": "Invalid hold fee amount."}, 400
+
+        line_items = [{
+            "price_data": {
+                "currency": order.currency or "usd",
+                "product_data": {"name": "Booking Holding Fee"},
+                "unit_amount": int(amount_cents),
+            },
+            "quantity": 1,
+        }]
+
+        success_url = f"{base_url}/checkout/hold-fee/success?session_id={{CHECKOUT_SESSION_ID}}"
+        cancel_url = f"{base_url}/bookings/{order.booking_id}" if order.booking_id else f"{base_url}/bookme/requests"
+
+        checkout_session = stripe.checkout.Session.create(
+            payment_method_types=["card"],
+            line_items=line_items,
+            mode="payment",
+            success_url=success_url,
+            cancel_url=cancel_url,
+            client_reference_id=client_ref,
+            metadata=metadata,
+            payment_intent_data={"metadata": metadata},
+            idempotency_key=f"order_{order.id}_holding",
+        )
+
+    elif phase == PaymentLedgerPhase.balance:
+        hold_paid = ledger_sum_gross(order.id, phase=PaymentLedgerPhase.holding)
+        hold_required = booking_hold_fee_effective(int(order.total_amount_cents or 0))
+        if hold_required > 0 and hold_paid < hold_required:
+            return {"error": "deposit_required"}, 409
+
+        balance_due_cents = max(0, int(order.total_amount_cents or 0) - int(hold_paid or 0))
+        if balance_due_cents <= 0:
+            return {"error": "no_balance_due"}, 409
+
+        acct_id, err = _get_provider_acct_id_or_error(int(order.provider_user_id or 0))
+        if err:
+            return {"error": err}, 400
+
+        fee_remaining = fee_remaining_cents(order)
+        application_fee_cents = min(int(fee_remaining), int(balance_due_cents))
+
+        line_items = [{
+            "price_data": {
+                "currency": order.currency or "usd",
+                "product_data": {"name": "Booking Balance"},
+                "unit_amount": int(balance_due_cents),
+            },
+            "quantity": 1,
+        }]
+
+        success_url = f"{base_url}/bookings/{order.booking_id}?payment=success&session_id={{CHECKOUT_SESSION_ID}}"
+        cancel_url = f"{base_url}/bookings/{order.booking_id}" if order.booking_id else f"{base_url}/bookme/requests"
+
+        checkout_session = stripe.checkout.Session.create(
+            payment_method_types=["card"],
+            line_items=line_items,
+            mode="payment",
+            success_url=success_url,
+            cancel_url=cancel_url,
+            client_reference_id=client_ref,
+            metadata=metadata,
+            payment_intent_data={
+                "application_fee_amount": int(application_fee_cents),
+                "transfer_data": {"destination": acct_id},
+                "metadata": metadata,
+            },
+            idempotency_key=f"order_{order.id}_balance",
+        )
+
+    else:
+        amount_cents = int(order.total_amount_cents or 0)
+        if amount_cents <= 0:
+            return {"error": "Invalid order amount."}, 400
+
+        acct_id, err = _get_provider_acct_id_or_error(int(order.provider_user_id or 0))
+        if err:
+            return {"error": err}, 400
+
+        application_fee_cents = planned_platform_fee_cents(order.order_type, amount_cents)
+
+        line_items = [{
+            "price_data": {
+                "currency": order.currency or "usd",
+                "product_data": {"name": "Beat Purchase"},
+                "unit_amount": int(amount_cents),
+            },
+            "quantity": 1,
+        }]
+
+        success_url = f"{base_url}/checkout/success?session_id={{CHECKOUT_SESSION_ID}}"
+        cancel_url = f"{base_url}/market/confirm/{order.beat_id}" if order.beat_id else f"{base_url}/market"
+
+        checkout_session = stripe.checkout.Session.create(
+            payment_method_types=["card"],
+            line_items=line_items,
+            mode="payment",
+            success_url=success_url,
+            cancel_url=cancel_url,
+            client_reference_id=client_ref,
+            metadata=metadata,
+            payment_intent_data={
+                "application_fee_amount": int(application_fee_cents),
+                "transfer_data": {"destination": acct_id},
+                "metadata": metadata,
+            },
+            idempotency_key=f"order_{order.id}_full",
+        )
+
+    order.status = OrderStatus.pending_payment
+    db.session.commit()
+
+    return {
+        "session_id": checkout_session.id,
+        "checkout_url": checkout_session.url,
+        "url": checkout_session.url,
+    }, 200
 
 
 def sync_beat_to_stripe(beat: Beat, commit: bool = True) -> tuple[Optional[str], Optional[str]]:
@@ -7672,9 +11363,6 @@ def create_checkout_session():
         app.logger.error(f"Stripe check failed: STRIPE_AVAILABLE={STRIPE_AVAILABLE}, STRIPE_SECRET_KEY length={len(STRIPE_SECRET_KEY) if STRIPE_SECRET_KEY else 0}")
         return jsonify({"error": "Stripe is not configured. Please set STRIPE_SECRET_KEY environment variable."}), 500
     
-    if not require_kyc_approved():
-        return jsonify({"error": "KYC verification required"}), 403
-    
     # Get beat_id from request
     beat_id = request.json.get("beat_id") if request.is_json else request.form.get("beat_id")
     if not beat_id:
@@ -7707,134 +11395,33 @@ def create_checkout_session():
     if _user_has_paid_for_beat(current_user.id, beat.id):
         return jsonify({"error": "You already purchased this beat"}), 400
     
-    # Calculate fees
     subtotal_cents = int(beat.price_cents or 0)
-    if subtotal_cents <= 0:
+    if subtotal_cents < 0:
         return jsonify({"error": "Invalid beat price"}), 400
-    
-    breakdown = fee_breakdown_for_beat(subtotal_cents)
-    total_cents = breakdown["total_cents"]
-    
-    # Get base URL for success/cancel URLs (must be publicly accessible)
-    base_url = get_stripe_base_url()
-    if not base_url:
-        return jsonify({"error": "Unable to determine base URL. Please set APP_BASE_URL environment variable."}), 500
-    
+
     try:
-        # Create (or reuse) a pending Order immediately. This is the source of truth
-        # for whether the user has access to downloads, and will be marked paid by webhook.
-        order = Order.query.filter_by(buyer_id=current_user.id, beat_id=beat.id).first()
-        if order and order.status == OrderStatus.paid:
+        order, err = get_or_create_payment_order_for_beat(beat, current_user)
+        if err:
+            return jsonify({"error": err}), 400
+        if order.status == OrderStatus.paid:
             return jsonify({"error": "You already purchased this beat"}), 400
 
-        if not order:
-            order = Order(
-                beat_id=beat.id,
-                buyer_id=current_user.id,
-                seller_id=seller.id,
-                amount_cents=int(breakdown["subtotal_cents"]),
-                platform_fee_cents=int(breakdown["platform_fee_cents"]),
-                processing_fee_cents=int(breakdown["processing_fee_cents"]),
-                total_cents=int(breakdown["total_cents"]),
-                currency="usd",
-                processor="stripe",
-                status=OrderStatus.pending,
-            )
-            db.session.add(order)
-            db.session.flush()
-        else:
-            # Recompute/store amounts in case fees changed between attempts
-            order.seller_id = seller.id
-            order.amount_cents = int(breakdown["subtotal_cents"])
-            order.platform_fee_cents = int(breakdown["platform_fee_cents"])
-            order.processing_fee_cents = int(breakdown["processing_fee_cents"])
-            order.total_cents = int(breakdown["total_cents"])
-            order.currency = "usd"
-            order.processor = "stripe"
-            order.status = OrderStatus.pending
-            order.paid_at = None
+        if subtotal_cents == 0:
+            order.status = OrderStatus.paid
+            db.session.commit()
+            return jsonify({"checkout_url": url_for("market_my_purchases"), "url": url_for("market_my_purchases")}), 200
 
-        # Create Checkout Session using dynamic price_data.
-        # This avoids dependency on stored Stripe Price IDs (which may not exist in the current Stripe account).
-        # All amounts are computed server-side and passed as integer cents.
-        line_items = [
-            {
-                "price_data": {
-                    "currency": "usd",
-                    "product_data": {
-                        "name": f"{beat.title or f'Beat #{beat.id}'} (Beat Purchase)",
-                    },
-                    "unit_amount": int(breakdown["subtotal_cents"]),
-                },
-                "quantity": 1,
-            },
-        ]
+        payload, status = _create_checkout_session_for_order(order, PaymentLedgerPhase.full)
+        return jsonify(payload), status
 
-        service_fee_cents = int(breakdown["platform_fee_cents"])
-        if service_fee_cents > 0:
-            line_items.append(
-                {
-                    "price_data": {
-                        "currency": "usd",
-                        "product_data": {"name": "BeatFund Service Fee"},
-                        "unit_amount": service_fee_cents,
-                    },
-                    "quantity": 1,
-                }
-            )
-
-        processing_fee_cents = int(breakdown["processing_fee_cents"])
-        if processing_fee_cents > 0:
-            line_items.append(
-                {
-                    "price_data": {
-                        "currency": "usd",
-                        "product_data": {"name": "Payment Processing Fee"},
-                        "unit_amount": processing_fee_cents,
-                    },
-                    "quantity": 1,
-                }
-            )
-
-        # Success URL must be publicly accessible so Stripe can redirect customers
-        checkout_session = stripe.checkout.Session.create(
-            payment_method_types=["card"],
-            line_items=line_items,
-            mode="payment",  # One-time payment (not subscription or setup)
-            success_url=f"{base_url}/checkout/success?session_id={{CHECKOUT_SESSION_ID}}",
-            cancel_url=f"{base_url}/market/confirm/{beat_id}",
-            client_reference_id=f"beat_{beat_id}_user_{current_user.id}",
-            metadata={
-                "type": "beat_purchase",
-                "purpose": "beat_purchase",
-                "order_id": str(order.id),
-                "beat_id": str(beat_id),
-                "user_id": str(current_user.id),
-                "seller_id": str(seller.id),
-                "subtotal_cents": str(breakdown["subtotal_cents"]),
-                "platform_fee_cents": str(breakdown["platform_fee_cents"]),
-                "processing_fee_cents": str(breakdown["processing_fee_cents"]),
-                "total_cents": str(total_cents),
-            },
-        )
-
-        # Persist the Stripe session id on the pending order for webhook lookup.
-        order.stripe_session_id = checkout_session.id
-        db.session.commit()
-        
-        return jsonify({
-            "sessionId": checkout_session.id,
-            "url": checkout_session.url
-        }), 200
-        
     except stripe.error.StripeError as e:
         req_id = getattr(e, "request_id", None)
         app.logger.error(f"Stripe error creating checkout session: {str(e)} (request_id={req_id})")
-        db.session.rollback()
-        return jsonify({"error": "Payment processing error. Please try again in a moment."}), 500
+        return jsonify({
+            "error": f"Payment processing error: {str(e) if 'invalid' in str(e).lower() or 'missing' in str(e).lower() else 'Please try again in a moment.'}"
+        }), 500
     except Exception as e:
         app.logger.error(f"Unexpected error creating checkout session: {str(e)}")
-        db.session.rollback()
         return jsonify({"error": "An unexpected error occurred"}), 500
 
 
@@ -7848,91 +11435,93 @@ def create_checkout_session_hold_fee():
     if not STRIPE_SECRET_KEY:
         app.logger.error(f"Stripe check failed: STRIPE_AVAILABLE={STRIPE_AVAILABLE}, STRIPE_SECRET_KEY length={len(STRIPE_SECRET_KEY) if STRIPE_SECRET_KEY else 0}")
         return jsonify({"error": "Stripe is not configured. Please set STRIPE_SECRET_KEY environment variable."}), 500
-    
-    if not require_kyc_approved():
-        return jsonify({"error": "KYC verification required"}), 403
-    
-    # Get booking_request_id from request
-    req_id = request.json.get("booking_request_id") if request.is_json else request.form.get("booking_request_id")
-    if not req_id:
-        return jsonify({"error": "booking_request_id is required"}), 400
-    
+
+    data = request.get_json(silent=True) or {}
+    req_id_raw = data.get("booking_request_id") or request.form.get("booking_request_id")
+    booking_id_raw = data.get("booking_id") or request.form.get("booking_id")
+
+    if not req_id_raw and not booking_id_raw:
+        return jsonify({"error": "booking_request_id or booking_id is required"}), 400
+
+    req = None
+    booking = None
+
+    if req_id_raw:
+        try:
+            req_id = int(req_id_raw)
+        except (ValueError, TypeError):
+            return jsonify({"error": "Invalid booking_request_id"}), 400
+        req = BookingRequest.query.get(req_id)
+        if not req:
+            return jsonify({"error": "Booking request not found"}), 404
+        if req.client_id != current_user.id:
+            return jsonify({"error": "You can only pay for your own booking requests"}), 403
+        if req.status not in (BookingStatus.accepted, BookingStatus.confirmed):
+            return jsonify({"error": "Booking request must be accepted before paying hold fee"}), 400
+        if req.booking_id:
+            booking = Booking.query.get(req.booking_id)
+
+    if booking_id_raw and not booking:
+        try:
+            booking_id = int(booking_id_raw)
+        except (ValueError, TypeError):
+            return jsonify({"error": "Invalid booking_id"}), 400
+        booking = Booking.query.get(booking_id)
+        if not booking:
+            return jsonify({"error": "Booking not found"}), 404
+        if booking.client_id != current_user.id:
+            return jsonify({"error": "You can only pay for your own booking"}), 403
+        if not req:
+            try:
+                req = BookingRequest.query.filter_by(booking_id=booking.id).first()
+            except Exception:
+                req = None
+
+    if not booking and not req:
+        return jsonify({"error": "Unable to find booking context for this payment"}), 400
+
     try:
-        req_id = int(req_id)
-    except (ValueError, TypeError):
-        return jsonify({"error": "Invalid booking_request_id"}), 400
-    
-    # Validate booking request
-    req = BookingRequest.query.get(req_id)
-    if not req:
-        return jsonify({"error": "Booking request not found"}), 404
-    
-    if req.client_id != current_user.id:
-        return jsonify({"error": "You can only pay for your own booking requests"}), 403
-    
-    if req.status != BookingStatus.accepted:
-        return jsonify({"error": "Booking request must be accepted before paying hold fee"}), 400
-    
-    if req.booking_id:
-        return jsonify({"error": "Hold fee already paid for this booking request"}), 400
-    
-    # Hold fee amount
-    hold_fee_cents = HOLD_FEE_CENTS
-    
-    # Get base URL for success/cancel URLs (must be publicly accessible)
-    base_url = get_stripe_base_url()
-    if not base_url:
-        return jsonify({"error": "Unable to determine base URL. Please set APP_BASE_URL environment variable."}), 500
-    
-    # Get provider info
-    provider = User.query.get(req.provider_id)
-    if not provider:
-        return jsonify({"error": "Provider not found"}), 404
-    
-    try:
-        # Create Checkout Session for hold fee
-        # Mode is set to "payment" for one-time payment (not subscription or setup)
-        # Hold fees are held in escrow until booking completion
-        # Success URL must be publicly accessible so Stripe can redirect customers
-        checkout_session = stripe.checkout.Session.create(
-            payment_method_types=["card"],
-            line_items=[
-                {
-                    "price_data": {
-                        "currency": "usd",
-                        "product_data": {
-                            "name": f"Booking Hold Fee - Booking Request",
-                            "description": f"Hold fee for booking with @{provider.username} on {req.preferred_time}. This fee will be held in escrow until the booking is completed.",
-                        },
-                        "unit_amount": hold_fee_cents,
-                    },
-                    "quantity": 1,
-                }
-            ],
-            mode="payment",  # One-time payment (not subscription or setup)
-            success_url=f"{base_url}/checkout/hold-fee/success?session_id={{CHECKOUT_SESSION_ID}}",
-            cancel_url=f"{base_url}/bookme/requests",
-            client_reference_id=f"hold_fee_req_{req_id}_user_{current_user.id}",
-            metadata={
-                "booking_request_id": str(req_id),
-                "user_id": str(current_user.id),
-                "provider_id": str(req.provider_id),
-                "hold_fee_cents": str(hold_fee_cents),
-                "purpose": "bookme_hold",
-            },
-        )
-        
-        return jsonify({
-            "sessionId": checkout_session.id,
-            "url": checkout_session.url
-        }), 200
-        
+        order, err = get_or_create_payment_order_for_booking(booking)
+        if err:
+            return jsonify({"error": err}), 400
+        payload, status = _create_checkout_session_for_order(order, PaymentLedgerPhase.holding)
+        return jsonify(payload), status
     except stripe.error.StripeError as e:
         app.logger.error(f"Stripe error creating hold fee checkout session: {str(e)}")
-        return jsonify({"error": f"Payment processing error: {str(e)}"}), 500
+        return jsonify({"error": f"Payment processing error: {str(e) if 'invalid' in str(e).lower() or 'missing' in str(e).lower() else 'Please try again in a moment.'}"}), 500
     except Exception as e:
         app.logger.error(f"Unexpected error creating hold fee checkout session: {str(e)}")
         return jsonify({"error": "An unexpected error occurred"}), 500
+
+
+@app.route("/api/orders/<int:order_id>/checkout/holding", methods=["POST"])
+@login_required
+def api_order_checkout_holding(order_id: int):
+    order = PaymentOrder.query.get_or_404(order_id)
+    if order.client_user_id != current_user.id and current_user.role != RoleEnum.admin:
+        return jsonify({"error": "Not authorized for this order."}), 403
+    payload, status = _create_checkout_session_for_order(order, PaymentLedgerPhase.holding)
+    return jsonify(payload), status
+
+
+@app.route("/api/orders/<int:order_id>/checkout/balance", methods=["POST"])
+@login_required
+def api_order_checkout_balance(order_id: int):
+    order = PaymentOrder.query.get_or_404(order_id)
+    if order.client_user_id != current_user.id and current_user.role != RoleEnum.admin:
+        return jsonify({"error": "Not authorized for this order."}), 403
+    payload, status = _create_checkout_session_for_order(order, PaymentLedgerPhase.balance)
+    return jsonify(payload), status
+
+
+@app.route("/api/orders/<int:order_id>/checkout/full", methods=["POST"])
+@login_required
+def api_order_checkout_full(order_id: int):
+    order = PaymentOrder.query.get_or_404(order_id)
+    if order.client_user_id != current_user.id and current_user.role != RoleEnum.admin:
+        return jsonify({"error": "Not authorized for this order."}), 403
+    payload, status = _create_checkout_session_for_order(order, PaymentLedgerPhase.full)
+    return jsonify(payload), status
 
 
 @app.route("/stripe/webhook", methods=["POST"])
@@ -8075,6 +11664,25 @@ def stripe_webhook():
             _alert_create(AlertSeverity.med, "PAYMENT_FAILED", "Stripe payment failed", {"stripe_event_id": event_id, "type": event_type})
         except Exception:
             pass
+        try:
+            pi = (event.get("data") or {}).get("object") or {}
+            metadata = pi.get("metadata") or {}
+            payment_kind = (metadata.get("payment_kind") or "").strip().lower()
+            if payment_kind in {"deposit", "balance"}:
+                payment_id = metadata.get("payment_id")
+                payment = None
+                if payment_id:
+                    try:
+                        payment = Payment.query.get(int(payment_id))
+                    except Exception:
+                        payment = None
+                if not payment and pi.get("id"):
+                    payment = Payment.query.filter_by(stripe_payment_intent_id=str(pi.get("id"))).first()
+                if payment and payment.status not in (PaymentStatus.succeeded, PaymentStatus.refunded):
+                    payment.status = PaymentStatus.failed if event_type == "payment_intent.payment_failed" else PaymentStatus.cancelled
+                    db.session.commit()
+        except Exception:
+            db.session.rollback()
         _mark_row(StripeWebhookEventStatus.processed)
         return Response(status=200)
 
@@ -8083,14 +11691,212 @@ def stripe_webhook():
             _alert_create(AlertSeverity.high, "STRIPE_DISPUTE", "Stripe dispute created", {"stripe_event_id": event_id})
         except Exception:
             pass
+        try:
+            charge = (event.get("data") or {}).get("object") or {}
+            charge_id = charge.get("id")
+            ledger = _ledger_by_charge_or_intent(charge_id, charge.get("payment_intent"))
+            if ledger and ledger.status != PaymentLedgerStatus.disputed:
+                ledger.status = PaymentLedgerStatus.disputed
+                db.session.commit()
+                _reverse_affiliate_for_ledger(ledger)
+        except Exception:
+            db.session.rollback()
         _mark_row(StripeWebhookEventStatus.processed)
         return Response(status=200)
 
-    if event_type == "charge.refunded":
+    if event_type in ("charge.refunded", "refund.updated"):
         try:
             _alert_create(AlertSeverity.med, "STRIPE_REFUND", "Stripe refund event received", {"stripe_event_id": event_id})
         except Exception:
             pass
+        try:
+            obj = (event.get("data") or {}).get("object") or {}
+            charge_id = obj.get("id") if event_type == "charge.refunded" else obj.get("charge")
+            payment_intent_id = obj.get("payment_intent")
+            ledger = _ledger_by_charge_or_intent(charge_id, payment_intent_id)
+            if ledger and ledger.status != PaymentLedgerStatus.refunded:
+                ledger.status = PaymentLedgerStatus.refunded
+                if ledger.order and ledger.order.order_type == OrderType.beat_purchase and ledger.phase == PaymentLedgerPhase.full:
+                    ledger.order.status = OrderStatus.refunded
+                db.session.commit()
+                _reverse_affiliate_for_ledger(ledger)
+        except Exception:
+            db.session.rollback()
+        _mark_row(StripeWebhookEventStatus.processed)
+        return Response(status=200)
+
+    if event_type == "payment_intent.succeeded":
+        pi = (event.get("data") or {}).get("object") or {}
+        metadata = pi.get("metadata") or {}
+        payment_kind = (metadata.get("payment_kind") or "").strip().lower()
+        if payment_kind in {"deposit", "balance"}:
+            payment_id = metadata.get("payment_id")
+            payment = None
+            if payment_id:
+                try:
+                    payment = Payment.query.get(int(payment_id))
+                except Exception:
+                    payment = None
+            if not payment and pi.get("id"):
+                payment = Payment.query.filter_by(stripe_payment_intent_id=str(pi.get("id"))).first()
+
+            if not payment:
+                app.logger.warning(f"Stripe webhook: booking payment not found (payment_id={payment_id} intent={pi.get('id')})")
+                _mark_row(StripeWebhookEventStatus.processed)
+                return Response(status=200)
+
+            if payment.status == PaymentStatus.succeeded:
+                _mark_row(StripeWebhookEventStatus.processed)
+                return Response(status=200)
+
+            try:
+                with db_txn():
+                    if db.engine.dialect.name == "postgresql":
+                        payment = Payment.query.filter_by(id=payment.id).with_for_update().first()
+                    else:
+                        payment = Payment.query.filter_by(id=payment.id).first()
+
+                    if not payment:
+                        _mark_row(StripeWebhookEventStatus.processed)
+                        return Response(status=200)
+
+                    if payment.status == PaymentStatus.succeeded:
+                        _mark_row(StripeWebhookEventStatus.processed)
+                        return Response(status=200)
+
+                    payment.status = PaymentStatus.succeeded
+                    if pi.get("id"):
+                        payment.stripe_payment_intent_id = str(pi.get("id"))
+                    if pi.get("latest_charge"):
+                        payment.stripe_charge_id = str(pi.get("latest_charge"))
+                    else:
+                        charges = (pi.get("charges") or {}).get("data") or []
+                        if charges:
+                            payment.stripe_charge_id = str(charges[0].get("id") or payment.stripe_charge_id)
+                    if payment.total_paid_cents is None and pi.get("amount_received"):
+                        try:
+                            payment.total_paid_cents = int(pi.get("amount_received"))
+                        except Exception:
+                            pass
+                    payment.nonrefundable_processing_kept_cents = int(payment.processing_fee_cents or 0)
+                    payment.nonrefundable_beatfund_kept_cents = int(payment.beatfund_fee_cents or 0)
+
+                    booking = Booking.query.get(payment.booking_id) if payment.booking_id else None
+                    if booking:
+                        booking.beatfund_fee_collected_cents = (booking.beatfund_fee_collected_cents or 0) + int(payment.beatfund_fee_cents or 0)
+                        if booking.quoted_total_cents is None and booking.total_cents is not None:
+                            booking.quoted_total_cents = booking.total_cents
+                        if booking.beatfund_fee_total_cents is None and booking.quoted_total_cents is not None:
+                            booking.beatfund_fee_total_cents = calc_beatfund_fee_total(int(booking.quoted_total_cents))
+                        try:
+                            provider_wallet = Wallet.query.filter_by(user_id=booking.provider_id).first() if booking.provider_id else None
+                            if not provider_wallet and booking.provider_id:
+                                provider_wallet = Wallet(user_id=booking.provider_id)
+                                db.session.add(provider_wallet)
+                                db.session.flush()
+
+                            base_cents = int(payment.base_amount_cents or 0)
+                            if provider_wallet and base_cents > 0:
+                                kind_label = payment.kind.value if payment.kind else "payment"
+                                meta = f"booking #{booking.id} {kind_label} (Stripe)"
+                                if not LedgerEntry.query.filter_by(
+                                    wallet_id=provider_wallet.id,
+                                    entry_type=EntryType.sale_income,
+                                    meta=meta,
+                                ).first():
+                                    post_ledger(provider_wallet, EntryType.sale_income, base_cents, meta=meta)
+                        except Exception:
+                            app.logger.warning("Stripe webhook: unable to post booking ledger entry")
+
+                        # Booking status + notifications
+                        try:
+                            if payment.kind == PaymentKind.deposit and booking.status not in (BOOKING_STATUS_COMPLETED, BOOKING_STATUS_CANCELLED):
+                                booking.status = BOOKING_STATUS_HOLD_PAID
+                                req_link = BookingRequest.query.filter_by(booking_id=booking.id).first()
+                                if req_link and req_link.status == BookingStatus.accepted:
+                                    req_link.status = BookingStatus.confirmed
+                            if payment.kind == PaymentKind.balance:
+                                sums = sum_successful_payments(booking, BookingRequest.query.filter_by(booking_id=booking.id).first())
+                                total_base_paid = sums.get("base_paid_cents", 0)
+                                service_total = booking.quoted_total_cents or booking.total_cents
+                                if service_total and total_base_paid >= int(service_total):
+                                    booking.status = BOOKING_STATUS_PAID
+                        except Exception:
+                            pass
+
+                        try:
+                            provider = User.query.get(booking.provider_id) if booking.provider_id else None
+                            client = User.query.get(booking.client_id) if booking.client_id else None
+                            if payment.kind == PaymentKind.deposit:
+                                if provider:
+                                    notify_user(
+                                        provider,
+                                        kind="success",
+                                        title="Deposit paid",
+                                        body=f"Deposit received for booking #{booking.id}.",
+                                        url=url_for("booking_detail", booking_id=booking.id),
+                                        event_key=f"booking:{booking.id}:deposit_paid",
+                                        commit=False,
+                                    )
+                                if client:
+                                    notify_user(
+                                        client,
+                                        kind="success",
+                                        title="Deposit paid",
+                                        body=f"Your hold fee was received for booking #{booking.id}.",
+                                        url=url_for("booking_detail", booking_id=booking.id),
+                                        event_key=f"booking:{booking.id}:deposit_paid_client",
+                                        commit=False,
+                                    )
+                            elif payment.kind == PaymentKind.balance:
+                                if provider:
+                                    notify_user(
+                                        provider,
+                                        kind="success",
+                                        title="Balance paid",
+                                        body=f"Balance payment received for booking #{booking.id}.",
+                                        url=url_for("booking_detail", booking_id=booking.id),
+                                        event_key=f"booking:{booking.id}:balance_paid",
+                                        commit=False,
+                                    )
+                                if client:
+                                    notify_user(
+                                        client,
+                                        kind="success",
+                                        title="Balance paid",
+                                        body=f"Your balance payment was received for booking #{booking.id}.",
+                                        url=url_for("booking_detail", booking_id=booking.id),
+                                        event_key=f"booking:{booking.id}:balance_paid_client",
+                                        commit=False,
+                                    )
+                        except Exception:
+                            pass
+            except Exception:
+                app.logger.exception(f"Stripe webhook: error finalizing booking payment_id={getattr(payment, 'id', None)} intent={pi.get('id')}")
+                _mark_row(StripeWebhookEventStatus.failed, "booking_payment_finalize_failed")
+                return Response(status=500 if _is_production_mode() else 200)
+
+            _mark_row(StripeWebhookEventStatus.processed)
+            return Response(status=200)
+
+    if event_type in ("payment_intent.payment_failed", "payment_intent.canceled"):
+        pi = (event.get("data") or {}).get("object") or {}
+        metadata = pi.get("metadata") or {}
+        payment_id = metadata.get("payment_id")
+        payment = None
+        if payment_id:
+            try:
+                payment = Payment.query.get(int(payment_id))
+            except Exception:
+                payment = None
+        if not payment and pi.get("id"):
+            payment = Payment.query.filter_by(stripe_payment_intent_id=str(pi.get("id"))).first()
+        if payment and payment.status != PaymentStatus.succeeded:
+            try:
+                payment.status = PaymentStatus.failed if event_type == "payment_intent.payment_failed" else PaymentStatus.cancelled
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
         _mark_row(StripeWebhookEventStatus.processed)
         return Response(status=200)
 
@@ -8102,6 +11908,135 @@ def stripe_webhook():
     session_obj = (event.get("data") or {}).get("object") or {}
     session_id = session_obj.get("id")
     metadata = session_obj.get("metadata") or {}
+    order_id_meta = metadata.get("order_id")
+    phase_meta = (metadata.get("phase") or "").strip().lower()
+
+    if order_id_meta and phase_meta in {PaymentLedgerPhase.holding.value, PaymentLedgerPhase.balance.value, PaymentLedgerPhase.full.value}:
+        try:
+            order = PaymentOrder.query.get(int(order_id_meta))
+        except Exception:
+            order = None
+
+        if not order:
+            app.logger.warning(f"Stripe webhook: payment_order not found (order_id={order_id_meta} session_id={session_id})")
+            _mark_row(StripeWebhookEventStatus.processed)
+            return Response(status=200)
+
+        try:
+            existing = None
+            if session_id:
+                existing = PaymentLedger.query.filter_by(stripe_checkout_session_id=str(session_id)).first()
+            if existing and existing.status == PaymentLedgerStatus.succeeded:
+                _mark_row(StripeWebhookEventStatus.processed)
+                return Response(status=200)
+        except Exception:
+            db.session.rollback()
+
+        payment_intent_id = session_obj.get("payment_intent")
+        pi = None
+        if payment_intent_id and STRIPE_AVAILABLE and STRIPE_SECRET_KEY:
+            try:
+                pi = stripe.PaymentIntent.retrieve(payment_intent_id)
+            except Exception:
+                pi = None
+
+        gross_amount = int(session_obj.get("amount_total") or 0)
+        application_fee_cents = 0
+        latest_charge_id = None
+        if pi:
+            try:
+                application_fee_cents = int(getattr(pi, "application_fee_amount", None) or pi.get("application_fee_amount") or 0)
+            except Exception:
+                application_fee_cents = 0
+            latest_charge_id = getattr(pi, "latest_charge", None) or pi.get("latest_charge")
+            if not latest_charge_id:
+                charges = (pi.get("charges") or {}).get("data") or []
+                if charges:
+                    latest_charge_id = charges[0].get("id")
+
+        phase_enum = PaymentLedgerPhase(phase_meta)
+        if phase_enum == PaymentLedgerPhase.holding:
+            platform_fee_collected = gross_amount
+            provider_amount_routed = 0
+        else:
+            platform_fee_collected = int(application_fee_cents or 0)
+            provider_amount_routed = max(0, int(gross_amount) - int(platform_fee_collected))
+
+        try:
+            ledger = PaymentLedger(
+                order_id=order.id,
+                phase=phase_enum,
+                gross_amount_cents=gross_amount,
+                platform_fee_collected_cents=platform_fee_collected,
+                provider_amount_routed_cents=provider_amount_routed,
+                stripe_checkout_session_id=str(session_id) if session_id else None,
+                stripe_payment_intent_id=str(payment_intent_id) if payment_intent_id else None,
+                stripe_charge_id=str(latest_charge_id) if latest_charge_id else None,
+                status=PaymentLedgerStatus.succeeded,
+            )
+            db.session.add(ledger)
+
+            if order.order_type == OrderType.booking:
+                if phase_enum == PaymentLedgerPhase.holding:
+                    order.status = OrderStatus.partially_paid
+                elif phase_enum == PaymentLedgerPhase.balance:
+                    order.status = OrderStatus.paid
+            elif order.order_type == OrderType.beat_purchase:
+                order.status = OrderStatus.paid
+
+            if order.booking_id:
+                booking = Booking.query.get(order.booking_id)
+                if booking:
+                    if phase_enum == PaymentLedgerPhase.holding:
+                        booking.status = BOOKING_STATUS_HOLD_PAID
+                        req_link = BookingRequest.query.filter_by(booking_id=booking.id).first()
+                        if req_link and req_link.status == BookingStatus.accepted:
+                            req_link.status = BookingStatus.confirmed
+                    elif phase_enum == PaymentLedgerPhase.balance:
+                        booking.status = BOOKING_STATUS_PAID
+
+            db.session.commit()
+
+            if order.affiliate_id:
+                try:
+                    affiliate = Affiliate.query.get(order.affiliate_id)
+                except Exception:
+                    affiliate = None
+                if affiliate:
+                    pct = affiliate.commission_pct if affiliate.commission_pct is not None else AFFILIATE_DEFAULT_PCT
+                    try:
+                        pct_decimal = Decimal(str(pct))
+                    except Exception:
+                        pct_decimal = Decimal(str(AFFILIATE_DEFAULT_PCT))
+                    commission = int((Decimal(platform_fee_collected) * pct_decimal).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+                    commission = min(commission, int(platform_fee_collected))
+                    if commission > 0 and platform_fee_collected > 0:
+                        earning = AffiliateEarning(
+                            affiliate_id=affiliate.id,
+                            order_id=order.id,
+                            payment_ledger_id=ledger.id,
+                            base_platform_fee_cents=int(platform_fee_collected),
+                            commission_cents=int(commission),
+                            status=AffiliateEarningStatus.pending,
+                            available_at=datetime.utcnow() + timedelta(days=int(AFFILIATE_PAYOUT_DELAY_DAYS or 0)),
+                        )
+                        try:
+                            db.session.add(earning)
+                            db.session.commit()
+                        except IntegrityError:
+                            db.session.rollback()
+                        except Exception:
+                            db.session.rollback()
+        except IntegrityError:
+            db.session.rollback()
+        except Exception:
+            db.session.rollback()
+            _mark_row(StripeWebhookEventStatus.failed, "payment_ledger_finalize_failed")
+            return Response(status=500 if _is_production_mode() else 200)
+
+        _mark_row(StripeWebhookEventStatus.processed)
+        return Response(status=200)
+
     purpose = metadata.get("type") or metadata.get("purpose")
 
     if purpose not in ("beat_purchase", "wallet_topup"):
@@ -8467,9 +12402,6 @@ def wallet_stripe_success():
     Stripe redirect page for wallet top-ups (NOT the source of truth).
     We verify payment server-side and credit wallet idempotently for good UX in dev.
     """
-    if not require_kyc_approved():
-        return redirect(url_for("kyc"))
-
     session_id = (request.args.get("session_id") or "").strip()
     if not session_id:
         flash("Invalid checkout session.", "error")
@@ -8555,14 +12487,13 @@ def _finalize_wallet_topup(*, user_id: int, amount_cents: int, session_id: str |
 @app.route("/connect/stripe/start", methods=["GET"])
 @login_required
 def stripe_connect_start():
-    if not require_kyc_approved():
-        return redirect(url_for("kyc"))
-
     if not STRIPE_AVAILABLE or not STRIPE_SECRET_KEY:
         flash("Stripe is not configured.", "error")
         return redirect(url_for("wallet_home"))
 
     base_url = get_stripe_base_url()
+    refresh_url = CONNECT_ONBOARDING_REFRESH_URL or f"{base_url}/connect/stripe/start"
+    return_url = CONNECT_ONBOARDING_RETURN_URL or f"{base_url}/connect/stripe/return"
 
     try:
         # Create account if missing
@@ -8585,11 +12516,12 @@ def stripe_connect_start():
             acct_id = acct.id
             with db_txn():
                 current_user.stripe_account_id = acct_id
+            _get_or_refresh_provider_stripe_account(current_user.id, refresh=True)
 
         link = stripe.AccountLink.create(
             account=acct_id,
-            refresh_url=f"{base_url}/connect/stripe/start",
-            return_url=f"{base_url}/connect/stripe/return",
+            refresh_url=refresh_url,
+            return_url=return_url,
             type="account_onboarding",
         )
         return redirect(link.url)
@@ -8602,9 +12534,6 @@ def stripe_connect_start():
 @app.route("/connect/stripe/return", methods=["GET"])
 @login_required
 def stripe_connect_return():
-    if not require_kyc_approved():
-        return redirect(url_for("kyc"))
-
     if not STRIPE_AVAILABLE or not STRIPE_SECRET_KEY:
         flash("Stripe is not configured.", "error")
         return redirect(url_for("wallet_home"))
@@ -8616,8 +12545,16 @@ def stripe_connect_return():
 
     try:
         acct = stripe.Account.retrieve(acct_id)
-        # Express accounts need details_submitted + payouts_enabled
-        if getattr(acct, "details_submitted", False) and getattr(acct, "payouts_enabled", False):
+        acct_row = _get_or_refresh_provider_stripe_account(current_user.id, refresh=True)
+        details_submitted = bool(getattr(acct, "details_submitted", False) or acct.get("details_submitted"))
+        payouts_enabled = bool(getattr(acct, "payouts_enabled", False) or acct.get("payouts_enabled"))
+        if acct_row:
+            acct_row.details_submitted = details_submitted
+            acct_row.payouts_enabled = payouts_enabled
+            acct_row.charges_enabled = bool(getattr(acct, "charges_enabled", False) or acct.get("charges_enabled"))
+            db.session.commit()
+
+        if details_submitted and payouts_enabled:
             flash("Bank account connected! You can now withdraw.", "success")
         else:
             flash("Connection started. Please finish the Stripe onboarding steps to enable payouts.", "info")
@@ -8628,14 +12565,67 @@ def stripe_connect_return():
     return redirect(url_for("wallet_home"))
 
 
+@app.route("/connect/onboard/provider", methods=["GET"])
+@login_required
+def connect_onboard_provider():
+    """Alias for provider onboarding (Stripe Connect)."""
+    return stripe_connect_start()
+
+
+@app.route("/connect/onboard/affiliate/<int:affiliate_id>", methods=["GET"])
+@role_required("admin")
+def connect_onboard_affiliate(affiliate_id: int):
+    if not STRIPE_AVAILABLE or not STRIPE_SECRET_KEY:
+        flash("Stripe is not configured.", "error")
+        return redirect(url_for("admin_dashboard"))
+
+    affiliate = Affiliate.query.get_or_404(affiliate_id)
+    base_url = get_stripe_base_url()
+    refresh_url = CONNECT_ONBOARDING_REFRESH_URL or f"{base_url}/connect/onboard/affiliate/{affiliate.id}"
+    return_url = CONNECT_ONBOARDING_RETURN_URL or f"{base_url}/admin/affiliates"
+
+    try:
+        acct_id = (affiliate.stripe_account_id or "").strip()
+        if not acct_id:
+            acct = stripe.Account.create(
+                type="express",
+                country="US",
+                email=None,
+                capabilities={"transfers": {"requested": True}},
+                business_type="individual",
+                metadata={"affiliate_id": str(affiliate.id), "purpose": "affiliate_payouts"},
+            )
+            acct_id = acct.id
+            affiliate.stripe_account_id = acct_id
+            db.session.commit()
+
+        link = stripe.AccountLink.create(
+            account=acct_id,
+            refresh_url=refresh_url,
+            return_url=return_url,
+            type="account_onboarding",
+        )
+        return redirect(link.url)
+    except Exception as e:
+        app.logger.error(f"Affiliate onboarding failed: {e}", exc_info=True)
+        flash("Unable to start affiliate onboarding. Please try again.", "error")
+        return redirect(url_for("admin_dashboard"))
+
+
 @app.route("/checkout/status/<int:order_id>", methods=["GET"])
 @login_required
 def checkout_status(order_id: int):
     """Lightweight polling endpoint for checkout success page."""
-    order = Order.query.get(order_id)
-    if not order or order.buyer_id != current_user.id:
+    order = PaymentOrder.query.get(order_id)
+    if order:
+        if order.client_user_id != current_user.id:
+            return jsonify({"error": "not_found"}), 404
+        return jsonify({"is_paid": order.status == OrderStatus.paid}), 200
+
+    legacy = Order.query.get(order_id)
+    if not legacy or legacy.buyer_id != current_user.id:
         return jsonify({"error": "not_found"}), 404
-    return jsonify({"is_paid": order.status == OrderStatus.paid}), 200
+    return jsonify({"is_paid": legacy.status == OrderStatus.paid}), 200
 
 
 @app.route("/debug/stripe-env", methods=["GET"])
@@ -8678,27 +12668,42 @@ def checkout_success():
 
         metadata = checkout_session.metadata or {}
         order = None
+        payment_order = None
 
         order_id = metadata.get("order_id")
         if order_id:
             try:
-                order = Order.query.get(int(order_id))
+                payment_order = PaymentOrder.query.get(int(order_id))
             except Exception:
-                order = None
+                payment_order = None
+            if payment_order and payment_order.client_user_id != current_user.id:
+                payment_order = None
 
-        if not order:
-            order = (
-                Order.query
-                .filter_by(stripe_session_id=session_id, buyer_id=current_user.id)
-                .order_by(Order.created_at.desc())
-                .first()
-            )
+        if payment_order:
+            order = payment_order
+        else:
+            if order_id:
+                try:
+                    order = Order.query.get(int(order_id))
+                except Exception:
+                    order = None
+
+            if not order:
+                order = (
+                    Order.query
+                    .filter_by(stripe_session_id=session_id, buyer_id=current_user.id)
+                    .order_by(Order.created_at.desc())
+                    .first()
+                )
 
         beat = None
         seller = None
         if order:
             beat = Beat.query.get(order.beat_id) if order.beat_id else None
-            seller = User.query.get(order.seller_id) if order.seller_id else None
+            if beat and beat.owner_id:
+                seller = User.query.get(beat.owner_id)
+            elif getattr(order, "seller_id", None):
+                seller = User.query.get(order.seller_id)
         else:
             # Fallback: show beat preview even if we can't find the order row yet
             try:
@@ -8718,12 +12723,12 @@ def checkout_success():
         # Display amounts: prefer DB values; fall back to Stripe metadata/session totals
         subtotal_cents = int(order.amount_cents or 0) if order else int(metadata.get("subtotal_cents") or 0)
         platform_fee_cents = int(order.platform_fee_cents or 0) if (order and order.platform_fee_cents is not None) else int(metadata.get("platform_fee_cents") or 0)
-        processing_fee_cents = int(order.processing_fee_cents or 0) if (order and order.processing_fee_cents is not None) else int(metadata.get("processing_fee_cents") or 0)
+        processing_fee_cents = int(getattr(order, "processing_fee_cents", 0) or 0) if order else int(metadata.get("processing_fee_cents") or 0)
 
         total_from_stripe = checkout_session.amount_total if getattr(checkout_session, "amount_total", None) is not None else None
-        total_cents = int(order.total_cents or 0) if (order and order.total_cents is not None) else int(metadata.get("total_cents") or (total_from_stripe or 0))
+        total_cents = int(getattr(order, "total_cents", 0) or 0) if order else int(metadata.get("total_cents") or (total_from_stripe or 0))
         if total_cents <= 0:
-            total_cents = subtotal_cents + platform_fee_cents + processing_fee_cents
+            total_cents = subtotal_cents
 
         is_paid = bool(order and order.status == OrderStatus.paid)
         return render_template(
@@ -8738,6 +12743,7 @@ def checkout_success():
             total_cents=total_cents,
             stripe_session_id=session_id,
             is_paid=is_paid,
+            is_payment_order=isinstance(order, PaymentOrder),
         )
         
     except stripe.error.StripeError as e:
@@ -8770,6 +12776,43 @@ def checkout_hold_fee_success():
     try:
         # Retrieve the checkout session from Stripe
         checkout_session = stripe.checkout.Session.retrieve(session_id)
+        metadata = checkout_session.metadata or {}
+
+        if metadata.get("order_id") and metadata.get("phase") == PaymentLedgerPhase.holding.value:
+            if checkout_session.payment_status != "paid":
+                flash("Payment was not completed.", "error")
+                return redirect(url_for("bookme_requests"))
+
+            try:
+                order = PaymentOrder.query.get(int(metadata.get("order_id")))
+            except Exception:
+                order = None
+            if not order or order.client_user_id != current_user.id:
+                flash("This checkout session does not belong to you.", "error")
+                return redirect(url_for("bookme_requests"))
+
+            booking = Booking.query.get(order.booking_id) if order.booking_id else None
+            if not booking:
+                flash("Booking not found.", "error")
+                return redirect(url_for("bookme_requests"))
+            if booking.client_id != current_user.id:
+                flash("You can only view your own booking.", "error")
+                return redirect(url_for("bookme_requests"))
+
+            provider = booking.provider or User.query.get(booking.provider_id)
+            hold_fee_cents = int(getattr(checkout_session, "amount_total", None) or HOLD_FEE_CENTS)
+
+            return render_template(
+                "checkout_hold_fee_success.html",
+                booking=booking,
+                booking_request=None,
+                provider=provider,
+                hold_fee_cents=hold_fee_cents,
+                beatfund_fee_cents=0,
+                processing_fee_cents=0,
+                total_cents=hold_fee_cents,
+                stripe_session_id=session_id,
+            )
         
         # Verify the session belongs to the current user
         if checkout_session.client_reference_id and f"user_{current_user.id}" not in checkout_session.client_reference_id:
@@ -8783,18 +12826,245 @@ def checkout_hold_fee_success():
         
         # Extract metadata
         metadata = checkout_session.metadata or {}
-        req_id = metadata.get("booking_request_id")
         purpose = metadata.get("purpose")
-        
-        if purpose != "bookme_hold" or not req_id:
+        req_id_raw = metadata.get("booking_request_id")
+        booking_id_raw = metadata.get("booking_id")
+
+        if purpose != "bookme_hold":
             flash("Invalid checkout session metadata.", "error")
             return redirect(url_for("bookme_requests"))
-        
-        try:
-            req_id = int(req_id)
-        except (ValueError, TypeError):
-            flash("Invalid booking request ID in checkout session.", "error")
+
+        req_id = None
+        booking_id = None
+        if req_id_raw:
+            try:
+                req_id = int(req_id_raw)
+            except (ValueError, TypeError):
+                req_id = None
+        if booking_id_raw:
+            try:
+                booking_id = int(booking_id_raw)
+            except (ValueError, TypeError):
+                booking_id = None
+
+        if not req_id and not booking_id:
+            flash("Invalid checkout session metadata.", "error")
             return redirect(url_for("bookme_requests"))
+
+        hold_fee_cents = int(metadata.get("hold_fee_cents", HOLD_FEE_CENTS))
+        beatfund_fee_cents = int(metadata.get("beatfund_fee_cents", 0) or 0)
+        processing_fee_cents = int(metadata.get("processing_fee_cents", 0) or 0)
+        total_cents = int(metadata.get("total_cents", hold_fee_cents + beatfund_fee_cents + processing_fee_cents) or 0)
+
+        if booking_id:
+            booking = Booking.query.get(booking_id)
+            if not booking:
+                flash("Booking not found.", "error")
+                return redirect(url_for("bookme_requests"))
+            if booking.client_id != current_user.id:
+                flash("You can only pay for your own booking.", "error")
+                return redirect(url_for("bookme_requests"))
+
+            req = None
+            if req_id:
+                req = BookingRequest.query.get(req_id)
+            if not req:
+                req = BookingRequest.query.filter_by(booking_id=booking.id).first()
+
+            provider = User.query.get(booking.provider_id)
+            if not provider:
+                flash("Provider not found.", "error")
+                return redirect(url_for("bookme_requests"))
+
+            # Idempotency for booking-based checkout
+            idempotency_key = generate_idempotency_key(
+                "stripe_hold_fee", current_user.id, booking_id=booking.id, session_id=session_id
+            )
+            existing_result = check_idempotency(idempotency_key, "stripe_hold_fee", current_user.id)
+            if existing_result:
+                flash("This hold fee payment was already processed.", "info")
+                return redirect(url_for("bookme_requests"))
+
+            try:
+                with db_txn():
+                    if db.engine.dialect.name == "postgresql":
+                        booking = Booking.query.filter_by(id=booking.id).with_for_update().first()
+                        client_w = Wallet.query.filter_by(user_id=current_user.id).with_for_update().first()
+                        req_check = BookingRequest.query.filter_by(id=req.id).with_for_update().first() if req else None
+                    else:
+                        booking = Booking.query.filter_by(id=booking.id).first()
+                        client_w = Wallet.query.filter_by(user_id=current_user.id).first()
+                        req_check = BookingRequest.query.filter_by(id=req.id).first() if req else None
+
+                    if not booking:
+                        raise ValueError("booking_not_found")
+
+                    existing_payment = Payment.query.filter_by(
+                        booking_id=booking.id,
+                        kind=PaymentKind.deposit,
+                        status=PaymentStatus.succeeded,
+                    ).first()
+                    if existing_payment:
+                        raise ValueError("already_paid")
+
+                    if not client_w:
+                        client_w = Wallet(user_id=current_user.id)
+                        db.session.add(client_w)
+                        db.session.flush()
+
+                    # Record escrow entry for client
+                    try:
+                        meta_client = f"hold fee for booking #{booking.id} with @{provider.username} (Stripe payment - held in escrow)"
+                        if not LedgerEntry.query.filter_by(
+                            wallet_id=client_w.id, entry_type=EntryType.purchase_spend, meta=meta_client
+                        ).first():
+                            post_ledger(client_w, EntryType.purchase_spend, hold_fee_cents, meta=meta_client)
+                    except Exception:
+                        pass
+
+                    # Credit provider ledger for hold fee
+                    try:
+                        provider_w = Wallet.query.filter_by(user_id=provider.id).first()
+                        if not provider_w:
+                            provider_w = Wallet(user_id=provider.id)
+                            db.session.add(provider_w)
+                            db.session.flush()
+                        meta_income = f"booking #{booking.id} deposit (Stripe)"
+                        if not LedgerEntry.query.filter_by(
+                            wallet_id=provider_w.id, entry_type=EntryType.sale_income, meta=meta_income
+                        ).first():
+                            post_ledger(provider_w, EntryType.sale_income, hold_fee_cents, meta=meta_income)
+                    except Exception:
+                        app.logger.warning("Hold fee: unable to post provider ledger entry")
+
+                    # Store payment breakdown for deposit
+                    try:
+                        payment_intent_id = getattr(checkout_session, "payment_intent", None)
+                        payment = Payment.query.filter_by(
+                            booking_id=booking.id, kind=PaymentKind.deposit
+                        ).order_by(Payment.created_at.desc()).first()
+                        if payment and payment.status in (PaymentStatus.created, PaymentStatus.processing, PaymentStatus.failed):
+                            payment.status = PaymentStatus.succeeded
+                            payment.amount_cents = total_cents
+                            payment.base_amount_cents = hold_fee_cents
+                            payment.beatfund_fee_cents = beatfund_fee_cents
+                            payment.processing_fee_cents = processing_fee_cents
+                            payment.total_paid_cents = total_cents
+                            if payment_intent_id:
+                                payment.stripe_payment_intent_id = str(payment_intent_id)
+                                payment.external_id = str(payment_intent_id)
+                            payment.nonrefundable_processing_kept_cents = int(processing_fee_cents or 0)
+                            payment.nonrefundable_beatfund_kept_cents = int(beatfund_fee_cents or 0)
+                        else:
+                            payment = Payment(
+                                purpose=PaymentPurpose.booking_deposit,
+                                processor=PaymentProcessor.stripe,
+                                status=PaymentStatus.succeeded,
+                                kind=PaymentKind.deposit,
+                                amount_cents=total_cents,
+                                currency="usd",
+                                base_amount_cents=hold_fee_cents,
+                                beatfund_fee_cents=beatfund_fee_cents,
+                                processing_fee_cents=processing_fee_cents,
+                                total_paid_cents=total_cents,
+                                idempotency_key=generate_idempotency_key(
+                                    "booking_deposit", current_user.id, booking_id=booking.id, session_id=session_id
+                                ),
+                                booking_id=booking.id,
+                                booking_request_id=(req_check.id if req_check else None),
+                                stripe_payment_intent_id=str(payment_intent_id) if payment_intent_id else None,
+                                external_id=str(payment_intent_id) if payment_intent_id else None,
+                            )
+                            payment.nonrefundable_processing_kept_cents = int(processing_fee_cents or 0)
+                            payment.nonrefundable_beatfund_kept_cents = int(beatfund_fee_cents or 0)
+                            db.session.add(payment)
+                    except Exception:
+                        pass
+
+                    booking.beatfund_fee_collected_cents = int(booking.beatfund_fee_collected_cents or 0) + int(beatfund_fee_cents or 0)
+                    if booking.status not in (BOOKING_STATUS_COMPLETED, BOOKING_STATUS_CANCELLED):
+                        booking.status = BOOKING_STATUS_HOLD_PAID
+                    if req_check and req_check.status == BookingStatus.accepted:
+                        req_check.status = BookingStatus.confirmed
+
+                    try:
+                        audit_log_event(
+                            action_type="HOLD_CREATED",
+                            actor_user=current_user,
+                            target_type="Booking",
+                            target_id=str(booking.id),
+                            reason="Hold fee paid and held in escrow",
+                            metadata={
+                                "booking_request_id": req_check.id if req_check else None,
+                                "booking_id": booking.id,
+                                "provider_id": provider.id,
+                                "client_id": current_user.id,
+                                "hold_fee_cents": hold_fee_cents,
+                                "stripe_session_id": session_id,
+                            },
+                            commit=False,
+                        )
+                    except Exception:
+                        pass
+
+                    store_idempotency_result(
+                        idempotency_key,
+                        "stripe_hold_fee",
+                        current_user.id,
+                        {"status": "success", "booking_id": booking.id, "req_id": (req_check.id if req_check else None), "stripe_session_id": session_id},
+                        commit=False,
+                    )
+
+                    notify_user(
+                        provider,
+                        kind="success",
+                        title="Hold fee paid - Booking confirmed!",
+                        body=f"@{current_user.username} paid the hold fee. Booking is now confirmed.",
+                        url=url_for("booking_detail", booking_id=booking.id),
+                        actor_user_id=current_user.id,
+                        event_key=f"booking:{booking.id}:deposit_paid",
+                        commit=False,
+                    )
+                    notify_user(
+                        current_user,
+                        kind="success",
+                        title="Deposit paid",
+                        body=f"Your hold fee was received for booking #{booking.id}.",
+                        url=url_for("booking_detail", booking_id=booking.id),
+                        actor_user_id=current_user.id,
+                        event_key=f"booking:{booking.id}:deposit_paid_client",
+                        commit=False,
+                    )
+
+            except ValueError as e:
+                error_msg = str(e)
+                if error_msg == "already_paid":
+                    flash("Hold fee already paid for this booking.", "info")
+                else:
+                    flash("Unable to process hold fee payment.", "error")
+                return redirect(url_for("bookme_requests"))
+            except IntegrityError:
+                flash("This hold fee payment was already processed.", "info")
+                return redirect(url_for("bookme_requests"))
+
+            db.session.refresh(booking)
+            if req:
+                try:
+                    db.session.refresh(req)
+                except Exception:
+                    pass
+
+            return render_template(
+                "checkout_hold_fee_success.html",
+                booking=booking,
+                booking_request=req,
+                provider=provider,
+                hold_fee_cents=hold_fee_cents,
+                beatfund_fee_cents=beatfund_fee_cents,
+                processing_fee_cents=processing_fee_cents,
+                total_cents=total_cents,
+                stripe_session_id=session_id,
+            )
         
         # Get booking request
         req = BookingRequest.query.get(req_id)
@@ -8811,6 +13081,9 @@ def checkout_hold_fee_success():
             return redirect(url_for("bookme_requests"))
         
         hold_fee_cents = int(metadata.get("hold_fee_cents", HOLD_FEE_CENTS))
+        beatfund_fee_cents = int(metadata.get("beatfund_fee_cents", 0) or 0)
+        processing_fee_cents = int(metadata.get("processing_fee_cents", 0) or 0)
+        total_cents = int(metadata.get("total_cents", hold_fee_cents + beatfund_fee_cents + processing_fee_cents) or 0)
         provider = User.query.get(req.provider_id)
         if not provider:
             flash("Provider not found.", "error")
@@ -8870,7 +13143,11 @@ def checkout_hold_fee_success():
                     client_id=current_user.id,
                     event_title=f"Booking with @{provider.username}",
                     event_datetime=event_datetime,
+                    duration_minutes=req_check.duration_minutes,
                     total_cents=None,  # Full payment amount set later
+                    quoted_total_cents=None,
+                    deposit_base_cents=HOLD_FEE_CENTS,
+                    beatfund_fee_total_cents=None,
                     status=BOOKING_STATUS_CONFIRMED,  # Confirmed after hold fee payment
                     notes_from_client=req_check.message,
                 )
@@ -8895,6 +13172,49 @@ def checkout_hold_fee_success():
                     hold_fee_cents,
                     meta=f"hold fee for booking #{booking.id} with @{provider.username} (Stripe payment - held in escrow)"
                 )
+
+                # Credit provider ledger for hold fee (Stripe payment)
+                try:
+                    provider_w = Wallet.query.filter_by(user_id=provider.id).first()
+                    if not provider_w:
+                        provider_w = Wallet(user_id=provider.id)
+                        db.session.add(provider_w)
+                        db.session.flush()
+                    meta_income = f"booking #{booking.id} deposit (Stripe)"
+                    if not LedgerEntry.query.filter_by(wallet_id=provider_w.id, entry_type=EntryType.sale_income, meta=meta_income).first():
+                        post_ledger(provider_w, EntryType.sale_income, hold_fee_cents, meta=meta_income)
+                except Exception:
+                    app.logger.warning("Hold fee: unable to post provider ledger entry")
+
+                # Store payment breakdown for deposit (Stripe Checkout uses a PaymentIntent internally)
+                try:
+                    payment_intent_id = getattr(checkout_session, "payment_intent", None)
+                    payment = Payment(
+                        purpose=PaymentPurpose.booking_deposit,
+                        processor=PaymentProcessor.stripe,
+                        status=PaymentStatus.succeeded,
+                        kind=PaymentKind.deposit,
+                        amount_cents=total_cents,
+                        currency="usd",
+                        base_amount_cents=hold_fee_cents,
+                        beatfund_fee_cents=beatfund_fee_cents,
+                        processing_fee_cents=processing_fee_cents,
+                        total_paid_cents=total_cents,
+                        idempotency_key=generate_idempotency_key(
+                            "booking_deposit", current_user.id, booking_id=booking.id, session_id=session_id
+                        ),
+                        booking_id=booking.id,
+                        stripe_payment_intent_id=str(payment_intent_id) if payment_intent_id else None,
+                        external_id=str(payment_intent_id) if payment_intent_id else None,
+                    )
+                    payment.nonrefundable_processing_kept_cents = int(processing_fee_cents or 0)
+                    payment.nonrefundable_beatfund_kept_cents = int(beatfund_fee_cents or 0)
+                    db.session.add(payment)
+                except Exception:
+                    pass
+
+                # Track BeatFund fee collected on the booking
+                booking.beatfund_fee_collected_cents = int(booking.beatfund_fee_collected_cents or 0) + int(beatfund_fee_cents or 0)
 
                 # Finance audit: hold creation (escrow)
                 try:
@@ -8933,7 +13253,19 @@ def checkout_hold_fee_success():
                     title="Hold fee paid - Booking confirmed!",
                     body=f"@{current_user.username} paid the hold fee. Booking is now confirmed for {req_check.preferred_time}",
                     url=url_for("booking_detail", booking_id=booking.id),
+                    actor_user_id=current_user.id,
+                    event_key=f"booking:{booking.id}:deposit_paid",
                     commit=False
+                )
+                notify_user(
+                    current_user,
+                    kind="success",
+                    title="Deposit paid",
+                    body=f"Your hold fee was received for booking #{booking.id}.",
+                    url=url_for("booking_detail", booking_id=booking.id),
+                    actor_user_id=current_user.id,
+                    event_key=f"booking:{booking.id}:deposit_paid_client",
+                    commit=False,
                 )
         
         except ValueError as e:
@@ -8960,6 +13292,9 @@ def checkout_hold_fee_success():
             booking_request=req_check,
             provider=provider,
             hold_fee_cents=hold_fee_cents,
+            beatfund_fee_cents=beatfund_fee_cents,
+            processing_fee_cents=processing_fee_cents,
+            total_cents=total_cents,
             stripe_session_id=session_id,
         )
         
@@ -8977,9 +13312,6 @@ def checkout_hold_fee_success():
 @login_required
 def market_confirm(beat_id):
     """Order preview page - shows order details before proceeding to checkout"""
-    if not require_kyc_approved():
-        return redirect(url_for("kyc"))
-
     beat = Beat.query.get_or_404(beat_id)
 
     if hasattr(beat, "is_active") and not beat.is_active:
@@ -9048,9 +13380,6 @@ def market_confirm(beat_id):
 @login_required
 def market_buy(beat_id):
     """Process the purchase - requires confirmation"""
-    if not require_kyc_approved():
-        return redirect(url_for("kyc"))
-
     # Check for confirmation parameter
     confirmed = request.form.get("confirmed") == "true"
     if not confirmed:
@@ -9176,7 +13505,7 @@ def market_buy(beat_id):
             if wallet_balance_cents(buyer_w) < total_cents:
                 raise ValueError("insufficient_funds")
 
-            # Buyer pays total (subtotal + platform fee + processing fee)
+            # Buyer pays subtotal (platform fee is withheld from seller payout)
             # Meta includes breakdown for transparency
             post_ledger(
                 buyer_w, 
@@ -9185,11 +13514,12 @@ def market_buy(beat_id):
                 meta=f"buy beat #{beat.id} '{(beat.title or '')[:80]}' | subtotal=${format_cents_dollars(subtotal_cents)} fee=${format_cents_dollars(platform_fee_cents)} proc=${format_cents_dollars(processing_fee_cents)}"
             )
             
-            # Seller receives subtotal only
+            # Seller receives subtotal minus platform fee
+            seller_amount_cents = max(0, int(subtotal_cents) - int(platform_fee_cents))
             post_ledger(
                 seller_w, 
                 EntryType.sale_income, 
-                subtotal_cents, 
+                seller_amount_cents, 
                 meta=f"sale beat #{beat.id} to @{current_user.username}"
             )
             
@@ -9284,7 +13614,20 @@ def market_download(beat_id):
         flash("No deliverable file available for this beat.", "error")
         return redirect(url_for("market_index"))
 
-    # Use the unified uploads route so S3 signed URLs + scan gating apply.
+    # If stems_path is already a URL, redirect directly.
+    if isinstance(beat.stems_path, str) and beat.stems_path.startswith(("http://", "https://")):
+        return redirect(beat.stems_path)
+
+    # Prefer signed URL for S3 to avoid 404s when legacy uploads lack UploadedFile rows.
+    if STORAGE_BACKEND == "s3" and isinstance(storage_backend, S3StorageBackend):
+        key = beat.stems_path
+        if S3_PREFIX and key.startswith(f"{S3_PREFIX}/"):
+            key = key[len(S3_PREFIX) + 1 :]
+        signed_url = storage_backend.get_signed_url(key, expires=SIGNED_URL_TTL_SECONDS)
+        if signed_url:
+            return redirect(signed_url)
+
+    # Fallback to unified uploads route so local storage + scan gating apply.
     return redirect(url_for("media_file", filename=beat.stems_path))
 
 
@@ -9309,7 +13652,7 @@ def market_providers_json():
         payload.append({
             "username": p.user.username,
             "display_name": p.display_name,
-            "role": p.user.role.value if p.user.role else "",
+            "role": p.user.role if p.user.role else "",
             "city": p.city or "",
             "state": p.state or "",
             "lat": float(p.lat),
@@ -9754,7 +14097,7 @@ def notifications_page():
         .filter_by(user_id=current_user.id)
         .join(ActivityEvent, NotificationRecipient.event_id == ActivityEvent.id)
         .join(User, ActivityEvent.actor_user_id == User.id)
-        .filter(User.role != RoleEnum.admin)
+        .filter(User.role != RoleEnum.admin.value)
         .filter(ActivityEvent.audience != "ADMINS")
         .order_by(ActivityEvent.created_at.desc(), NotificationRecipient.id.desc())
         .limit(limit)
@@ -9865,7 +14208,7 @@ def api_notifications_unread_count():
         )
         .join(ActivityEvent, NotificationRecipient.event_id == ActivityEvent.id)
         .join(User, ActivityEvent.actor_user_id == User.id)
-        .filter(User.role != RoleEnum.admin)
+        .filter(User.role != RoleEnum.admin.value)
         .filter(ActivityEvent.audience != "ADMINS")
         .count()
     )
@@ -9884,7 +14227,7 @@ def api_notifications_recent():
         .filter_by(user_id=current_user.id)
         .join(ActivityEvent, NotificationRecipient.event_id == ActivityEvent.id)
         .join(User, ActivityEvent.actor_user_id == User.id)
-        .filter(User.role != RoleEnum.admin)
+        .filter(User.role != RoleEnum.admin.value)
         .filter(ActivityEvent.audience != "ADMINS")
         .order_by(ActivityEvent.created_at.desc(), NotificationRecipient.id.desc())
         .limit(limit)
@@ -9943,7 +14286,7 @@ def notifications_unread_count_alias():
         )
         .join(ActivityEvent, NotificationRecipient.event_id == ActivityEvent.id)
         .join(User, ActivityEvent.actor_user_id == User.id)
-        .filter(User.role != RoleEnum.admin)
+        .filter(User.role != RoleEnum.admin.value)
         .filter(ActivityEvent.audience != "ADMINS")
         .count()
     )
@@ -9953,6 +14296,19 @@ def notifications_unread_count_alias():
 # =========================================================
 # Admin Notifications (admins only)
 # =========================================================
+def _admin_bell_event_allowed(ev: ActivityEvent | None, payload: dict | None) -> bool:
+    if not ev:
+        return False
+    et = getattr(ev, "event_type", None)
+    if et in {ActivityEventType.admin_ticket_updated, ActivityEventType.admin_wallet_adjusted, ActivityEventType.admin_refund_issued}:
+        return True
+    if et == ActivityEventType.admin_user_role_changed:
+        data = (payload or {}).get("data") or {}
+        before = data.get("before") or {}
+        after = data.get("after") or {}
+        return ("kyc_status" in before) or ("kyc_status" in after)
+    return False
+
 @app.route("/dashboard/admin/notifications", endpoint="admin_notifications")
 @app.route("/admin/notifications", endpoint="admin_notifications_alias")
 @role_required("admin")
@@ -9973,6 +14329,9 @@ def admin_notifications():
         ev = r.event
         actor = getattr(ev, "actor", None)
         payload = _safe_json_loads(getattr(ev, "payload_json", None))
+
+        if not _admin_bell_event_allowed(ev, payload):
+            continue
 
         title = payload.get("summary") or payload.get("action_type") or (getattr(ev, "event_type", None).value if getattr(ev, "event_type", None) else "Admin event")
         body = ""
@@ -10028,7 +14387,13 @@ def admin_notifications_mark_read(recipient_id: int):
 @app.route("/admin/notifications/unread_count", endpoint="admin_notifications_unread_count_alias")
 @role_required("admin")
 def admin_notifications_unread_count():
-    count = (
+    allowed_types = {
+        ActivityEventType.admin_ticket_updated,
+        ActivityEventType.admin_wallet_adjusted,
+        ActivityEventType.admin_refund_issued,
+        ActivityEventType.admin_user_role_changed,
+    }
+    recs = (
         NotificationRecipient.query
         .filter(
             NotificationRecipient.user_id == current_user.id,
@@ -10036,30 +14401,252 @@ def admin_notifications_unread_count():
         )
         .join(ActivityEvent, NotificationRecipient.event_id == ActivityEvent.id)
         .filter(ActivityEvent.audience == "ADMINS")
-        .count()
+        .filter(ActivityEvent.event_type.in_(list(allowed_types)))
+        .order_by(NotificationRecipient.id.desc())
+        .limit(500)
+        .all()
     )
-    return jsonify({"count": int(count)})
+    count = 0
+    for r in recs:
+        ev = r.event
+        payload = _safe_json_loads(getattr(ev, "payload_json", None))
+        if _admin_bell_event_allowed(ev, payload):
+            count += 1
+    alert_count = 0
+    try:
+        alert_count = Alert.query.filter(Alert.severity == AlertSeverity.high, Alert.resolved_at.is_(None)).count()
+    except Exception:
+        alert_count = 0
+    return jsonify({"count": int(count + alert_count)})
+
+
+@app.route("/admin/notifications/recent", endpoint="admin_notifications_recent")
+@role_required("admin")
+def admin_notifications_recent():
+    limit = request.args.get("limit", type=int) or 8
+    allowed_types = {
+        ActivityEventType.admin_ticket_updated,
+        ActivityEventType.admin_wallet_adjusted,
+        ActivityEventType.admin_refund_issued,
+        ActivityEventType.admin_user_role_changed,
+    }
+    recs = (
+        NotificationRecipient.query
+        .filter(NotificationRecipient.user_id == current_user.id)
+        .join(ActivityEvent, NotificationRecipient.event_id == ActivityEvent.id)
+        .filter(ActivityEvent.audience == "ADMINS")
+        .filter(ActivityEvent.event_type.in_(list(allowed_types)))
+        .order_by(ActivityEvent.created_at.desc(), NotificationRecipient.id.desc())
+        .limit(limit * 5)
+        .all()
+    )
+
+    items = []
+    for r in recs:
+        ev = r.event
+        actor = getattr(ev, "actor", None)
+        payload = _safe_json_loads(getattr(ev, "payload_json", None))
+        if not _admin_bell_event_allowed(ev, payload):
+            continue
+
+        title = payload.get("summary") or payload.get("action_type") or (getattr(ev, "event_type", None).value if getattr(ev, "event_type", None) else "Admin event")
+        body = ""
+        try:
+            data = payload.get("data") or {}
+            if isinstance(data, dict) and (data.get("before") or data.get("after")):
+                body = json.dumps({"before": data.get("before"), "after": data.get("after")}, ensure_ascii=False, default=str)
+        except Exception:
+            body = ""
+
+        url = payload.get("url") if isinstance(payload, dict) else None
+        if not (url and str(url).startswith("/")):
+            url = None
+
+        items.append({
+            "id": r.id,
+            "event_type": payload.get("action_type") or (getattr(ev, "event_type", None).value if getattr(ev, "event_type", None) else None),
+            "title": title,
+            "body": body,
+            "url": url,
+            "created_at": getattr(ev, "created_at", None) or getattr(r, "created_at", None),
+            "is_read": bool(getattr(r, "read_at", None)),
+            "actor_username": payload.get("actor_username") or (getattr(actor, "username", None) if actor else None),
+            "kind": "info",
+        })
+
+    # Critical alerts in admin bell
+    try:
+        alerts = (
+            Alert.query
+            .filter(Alert.severity == AlertSeverity.high, Alert.resolved_at.is_(None))
+            .order_by(Alert.created_at.desc())
+            .limit(limit)
+            .all()
+        )
+        for a in alerts:
+            items.append({
+                "id": f"alert-{a.id}",
+                "event_type": "ALERT",
+                "title": "System alert",
+                "body": a.message,
+                "url": url_for("admin_alerts"),
+                "created_at": a.created_at,
+                "is_read": False,
+                "actor_username": None,
+                "kind": "error",
+            })
+    except Exception:
+        pass
+
+    items.sort(key=lambda x: (x.get("created_at") is not None, x.get("created_at")), reverse=True)
+    return jsonify(items[:limit])
 
 
 # =========================================================
 # Tickets (User-facing)
 # =========================================================
-@app.route("/tickets", endpoint="my_tickets")
+def _support_thread(ticket: SupportTicket) -> list[dict]:
+    """Merge user/admin messages and legacy admin comments into a single timeline."""
+    items: list[dict] = []
+    try:
+        for msg in SupportTicketMessage.query.filter_by(ticket_id=ticket.id).all():
+            items.append({
+                "created_at": msg.created_at,
+                "author": msg.author,
+                "body": msg.body,
+                "internal": False,
+            })
+    except Exception:
+        pass
+    try:
+        for c in ticket.comments.all():
+            items.append({
+                "created_at": c.created_at,
+                "author": c.admin,
+                "body": c.body,
+                "internal": True,
+            })
+    except Exception:
+        pass
+    items.sort(key=lambda i: i.get("created_at") or datetime.min)
+    return items
+
+
+@app.route("/support", endpoint="support_home")
 @login_required
-def my_tickets():
+def support_home():
     tickets = SupportTicket.query.filter(SupportTicket.user_id == current_user.id).order_by(SupportTicket.created_at.desc()).all()
-    return render_template("my_tickets.html", tickets=tickets, TicketStatus=TicketStatus, TicketType=TicketType)
+    return render_template("support_home.html", tickets=tickets, TicketStatus=TicketStatus, TicketType=TicketType)
 
 
-@app.route("/tickets/<int:ticket_id>", endpoint="my_ticket_detail")
+@app.route("/support/new", methods=["GET", "POST"], endpoint="support_new")
 @login_required
-def my_ticket_detail(ticket_id):
+def support_new():
+    if request.method == "POST":
+        subject = sanitize_input((request.form.get("subject") or "").strip(), max_length=200)
+        description = sanitize_input((request.form.get("description") or "").strip(), max_length=4000)
+        type_raw = (request.form.get("type") or "").strip()
+
+        if not subject:
+            flash("Subject is required.", "error")
+            return redirect(url_for("support_new"))
+        if not description:
+            flash("Description is required.", "error")
+            return redirect(url_for("support_new"))
+
+        try:
+            ticket_type = TicketType(type_raw) if type_raw else TicketType.other
+        except Exception:
+            ticket_type = TicketType.other
+
+        creator_admin_id = _system_audit_admin_id()
+        if not creator_admin_id:
+            # Fallback to current user if no admin exists (dev/test)
+            creator_admin_id = int(current_user.id)
+
+        ticket = SupportTicket(
+            user_id=current_user.id,
+            created_by_admin_id=creator_admin_id,
+            type=ticket_type,
+            status=TicketStatus.open,
+            subject=subject,
+            description=description,
+        )
+        db.session.add(ticket)
+        db.session.flush()
+
+        msg = SupportTicketMessage(
+            ticket_id=ticket.id,
+            author_user_id=current_user.id,
+            body=description,
+        )
+        db.session.add(msg)
+        db.session.commit()
+
+        flash("Support ticket created.", "success")
+        return redirect(url_for("support_ticket_detail", ticket_id=ticket.id))
+
+    return render_template("support_search.html", TicketType=TicketType)
+
+
+@app.route("/support/<int:ticket_id>", endpoint="support_ticket_detail")
+@login_required
+def support_ticket_detail(ticket_id: int):
     ticket = SupportTicket.query.get_or_404(ticket_id)
     if (ticket.user_id != current_user.id) and (current_user.role != RoleEnum.admin):
         abort(403)
 
-    comments = ticket.comments.order_by(SupportTicketComment.created_at.asc()).all()
-    return render_template("my_ticket_detail.html", ticket=ticket, comments=comments, TicketStatus=TicketStatus, TicketType=TicketType)
+    thread = _support_thread(ticket)
+    return render_template(
+        "support_user_detail.html",
+        ticket=ticket,
+        thread=thread,
+        TicketStatus=TicketStatus,
+        TicketType=TicketType,
+    )
+
+
+@app.route("/support/<int:ticket_id>/reply", methods=["POST"], endpoint="support_ticket_reply")
+@login_required
+def support_ticket_reply(ticket_id: int):
+    ticket = SupportTicket.query.get_or_404(ticket_id)
+    if (ticket.user_id != current_user.id) and (current_user.role != RoleEnum.admin):
+        abort(403)
+
+    body = sanitize_input((request.form.get("body") or "").strip(), max_length=4000)
+    if not body:
+        flash("Reply cannot be empty.", "error")
+        return redirect(url_for("support_ticket_detail", ticket_id=ticket.id))
+
+    msg = SupportTicketMessage(
+        ticket_id=ticket.id,
+        author_user_id=current_user.id,
+        body=body,
+    )
+    db.session.add(msg)
+
+    if current_user.role != RoleEnum.admin:
+        # Move to in_review when user replies
+        try:
+            ticket.status = TicketStatus.in_review
+        except Exception:
+            pass
+
+    db.session.commit()
+    flash("Reply sent.", "success")
+    return redirect(url_for("support_ticket_detail", ticket_id=ticket.id))
+
+
+@app.route("/tickets", endpoint="my_tickets")
+@login_required
+def my_tickets():
+    return redirect(url_for("support_home"))
+
+
+@app.route("/tickets/<int:ticket_id>", endpoint="my_ticket_detail")
+@login_required
+def my_ticket_detail(ticket_id: int):
+    return redirect(url_for("support_ticket_detail", ticket_id=ticket_id))
 
 
 # =========================================================
@@ -10068,7 +14655,7 @@ def my_ticket_detail(ticket_id):
 @app.route("/dashboard/admin", endpoint="admin_dashboard")
 @role_required("admin")
 def admin_dashboard():
-    total_users = User.query.filter(User.role != RoleEnum.admin).count()
+    total_users = User.query.filter(User.role != RoleEnum.admin.value).count()
     total_wallets = Wallet.query.count()
     total_beats = Beat.query.count()
     total_orders = Order.query.count()
@@ -10128,6 +14715,91 @@ def admin_dashboard():
         KYCStatus=KYCStatus,
         RoleEnum=RoleEnum,
         TicketStatus=TicketStatus,
+    )
+
+
+@app.route("/admin/payment-orders", endpoint="admin_payment_orders")
+@app.route("/dashboard/admin/payment-orders", endpoint="admin_payment_orders_dashboard")
+@role_required("admin")
+def admin_payment_orders():
+    order_type = (request.args.get("type") or "").strip().lower()
+    status = (request.args.get("status") or "").strip().lower()
+
+    query = PaymentOrder.query
+    if order_type:
+        try:
+            query = query.filter(PaymentOrder.order_type == OrderType(order_type))
+        except Exception:
+            pass
+    if status:
+        try:
+            query = query.filter(PaymentOrder.status == OrderStatus(status))
+        except Exception:
+            pass
+
+    orders = query.order_by(PaymentOrder.created_at.desc()).limit(300).all()
+    ledger_rows = PaymentLedger.query.order_by(PaymentLedger.created_at.desc()).limit(300).all()
+    return render_template(
+        "admin_payment_orders.html",
+        orders=orders,
+        ledger_rows=ledger_rows,
+        filters={"type": order_type, "status": status},
+    )
+
+
+@app.route("/admin/affiliates", endpoint="admin_affiliates")
+@app.route("/dashboard/admin/affiliates", endpoint="admin_affiliates_dashboard")
+@role_required("admin")
+def admin_affiliates():
+    status = (request.args.get("status") or "").strip().lower()
+    query = Affiliate.query
+    if status:
+        try:
+            query = query.filter(Affiliate.status == AffiliateStatus(status))
+        except Exception:
+            pass
+    affiliates = query.order_by(Affiliate.created_at.desc()).all()
+    return render_template("admin_affiliates.html", affiliates=affiliates, status=status)
+
+
+@app.route("/admin/affiliate-earnings", endpoint="admin_affiliate_earnings")
+@app.route("/dashboard/admin/affiliate-earnings", endpoint="admin_affiliate_earnings_dashboard")
+@role_required("admin")
+def admin_affiliate_earnings():
+    try:
+        now = datetime.utcnow()
+        (
+            AffiliateEarning.query
+            .filter(
+                AffiliateEarning.status == AffiliateEarningStatus.pending,
+                AffiliateEarning.available_at.isnot(None),
+                AffiliateEarning.available_at <= now,
+            )
+            .update({"status": AffiliateEarningStatus.available}, synchronize_session=False)
+        )
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+
+    rows = AffiliateEarning.query.order_by(AffiliateEarning.created_at.desc()).limit(500).all()
+
+    summary_rows = (
+        db.session.query(
+            AffiliateEarning.status,
+            func.count(AffiliateEarning.id),
+            func.coalesce(func.sum(AffiliateEarning.commission_cents), 0),
+        )
+        .group_by(AffiliateEarning.status)
+        .all()
+    )
+    summary = {}
+    for status, count, total_cents in summary_rows:
+        summary[str(status)] = {"count": int(count or 0), "total_cents": int(total_cents or 0)}
+
+    return render_template(
+        "admin_affiliate_earnings.html",
+        rows=rows,
+        summary=summary,
     )
 
 
@@ -10504,7 +15176,7 @@ def superadmin_dashboard():
     if not owner_panel_unlocked():
         return redirect(url_for("superadmin_unlock"))
 
-    total_users = User.query.filter(User.role != RoleEnum.admin).count()
+    total_users = User.query.filter(User.role != RoleEnum.admin.value).count()
     total_wallets = Wallet.query.count()
     total_beats = Beat.query.count()
     total_orders = Order.query.count()
@@ -10774,6 +15446,9 @@ def provider_dashboard():
     incoming_requests = BookingRequest.query.filter_by(
         provider_id=current_user.id, status=BookingStatus.pending
     ).count()
+    accepted_requests = BookingRequest.query.filter_by(
+        provider_id=current_user.id, status=BookingStatus.accepted
+    ).count()
     outgoing_requests = BookingRequest.query.filter_by(client_id=current_user.id).count()
     
     # Bookings as provider
@@ -10788,6 +15463,17 @@ def provider_dashboard():
         .limit(10)
         .all()
     )
+    provider_recent_accepted_requests = []
+    try:
+        provider_recent_accepted_requests = (
+            BookingRequest.query
+            .filter_by(provider_id=current_user.id, status=BookingStatus.accepted)
+            .order_by(BookingRequest.created_at.desc())
+            .limit(10)
+            .all()
+        )
+    except Exception:
+        provider_recent_accepted_requests = []
     
     # Bookings as client
     client_bookings_count = Booking.query.filter_by(client_id=current_user.id).count()
@@ -10810,12 +15496,14 @@ def provider_dashboard():
         following_count=following_count,
         artist_can_take_gigs=artist_can_take_gigs,
         incoming_requests=incoming_requests,
+        accepted_requests=accepted_requests,
         outgoing_requests=outgoing_requests,
         provider_bookings_count=provider_bookings_count,
         provider_pending_bookings=provider_pending_bookings,
         client_bookings_count=client_bookings_count,
         client_pending_bookings=client_pending_bookings,
         provider_recent_bookings=provider_recent_bookings,
+        provider_recent_accepted_requests=provider_recent_accepted_requests,
         client_recent_bookings=client_recent_bookings,
     )
 
@@ -10964,7 +15652,7 @@ def provider_toggle_live():
     flash(f"Profile {status}. {'Your services are now visible on the marketplace.' if prof.is_visible else 'Your services are hidden from the marketplace, but your profile is still visible for following and portfolio viewing.'}", "success")
     
     # Redirect to appropriate dashboard based on role
-    role = current_user.role.value
+    role = current_user.role
     if role == "videographer":
         return redirect(url_for("videographer_dashboard"))
     elif role == "designer":
@@ -11649,7 +16337,7 @@ def photographer_dashboard():
             "profile_image_url": current_user.avatar_url,
             "specialties": specialties,
             "location": f"{prof.city}, {prof.state}" if prof and (prof.city or prof.state) else "Remote",
-            "kyc_status": current_user.kyc_status.value
+            "kyc_status": current_user.kyc_status
         },
         stats={
             "new_requests_count": new_requests_count,
@@ -13410,8 +18098,8 @@ def opportunities():
 def whoami():
     return (
         f"id={current_user.id}, username={current_user.username}, "
-        f"role={current_user.role.value}, "
-        f"kyc={current_user.kyc_status.value}, "
+        f"role={current_user.role}, "
+        f"kyc={current_user.kyc_status}, "
         f"active={current_user.is_active_col}"
     )
 
@@ -13434,8 +18122,11 @@ def admin_users():
     role = (request.args.get("role") or "").strip()
     status = (request.args.get("status") or "").strip()
     active = (request.args.get("active") or "").strip()
+    sort = (request.args.get("sort") or "").strip().lower()
+    order = (request.args.get("order") or "").strip().lower()
+    group_by_role = (request.args.get("group") or "1").strip().lower() not in ("0", "false", "off", "no")
 
-    query = User.query
+    query = User.query.filter(User.role != RoleEnum.admin.value)
 
     if q:
         like = f"%{q}%"
@@ -13448,7 +18139,7 @@ def admin_users():
 
     if role:
         try:
-            query = query.filter(User.role == RoleEnum(role))
+            query = query.filter(User.role == RoleEnum(role).value)
         except Exception:
             pass
 
@@ -13462,7 +18153,25 @@ def admin_users():
         except Exception:
             pass
 
-    query = query.order_by(User.id.desc())
+    # Sorting
+    sort_map = {
+        "id": User.id,
+        "username": func.lower(User.username),
+        "role": User.role,
+        "kyc": User.kyc_status,
+        "status": User.is_active_col,
+    }
+    sort_expr = sort_map.get(sort or "role", User.role)
+    if order in ("desc", "za"):
+        sort_expr = sort_expr.desc()
+    else:
+        sort_expr = sort_expr.asc()
+
+    if group_by_role:
+        role_order = User.role.desc() if order in ("desc", "za") and (sort or "role") == "role" else User.role.asc()
+        query = query.order_by(role_order, sort_expr, User.id.asc())
+    else:
+        query = query.order_by(sort_expr, User.id.asc())
 
     # Flask-SQLAlchemy paginate
     pagination = query.paginate(page=page, per_page=25, error_out=False)
@@ -13475,6 +18184,9 @@ def admin_users():
         role=role,
         status=status,
         active=active,
+        sort=sort or "role",
+        order=order or "asc",
+        group_by_role=group_by_role,
         RoleEnum=RoleEnum,
         KYCStatus=KYCStatus,
     )
@@ -13584,6 +18296,114 @@ def admin_transactions():
         audit_logs=audit_logs,
         EntryType=EntryType,
     )
+
+
+@app.route("/dashboard/admin/refunds", methods=["GET", "POST"], endpoint="admin_refunds")
+@role_required("admin")
+def admin_refunds():
+    """Admin refund tool for booking payments."""
+    if not STRIPE_AVAILABLE or not STRIPE_SECRET_KEY:
+        flash("Stripe is not configured.", "error")
+        return redirect(url_for("admin_transactions"))
+
+    if request.method == "POST":
+        payment_id_raw = (request.form.get("payment_id") or "").strip()
+        refund_base_raw = (request.form.get("refund_base_cents") or "").strip()
+        provider_fault = (request.form.get("provider_fault") or "").strip().lower() in {"1", "true", "yes", "on"}
+        reason = (request.form.get("reason") or "").strip()
+
+        try:
+            payment_id = int(payment_id_raw)
+        except Exception:
+            flash("Invalid payment ID.", "error")
+            return redirect(url_for("admin_refunds"))
+
+        try:
+            refund_base_cents = int(refund_base_raw)
+        except Exception:
+            flash("Refund base cents must be a number.", "error")
+            return redirect(url_for("admin_refunds"))
+
+        payment = Payment.query.get(payment_id)
+        if not payment:
+            flash("Payment not found.", "error")
+            return redirect(url_for("admin_refunds"))
+
+        remaining_base = int(payment.base_amount_cents or 0) - int(payment.refunded_base_cents or 0)
+        if refund_base_cents <= 0 or refund_base_cents > remaining_base:
+            flash("Refund amount exceeds remaining refundable base.", "error")
+            return redirect(url_for("admin_refunds"))
+
+        refundable_bf = 0
+        already_refunded_bf = int(payment.beatfund_fee_cents or 0) - int(payment.nonrefundable_beatfund_kept_cents or 0)
+        if provider_fault and ALLOW_REFUND_BF_FEE_ON_PROVIDER_FAULT and already_refunded_bf <= 0:
+            refundable_bf = int(payment.beatfund_fee_cents or 0)
+
+        refundable_cents = refund_base_cents + refundable_bf
+        if refundable_cents <= 0:
+            flash("No refundable amount available for this payment.", "error")
+            return redirect(url_for("admin_refunds"))
+
+        try:
+            refund_kwargs = {"amount": refundable_cents, "reason": "requested_by_customer"}
+            if payment.stripe_payment_intent_id:
+                refund_kwargs["payment_intent"] = payment.stripe_payment_intent_id
+            elif payment.stripe_charge_id:
+                refund_kwargs["charge"] = payment.stripe_charge_id
+            else:
+                flash("Stripe payment reference missing on this payment.", "error")
+                return redirect(url_for("admin_refunds"))
+
+            stripe.Refund.create(**refund_kwargs)
+
+            payment.refunded_base_cents = int(payment.refunded_base_cents or 0) + refund_base_cents
+            payment.nonrefundable_processing_kept_cents = int(payment.processing_fee_cents or 0)
+            payment.nonrefundable_beatfund_kept_cents = int(payment.beatfund_fee_cents or 0) - refundable_bf
+
+            if payment.refunded_base_cents >= int(payment.base_amount_cents or 0):
+                payment.status = PaymentStatus.refunded
+            else:
+                payment.status = PaymentStatus.partially_refunded
+
+            booking = Booking.query.get(payment.booking_id) if payment.booking_id else None
+            if booking and refundable_bf > 0:
+                booking.beatfund_fee_collected_cents = max(0, int(booking.beatfund_fee_collected_cents or 0) - refundable_bf)
+
+            db.session.commit()
+            try:
+                log_admin_action(
+                    ActivityEventType.admin_refund_issued,
+                    actor_admin_id=current_user.id,
+                    target_type="payment",
+                    target_id=payment.id,
+                    summary=f"Refund issued for payment #{payment.id} (${refundable_cents/100.0:.2f})",
+                    payload_dict={
+                        "payment_id": payment.id,
+                        "booking_id": payment.booking_id,
+                        "refund_cents": refundable_cents,
+                        "refund_base_cents": refund_base_cents,
+                        "provider_fault": provider_fault,
+                    },
+                    url=url_for("admin_refunds"),
+                    include_actor=True,
+                )
+            except Exception:
+                pass
+            flash("Refund processed successfully.", "success")
+            return redirect(url_for("admin_refunds"))
+        except Exception as e:
+            db.session.rollback()
+            flash(f"Refund failed: {e}", "error")
+            return redirect(url_for("admin_refunds"))
+
+    payments = (
+        Payment.query
+        .filter(Payment.processor == PaymentProcessor.stripe)
+        .order_by(Payment.created_at.desc())
+        .limit(50)
+        .all()
+    )
+    return render_template("admin_refunds.html", payments=payments)
 
 
 @app.route("/dashboard/admin/audit-access/<int:user_id>", methods=["GET", "POST"], endpoint="admin_audit_access")
@@ -13867,8 +18687,18 @@ def admin_ticket_detail(ticket_id: int):
         if new_priority in ["low", "normal", "high"]:
             ticket.priority = new_priority
         
-        # Add comment if provided
-        comment_body = (request.form.get("comment_body") or "").strip()
+        # Add reply to user (public)
+        reply_body = sanitize_input((request.form.get("reply_body") or "").strip(), max_length=4000)
+        if reply_body:
+            msg = SupportTicketMessage(
+                ticket_id=ticket.id,
+                author_user_id=current_user.id,
+                body=reply_body,
+            )
+            db.session.add(msg)
+
+        # Add internal comment if provided
+        comment_body = sanitize_input((request.form.get("comment_body") or "").strip(), max_length=2000)
         if comment_body:
             comment = SupportTicketComment(
                 ticket_id=ticket.id,
@@ -13887,7 +18717,7 @@ def admin_ticket_detail(ticket_id: int):
                 target_type="ticket",
                 target_id=ticket.id,
                 summary=f"Updated ticket #{ticket.id}: {ticket.subject}",
-                payload_dict={"before": before, "after": after, "comment_added": bool(comment_body)},
+                payload_dict={"before": before, "after": after, "comment_added": bool(comment_body), "reply_added": bool(reply_body)},
                 url=url_for("admin_ticket_detail", ticket_id=ticket.id),
                 include_actor=True,
             )
@@ -13897,16 +18727,78 @@ def admin_ticket_detail(ticket_id: int):
         flash("Ticket updated successfully.", "success")
         return redirect(url_for("admin_ticket_detail", ticket_id=ticket.id))
     
-    # Get comments
+    # Get thread + internal notes
+    thread = _support_thread(ticket)
     comments = ticket.comments.order_by(SupportTicketComment.created_at.asc()).all()
     
     return render_template(
         "admin_ticket_detail.html",
         ticket=ticket,
+        thread=thread,
         comments=comments,
         TicketStatus=TicketStatus,
         TicketType=TicketType,
     )
+
+
+@app.route("/admin/tickets/<int:ticket_id>/reply", methods=["POST"], endpoint="admin_ticket_reply")
+@role_required("admin")
+def admin_ticket_reply(ticket_id: int):
+    ticket = SupportTicket.query.get_or_404(ticket_id)
+    body = sanitize_input((request.form.get("body") or "").strip(), max_length=4000)
+    if not body:
+        flash("Reply cannot be empty.", "error")
+        return redirect(url_for("admin_ticket_detail", ticket_id=ticket.id))
+    msg = SupportTicketMessage(
+        ticket_id=ticket.id,
+        author_user_id=current_user.id,
+        body=body,
+    )
+    db.session.add(msg)
+    db.session.commit()
+    flash("Reply sent.", "success")
+    return redirect(url_for("admin_ticket_detail", ticket_id=ticket.id))
+
+
+@app.route("/admin/tickets/<int:ticket_id>/status", methods=["POST"], endpoint="admin_ticket_status")
+@role_required("admin")
+def admin_ticket_status(ticket_id: int):
+    ticket = SupportTicket.query.get_or_404(ticket_id)
+    new_status = (request.form.get("status") or "").strip().lower()
+    if new_status:
+        try:
+            ticket.status = TicketStatus(new_status)
+            db.session.commit()
+            flash("Status updated.", "success")
+        except Exception:
+            db.session.rollback()
+
+    def _ledger_by_charge_or_intent(charge_id: str | None, payment_intent_id: str | None) -> PaymentLedger | None:
+        try:
+            if charge_id:
+                ledger = PaymentLedger.query.filter_by(stripe_charge_id=str(charge_id)).first()
+                if ledger:
+                    return ledger
+            if payment_intent_id:
+                return PaymentLedger.query.filter_by(stripe_payment_intent_id=str(payment_intent_id)).first()
+        except (ProgrammingError, OperationalError):
+            db.session.rollback()
+        except Exception:
+            return None
+        return None
+
+    def _reverse_affiliate_for_ledger(ledger: PaymentLedger) -> None:
+        if not ledger:
+            return
+        try:
+            earning = AffiliateEarning.query.filter_by(payment_ledger_id=ledger.id).first()
+            if earning and earning.status != AffiliateEarningStatus.reversed:
+                earning.status = AffiliateEarningStatus.reversed
+                db.session.commit()
+        except Exception:
+            db.session.rollback()
+            flash("Invalid status value.", "error")
+    return redirect(url_for("admin_ticket_detail", ticket_id=ticket.id))
 
 
 @app.route("/dashboard/admin/audit", endpoint="admin_audit_log")
@@ -14321,12 +19213,154 @@ def admin_fees():
         "admin_fees.html",
         cfg={
             "HOLD_FEE_CENTS": HOLD_FEE_CENTS,
-            "BEAT_FEE_RATE": float(BEAT_FEE_RATE) if "BEAT_FEE_RATE" in globals() else None,
-            "BEAT_FEE_MIN_CENTS": BEAT_FEE_MIN_CENTS if "BEAT_FEE_MIN_CENTS" in globals() else None,
-            "BEAT_FEE_MAX_CENTS": BEAT_FEE_MAX_CENTS if "BEAT_FEE_MAX_CENTS" in globals() else None,
+            "BEAT_FEE_FLAT_CENTS": BEAT_FEE_FLAT_CENTS,
             "MAX_TXN_DOLLARS": MAX_TXN_DOLLARS,
         },
     )
+
+
+@app.route("/dashboard/admin/schema/booking", endpoint="admin_booking_schema")
+@app.route("/dashboard/admin/schema-check", endpoint="admin_schema_check")
+@role_required("admin")
+def admin_booking_schema():
+    """Admin schema check for booking/payment fee columns (Postgres)."""
+    booking_cols = []
+    payment_cols = []
+    error = None
+    has_fee_columns = False
+    has_payment_columns = False
+    has_payment_kind = False
+    booking_sample_ok = False
+    payment_sample_ok = False
+
+    try:
+        if db.engine.dialect.name == "postgresql":
+            with db.engine.begin() as conn:
+                booking_rows = conn.execute(text("""
+                    SELECT column_name, data_type
+                    FROM information_schema.columns
+                    WHERE table_schema = 'public' AND table_name = 'booking'
+                    ORDER BY ordinal_position
+                """)).fetchall()
+                payment_rows = conn.execute(text("""
+                    SELECT column_name, data_type
+                    FROM information_schema.columns
+                    WHERE table_schema = 'public' AND table_name = 'payment'
+                    ORDER BY ordinal_position
+                """)).fetchall()
+
+                booking_cols = [{"name": r[0], "type": r[1]} for r in booking_rows]
+                payment_cols = [{"name": r[0], "type": r[1]} for r in payment_rows]
+
+                booking_names = {r[0] for r in booking_rows}
+                payment_names = {r[0] for r in payment_rows}
+
+                booking_required = {
+                    "quoted_total_cents",
+                    "quote_hourly_rate_cents",
+                    "quote_billable_minutes",
+                    "quote_calculation_text",
+                    "quote_breakdown_text",
+                    "deposit_base_cents",
+                    "beatfund_fee_total_cents",
+                    "beatfund_fee_collected_cents",
+                }
+                payment_required = {
+                    "kind",
+                    "base_amount_cents",
+                    "beatfund_fee_cents",
+                    "processing_fee_cents",
+                    "total_paid_cents",
+                    "refunded_base_cents",
+                    "nonrefundable_processing_kept_cents",
+                    "nonrefundable_beatfund_kept_cents",
+                    "idempotency_key",
+                    "external_id",
+                    "booking_request_id",
+                    "booking_id",
+                    "stripe_payment_intent_id",
+                    "stripe_charge_id",
+                }
+
+                has_fee_columns = booking_required.issubset(booking_names)
+                has_payment_columns = payment_required.issubset(payment_names)
+                has_payment_kind = "kind" in payment_names
+
+                try:
+                    conn.execute(text("SELECT quoted_total_cents FROM booking LIMIT 1"))
+                    booking_sample_ok = True
+                except Exception:
+                    booking_sample_ok = False
+
+                try:
+                    conn.execute(text("SELECT kind FROM payment LIMIT 1"))
+                    payment_sample_ok = True
+                except Exception:
+                    payment_sample_ok = False
+        else:
+            booking_names = set()
+            payment_names = set()
+            if _sqlite_has_table("booking"):
+                booking_names = set(_sqlite_columns("booking"))
+            if _sqlite_has_table("payment"):
+                payment_names = set(_sqlite_columns("payment"))
+
+            booking_cols = [{"name": c, "type": "unknown"} for c in sorted(booking_names)]
+            payment_cols = [{"name": c, "type": "unknown"} for c in sorted(payment_names)]
+
+            booking_required = {
+                "quoted_total_cents",
+                "quote_hourly_rate_cents",
+                "quote_billable_minutes",
+                "quote_calculation_text",
+                "quote_breakdown_text",
+                "deposit_base_cents",
+                "beatfund_fee_total_cents",
+                "beatfund_fee_collected_cents",
+            }
+            payment_required = {
+                "kind",
+                "base_amount_cents",
+                "beatfund_fee_cents",
+                "processing_fee_cents",
+                "total_paid_cents",
+                "refunded_base_cents",
+                "nonrefundable_processing_kept_cents",
+                "nonrefundable_beatfund_kept_cents",
+                "idempotency_key",
+                "external_id",
+                "booking_request_id",
+                "booking_id",
+                "stripe_payment_intent_id",
+                "stripe_charge_id",
+            }
+
+            has_fee_columns = booking_required.issubset(booking_names)
+            has_payment_columns = payment_required.issubset(payment_names)
+            has_payment_kind = "kind" in payment_names
+            booking_sample_ok = bool(booking_names)
+            payment_sample_ok = bool(payment_names)
+    except Exception as e:
+        error = f"{type(e).__name__}: {str(e)[:200]}"
+
+    return jsonify({
+        "ok": error is None,
+        "has_fee_columns": has_fee_columns,
+        "sample_ok": booking_sample_ok,
+        "columns": booking_cols,
+        "booking": {
+            "has_fee_columns": has_fee_columns,
+            "sample_ok": booking_sample_ok,
+            "columns": booking_cols,
+        },
+        "payment": {
+            "has_payment_columns": has_payment_columns,
+            "has_payment_kind": has_payment_kind,
+            "sample_ok": payment_sample_ok,
+            "columns": payment_cols,
+        },
+        "error": error,
+    })
 
 
 @app.route("/healthz")
@@ -14553,7 +19587,7 @@ def admin_reports():
             User.role,
             func.count(User.id).label('count')
         )
-        .filter(User.role != RoleEnum.admin)
+        .filter(User.role != RoleEnum.admin.value)
         .group_by(User.role)
         .order_by(User.role)
         .all()
@@ -14570,6 +19604,201 @@ def admin_reports():
         wallet_stats=wallet_stats,
         role_stats=role_stats,
         EntryType=EntryType,
+    )
+
+
+@app.route("/dashboard/admin/analytics", endpoint="admin_analytics")
+@role_required("admin")
+def admin_analytics():
+    """Admin analytics dashboard (high-signal operational metrics)."""
+    now = datetime.utcnow()
+    last_30 = now - timedelta(days=30)
+
+    # Users (exclude admins)
+    role_counts = (
+        db.session.query(User.role, func.count(User.id))
+        .filter(User.role != RoleEnum.admin.value)
+        .group_by(User.role)
+        .order_by(User.role)
+        .all()
+    )
+    total_users = sum(row[1] for row in role_counts) if role_counts else 0
+    active_users = (
+        db.session.query(func.count(User.id))
+        .filter(User.role != RoleEnum.admin.value, User.is_active_col.is_(True))
+        .scalar() or 0
+    )
+
+    kyc_counts = (
+        db.session.query(User.kyc_status, func.count(User.id))
+        .filter(User.role != RoleEnum.admin.value)
+        .group_by(User.kyc_status)
+        .order_by(User.kyc_status)
+        .all()
+    )
+
+    # Orders / revenue
+    total_orders = db.session.query(func.count(Order.id)).scalar() or 0
+    paid_orders = db.session.query(func.count(Order.id)).filter(Order.status == OrderStatus.paid).scalar() or 0
+    total_sales_cents = (
+        db.session.query(func.coalesce(func.sum(Order.amount_cents), 0))
+        .filter(Order.status == OrderStatus.paid)
+        .scalar() or 0
+    )
+    total_gross_cents = (
+        db.session.query(func.coalesce(func.sum(Order.total_cents), 0))
+        .filter(Order.status == OrderStatus.paid)
+        .scalar() or 0
+    )
+    platform_fee_cents = (
+        db.session.query(func.coalesce(func.sum(Order.platform_fee_cents), 0))
+        .filter(Order.status == OrderStatus.paid)
+        .scalar() or 0
+    )
+    processing_fee_cents = (
+        db.session.query(func.coalesce(func.sum(Order.processing_fee_cents), 0))
+        .filter(Order.status == OrderStatus.paid)
+        .scalar() or 0
+    )
+
+    orders_series = (
+        db.session.query(
+            func.date(Order.created_at).label("day"),
+            func.count(Order.id).label("count"),
+            func.coalesce(func.sum(Order.amount_cents), 0).label("sum_cents"),
+        )
+        .filter(Order.created_at >= last_30)
+        .group_by("day")
+        .order_by("day")
+        .all()
+    )
+
+    # Wallet / ledger
+    wallet_volume_cents = (
+        db.session.query(func.coalesce(func.sum(func.abs(LedgerEntry.amount_cents)), 0))
+        .scalar() or 0
+    )
+    ledger_by_type = (
+        db.session.query(
+            LedgerEntry.entry_type,
+            func.count(LedgerEntry.id).label("count"),
+            func.coalesce(func.sum(LedgerEntry.amount_cents), 0).label("sum_cents"),
+        )
+        .group_by(LedgerEntry.entry_type)
+        .order_by(LedgerEntry.entry_type)
+        .all()
+    )
+
+    # Bookings & tickets
+    booking_counts = (
+        db.session.query(Booking.status, func.count(Booking.id))
+        .group_by(Booking.status)
+        .order_by(Booking.status)
+        .all()
+    )
+    ticket_counts = (
+        db.session.query(SupportTicket.status, func.count(SupportTicket.id))
+        .group_by(SupportTicket.status)
+        .order_by(SupportTicket.status)
+        .all()
+    )
+
+    # Uploads
+    upload_counts = (
+        db.session.query(UploadedFile.scan_status, func.count(UploadedFile.id))
+        .group_by(UploadedFile.scan_status)
+        .order_by(UploadedFile.scan_status)
+        .all()
+    )
+
+    # Top sellers + beats
+    top_sellers = (
+        db.session.query(
+            User.username,
+            func.count(Order.id).label("count"),
+            func.coalesce(func.sum(Order.amount_cents), 0).label("sum_cents"),
+        )
+        .join(User, User.id == Order.seller_id)
+        .filter(Order.status == OrderStatus.paid)
+        .group_by(User.username)
+        .order_by(func.sum(Order.amount_cents).desc())
+        .limit(5)
+        .all()
+    )
+    top_beats = (
+        db.session.query(
+            Beat.title,
+            func.count(Order.id).label("count"),
+            func.coalesce(func.sum(Order.amount_cents), 0).label("sum_cents"),
+        )
+        .join(Order, Order.beat_id == Beat.id)
+        .filter(Order.status == OrderStatus.paid)
+        .group_by(Beat.title)
+        .order_by(func.count(Order.id).desc())
+        .limit(5)
+        .all()
+    )
+
+    def _dstr(v):
+        if isinstance(v, datetime):
+            return v.strftime("%Y-%m-%d")
+        try:
+            return v.strftime("%Y-%m-%d")  # date
+        except Exception:
+            return str(v)
+
+    order_labels = [_dstr(row.day) for row in orders_series]
+    order_counts_series = [int(row.count) for row in orders_series]
+    order_sales_series = [round((row.sum_cents or 0) / 100.0, 2) for row in orders_series]
+
+    role_labels = [get_role_display(r) for r, _ in role_counts]
+    role_values = [int(c) for _, c in role_counts]
+
+    kyc_labels = [str(k).replace("_", " ").title() for k, _ in kyc_counts]
+    kyc_values = [int(c) for _, c in kyc_counts]
+
+    ledger_labels = [row.entry_type.value if hasattr(row.entry_type, "value") else str(row.entry_type) for row in ledger_by_type]
+    ledger_counts = [int(row.count) for row in ledger_by_type]
+    ledger_amounts = [round((row.sum_cents or 0) / 100.0, 2) for row in ledger_by_type]
+
+    booking_labels = [str(s).replace("_", " ").title() for s, _ in booking_counts]
+    booking_values = [int(c) for _, c in booking_counts]
+
+    ticket_labels = [str(s).replace("_", " ").title() for s, _ in ticket_counts]
+    ticket_values = [int(c) for _, c in ticket_counts]
+
+    upload_labels = [str(s).replace("_", " ").title() for s, _ in upload_counts]
+    upload_values = [int(c) for _, c in upload_counts]
+
+    return render_template(
+        "admin_analytics.html",
+        total_users=total_users,
+        active_users=active_users,
+        total_orders=total_orders,
+        paid_orders=paid_orders,
+        total_sales=round(total_sales_cents / 100.0, 2),
+        total_gross=round(total_gross_cents / 100.0, 2),
+        platform_fees=round(platform_fee_cents / 100.0, 2),
+        processing_fees=round(processing_fee_cents / 100.0, 2),
+        wallet_volume=round(wallet_volume_cents / 100.0, 2),
+        order_labels=order_labels,
+        order_counts_series=order_counts_series,
+        order_sales_series=order_sales_series,
+        role_labels=role_labels,
+        role_values=role_values,
+        kyc_labels=kyc_labels,
+        kyc_values=kyc_values,
+        ledger_labels=ledger_labels,
+        ledger_counts=ledger_counts,
+        ledger_amounts=ledger_amounts,
+        booking_labels=booking_labels,
+        booking_values=booking_values,
+        ticket_labels=ticket_labels,
+        ticket_values=ticket_values,
+        upload_labels=upload_labels,
+        upload_values=upload_values,
+        top_sellers=top_sellers,
+        top_beats=top_beats,
     )
 
 

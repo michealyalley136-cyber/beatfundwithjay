@@ -362,7 +362,7 @@
   }
 </style>
 
-<script>
+<script nonce="{{ csp_nonce }}">
   document.addEventListener('DOMContentLoaded', function () {
     const trigger = document.getElementById('role-trigger');
     const menu = document.getElementById('role-menu');
@@ -523,6 +523,17 @@
               required
             >
           </div>
+        </div>
+
+        <div>
+          <div class="auth-field-label">Referral code (optional)</div>
+          <input
+            type="text"
+            name="referral_code"
+            class="auth-input"
+            placeholder="Referral code"
+            value="{{ referral_code or '' }}"
+          >
         </div>
 
         <div>

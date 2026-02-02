@@ -292,6 +292,7 @@
 
 {% block content %}
 <div class="bf-makeup">
+  {% include "_provider_rating_snippet.html" %}
   <div class="bf-hero">
     <div class="bf-hero-left">
       <h1>💄 Makeup Artist Dashboard</h1>
@@ -751,7 +752,7 @@
   </div>
 </div>
 
-<script>
+<script nonce="{{ csp_nonce }}">
   function showSection(sectionId) {
     // Hide all sections
     document.querySelectorAll('.section').forEach(section => {

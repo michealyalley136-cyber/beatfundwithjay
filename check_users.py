@@ -28,7 +28,7 @@ with app.app_context():
             print(f"\nUser ID: {user.id}")
             print(f"  Username: {user.username}")
             print(f"  Email: {user.email}")
-            print(f"  Role: {user.role.value if user.role else 'None'}")
+            print(f"  Role: {user.role if user.role else 'None'}")
             print(f"  Is Active: {user.is_active_col}")
             print(f"  Password Hash: {user.password_hash[:50] if user.password_hash else 'None'}...")
             print(f"  Password Hash Length: {len(user.password_hash) if user.password_hash else 0}")

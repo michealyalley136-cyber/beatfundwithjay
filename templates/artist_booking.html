@@ -175,15 +175,16 @@
 
         <div class="bf-row">
           <div class="bf-field">
-            <div class="bf-label">Duration (minutes)</div>
+            <div class="bf-label">Duration (required, minutes)</div>
             <input
               class="bf-input"
               type="number"
               name="duration_minutes"
-              min="0"
+              min="30"
               step="15"
               value="{{ form_data.get('duration_minutes', '') }}"
               placeholder="60"
+              required
             >
           </div>
           <div class="bf-field">

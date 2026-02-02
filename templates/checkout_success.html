@@ -232,12 +232,8 @@
         <span class="info-value">${{ '%.2f'|format(subtotal_cents / 100.0) }}</span>
       </div>
       <div class="info-row">
-        <span class="info-label">Service Fee</span>
+        <span class="info-label">BeatFund platform fee (2% of total, included)</span>
         <span class="info-value">${{ '%.2f'|format(platform_fee_cents / 100.0) }}</span>
-      </div>
-      <div class="info-row">
-        <span class="info-label">Processing Fee</span>
-        <span class="info-value">${{ '%.2f'|format(processing_fee_cents / 100.0) }}</span>
       </div>
       <div class="info-row">
         <span class="info-label">Total Paid</span>
@@ -272,8 +268,8 @@
   </div>
 </div>
 
-{% if not is_paid and order_id %}
-<script>
+{% if not is_paid and order_id and not is_payment_order %}
+<script nonce="{{ csp_nonce }}">
   (function () {
     const orderId = {{ order_id|int }};
     const stripeSessionId = {{ (stripe_session_id or "")|tojson }};

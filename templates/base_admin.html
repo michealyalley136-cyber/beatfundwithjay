@@ -329,6 +329,9 @@
         <a href="{{ url_for('admin_finance_events') }}">Finance Events</a>
         <a href="{{ url_for('admin_audit') }}">Audit</a>
         <a href="{{ url_for('admin_stripe_webhooks') }}">Stripe Webhooks</a>
+        <a href="{{ url_for('admin_payment_orders') }}">Payment Orders</a>
+        <a href="{{ url_for('admin_affiliates') }}">Affiliates</a>
+        <a href="{{ url_for('admin_affiliate_earnings') }}">Affiliate Earnings</a>
         <a href="{{ url_for('admin_alerts') }}">Alerts</a>
         <a href="{{ url_for('admin_uploads') }}">Uploads</a>
         <a href="{{ url_for('admin_fees') }}">Fees</a>
@@ -367,7 +370,7 @@
     {% block admin_content %}{% endblock %}
 </main>
 
-<script>
+<script nonce="{{ csp_nonce }}">
   (function() {
     const badge = document.getElementById('adminNotifBadge');
     if (!badge) return;

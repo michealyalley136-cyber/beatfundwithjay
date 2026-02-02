@@ -66,10 +66,10 @@
             @{{ u.username }}
           </td>
           <td style="padding:8px 6px;">
-            {{ u.role.value|capitalize }}
+            {{ u.role|capitalize }}
           </td>
           <td style="padding:8px 6px;">
-            {{ u.kyc_status.value.replace('_',' ')|title }}
+            {{ u.kyc_status.replace('_',' ')|title }}
           </td>
           <td style="padding:8px 6px;">
             {% if u.is_active_col %}

@@ -256,6 +256,8 @@
 {% block content %}
 <div class="bf-producer">
 
+  {% include "_provider_rating_snippet.html" %}
+
   <div class="bf-hero">
     <div class="bf-hero-left">
       <img class="bf-avatar" src="{{ current_user.avatar_url }}" alt="avatar">
@@ -541,7 +543,7 @@
   </div>
 </div>
 
-<script>
+<script nonce="{{ csp_nonce }}">
   let currentModalType = null;
 
   function showFollowers() {

@@ -36,7 +36,14 @@
   .bf-list { display:flex; flex-direction:column; gap:10px; }
   .bf-row { display:flex; gap:10px; align-items:flex-start; justify-content:space-between; flex-wrap:wrap; }
   .bf-row .left { min-width: 220px; }
-  .bf-row .meta { opacity:.75; font-size:.9rem; }
+  .bf-row .meta { opacity:.75; font-size:.9rem; overflow-wrap:anywhere; word-break:break-word; }
+  .bf-chip{ white-space:nowrap; }
+
+  @media (max-width: 640px){
+    .bf-row{ flex-direction:column; align-items:flex-start; }
+    .bf-row .left{ min-width: 0; width:100%; }
+    .bf-chip{ align-self:flex-start; }
+  }
   .bf-chip {
     display:inline-flex; align-items:center;
     padding: 6px 10px; border-radius: 999px;
@@ -78,6 +85,8 @@
       <a class="bf-btn" href="{{ url_for('profile_edit') }}">Edit Profile</a>
     </div>
   </div>
+
+  {% include "_provider_rating_snippet.html" %}
 
   <div class="bf-grid">
 

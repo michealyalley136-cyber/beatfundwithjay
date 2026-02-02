@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Booking #{{ booking.id }} · BeatFund{% endblock %}
+{% block title %}Booking #{{ booking.id }} - BeatFund{% endblock %}
 
 {% block content %}
 <style>
@@ -137,6 +137,42 @@
     opacity: 0.7;
     font-style: italic;
   }
+  .bf-payment-card {
+    margin-top: 12px;
+    padding: 14px;
+    border-radius: 16px;
+    border: 1px solid rgba(148,163,184,0.4);
+    background: rgba(8,16,30,0.6);
+  }
+  .bf-fee-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.85rem;
+    margin-top: 6px;
+  }
+  .bf-payment-actions {
+    margin-top: 12px;
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .bf-payment-note {
+    font-size: 0.78rem;
+    opacity: 0.75;
+    margin-top: 8px;
+  }
+  #booking-card-element {
+    margin-top: 10px;
+    padding: 10px 12px;
+    border-radius: 12px;
+    border: 1px solid rgba(148,163,184,0.35);
+    background: rgba(2,6,23,0.8);
+  }
+  #booking-card-errors {
+    color: #fca5a5;
+    font-size: 0.8rem;
+    margin-top: 8px;
+  }
   .bf-contract-box {
     font-size: 0.82rem;
     opacity: 0.85;
@@ -254,17 +290,17 @@
     <div>
       <h1 id="booking-title-display">{{ booking.event_title or ("Booking #" ~ booking.id) }}</h1>
       <div class="bf-header-sub">
-        Booking #{{ booking.id }} •
+        Booking #{{ booking.id }} -
         <span id="booking-date-display">
         {% if booking.event_datetime %}
-          {{ booking.event_datetime.strftime("%b %d, %Y · %I:%M %p") }}
+          {{ booking.event_datetime.strftime("%b %d, %Y - %I:%M %p") }}
         {% else %}
           Date/time: TBD
         {% endif %}
         </span>
       </div>
 
-      {% set chat_ok = booking.status in ['pending','accepted','confirmed','completed'] %}
+      {% set chat_ok = booking.status in ['pending','accepted','quoted','confirmed','completed'] %}
       {% if chat_ok %}
         <a class="bf-btn bf-btn-primary bf-chat-link" href="{{ url_for('booking_chat', booking_id=booking.id) }}">
           Open Chat
@@ -276,6 +312,8 @@
       {% set status = booking.status|lower %}
       {% set pill_class = "bf-status-pill" %}
       {% if status == "pending" %}
+        {% set pill_class = pill_class + " bf-status-pending" %}
+      {% elif status == "quoted" %}
         {% set pill_class = pill_class + " bf-status-pending" %}
       {% elif status == "confirmed" %}
         {% set pill_class = pill_class + " bf-status-confirmed" %}
@@ -303,41 +341,47 @@
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="action" value="edit_booking">
 
-        <div class="bf-meta-row">
-          <div style="flex: 1;">
-            <div class="bf-meta-label">Event Title</div>
-            <input type="text" name="event_title" class="bf-input" value="{{ booking.event_title }}" required>
+        {% if is_client or is_admin %}
+          <div class="bf-meta-row">
+            <div style="flex: 1;">
+              <div class="bf-meta-label">Event Title</div>
+              <input type="text" name="event_title" class="bf-input" value="{{ booking.event_title }}" required>
+            </div>
           </div>
-        </div>
 
-        <div class="bf-meta-row">
-          <div>
-            <div class="bf-meta-label">Date</div>
-            <input type="date" name="event_date" class="bf-input" value="{{ booking.event_datetime.strftime('%Y-%m-%d') if booking.event_datetime else '' }}">
+          <div class="bf-meta-row">
+            <div>
+              <div class="bf-meta-label">Date</div>
+              <input type="date" name="event_date" class="bf-input" value="{{ booking.event_datetime.strftime('%Y-%m-%d') if booking.event_datetime else '' }}">
+            </div>
+            <div>
+              <div class="bf-meta-label">Time</div>
+              <input type="time" name="event_time" class="bf-input" value="{{ booking.event_datetime.strftime('%H:%M') if booking.event_datetime else '' }}">
+            </div>
           </div>
-          <div>
-            <div class="bf-meta-label">Time</div>
-            <input type="time" name="event_time" class="bf-input" value="{{ booking.event_datetime.strftime('%H:%M') if booking.event_datetime else '' }}">
-          </div>
-        </div>
 
-        <div class="bf-meta-row">
-          <div>
-            <div class="bf-meta-label">Duration (minutes)</div>
-            <input type="number" name="duration_minutes" class="bf-input" value="{{ booking.duration_minutes or '' }}" min="1">
+          <div class="bf-meta-row">
+            <div>
+              <div class="bf-meta-label">Duration (required, minutes)</div>
+              <input type="number" name="duration_minutes" class="bf-input" value="{{ booking.duration_minutes or '' }}" min="1" required>
+            </div>
+            <div>
+              <div class="bf-meta-label">Total Amount ($)</div>
+              <input type="number" name="total_dollars" class="bf-input" step="0.01" min="0" value="{{ '%.2f'|format(booking.total_cents / 100.0) if booking.total_cents else '' }}">
+            </div>
           </div>
-          <div>
-            <div class="bf-meta-label">Total Amount ($)</div>
-            <input type="number" name="total_dollars" class="bf-input" step="0.01" min="0" value="{{ '%.2f'|format(booking.total_cents / 100.0) if booking.total_cents else '' }}">
-          </div>
-        </div>
 
-        <div class="bf-meta-row">
-          <div style="flex: 1;">
-            <div class="bf-meta-label">Location</div>
-            <input type="text" name="location_text" class="bf-input" value="{{ booking.location_text or '' }}">
+          <div class="bf-meta-row">
+            <div style="flex: 1;">
+              <div class="bf-meta-label">Location</div>
+              <input type="text" name="location_text" class="bf-input" value="{{ booking.location_text or '' }}">
+            </div>
           </div>
-        </div>
+        {% elif is_provider %}
+          <div class="bf-meta-row">
+            <div class="bf-meta-value">Event details are set by the client.</div>
+          </div>
+        {% endif %}
 
         {% if is_provider %}
         <div class="bf-meta-row">
@@ -369,7 +413,7 @@
             <div class="bf-meta-label">Date &amp; time</div>
             <div class="bf-meta-value bf-display-value">
               {% if booking.event_datetime %}
-                {{ booking.event_datetime.strftime("%A, %b %d, %Y · %I:%M %p") }}
+                {{ booking.event_datetime.strftime("%A, %b %d, %Y - %I:%M %p") }}
               {% else %}
                 Not set / discussed separately
               {% endif %}
@@ -379,9 +423,15 @@
             <div class="bf-meta-label">Duration</div>
             <div class="bf-meta-value bf-display-value">
               {% if booking.duration_minutes %}
-                {{ booking.duration_minutes }} minutes
+                {% set hrs = booking.duration_minutes // 60 %}
+                {% set mins = booking.duration_minutes % 60 %}
+                {% if hrs > 0 %}
+                  {{ hrs }} hr{% if hrs != 1 %}s{% endif %}{% if mins %} {{ mins }} min{% endif %}
+                {% else %}
+                  {{ mins }} min
+                {% endif %}
               {% else %}
-                Not specified
+                Duration not provided
               {% endif %}
             </div>
           </div>
@@ -397,10 +447,15 @@
           <div>
             <div class="bf-meta-label">Total / Hold Amount</div>
             <div class="bf-meta-value bf-display-value">
-              {% if booking.total_cents %}
-                ${{ "%.2f"|format(booking.total_cents / 100.0) }}
+              {% if is_client %}
+                {% set display_total = booking.quoted_total_cents or booking.total_cents %}
+                {% if display_total %}
+                  ${{ "%.2f"|format(display_total / 100.0) }}
+                {% else %}
+                  Not set in system
+                {% endif %}
               {% else %}
-                Not set in system
+                Hidden for providers
               {% endif %}
             </div>
           </div>
@@ -414,11 +469,11 @@
         </p>
         <ul>
           <li>
-            <strong>Provider:</strong> @{{ booking.provider.username }}
-            ({{ booking.provider_role.value.replace("_"," ")|title if booking.provider_role else "Provider" }})
+            <strong>Provider:</strong> @{{ provider_user.username if provider_user else "Unknown" }}
+            ({{ get_role_display(booking.provider_role) if booking.provider_role else "Provider" }})
           </li>
           <li>
-            <strong>Client:</strong> @{{ booking.client.username }}
+            <strong>Client:</strong> @{{ client_user.username if client_user else "Unknown" }}
           </li>
         </ul>
 
@@ -434,6 +489,203 @@
           BeatFund's wallet ledger records any holds or transfers made through the platform for this booking.
         </p>
       </div>
+
+      <div class="bf-section-title">Quote</div>
+      <div class="bf-payment-card">
+        {% if not booking.duration_minutes %}
+          <div class="bf-meta-value">Duration not provided. Ask the client to update the booking request.</div>
+        {% else %}
+          {% set duration_hours = (booking.duration_minutes + 59) // 60 %}
+          {% if is_provider %}
+            <form method="post" action="{{ url_for('booking_quote', booking_id=booking.id) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <div class="bf-meta-row">
+                <div style="flex: 1;">
+                  <div class="bf-meta-label">Billable hours</div>
+                  {% set default_billable_minutes = booking.quote_billable_minutes or ((booking.duration_minutes + 59) // 60) * 60 %}
+                  <input type="number" name="billable_hours" class="bf-input" min="0" step="0.25" value="{{ '%.2f'|format(default_billable_minutes / 60.0) }}" required>
+                </div>
+                <div style="flex: 1;">
+                  <div class="bf-meta-label">Hourly rate ($/hr)</div>
+                  <input type="number" name="hourly_rate_dollars" class="bf-input" min="0" step="0.01" value="{{ '%.2f'|format(booking.quote_hourly_rate_cents / 100.0) if booking.quote_hourly_rate_cents else '' }}" required>
+                </div>
+              </div>
+              <div class="bf-meta-row">
+                <div style="flex: 1;">
+                  <div class="bf-meta-label">Calculated total</div>
+                  <div class="bf-meta-value" id="quote-total-display">
+                    {% if booking.quoted_total_cents %}
+                      ${{ "%.2f"|format(booking.quoted_total_cents / 100.0) }}
+                    {% else %}
+                      --
+                    {% endif %}
+                  </div>
+                </div>
+              </div>
+              <div class="bf-meta-row">
+                <div style="flex: 1;">
+                  <div class="bf-meta-label">Quote breakdown</div>
+                  <textarea name="quote_breakdown_text" class="bf-textarea" placeholder="Studio time: 3 hrs x $50/hr = $150&#10;Engineer: $25&#10;Total: $175" required>{{ booking.quote_breakdown_text or "" }}</textarea>
+                </div>
+              </div>
+              <div class="bf-payment-note" id="quote-calc-note">
+                Calculated as: <span id="quote-hours-display">{{ '%.2f'|format(default_billable_minutes / 60.0) }}</span> hrs x $<span id="quote-hourly-display">{{ '%.2f'|format(booking.quote_hourly_rate_cents / 100.0) if booking.quote_hourly_rate_cents else '0.00' }}</span>/hr
+              </div>
+              <div class="bf-payment-actions">
+                <button class="bf-btn bf-btn-primary" type="submit">Send quote</button>
+              </div>
+            </form>
+          {% elif is_client %}
+            {% if booking.quoted_total_cents %}
+              <div class="bf-fee-row">
+                <span>Requested duration</span>
+                <span>
+                  {% if booking.duration_minutes %}
+                    {{ (booking.duration_minutes / 60.0)|round(2) }} hrs
+                  {% else %}
+                    --
+                  {% endif %}
+                </span>
+              </div>
+              {% if booking.quote_billable_minutes %}
+                <div class="bf-fee-row">
+                  <span>Provider billable hours</span>
+                  <span>{{ '%.2f'|format(booking.quote_billable_minutes / 60.0) }} hrs</span>
+                </div>
+              {% endif %}
+              {% if booking.quote_hourly_rate_cents %}
+                <div class="bf-fee-row">
+                  <span>Hourly rate</span>
+                  <span>${{ "%.2f"|format(booking.quote_hourly_rate_cents / 100.0) }}/hr</span>
+                </div>
+              {% endif %}
+              {% if booking.quote_billable_minutes and booking.quote_hourly_rate_cents %}
+                <div class="bf-fee-row">
+                  <span>Calculated as</span>
+                  <span>{{ '%.2f'|format(booking.quote_billable_minutes / 60.0) }} hrs x ${{ "%.2f"|format(booking.quote_hourly_rate_cents / 100.0) }}/hr</span>
+                </div>
+              {% endif %}
+              {% if booking.quote_breakdown_text %}
+                <div class="bf-meta-row" style="margin-top:10px;">
+                  <div class="bf-meta-label">Breakdown</div>
+                </div>
+                <div class="bf-note-box">{{ booking.quote_breakdown_text }}</div>
+              {% endif %}
+              <div class="bf-fee-row" style="margin-top:10px;">
+                <strong>Quoted total</strong>
+                <strong>${{ "%.2f"|format(booking.quoted_total_cents / 100.0) }}</strong>
+              </div>
+              <div class="bf-fee-row">
+                <span>Provider payout (before platform fee)</span>
+                <span>${{ "%.2f"|format(booking.quoted_total_cents / 100.0) }}</span>
+              </div>
+              {% if deposit_due %}
+                <div class="bf-payment-actions">
+                  {% if stripe_enabled %}
+                    <button class="bf-btn bf-btn-primary" type="button" data-payment-kind="deposit" data-scroll-target="#booking-payment-section">
+                      Accept quote &amp; pay hold
+                    </button>
+                  {% else %}
+                    <button class="bf-btn bf-btn-primary" type="button" data-payment-kind="deposit" data-scroll-target="#booking-payment-section" disabled>
+                      Accept quote &amp; pay hold
+                    </button>
+                  {% endif %}
+                </div>
+                {% if not stripe_enabled %}
+                  <div class="bf-payment-note">Stripe not configured. Payments unavailable.</div>
+                {% endif %}
+              {% endif %}
+            {% else %}
+              <div class="bf-meta-value">Waiting for the provider to send a quote.</div>
+            {% endif %}
+          {% endif %}
+        {% endif %}
+      </div>
+
+      {% if is_client %}
+        <div class="bf-section-title" id="booking-payment-section">Payment</div>
+        <div class="bf-payment-card">
+          {% if not stripe_enabled %}
+            <div class="bf-meta-value">Stripe is not configured. Payments are unavailable.</div>
+          {% elif not deposit_breakdown %}
+            <div class="bf-meta-value">Waiting for the provider to set a quote.</div>
+          {% else %}
+            {% if deposit_due %}
+              <div class="bf-meta-label">Hold due now</div>
+              <div class="bf-fee-row">
+                <span>Hold amount (applied to total)</span>
+                <span>${{ '%.2f'|format(deposit_breakdown.base_cents / 100.0) }}</span>
+              </div>
+              <div class="bf-fee-row">
+                <strong>Total due now</strong>
+                <strong>${{ '%.2f'|format(deposit_breakdown.total_cents / 100.0) }}</strong>
+              </div>
+              <div class="bf-payment-note">BeatFund platform fee (2% of total) is collected with the remaining balance and included in the total.</div>
+            {% else %}
+              <div class="bf-meta-value">Hold paid</div>
+            {% endif %}
+
+                        {% if balance_due and balance_breakdown %}
+              <div class="bf-meta-label" style="margin-top:12px;">Balance due</div>
+              <div class="bf-fee-row">
+                <span>Service total (quoted)</span>
+                <span>${{ '%.2f'|format((service_total_cents or 0) / 100.0) }}</span>
+              </div>
+              <div class="bf-fee-row">
+                <span>Hold paid (credited)</span>
+                <span>-${{ '%.2f'|format((deposit_credit_cents or 0) / 100.0) }}</span>
+              </div>
+              <div class="bf-fee-row">
+                <span>Remaining base</span>
+                <span>${{ '%.2f'|format((remaining_service_cents or 0) / 100.0) }}</span>
+              </div>
+              <div class="bf-fee-row">
+                <span>BeatFund platform fee (2% of total, included)</span>
+                <span>${{ '%.2f'|format((beatfund_fee_remaining_cents or 0) / 100.0) }}</span>
+              </div>
+              <div class="bf-fee-row">
+                <strong>Total due now</strong>
+                <strong>${{ '%.2f'|format(balance_breakdown.total_cents / 100.0) }}</strong>
+              </div>
+              {% if balance_due_by %}
+                <div class="bf-payment-note">Balance due by {{ balance_due_by.strftime("%b %d, %Y %I:%M %p") }} ({{ BOOKING_BALANCE_DEADLINE_HOURS }}h before booking).</div>
+              {% endif %}
+              {% if balance_blocked_reason %}
+                <div class="bf-payment-note" style="color:#fca5a5;">{{ balance_blocked_reason }}</div>
+              {% endif %}
+            {% elif deposit_breakdown and not balance_due %}
+              <div class="bf-meta-value" style="margin-top:10px;">Balance paid or not required.</div>
+            {% endif %}
+
+            {% if service_total_cents is not none and not balance_due %}
+              <div class="bf-meta-label" style="margin-top:12px;">Payment summary</div>
+              <div class="bf-fee-row">
+                <span>Deposit credited</span>
+                <span>${{ '%.2f'|format((deposit_credit_cents or 0) / 100.0) }}</span>
+              </div>
+              <div class="bf-fee-row">
+                <span>Remaining service balance</span>
+                <span>${{ '%.2f'|format((remaining_service_cents or 0) / 100.0) }}</span>
+              </div>
+            {% endif %}
+
+            {% if deposit_due or balance_due %}
+              <div id="booking-card-errors"></div>
+              <div class="bf-payment-actions">
+                {% if deposit_due %}
+                  <button class="bf-btn bf-btn-primary" type="button" data-payment-kind="deposit">Pay deposit</button>
+                {% endif %}
+                {% if balance_due %}
+                  <button class="bf-btn bf-btn-primary" type="button" data-payment-kind="balance" {% if balance_blocked %}disabled{% endif %}>
+                    Pay balance
+                  </button>
+                {% endif %}
+              </div>
+              <div class="bf-payment-note">Youâ€™ll be redirected to Stripe Checkout to complete payment.</div>
+            {% endif %}
+          {% endif %}
+        </div>
+      {% endif %}
     </section>
 
     <!-- RIGHT: People + messages + provider notes -->
@@ -442,15 +694,15 @@
 
       <div class="bf-section-title">Provider</div>
       <div class="bf-user-card">
-        <div class="bf-user-username">@{{ booking.provider.username }}</div>
+        <div class="bf-user-username">@{{ provider_user.username if provider_user else "Unknown" }}</div>
         <div class="bf-user-role">
-          {{ booking.provider_role.value.replace("_", " ")|title if booking.provider_role else "Provider" }}
+          {{ get_role_display(booking.provider_role) if booking.provider_role else "Provider" }}
         </div>
       </div>
 
       <div class="bf-section-title">Client</div>
       <div class="bf-user-card">
-        <div class="bf-user-username">@{{ booking.client.username }}</div>
+        <div class="bf-user-username">@{{ client_user.username if client_user else "Unknown" }}</div>
         <div class="bf-user-role">Client / event organizer</div>
       </div>
 
@@ -520,7 +772,153 @@
   </div>
 </div>
 
-<script>
+<section class="bf-card" style="margin-top:16px;">
+  <h2>Reviews</h2>
+  {% if review %}
+    <div class="bf-meta-row">
+      <div class="bf-meta-label">Your review</div>
+      <div class="bf-meta-value">{{ review.rating }}/5{% if review.title %} · {{ review.title }}{% endif %}</div>
+    </div>
+    {% if review.body %}
+      <div class="bf-meta-value" style="margin-top:6px; white-space:pre-line;">{{ review.body }}</div>
+    {% endif %}
+  {% elif can_leave_review %}
+    <a class="bf-btn bf-btn-primary" href="{{ url_for('booking_review', booking_id=booking.id) }}">Leave a review</a>
+  {% else %}
+    <div class="bf-meta-value">Reviews are available after completion.</div>
+  {% endif %}
+</section>
+
+<section class="bf-card" style="margin-top:16px;">
+  <h2>Dispute</h2>
+  {% if dispute %}
+    <div class="bf-meta-row">
+      <div class="bf-meta-label">Status</div>
+      <div class="bf-meta-value">{{ dispute.status|replace("_"," ")|title }}</div>
+    </div>
+    <div class="bf-meta-row">
+      <div class="bf-meta-label">Reason</div>
+      <div class="bf-meta-value">{{ dispute.reason }}</div>
+    </div>
+    <a class="bf-btn" href="{{ url_for('booking_dispute', booking_id=booking.id) }}">View dispute</a>
+  {% elif can_open_dispute %}
+    <a class="bf-btn bf-btn-primary" href="{{ url_for('booking_dispute', booking_id=booking.id) }}">Open dispute</a>
+  {% else %}
+    <div class="bf-meta-value">No dispute available for this booking.</div>
+  {% endif %}
+</section>
+
+{% if is_provider and booking.duration_minutes %}
+<script nonce="{{ csp_nonce }}">
+  (function () {
+    const hoursInput = document.querySelector('input[name="billable_hours"]');
+    const rateInput = document.querySelector('input[name="hourly_rate_dollars"]');
+    const totalDisplay = document.getElementById('quote-total-display');
+    const hoursDisplay = document.getElementById('quote-hours-display');
+    const hourlyDisplay = document.getElementById('quote-hourly-display');
+
+    if (!hoursInput || !rateInput || !totalDisplay) return;
+
+    function updateQuote() {
+      const hours = parseFloat(hoursInput.value || '0');
+      const rate = parseFloat(rateInput.value || '0');
+      if (!isFinite(hours) || !isFinite(rate) || hours <= 0 || rate <= 0) {
+        totalDisplay.textContent = '--';
+        if (hoursDisplay) hoursDisplay.textContent = (hours > 0 ? hours.toFixed(2) : '0.00');
+        if (hourlyDisplay) hourlyDisplay.textContent = (rate > 0 ? rate.toFixed(2) : '0.00');
+        return;
+      }
+      const total = hours * rate;
+      totalDisplay.textContent = `$${total.toFixed(2)}`;
+      if (hoursDisplay) hoursDisplay.textContent = hours.toFixed(2);
+      if (hourlyDisplay) hourlyDisplay.textContent = rate.toFixed(2);
+    }
+
+    hoursInput.addEventListener('input', updateQuote);
+    rateInput.addEventListener('input', updateQuote);
+    updateQuote();
+  })();
+</script>
+{% endif %}
+
+{% if is_client and stripe_enabled and (deposit_due or balance_due) %}
+<script nonce="{{ csp_nonce }}">
+  document.addEventListener('DOMContentLoaded', () => {
+    const orderId = {{ (payment_order_id or 0)|tojson }};
+    const errorEl = document.getElementById('booking-card-errors');
+    const metaToken = document.querySelector('meta[name="csrf-token"]');
+    const csrfToken = metaToken ? metaToken.getAttribute('content') : '';
+
+    function setError(message) {
+      if (errorEl) {
+        errorEl.textContent = message;
+      }
+    }
+
+    document.addEventListener('click', async (e) => {
+      const btn = e.target.closest('[data-payment-kind]');
+      if (!btn) return;
+      e.preventDefault();
+      const kind = (btn.dataset.paymentKind || '').toLowerCase();
+      if (kind !== 'deposit' && kind !== 'balance') {
+        return;
+      }
+
+      if (!csrfToken) {
+        setError('Missing CSRF token... add meta tag in base.html');
+        return;
+      }
+
+      if (!orderId) {
+        setError('Unable to start payment. Please refresh and try again.');
+        return;
+      }
+
+      const endpoint = kind === 'balance'
+        ? `/api/orders/${orderId}/checkout/balance`
+        : `/api/orders/${orderId}/checkout/holding`;
+
+      const original = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = 'Redirecting...';
+
+      try {
+        const resp = await fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': csrfToken,
+            'X-CSRF-Token': csrfToken
+          },
+          body: JSON.stringify({kind})
+        });
+
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok) {
+          setError((data && data.error) ? data.error : 'Payment failed');
+          return;
+        }
+
+        const url = data.checkout_url || data.url;
+        if (!url) {
+          setError('No checkout URL received.');
+          return;
+        }
+
+        window.location.href = url;
+      } catch (err) {
+        setError(err && err.message ? err.message : 'Payment failed');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = original;
+      }
+    }, true);
+  });
+</script>
+{% endif %}
+{% endif %}
+
+<script nonce="{{ csp_nonce }}">
   let editMode = false;
   
   function toggleEditMode() {

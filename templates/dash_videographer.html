@@ -234,6 +234,8 @@
 {% block content %}
 <div class="bf-studio">
 
+  {% include "_provider_rating_snippet.html" %}
+
   <div class="bf-hero">
     <div class="bf-hero-left">
       <img class="bf-avatar" src="{{ current_user.avatar_url }}" alt="avatar">
@@ -336,8 +338,8 @@
           <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,.1);">
             <div style="opacity: .7; font-size: .85rem; margin-bottom: 8px;">
               KYC Status: 
-              <span class="bf-chip" style="{% if current_user.kyc_status.value == 'approved' %}background: rgba(34,197,94,.2); border-color: rgba(34,197,94,.4);{% elif current_user.kyc_status.value == 'pending' %}background: rgba(251,191,36,.2); border-color: rgba(251,191,36,.4);{% else %}background: rgba(239,68,68,.2); border-color: rgba(239,68,68,.4);{% endif %}">
-                {{ current_user.kyc_status.value|title }}
+              <span class="bf-chip" style="{% if current_user.kyc_status == 'approved' %}background: rgba(34,197,94,.2); border-color: rgba(34,197,94,.4);{% elif current_user.kyc_status == 'pending' %}background: rgba(251,191,36,.2); border-color: rgba(251,191,36,.4);{% else %}background: rgba(239,68,68,.2); border-color: rgba(239,68,68,.4);{% endif %}">
+                {{ current_user.kyc_status|title }}
               </span>
             </div>
           </div>
@@ -614,7 +616,7 @@
   </div>
 </div>
 
-<script>
+<script nonce="{{ csp_nonce }}">
   let currentModalType = null;
 
   function showFollowers() {

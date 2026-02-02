@@ -7,19 +7,81 @@
 
   <title>{% block title %}BeatFund{% endblock %}</title>
 
-  {# Favicon - BeatFund BF Logo (gradient with bf symbol) #}
-  <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='favicon.png') }}">
-  <link rel="icon" type="image/png" sizes="16x16" href="{{ url_for('static', filename='favicon.png') }}">
-  <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}">
-  <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='favicon.png') }}">
+  <link rel="manifest" href="{{ url_for('static', filename='manifest.webmanifest') }}">
+  <meta name="theme-color" content="#19E28C">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="BeatFund">
+  <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='img/favicon/icon-180.png') }}">
+  <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='img/favicon/icon-32.png') }}">
+  <link rel="icon" type="image/png" sizes="16x16" href="{{ url_for('static', filename='img/favicon/icon-16.png') }}">
 
   <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
   {% block extra_head %}{% endblock %}
 </head>
 
-<body>
-<header class="top-nav">
+<body data-role="{{ current_user.role if current_user.is_authenticated else '' }}">
+<header class="top-nav{% if current_user.is_authenticated and current_user.role == RoleEnum.admin %} top-nav-admin{% endif %}">
   <div class="nav-left">
+  <div class="mobile-actions">
+    <button id="mobileRefreshBtn" class="mobile-refresh" type="button" aria-label="Refresh">⟳</button>
+    {% if current_user.is_authenticated %}
+      {% if current_user.role == RoleEnum.admin %}
+        <div class="notifications-bell-container" data-notifications data-count-url="{{ url_for('admin_notifications_unread_count') }}" data-recent-url="{{ url_for('admin_notifications_recent') }}" data-read-url-prefix="/admin/notifications" data-view-url="{{ url_for('admin_notifications') }}">
+          <button class="notifications-bell" type="button" aria-label="Notifications">
+            <span class="bell-icon">🔔</span>
+            <span class="notifications-badge" data-badge>0</span>
+          </button>
+          <div class="notifications-dropdown notifications-panel" data-dropdown>
+            <div class="notifications-dropdown-header">
+              <strong>Admin alerts</strong>
+              <span class="notifications-subtitle">Critical + ticket/KYC events</span>
+            </div>
+            <div class="notifications-list" data-list>
+              <div class="notifications-loading">Loading...</div>
+            </div>
+            <div class="notifications-dropdown-footer">
+              <a href="{{ url_for('admin_notifications') }}">View all admin notifications</a>
+            </div>
+          </div>
+        </div>
+      {% else %}
+        <div class="notifications-bell-container" data-notifications data-count-url="{{ url_for('api_notifications_unread_count') }}" data-recent-url="{{ url_for('api_notifications_recent') }}" data-read-url-prefix="/notifications" data-view-url="{{ url_for('notifications_page') }}">
+          <button class="notifications-bell" type="button" aria-label="Notifications">
+            <span class="bell-icon">🔔</span>
+            <span class="notifications-badge" data-badge>0</span>
+          </button>
+          <div class="notifications-dropdown notifications-panel" data-dropdown>
+            <div class="notifications-dropdown-header">
+              <strong>Notifications</strong>
+              <form method="POST" action="{{ url_for('mark_all_notifications_read_route') }}" style="display: inline; margin: 0;">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="notifications-mark-read">Mark all read</button>
+              </form>
+            </div>
+            <div class="notifications-list" data-list>
+              <div class="notifications-loading">Loading...</div>
+            </div>
+            <div class="notifications-dropdown-footer">
+              <a href="{{ url_for('notifications_page') }}">View all notifications</a>
+            </div>
+          </div>
+        </div>
+      {% endif %}
+    {% endif %}
+  </div>
+
+  </div>
+
+  <div class="nav-center">
+    <button class="nav-toggle" type="button" aria-controls="mobileMenu" aria-expanded="false">
+      <span class="nav-toggle-icon" aria-hidden="true"></span>
+      <span class="nav-toggle-label">Menu</span>
+    </button>
+  </div>
+
+  <div class="nav-brand">
     <a href="{% if current_user.is_authenticated %}{{ url_for('route_to_dashboard') }}{% else %}{{ url_for('home') }}{% endif %}" style="text-decoration: none; color: inherit; display: block; cursor: pointer; transition: opacity 0.2s;" onmouseover="this.style.opacity='0.8'" onmouseout="this.style.opacity='1'">
       <div class="brand-text">
         <div class="brand-main">BEATFUND</div>
@@ -35,14 +97,16 @@
   </div>
 
   {# Desktop admin nav (hidden on mobile by CSS) #}
-  <nav class="nav-center">
+  <nav class="nav-links">
     {% if current_user.is_authenticated and current_user.role == RoleEnum.admin %}
       <a href="{{ url_for('admin_dashboard') }}">Admin Dashboard</a>
       <a href="{{ url_for('admin_users') }}">Users</a>
       <a href="{{ url_for('admin_kyc') }}">KYC Queue</a>
       <a href="{{ url_for('admin_transactions') }}">Transactions</a>
+      <a href="{{ url_for('admin_refunds') }}">Refunds</a>
       <a href="{{ url_for('admin_tickets') }}">Tickets</a>
       <a href="{{ url_for('admin_reports') }}">Reports</a>
+      <a href="{{ url_for('admin_audit') }}">System Logs</a>
       <a href="{{ url_for('admin_waitlist') }}">Waitlist</a>
       <a href="{{ url_for('opportunities') }}">Opportunities</a>
       {% if current_user.is_superadmin %}
@@ -52,55 +116,88 @@
   </nav>
 
   {# Desktop main nav (hidden on mobile by CSS) #}
-  <div class="nav-right">
+    <div class="nav-right">
     {% if current_user.is_authenticated %}
-      <span class="nav-username">@{{ current_user.username }}</span>
-      {% if current_user.role != RoleEnum.admin %}
+      {% if current_user.role == RoleEnum.admin %}
+        {# Admin utilities are shown under the install button on the right #}
+      {% else %}
+        <span class="nav-username">@{{ current_user.username }}</span>
         <a href="{{ url_for('route_to_dashboard') }}">Dashboard</a>
         <a href="{{ url_for('market_index') }}">Market</a>
         <a href="{{ url_for('market_my_purchases') }}">My Purchases</a>
         <a href="{{ url_for('bookme_search') }}">BookMe</a>
         <a href="{{ url_for('wallet_home') }}">Wallet</a>
         <a href="{{ url_for('opportunities') }}">Opportunities</a>
-      {% endif %}
 
-      {# Notifications bell #}
-      <div class="notifications-bell-container" style="position: relative; display: inline-block;">
-        <button id="notificationsBell" class="notifications-bell" type="button" aria-label="Notifications" style="background: none; border: none; cursor: pointer; padding: 8px; position: relative;">
-          <span style="font-size: 20px;">🔔</span>
-          <span id="notificationsBadge" class="notifications-badge" style="display: none; position: absolute; top: 4px; right: 4px; background: #ef4444; color: white; border-radius: 50%; width: 18px; height: 18px; font-size: 11px; font-weight: bold; align-items: center; justify-content: center; line-height: 1;">0</span>
-        </button>
-        <div id="notificationsDropdown" class="notifications-dropdown" style="display: none; position: absolute; right: 0; top: 100%; margin-top: 8px; background: white; border: 1px solid #ddd; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); min-width: 320px; max-width: 400px; max-height: 500px; overflow-y: auto; z-index: 1000;">
-          <div style="padding: 12px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center;">
-            <strong>Notifications</strong>
-            <form method="POST" action="{{ url_for('mark_all_notifications_read_route') }}" style="display: inline; margin: 0;">
-              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-              <button type="submit" style="background: none; border: none; color: #4f8bff; cursor: pointer; font-size: 12px; padding: 0;">Mark all read</button>
-            </form>
-          </div>
-          <div id="notificationsList" style="max-height: 400px; overflow-y: auto;">
-            <div style="padding: 20px; text-align: center; color: #999;">Loading...</div>
-          </div>
-          <div style="padding: 8px; border-top: 1px solid #eee; text-align: center;">
-            <a href="{{ url_for('notifications_page') }}" style="color: #4f8bff; text-decoration: none; font-size: 13px;">View all notifications</a>
+        {# Notifications bell #}
+        <div class="notifications-bell-container" data-notifications data-count-url="{{ url_for('api_notifications_unread_count') }}" data-recent-url="{{ url_for('api_notifications_recent') }}" data-read-url-prefix="/notifications" data-view-url="{{ url_for('notifications_page') }}">
+          <button class="notifications-bell" type="button" aria-label="Notifications">
+            <span class="bell-icon">🔔</span>
+            <span class="notifications-badge" data-badge>0</span>
+          </button>
+          <div class="notifications-dropdown notifications-panel" data-dropdown>
+            <div class="notifications-dropdown-header">
+              <strong>Notifications</strong>
+              <form method="POST" action="{{ url_for('mark_all_notifications_read_route') }}" style="display: inline; margin: 0;">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="notifications-mark-read">Mark all read</button>
+              </form>
+            </div>
+            <div class="notifications-list" data-list>
+              <div class="notifications-loading">Loading...</div>
+            </div>
+            <div class="notifications-dropdown-footer">
+              <a href="{{ url_for('notifications_page') }}">View all notifications</a>
+            </div>
           </div>
         </div>
-      </div>
+      {% endif %}
 
-      <form method="get" action="{{ url_for('logout_get') }}" class="logout-form">
-        <button type="submit" class="nav-link-button">Logout</button>
-      </form>
+      {% if current_user.role != RoleEnum.admin %}
+        <form method="get" action="{{ url_for('logout_get') }}" class="logout-form">
+          <button type="submit" class="nav-link-button">Logout</button>
+        </form>
+      {% endif %}
     {% else %}
       <a href="{{ url_for('login') }}">Log in</a>
       <a href="{{ url_for('register') }}">Sign up</a>
     {% endif %}
   </div>
 
-  {# Mobile hamburger button (shown on mobile by CSS) #}
-  <button class="nav-toggle" type="button" aria-controls="mobileMenu" aria-expanded="false">
-    <span class="nav-toggle-icon" aria-hidden="true"></span>
-    <span class="nav-toggle-label">Menu</span>
-  </button>
+
+
+  <div class="pwa-install{% if current_user.is_authenticated and current_user.role == RoleEnum.admin %} admin-install{% endif %}">
+    <button id="installBtn" class="btn btn-primary" style="display:none;">Install BeatFund</button>
+    <div id="iosInstallTip" class="ios-install-tip" style="display:none;">On iPhone: Share -> Add to Home Screen</div>
+    <div id="androidInstallTip" class="ios-install-tip" style="display:none;">On Android: Menu -> Install app</div>
+    {% if current_user.is_authenticated and current_user.role == RoleEnum.admin %}
+      <div class="pwa-admin-meta">
+        <div class="notifications-bell-container" data-notifications data-count-url="{{ url_for('admin_notifications_unread_count') }}" data-recent-url="{{ url_for('admin_notifications_recent') }}" data-read-url-prefix="/admin/notifications" data-view-url="{{ url_for('admin_notifications') }}">
+          <button class="notifications-bell" type="button" aria-label="Notifications">
+            <span class="bell-icon">🔔</span>
+            <span class="notifications-badge" data-badge>0</span>
+          </button>
+          <div class="notifications-dropdown notifications-panel" data-dropdown>
+            <div class="notifications-dropdown-header">
+              <strong>Admin alerts</strong>
+              <span class="notifications-subtitle">Critical + ticket/KYC events</span>
+            </div>
+            <div class="notifications-list" data-list>
+              <div class="notifications-loading">Loading...</div>
+            </div>
+            <div class="notifications-dropdown-footer">
+              <a href="{{ url_for('admin_notifications') }}">View all admin notifications</a>
+            </div>
+          </div>
+        </div>
+        <span class="nav-username">@{{ current_user.username }}</span>
+        <form method="get" action="{{ url_for('logout_get') }}" class="logout-form">
+          <button type="submit" class="nav-link-button">Logout</button>
+        </form>
+      </div>
+    {% endif %}
+  </div>
+
 </header>
 
 {# Mobile menu overlay #}
@@ -134,6 +231,7 @@
         <a href="{{ url_for('admin_transactions') }}">Transactions</a>
         <a href="{{ url_for('admin_tickets') }}">Tickets</a>
         <a href="{{ url_for('admin_reports') }}">Reports</a>
+        <a href="{{ url_for('admin_audit') }}">System Logs</a>
         <a href="{{ url_for('admin_waitlist') }}">Waitlist</a>
         <a href="{{ url_for('opportunities') }}">Opportunities</a>
         {% if current_user.is_superadmin %}
@@ -162,6 +260,11 @@
 </nav>
 
 <main class="page-main">
+  {% if kyc_bypass_active %}
+    <div class="kyc-bypass-banner">
+      KYC not verified (staging bypass enabled)
+    </div>
+  {% endif %}
   {% with msgs = get_flashed_messages(with_categories=true) %}
     {% if msgs %}
       <div class="flash-container">
@@ -201,11 +304,14 @@
     <div class="footer-section">
       <h3>Company</h3>
       <a href="{{ url_for('careers') }}">Careers</a>
+      <a href="{{ url_for('affiliate_marketing') }}">Affiliate Marketing</a>
     </div>
   </div>
 </footer>
 
-<script>
+<div id="bfToast" class="bf-toast" role="status" aria-live="polite"></div>
+
+<script nonce="{{ csp_nonce }}">
   (function () {
     const btn = document.querySelector('.nav-toggle');
     const menu = document.getElementById('mobileMenu');
@@ -254,32 +360,68 @@
 
   // Notifications bell polling and dropdown (secure version)
   (function() {
-    const bell = document.getElementById('notificationsBell');
-    const badge = document.getElementById('notificationsBadge');
-    const dropdown = document.getElementById('notificationsDropdown');
-    const list = document.getElementById('notificationsList');
-    
-    if (!bell || !badge || !dropdown || !list) return;
-    
-    let unreadCount = 0;
-    
-    // Update unread count badge
+    const containers = Array.from(document.querySelectorAll('[data-notifications]'));
+    if (!containers.length) return;
+
+    const countUrl = containers[0].dataset.countUrl;
+    const recentUrl = containers[0].dataset.recentUrl;
+    const readPrefix = containers[0].dataset.readUrlPrefix || '/notifications';
+    const viewUrl = containers[0].dataset.viewUrl || '/notifications';
+    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
+    const toastEl = document.getElementById('bfToast');
+    let unreadCount = null;
+
+    function showToast(message) {
+      if (!toastEl) return;
+      toastEl.textContent = message;
+      toastEl.classList.add('show');
+      setTimeout(() => toastEl.classList.remove('show'), 3200);
+    }
+
+    function setBadges(count) {
+      containers.forEach((container) => {
+        const badge = container.querySelector('[data-badge]');
+        if (!badge) return;
+        if (count > 0) {
+          badge.textContent = count > 99 ? '99+' : String(count);
+          badge.style.display = 'flex';
+        } else {
+          badge.style.display = 'none';
+        }
+      });
+    }
+
     function updateUnreadCount() {
-      fetch('/api/notifications/unread-count')
+      fetch(countUrl)
         .then(r => r.json())
         .then(data => {
-          unreadCount = data.count || 0;
-          if (unreadCount > 0) {
-            badge.textContent = unreadCount > 99 ? '99+' : String(unreadCount);
-            badge.style.display = 'flex';
-          } else {
-            badge.style.display = 'none';
+          const nextCount = data.count || 0;
+          if (unreadCount !== null && nextCount > unreadCount) {
+            const delta = nextCount - unreadCount;
+            showToast(delta === 1 ? 'New notification' : `${delta} new notifications`);
           }
+          unreadCount = nextCount;
+          setBadges(nextCount);
         })
         .catch(() => {});
     }
-    
-    // Get kind color safely
+
+    function clampDropdown(dropdown) {
+      if (!dropdown) return;
+      const isMobile = window.innerWidth <= 900;
+      if (!isMobile) {
+        dropdown.style.left = '';
+        dropdown.style.right = '';
+        dropdown.style.width = '';
+        return;
+      }
+      const padding = 12;
+      const maxWidth = Math.min(360, Math.floor(window.innerWidth * 0.92));
+      dropdown.style.width = `${maxWidth}px`;
+      dropdown.style.left = `${padding}px`;
+      dropdown.style.right = 'auto';
+    }
+
     function getKindColor(kind) {
       switch (kind) {
         case 'success': return '#10b981';
@@ -288,50 +430,50 @@
         default: return '#3b82f6';
       }
     }
-    
-    // Render notifications using DOM manipulation (no innerHTML with untrusted data)
-    function renderNotifications(notifications) {
-      // Clear list
-      while (list.firstChild) {
-        list.removeChild(list.firstChild);
+
+    function renderNotifications(listEl, notifications) {
+      while (listEl.firstChild) {
+        listEl.removeChild(listEl.firstChild);
       }
-      
+
       if (!notifications || notifications.length === 0) {
         const emptyDiv = document.createElement('div');
-        emptyDiv.style.cssText = 'padding: 20px; text-align: center; color: #999;';
+        emptyDiv.className = 'notifications-loading';
         emptyDiv.textContent = 'No notifications';
-        list.appendChild(emptyDiv);
+        listEl.appendChild(emptyDiv);
         return;
       }
-      
+
       notifications.forEach(n => {
         const row = document.createElement('div');
-        row.style.cssText = 'padding: 12px; border-bottom: 1px solid #eee; cursor: pointer;';
+        row.className = 'notifications-row';
         if (!n.is_read) {
-          row.style.background = '#f8f9ff';
+          row.classList.add('unread');
         }
-        
+
         const contentDiv = document.createElement('div');
-        contentDiv.style.cssText = 'display: flex; justify-content: space-between; align-items: start;';
-        
+        contentDiv.className = 'notifications-row-content';
+
         const leftDiv = document.createElement('div');
-        leftDiv.style.flex = '1';
-        
+        leftDiv.className = 'notifications-row-left';
+
         const titleDiv = document.createElement('div');
-        titleDiv.style.cssText = 'font-weight: ' + (n.is_read ? 'normal' : 'bold') + '; margin-bottom: 4px;';
+        titleDiv.className = 'notifications-row-title';
+        if (n.is_read) {
+          titleDiv.classList.add('is-read');
+        }
         titleDiv.textContent = n.title || '';
 
-        // Subtitle (show who did it / short message)
         const subtitleDiv = document.createElement('div');
-        subtitleDiv.style.cssText = 'font-size: 12px; color: #666; margin-bottom: 4px;';
+        subtitleDiv.className = 'notifications-row-subtitle';
         const rawSubtitle = (n.body || '') || (n.actor_name ? (n.actor_name + ' posted an update.') : '');
         if (rawSubtitle) {
           const maxLen = 90;
           subtitleDiv.textContent = rawSubtitle.length > maxLen ? (rawSubtitle.slice(0, maxLen - 1) + '…') : rawSubtitle;
         }
-        
+
         const timeDiv = document.createElement('div');
-        timeDiv.style.cssText = 'font-size: 12px; color: #666;';
+        timeDiv.className = 'notifications-row-time';
         if (n.created_at) {
           try {
             timeDiv.textContent = new Date(n.created_at).toLocaleString();
@@ -339,124 +481,260 @@
             timeDiv.textContent = '';
           }
         }
-        
+
         leftDiv.appendChild(titleDiv);
         if (subtitleDiv.textContent) {
           leftDiv.appendChild(subtitleDiv);
         }
         leftDiv.appendChild(timeDiv);
-        
+
         const dotSpan = document.createElement('span');
-        dotSpan.style.cssText = 'display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-left: 8px;';
+        dotSpan.className = 'notifications-row-dot';
         dotSpan.style.backgroundColor = getKindColor(n.kind || 'info');
-        
+
         contentDiv.appendChild(leftDiv);
         contentDiv.appendChild(dotSpan);
         row.appendChild(contentDiv);
-        
-        // Click handler - mark as read and navigate
+
         row.addEventListener('click', function() {
           const safeUrl = (n.url && n.url.startsWith('/')) ? n.url : null;
-          
-          // Mark as read if unread
-          if (!n.is_read && n.id) {
-            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
-            if (csrfToken) {
-              const formData = new FormData();
-              formData.append('csrf_token', csrfToken);
-              
-              fetch(`/notifications/${n.id}/read`, {
-                method: 'POST',
-                body: formData,
-                credentials: 'same-origin'
-              })
-              .then(response => {
-                if (response.ok) {
-                  // Update UI
-                  row.style.background = '';
-                  titleDiv.style.fontWeight = 'normal';
-                  n.is_read = true;
-                  
-                  // Decrement badge count
-                  unreadCount = Math.max(0, unreadCount - 1);
-                  if (unreadCount > 0) {
-                    badge.textContent = unreadCount > 99 ? '99+' : String(unreadCount);
-                    badge.style.display = 'flex';
-                  } else {
-                    badge.style.display = 'none';
-                  }
-                }
-              })
-              .catch(() => {
-                // Best effort - continue navigation
-              });
-            }
+
+          if (!n.is_read && n.id && csrfToken) {
+            const formData = new FormData();
+            formData.append('csrf_token', csrfToken);
+            fetch(`${readPrefix}/${n.id}/read`, {
+              method: 'POST',
+              body: formData,
+              credentials: 'same-origin'
+            })
+            .then(response => {
+              if (response.ok) {
+                row.classList.remove('unread');
+                titleDiv.classList.add('is-read');
+                n.is_read = true;
+                unreadCount = Math.max(0, (unreadCount || 0) - 1);
+                setBadges(unreadCount);
+              }
+            })
+            .catch(() => {});
           }
-          
-          // Navigate
+
           if (safeUrl) {
             window.location.href = safeUrl;
           } else {
-            window.location.href = '/notifications';
+            window.location.href = viewUrl;
           }
         });
-        
-        list.appendChild(row);
+
+        listEl.appendChild(row);
       });
     }
-    
-    // Load recent notifications (only when dropdown is open)
-    function loadRecentNotifications() {
-      // Show loading state
-      while (list.firstChild) {
-        list.removeChild(list.firstChild);
+
+    function loadRecentNotifications(container) {
+      const listEl = container.querySelector('[data-list]');
+      if (!listEl) return;
+
+      while (listEl.firstChild) {
+        listEl.removeChild(listEl.firstChild);
       }
       const loadingDiv = document.createElement('div');
-      loadingDiv.style.cssText = 'padding: 20px; text-align: center; color: #999;';
+      loadingDiv.className = 'notifications-loading';
       loadingDiv.textContent = 'Loading...';
-      list.appendChild(loadingDiv);
-      
-      fetch('/api/notifications/recent')
+      listEl.appendChild(loadingDiv);
+
+      fetch(recentUrl)
         .then(r => r.json())
         .then(data => {
-          renderNotifications(data);
+          renderNotifications(listEl, data);
         })
         .catch(() => {
           const errorDiv = document.createElement('div');
-          errorDiv.style.cssText = 'padding: 20px; text-align: center; color: #999;';
+          errorDiv.className = 'notifications-loading';
           errorDiv.textContent = 'Error loading notifications';
-          while (list.firstChild) {
-            list.removeChild(list.firstChild);
+          while (listEl.firstChild) {
+            listEl.removeChild(listEl.firstChild);
           }
-          list.appendChild(errorDiv);
+          listEl.appendChild(errorDiv);
         });
     }
-    
-    // Toggle dropdown
-    bell.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const isOpen = dropdown.style.display === 'block';
-      dropdown.style.display = isOpen ? 'none' : 'block';
-      
-      if (!isOpen) {
-        // Opening dropdown - refresh count and load recent
-        updateUnreadCount();
-        loadRecentNotifications();
-      }
+
+    function closeAllDropdowns(except) {
+      containers.forEach((container) => {
+        if (except && container === except) return;
+        const dropdown = container.querySelector('[data-dropdown]');
+        if (dropdown) dropdown.style.display = 'none';
+      });
+    }
+
+    containers.forEach((container) => {
+      const bell = container.querySelector('.notifications-bell');
+      const dropdown = container.querySelector('[data-dropdown]');
+      if (!bell || !dropdown) return;
+
+      bell.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const isOpen = dropdown.style.display === 'block';
+        closeAllDropdowns(container);
+        dropdown.style.display = isOpen ? 'none' : 'block';
+        if (!isOpen) {
+          clampDropdown(dropdown);
+          updateUnreadCount();
+          loadRecentNotifications(container);
+        }
+      });
     });
-    
-    // Close dropdown when clicking outside
+
     document.addEventListener('click', (e) => {
-      if (!dropdown.contains(e.target) && !bell.contains(e.target)) {
-        dropdown.style.display = 'none';
-      }
+      containers.forEach((container) => {
+        const dropdown = container.querySelector('[data-dropdown]');
+        const bell = container.querySelector('.notifications-bell');
+        if (!dropdown || !bell) return;
+        if (!dropdown.contains(e.target) && !bell.contains(e.target)) {
+          dropdown.style.display = 'none';
+        }
+      });
     });
-    
-    // Poll unread count every 20 seconds
+
+    window.addEventListener('resize', () => {
+      containers.forEach((container) => {
+        const dropdown = container.querySelector('[data-dropdown]');
+        if (dropdown && dropdown.style.display === 'block') {
+          clampDropdown(dropdown);
+        }
+      });
+    });
+
     updateUnreadCount();
-    setInterval(updateUnreadCount, 20000);
+    const pollSeconds = Math.max(10, {{ NOTIF_POLL_SECONDS|default(30) }});
+    setInterval(updateUnreadCount, pollSeconds * 1000);
   })();
 </script>
 
+<script nonce="{{ csp_nonce }}">
+  (function() {
+    function initAudioErrors() {
+      document.querySelectorAll('audio').forEach((audio) => {
+        if (audio.dataset.errorBound) return;
+        audio.dataset.errorBound = '1';
+        audio.addEventListener('error', () => {
+          let msg = audio.parentElement ? audio.parentElement.querySelector('.audio-error') : null;
+          if (!msg && audio.parentElement) {
+            msg = document.createElement('div');
+            msg.className = 'audio-error';
+            msg.textContent = 'Audio failed to load. Please try again.';
+            audio.parentElement.appendChild(msg);
+          }
+        });
+      });
+    }
+
+    document.addEventListener('DOMContentLoaded', initAudioErrors);
+    window.BeatFundAudioInit = initAudioErrors;
+  })();
+</script>
+
+<script nonce="{{ csp_nonce }}">
+  (function() {
+    const refreshBtn = document.getElementById('mobileRefreshBtn');
+    const toastEl = document.getElementById('bfToast');
+    const eligible = /^\/(dashboard|bookme\/requests|notifications|market|wallet)/.test(window.location.pathname || '');
+    if (refreshBtn) {
+      refreshBtn.style.display = eligible ? 'inline-flex' : 'none';
+    }
+
+    let refreshing = false;
+    function showToast(message) {
+      if (!toastEl) return;
+      toastEl.textContent = message;
+      toastEl.classList.add('show');
+      setTimeout(() => toastEl.classList.remove('show'), 2800);
+    }
+
+    async function softRefresh(trigger) {
+      if (refreshing) return;
+      refreshing = true;
+      if (!eligible) {
+        window.location.reload();
+        return;
+      }
+      try {
+        const roots = Array.from(document.querySelectorAll('[data-refresh-root]'));
+        if (!roots.length) {
+          window.location.reload();
+          return;
+        }
+        const resp = await fetch(window.location.href, { headers: { 'X-Refresh': '1' } });
+        const html = await resp.text();
+        const doc = new DOMParser().parseFromString(html, 'text/html');
+        roots.forEach((root) => {
+          const key = root.dataset.refreshRoot;
+          const replacement = doc.querySelector(`[data-refresh-root="${key}"]`);
+          if (replacement) {
+            root.replaceWith(replacement);
+          }
+        });
+        if (typeof window.BeatFundPageInit === 'function') {
+          window.BeatFundPageInit();
+        }
+        if (typeof window.BeatFundAudioInit === 'function') {
+          window.BeatFundAudioInit();
+        }
+        showToast(trigger === 'pull' ? 'Refreshed' : 'Updated');
+      } catch (err) {
+        showToast('Refresh failed. Try again.');
+      } finally {
+        refreshing = false;
+      }
+    }
+
+    if (refreshBtn) {
+      refreshBtn.addEventListener('click', () => softRefresh('tap'));
+    }
+
+    let startY = 0;
+    let pullReady = false;
+    window.addEventListener('touchstart', (e) => {
+      if (!eligible || refreshing) return;
+      if (window.scrollY <= 0) {
+        startY = e.touches[0].clientY;
+        pullReady = true;
+      }
+    }, { passive: true });
+
+    window.addEventListener('touchmove', (e) => {
+      if (!pullReady || refreshing) return;
+      const delta = e.touches[0].clientY - startY;
+      if (delta > 70) {
+        pullReady = false;
+        softRefresh('pull');
+      }
+    }, { passive: true });
+
+    window.addEventListener('touchend', () => {
+      pullReady = false;
+    });
+  })();
+
+  (function() {
+    document.addEventListener('submit', (e) => {
+      const form = e.target;
+      if (!form || !form.hasAttribute('data-disable-on-submit')) return;
+      const buttons = form.querySelectorAll('button[type="submit"]');
+      buttons.forEach((btn) => {
+        if (btn.disabled) return;
+        btn.disabled = true;
+        const loadingText = btn.getAttribute('data-loading-text');
+        if (loadingText) {
+          btn.setAttribute('data-original-text', btn.textContent);
+          btn.textContent = loadingText;
+        }
+      });
+    });
+  })();
+</script>
+
+<script src="{{ url_for('static', filename='pwa.js') }}"></script>
+
 </body>
 </html>
+

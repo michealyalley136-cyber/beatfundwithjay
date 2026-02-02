@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}Admin - Reviews{% endblock %}
+
+{% block content %}
+<div class="page" style="max-width:1100px;margin:0 auto;padding:24px 16px;">
+  <h2>Provider Reviews</h2>
+  <form method="GET" style="display:flex;gap:10px;flex-wrap:wrap;margin:12px 0;">
+    <input type="text" name="q" placeholder="Provider username" value="{{ q }}"
+           style="flex:1;min-width:200px;padding:8px;border-radius:8px;border:1px solid #ddd;">
+    <select name="status" style="padding:8px;border-radius:8px;border:1px solid #ddd;">
+      <option value="">All</option>
+      <option value="visible" {% if status == "visible" %}selected{% endif %}>Visible</option>
+      <option value="hidden" {% if status == "hidden" %}selected{% endif %}>Hidden</option>
+    </select>
+    <button type="submit" class="btn btn-secondary">Filter</button>
+  </form>
+
+  {% if reviews %}
+    <table style="width:100%;border-collapse:collapse;">
+      <thead>
+        <tr>
+          <th style="text-align:left;padding:6px;border-bottom:1px solid #eee;">Booking</th>
+          <th style="text-align:left;padding:6px;border-bottom:1px solid #eee;">Provider</th>
+          <th style="text-align:left;padding:6px;border-bottom:1px solid #eee;">Reviewer</th>
+          <th style="text-align:left;padding:6px;border-bottom:1px solid #eee;">Rating</th>
+          <th style="text-align:left;padding:6px;border-bottom:1px solid #eee;">Status</th>
+          <th style="text-align:left;padding:6px;border-bottom:1px solid #eee;">Reports</th>
+          <th style="text-align:left;padding:6px;border-bottom:1px solid #eee;"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in reviews %}
+          <tr>
+            <td style="padding:6px;">#{{ r.booking_id }}</td>
+            <td style="padding:6px;">@{{ r.provider.username }}</td>
+            <td style="padding:6px;">@{{ r.reviewer.username }}</td>
+            <td style="padding:6px;">{{ r.rating }}/5</td>
+            <td style="padding:6px;">{{ r.status.value }}</td>
+            <td style="padding:6px;">{{ r.reported_count }}</td>
+            <td style="padding:6px;">
+              <form method="POST" action="{{ url_for('admin_review_hide' if r.status.value == 'visible' else 'admin_review_show', review_id=r.id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="btn btn-secondary">
+                  {% if r.status.value == 'visible' %}Hide{% else %}Show{% endif %}
+                </button>
+              </form>
+            </td>
+          </tr>
+          {% if r.title or r.body %}
+          <tr>
+            <td></td>
+            <td colspan="6" style="padding:6px;color:#6b7280;">
+              <strong>{{ r.title or "Review" }}</strong><br>
+              {{ r.body or "" }}
+            </td>
+          </tr>
+          {% endif %}
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="muted">No reviews found.</p>
+  {% endif %}
+</div>
+{% endblock %}

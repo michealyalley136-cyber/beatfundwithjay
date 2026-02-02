@@ -1,0 +1,109 @@
+{% extends "base_admin.html" %}
+
+{% block title %}BeatFund · Admin · Payment Orders{% endblock %}
+
+{% block admin_content %}
+<div class="admin-page-header">
+  <h1>Payment Orders</h1>
+  <p>Stripe payout orders and ledger entries (booking holds/balances + beat purchases).</p>
+</div>
+
+<div class="card">
+  <h2>Filters</h2>
+  <form method="get" action="{{ url_for('admin_payment_orders') }}" style="display:flex; gap:10px; flex-wrap:wrap; align-items:end;">
+    <div>
+      <label class="stat-label">Order type</label>
+      <select class="form-control" name="type">
+        <option value="" {% if not filters.type %}selected{% endif %}>All</option>
+        <option value="booking" {% if filters.type == 'booking' %}selected{% endif %}>Booking</option>
+        <option value="beat_purchase" {% if filters.type == 'beat_purchase' %}selected{% endif %}>Beat purchase</option>
+        <option value="other" {% if filters.type == 'other' %}selected{% endif %}>Other</option>
+      </select>
+    </div>
+    <div>
+      <label class="stat-label">Status</label>
+      <select class="form-control" name="status">
+        <option value="" {% if not filters.status %}selected{% endif %}>All</option>
+        <option value="pending_payment" {% if filters.status == 'pending_payment' %}selected{% endif %}>Pending payment</option>
+        <option value="partially_paid" {% if filters.status == 'partially_paid' %}selected{% endif %}>Partially paid</option>
+        <option value="paid" {% if filters.status == 'paid' %}selected{% endif %}>Paid</option>
+        <option value="refunded" {% if filters.status == 'refunded' %}selected{% endif %}>Refunded</option>
+        <option value="canceled" {% if filters.status == 'canceled' %}selected{% endif %}>Canceled</option>
+      </select>
+    </div>
+    <button class="btn btn-primary" type="submit">Apply</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>Orders</h2>
+  <div style="overflow:auto;">
+    <table style="width:100%; border-collapse:collapse;">
+      <thead>
+        <tr>
+          <th style="text-align:left; padding:8px; border-bottom:1px solid rgba(148,163,184,0.2);">ID</th>
+          <th style="text-align:left; padding:8px; border-bottom:1px solid rgba(148,163,184,0.2);">Type</th>
+          <th style="text-align:left; padding:8px; border-bottom:1px solid rgba(148,163,184,0.2);">Status</th>
+          <th style="text-align:left; padding:8px; border-bottom:1px solid rgba(148,163,184,0.2);">Client</th>
+          <th style="text-align:left; padding:8px; border-bottom:1px solid rgba(148,163,184,0.2);">Provider</th>
+          <th style="text-align:left; padding:8px; border-bottom:1px solid rgba(148,163,184,0.2);">Total</th>
+          <th style="text-align:left; padding:8px; border-bottom:1px solid rgba(148,163,184,0.2);">Affiliate</th>
+          <th style="text-align:left; padding:8px; border-bottom:1px solid rgba(148,163,184,0.2);">Created</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for o in orders %}
+        <tr>
+          <td style="padding:8px;">#{{ o.id }}</td>
+          <td style="padding:8px;">{{ o.order_type.value if o.order_type else 'unknown' }}</td>
+          <td style="padding:8px;">{{ o.status.value if o.status else 'unknown' }}</td>
+          <td style="padding:8px;">@{{ o.client.username if o.client else 'unknown' }}</td>
+          <td style="padding:8px;">@{{ o.provider.username if o.provider else 'n/a' }}</td>
+          <td style="padding:8px;">${{ format_cents_dollars(o.total_amount_cents or 0) }}</td>
+          <td style="padding:8px;">{{ o.affiliate.code if o.affiliate else '—' }}</td>
+          <td style="padding:8px;">{{ o.created_at.strftime('%Y-%m-%d %H:%M') if o.created_at else '—' }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="8" style="padding:12px; color:#9ca3af;">No orders found.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Ledger</h2>
+  <div style="overflow:auto;">
+    <table style="width:100%; border-collapse:collapse;">
+      <thead>
+        <tr>
+          <th style="text-align:left; padding:8px; border-bottom:1px solid rgba(148,163,184,0.2);">Order</th>
+          <th style="text-align:left; padding:8px; border-bottom:1px solid rgba(148,163,184,0.2);">Phase</th>
+          <th style="text-align:left; padding:8px; border-bottom:1px solid rgba(148,163,184,0.2);">Gross</th>
+          <th style="text-align:left; padding:8px; border-bottom:1px solid rgba(148,163,184,0.2);">Platform fee</th>
+          <th style="text-align:left; padding:8px; border-bottom:1px solid rgba(148,163,184,0.2);">Provider routed</th>
+          <th style="text-align:left; padding:8px; border-bottom:1px solid rgba(148,163,184,0.2);">Status</th>
+          <th style="text-align:left; padding:8px; border-bottom:1px solid rgba(148,163,184,0.2);">Session</th>
+          <th style="text-align:left; padding:8px; border-bottom:1px solid rgba(148,163,184,0.2);">Created</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in ledger_rows %}
+        <tr>
+          <td style="padding:8px;">#{{ row.order_id }}</td>
+          <td style="padding:8px;">{{ row.phase.value if row.phase else '—' }}</td>
+          <td style="padding:8px;">${{ format_cents_dollars(row.gross_amount_cents or 0) }}</td>
+          <td style="padding:8px;">${{ format_cents_dollars(row.platform_fee_collected_cents or 0) }}</td>
+          <td style="padding:8px;">${{ format_cents_dollars(row.provider_amount_routed_cents or 0) }}</td>
+          <td style="padding:8px;">{{ row.status.value if row.status else '—' }}</td>
+          <td style="padding:8px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;">{{ (row.stripe_checkout_session_id or '')[:14] }}…</td>
+          <td style="padding:8px;">{{ row.created_at.strftime('%Y-%m-%d %H:%M') if row.created_at else '—' }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="8" style="padding:12px; color:#9ca3af;">No ledger entries found.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

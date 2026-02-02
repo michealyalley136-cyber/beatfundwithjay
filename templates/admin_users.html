@@ -25,11 +25,20 @@
   }
   .filter-grid {
     display: grid;
-    grid-template-columns: 2.2fr 1.6fr 1.6fr 1.6fr auto;
+    grid-template-columns: repeat(5, minmax(180px, 1fr));
     gap: 10px;
     align-items: end;
   }
-  @media (max-width: 900px) {
+  @media (max-width: 1100px) {
+    .filter-grid {
+      grid-template-columns: repeat(2, minmax(180px, 1fr));
+    }
+    .filter-actions-right {
+      grid-column: auto;
+      justify-content: flex-start;
+    }
+  }
+  @media (max-width: 720px) {
     .filter-grid {
       grid-template-columns: 1fr;
     }
@@ -71,6 +80,16 @@
     cursor: pointer;
     margin-left: 6px;
   }
+  .filter-actions {
+    display: flex;
+    gap: 6px;
+    justify-content: flex-start;
+    align-self: end;
+  }
+  .filter-actions-right {
+    justify-content: flex-end;
+    grid-column: 5;
+  }
 
   .card-table {
     background: linear-gradient(135deg, #0b1220, #020617);
@@ -81,14 +100,15 @@
   }
   table {
     width: 100%;
-    border-collapse: collapse;
+    border-collapse: separate;
+    border-spacing: 0 6px;
     font-size: 13px;
   }
   thead tr {
     border-bottom: 1px solid #111827;
   }
   th, td {
-    padding: 9px 6px;
+    padding: 10px 10px;
     text-align: left;
   }
   th {
@@ -97,8 +117,20 @@
     letter-spacing: 0.14em;
     color: #64748b;
   }
-  tbody tr + tr {
-    border-top: 1px solid rgba(15, 23, 42, 0.9);
+  tbody tr {
+    background: rgba(15, 23, 42, 0.55);
+    border: 1px solid rgba(30, 41, 59, 0.6);
+  }
+  tbody td:first-child { border-radius: 10px 0 0 10px; }
+  tbody td:last-child { border-radius: 0 10px 10px 0; }
+  .group-row td {
+    padding: 6px 6px 2px;
+    background: transparent;
+    color: #8aa0c5;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.2em;
+    border: none;
   }
 
   .pill {
@@ -257,10 +289,38 @@
         </select>
       </div>
 
-      <div style="display:flex; gap:6px; justify-content:flex-end;">
+      <div>
+        <div class="filter-label">Sort by</div>
+        <select name="sort" class="filter-select">
+          <option value="role" {% if sort == 'role' %}selected{% endif %}>Role</option>
+          <option value="username" {% if sort == 'username' %}selected{% endif %}>Username</option>
+          <option value="id" {% if sort == 'id' %}selected{% endif %}>ID</option>
+          <option value="kyc" {% if sort == 'kyc' %}selected{% endif %}>KYC</option>
+          <option value="status" {% if sort == 'status' %}selected{% endif %}>Status</option>
+        </select>
+      </div>
+
+      <div>
+        <div class="filter-label">Order</div>
+        <select name="order" class="filter-select">
+          <option value="asc" {% if order == 'asc' %}selected{% endif %}>A-Z</option>
+          <option value="desc" {% if order == 'desc' %}selected{% endif %}>Z-A</option>
+        </select>
+      </div>
+
+      <div>
+        <div class="filter-label">Group</div>
+        <select name="group" class="filter-select">
+          <option value="1" {% if group_by_role %}selected{% endif %}>Group by role</option>
+          <option value="0" {% if not group_by_role %}selected{% endif %}>No grouping</option>
+        </select>
+      </div>
+
+      <div class="filter-actions filter-actions-right">
         <button type="submit" class="btn-filter">Apply</button>
         <a href="{{ url_for('admin_users') }}" class="btn-filter-clear">Clear</a>
       </div>
+
     </div>
   </form>
 </div>
@@ -279,13 +339,22 @@
     </thead>
     <tbody>
       {% if users %}
+        {% if group_by_role %}
+          {% set ns = namespace(prev_role=None) %}
+        {% endif %}
         {% for u in users %}
+          {% if group_by_role and u.role != ns.prev_role %}
+            <tr class="group-row">
+              <td colspan="6">Role: {{ u.role|capitalize }}</td>
+            </tr>
+            {% set ns.prev_role = u.role %}
+          {% endif %}
           <tr>
             <td>#{{ u.id }}</td>
             <td>@{{ u.username }}</td>
             <td>
               <span class="pill pill-role">
-                {{ u.role.value|capitalize }}
+                {{ u.role|capitalize }}
               </span>
             </td>
             <td>
@@ -353,7 +422,7 @@
         <a class="page-link"
            href="{{ url_for('admin_users',
                             page=pagination.prev_num,
-                            q=q, role=role, status=status, active=active) }}">
+                            q=q, role=role, status=status, active=active, sort=sort, order=order, group=('1' if group_by_role else '0')) }}">
           ‹ Prev
         </a>
       {% endif %}
@@ -366,7 +435,7 @@
         <a class="page-link"
            href="{{ url_for('admin_users',
                             page=pagination.next_num,
-                            q=q, role=role, status=status, active=active) }}">
+                            q=q, role=role, status=status, active=active, sort=sort, order=order, group=('1' if group_by_role else '0')) }}">
           Next ›
         </a>
       {% endif %}
@@ -374,3 +443,4 @@
   {% endif %}
 </div>
 {% endblock %}
+

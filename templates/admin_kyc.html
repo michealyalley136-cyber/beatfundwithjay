@@ -21,7 +21,7 @@
       {% for u in pending %}
         <tr style="border-top:1px solid rgba(15,23,42,0.9);">
           <td style="padding:8px 6px;">@{{ u.username }}</td>
-          <td style="padding:8px 6px;">{{ u.kyc_status.value.replace('_',' ')|title }}</td>
+          <td style="padding:8px 6px;">{{ u.kyc_status.replace('_',' ')|title }}</td>
           <td style="padding:8px 6px;">
             <!-- Approve -->
             <form method="POST"

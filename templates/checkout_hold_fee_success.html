@@ -175,10 +175,9 @@
     <p class="success-subtitle">Your booking is now confirmed</p>
 
     <div class="escrow-notice">
-      <div class="escrow-notice-title">💰 Hold Fee in Escrow</div>
+      <div class="escrow-notice-title">💰 Hold Fee Applied</div>
       <div class="escrow-notice-text">
-        Your hold fee of ${{ '%.2f'|format(hold_fee_cents / 100.0) }} has been paid and is being held in escrow. 
-        This fee will be released to the provider when the booking is completed, or refunded to you if the booking is cancelled.
+        Your hold fee of ${{ '%.2f'|format(hold_fee_cents / 100.0) }} has been paid. This fee is applied to your booking total and kept by BeatFund.
       </div>
     </div>
 
@@ -204,6 +203,14 @@
       <div class="info-row">
         <span class="info-label">Hold Fee Paid</span>
         <span class="info-value info-total">${{ '%.2f'|format(hold_fee_cents / 100.0) }}</span>
+      </div>
+      <div class="info-row">
+        <span class="info-label">BeatFund platform fee (included)</span>
+        <span class="info-value">${{ '%.2f'|format((hold_fee_cents or 0) / 100.0) }}</span>
+      </div>
+      <div class="info-row">
+        <span class="info-label">Total Paid</span>
+        <span class="info-value info-total">${{ '%.2f'|format((total_cents or 0) / 100.0) }}</span>
       </div>
     </div>
 

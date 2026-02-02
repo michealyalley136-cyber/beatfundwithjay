@@ -436,6 +436,7 @@
 
   <!-- Main Content -->
   <main class="bf-main-content">
+    {% include "_provider_rating_snippet.html" %}
     <div class="bf-hero">
       <div class="bf-hero-left">
         <h1>Manager Dashboard</h1>
@@ -976,7 +977,7 @@
   </main>
 </div>
 
-<script>
+<script nonce="{{ csp_nonce }}">
   function showSection(sectionId) {
     // Hide all sections
     document.querySelectorAll('.section').forEach(section => {
