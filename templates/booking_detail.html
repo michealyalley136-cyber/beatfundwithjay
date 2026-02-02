@@ -576,7 +576,7 @@
                 <strong>${{ "%.2f"|format(booking.quoted_total_cents / 100.0) }}</strong>
               </div>
               <div class="bf-fee-row">
-                <span>Provider payout (full quote)</span>
+                <span>Provider payout (before platform fee)</span>
                 <span>${{ "%.2f"|format(booking.quoted_total_cents / 100.0) }}</span>
               </div>
               {% if deposit_due %}
@@ -613,18 +613,14 @@
             {% if deposit_due %}
               <div class="bf-meta-label">Hold due now</div>
               <div class="bf-fee-row">
-                <span>Hold amount (credited)</span>
+                <span>Hold amount (applied to total)</span>
                 <span>${{ '%.2f'|format(deposit_breakdown.base_cents / 100.0) }}</span>
-              </div>
-              <div class="bf-fee-row">
-                <span>Payment processing fee (non-refundable)</span>
-                <span>${{ '%.2f'|format(deposit_breakdown.processing_fee_cents / 100.0) }}</span>
               </div>
               <div class="bf-fee-row">
                 <strong>Total due now</strong>
                 <strong>${{ '%.2f'|format(deposit_breakdown.total_cents / 100.0) }}</strong>
               </div>
-              <div class="bf-payment-note">BeatFund service fee (5.17%) applies when you pay the remaining balance. Processing fees are non-refundable.</div>
+              <div class="bf-payment-note">BeatFund platform fee (2% of total) is collected with the remaining balance and included in the total.</div>
             {% else %}
               <div class="bf-meta-value">Hold paid</div>
             {% endif %}
@@ -644,12 +640,8 @@
                 <span>${{ '%.2f'|format((remaining_service_cents or 0) / 100.0) }}</span>
               </div>
               <div class="bf-fee-row">
-                <span>BeatFund service fee (5.17%)</span>
+                <span>BeatFund platform fee (2% of total, included)</span>
                 <span>${{ '%.2f'|format((beatfund_fee_remaining_cents or 0) / 100.0) }}</span>
-              </div>
-              <div class="bf-fee-row">
-                <span>Payment processing fee (non-refundable)</span>
-                <span>${{ '%.2f'|format(balance_breakdown.processing_fee_cents / 100.0) }}</span>
               </div>
               <div class="bf-fee-row">
                 <strong>Total due now</strong>
@@ -678,7 +670,6 @@
             {% endif %}
 
             {% if deposit_due or balance_due %}
-              <div id="booking-card-element"></div>
               <div id="booking-card-errors"></div>
               <div class="bf-payment-actions">
                 {% if deposit_due %}
@@ -690,7 +681,7 @@
                   </button>
                 {% endif %}
               </div>
-              <div class="bf-payment-note">Processing fees are non-refundable. BeatFund service fee applies when you pay the remaining balance.</div>
+              <div class="bf-payment-note">Youâ€™ll be redirected to Stripe Checkout to complete payment.</div>
             {% endif %}
           {% endif %}
         </div>
@@ -851,29 +842,10 @@
 {% endif %}
 
 {% if is_client and stripe_enabled and (deposit_due or balance_due) %}
-<script src="https://js.stripe.com/v3/"></script>
 <script nonce="{{ csp_nonce }}">
   document.addEventListener('DOMContentLoaded', () => {
-    console.log('[booking_detail] Stripe payment init');
-    const pk = {{ stripe_publishable_key|tojson }};
-    const stripe = Stripe(pk);
-    const elements = stripe.elements();
-    const card = elements.create('card', {style: {base: {color: '#e2e8f0', fontSize: '14px'}}});
-    const cardMount = document.getElementById('booking-card-element');
+    const orderId = {{ (payment_order_id or 0)|tojson }};
     const errorEl = document.getElementById('booking-card-errors');
-
-    if (cardMount) {
-      card.mount('#booking-card-element');
-    }
-
-    let cardComplete = false;
-    card.on('change', (event) => {
-      cardComplete = !!event.complete;
-      if (event.error && errorEl) {
-        errorEl.textContent = event.error.message;
-      }
-    });
-
     const metaToken = document.querySelector('meta[name="csrf-token"]');
     const csrfToken = metaToken ? metaToken.getAttribute('content') : '';
 
@@ -891,29 +863,24 @@
       if (kind !== 'deposit' && kind !== 'balance') {
         return;
       }
-      console.log('[booking_detail] click', kind, btn);
 
       if (!csrfToken) {
         setError('Missing CSRF token... add meta tag in base.html');
         return;
       }
 
-      if (!cardComplete) {
-        setError('Enter your card details first, then click again.');
-        if (cardMount) {
-          cardMount.scrollIntoView({behavior: 'smooth', block: 'center'});
-        }
+      if (!orderId) {
+        setError('Unable to start payment. Please refresh and try again.');
         return;
       }
 
       const endpoint = kind === 'balance'
-        ? `/api/bookings/{{ booking.id }}/pay/balance`
-        : `/api/bookings/{{ booking.id }}/pay/deposit`;
-      console.log('[booking_detail] POST', endpoint);
+        ? `/api/orders/${orderId}/checkout/balance`
+        : `/api/orders/${orderId}/checkout/holding`;
 
       const original = btn.textContent;
       btn.disabled = true;
-      btn.textContent = 'Processing...';
+      btn.textContent = 'Redirecting...';
 
       try {
         const resp = await fetch(endpoint, {
@@ -926,40 +893,19 @@
           body: JSON.stringify({kind})
         });
 
-        const raw = await resp.text();
-        let data = null;
-        try {
-          data = raw ? JSON.parse(raw) : {};
-        } catch (err) {
-          setError('Server returned non-JSON response.');
-          return;
-        }
-
-        console.log('[booking_detail] response', resp.status, data);
+        const data = await resp.json().catch(() => ({}));
         if (!resp.ok) {
-          const msg = (data && data.error) ? data.error : (raw || 'Payment failed');
-          setError(msg);
+          setError((data && data.error) ? data.error : 'Payment failed');
           return;
         }
 
-        if (!data || !data.client_secret) {
-          setError('Payment could not be started. Please try again.');
+        const url = data.checkout_url || data.url;
+        if (!url) {
+          setError('No checkout URL received.');
           return;
         }
 
-        const result = await stripe.confirmCardPayment(data.client_secret, {
-          payment_method: {card}
-        });
-
-        if (result.error) {
-          setError(result.error.message || 'Payment failed');
-          return;
-        }
-
-        if (result.paymentIntent && result.paymentIntent.status === 'succeeded') {
-          window.location.reload();
-          return;
-        }
+        window.location.href = url;
       } catch (err) {
         setError(err && err.message ? err.message : 'Payment failed');
       } finally {
