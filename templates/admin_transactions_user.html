@@ -1,0 +1,302 @@
+{% extends "base.html" %}
+
+{% block title %}Wallet · {{ customer.username }} · BeatFund Admin{% endblock %}
+
+{% block extra_head %}
+<style>
+  .page-title {
+    font-size: 22px;
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+  .page-subtitle {
+    font-size: 13px;
+    color: #9aa4c2;
+    margin-bottom: 18px;
+  }
+
+  .layout-grid {
+    display: grid;
+    grid-template-columns: 1.1fr 2.2fr;
+    gap: 16px;
+    align-items: flex-start;
+  }
+  @media (max-width: 960px) {
+    .layout-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .card {
+    background: linear-gradient(135deg, #0b1220, #020617);
+    border-radius: 16px;
+    border: 1px solid #20263b;
+    box-shadow: 0 18px 35px rgba(15, 23, 42, 0.9);
+    padding: 18px 18px 14px;
+  }
+  .card-title {
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+  .card-subtext {
+    font-size: 12px;
+    color: #9aa4c2;
+  }
+
+  .card-header-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 12px;
+    margin-bottom: 10px;
+  }
+
+  .btn-export-csv {
+    padding: 6px 14px;
+    border-radius: 999px;
+    border: 1px solid #1f2937;
+    background: linear-gradient(to right, #0ea5e9, #22c55e);
+    color: #020617;
+    font-size: 11px;
+    font-weight: 600;
+    text-decoration: none;
+    white-space: nowrap;
+  }
+  .btn-export-csv:hover {
+    filter: brightness(1.05);
+  }
+
+  .stat-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-top: 14px;
+  }
+  .stat-card {
+    background: #020617;
+    border-radius: 14px;
+    border: 1px solid #111827;
+    padding: 10px 12px;
+  }
+  .stat-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: #64748b;
+    margin-bottom: 4px;
+  }
+  .stat-value {
+    font-size: 14px;
+    font-weight: 500;
+  }
+  .stat-muted {
+    font-size: 12px;
+    color: #9aa4c2;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  thead tr {
+    border-bottom: 1px solid #111827;
+  }
+  th, td {
+    padding: 8px 6px;
+    text-align: left;
+  }
+  th {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: #64748b;
+  }
+  tbody tr + tr {
+    border-top: 1px solid rgba(15, 23, 42, 0.9);
+  }
+
+  .amount-credit {
+    color: #4ade80;
+  }
+  .amount-debit {
+    color: #f97373;
+  }
+
+  .ticket-cell {
+    text-align: right;
+  }
+  .btn-ticket {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 4px 12px;
+    border-radius: 999px;
+    border: 1px solid rgba(59, 130, 246, 0.9);
+    background: rgba(59, 130, 246, 0.12);
+    color: #bfdbfe;
+    font-size: 11px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .btn-ticket:hover {
+    filter: brightness(1.06);
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-title">Wallet · @{{ customer.username }}</div>
+<div class="page-subtitle">
+  Use this page to understand wallet history for support and investigations.
+</div>
+
+<div class="layout-grid">
+  <!-- Left summary -->
+  <div class="card">
+    <div class="card-title">Customer</div>
+    <div class="card-subtext">
+      @{{ customer.username }}<br>
+      Role: {{ customer.role|capitalize }}
+    </div>
+
+    <div style="margin-top: 14px; padding-top: 12px; border-top: 1px solid rgba(31,41,55,0.9);">
+      <div class="card-title" style="margin-bottom: 6px;">Admin wallet adjustment</div>
+      <div class="card-subtext" style="margin-bottom: 10px;">
+        Requires a reason. Creates an audit event.
+      </div>
+      <form method="POST" action="{{ url_for('admin_wallet_adjust', user_id=customer.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="stat-grid" style="grid-template-columns: 1fr 1fr;">
+          <div class="stat-card">
+            <div class="stat-label">Direction</div>
+            <select name="direction" class="form-control" required>
+              <option value="credit">Credit (+)</option>
+              <option value="debit">Debit (-)</option>
+            </select>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Amount (USD)</div>
+            <input name="amount_dollars" class="form-control" placeholder="e.g. 10.00" required>
+          </div>
+        </div>
+        <div class="form-group" style="margin-top: 10px;">
+          <label>Reason (required)</label>
+          <input name="reason" class="form-control" placeholder="Why are we adjusting this wallet?" required>
+        </div>
+        <div class="form-group">
+          <label>Internal note (optional)</label>
+          <input name="note" class="form-control" placeholder="Extra context for meta/audit">
+        </div>
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary">Apply adjustment</button>
+        </div>
+      </form>
+    </div>
+
+    <div class="stat-grid">
+      <div class="stat-card">
+        <div class="stat-label">Total entries</div>
+        <div class="stat-value">{{ ledger|length }}</div>
+        <div class="stat-muted">
+          All deposits, sends, withdrawals, sales, adjustments.
+        </div>
+      </div>
+
+      <div class="stat-card">
+        <div class="stat-label">Most recent activity</div>
+        {% if ledger %}
+          {% set latest = ledger[0] %}
+          <div class="stat-value">
+            {{ latest.created_at.strftime("%Y-%m-%d") }}
+          </div>
+          <div class="stat-muted">
+            {{ latest.entry_type.value.replace('_',' ')|title }}
+            for {{ (latest.amount_cents / 100.0)|round(2) }}
+          </div>
+        {% else %}
+          <div class="stat-value">None yet</div>
+          <div class="stat-muted">No wallet entries for this user.</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- Right: transaction table -->
+  <div class="card">
+    <div class="card-header-row">
+      <div>
+        <div class="card-title">Wallet transaction history</div>
+        <div class="card-subtext">
+          Ordered from newest to oldest. Use the “Meta / description” column and “Flag / ticket”
+          actions for investigations and support follow-up.
+        </div>
+      </div>
+      <div>
+        <a
+          href="{{ url_for('admin_export_wallet_csv', user_id=customer.id) }}"
+          class="btn-export-csv"
+        >
+          Download CSV
+        </a>
+      </div>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Type</th>
+          <th>Direction</th>
+          <th>Amount</th>
+          <th>Meta / description</th>
+          <th style="text-align:right;">Ticket</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% if ledger %}
+          {% for row in ledger %}
+            {% set is_credit = row.entry_type in [
+              EntryType.deposit,
+              EntryType.transfer_in,
+              EntryType.interest,
+              EntryType.adjustment,
+              EntryType.sale_income
+            ] %}
+            <tr>
+              <td>
+                {{ row.created_at.strftime("%Y-%m-%d %H:%M") if row.created_at else "" }}
+              </td>
+              <td>{{ row.entry_type.value.replace('_',' ')|title }}</td>
+              <td>{{ "Credit" if is_credit else "Debit" }}</td>
+              <td>
+                <span class="{{ 'amount-credit' if is_credit else 'amount-debit' }}">
+                  {{ "+" if is_credit else "-" }}${{ (row.amount_cents / 100.0)|round(2) }}
+                </span>
+              </td>
+              <td>
+                {{ row.meta or "" }}
+              </td>
+              <td class="ticket-cell">
+                <a
+                  href="{{ url_for('admin_ticket_new', user_id=customer.id, ledger_id=row.id) }}"
+                  class="btn-ticket"
+                >
+                  Flag / ticket
+                </a>
+              </td>
+            </tr>
+          {% endfor %}
+        {% else %}
+          <tr>
+            <td colspan="6" style="padding:14px 6px; color:#9aa4c2;">
+              No wallet entries yet for this customer.
+            </td>
+          </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,808 @@
+{% extends "base.html" %}
+{% block title %}BookMe - Requests & Bookings - BeatFund{% endblock %}
+
+{% block content %}
+{% set incoming_requests = requests_incoming|default([]) %}
+{% set sent_requests = requests_sent|default([]) %}
+{% set hold_actions = hold_actions|default([]) %}
+{% set default_request_segment = 'sent' if hold_actions|length > 0 else 'incoming' %}
+{% set provider_bookings = bookings_as_provider|default([]) %}
+{% set client_bookings = bookings_as_client|default([]) %}
+
+<div data-refresh-root="bookme-requests">
+<div class="page bookme-requests-page">
+  <header class="page-header">
+    <h1>BookMe - Requests & Bookings</h1>
+    <p class="text-muted">Track requests, confirm holds, and manage all bookings in one place.</p>
+  </header>
+
+  <section class="summary-strip">
+    <div class="summary-pill">
+      <span>Incoming requests</span>
+      <strong>{{ incoming_requests|length }}</strong>
+    </div>
+    <div class="summary-pill">
+      <span>Sent requests</span>
+      <strong>{{ sent_requests|length }}</strong>
+    </div>
+    <div class="summary-pill">
+      <span>Bookings as provider</span>
+      <strong>{{ provider_bookings|length }}</strong>
+    </div>
+    <div class="summary-pill">
+      <span>Bookings as client</span>
+      <strong>{{ client_bookings|length }}</strong>
+    </div>
+  </section>
+
+  <div id="holdFeeError" class="bf-error" role="status"></div>
+
+  {% if hold_actions %}
+    <section class="bf-action-card">
+      <div class="bf-action-header">
+        <strong>Action required</strong>
+        <span>You have {{ hold_actions|length }} holds to confirm</span>
+      </div>
+      <div class="bf-action-list">
+        {% for item in hold_actions %}
+          <div class="bf-action-row">
+            <div>
+              <div class="bf-action-title">@{{ item.provider_username }}</div>
+              <div class="bf-action-meta">{{ item.preferred_time or "Time not set" }}</div>
+            </div>
+            <div class="bf-action-side">
+              <span class="bf-pill">Hold ${{ '%.2f'|format(HOLD_FEE_CENTS / 100.0) }}</span>
+              <button class="btn btn-primary pay-hold-fee-btn" type="button" data-booking-id="{{ item.booking_id }}" data-request-id="{{ item.request_id }}">
+                Pay hold fee (${{ '%.2f'|format(HOLD_FEE_CENTS / 100.0) }})
+              </button>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    </section>
+  {% endif %}
+
+  <div class="bf-toolbar">
+    <div class="bf-tabs">
+      <button class="bf-tab is-active" type="button" data-tab="requests">Requests</button>
+      <button class="bf-tab" type="button" data-tab="bookings">Bookings</button>
+    </div>
+    <div class="bf-filters">
+      <input id="bf-search" type="search" placeholder="Search name or date" autocomplete="off" />
+      <select id="bf-status-filter">
+        <option value="all">All statuses</option>
+        <option value="pending">Pending</option>
+        <option value="accepted">Accepted</option>
+        <option value="confirmed">Confirmed</option>
+        <option value="quoted">Quoted</option>
+        <option value="declined">Declined</option>
+        <option value="cancelled">Cancelled</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="bf-segmented" data-tab="requests">
+    <button class="bf-seg {% if default_request_segment == 'incoming' %}is-active{% endif %}" type="button" data-segment="incoming">Incoming</button>
+    <button class="bf-seg {% if default_request_segment == 'sent' %}is-active{% endif %}" type="button" data-segment="sent">Sent</button>
+  </div>
+
+  <div class="bf-segmented is-hidden" data-tab="bookings">
+    <button class="bf-seg is-active" type="button" data-segment="incoming">As provider</button>
+    <button class="bf-seg" type="button" data-segment="sent">As client</button>
+  </div>
+
+  <div class="bf-list" data-tab="requests" data-segment="incoming">
+    {% if incoming_requests %}
+      {% for req in incoming_requests %}
+        {% set status_value = (req.status.value if req.status else "pending")|lower %}
+        {% set deposit_paid = request_deposit_paid.get(req.id, False) %}
+        {% set needs_action = (req.status == BookingStatus.pending) %}
+        <article class="bf-row-card {% if needs_action %}needs-action{% endif %}" data-status="{{ status_value }}" data-search="{{ req.client.username }} {{ req.preferred_time or '' }}">
+          <div class="bf-row-main">
+            <div class="bf-row-title">@{{ req.client.username }}</div>
+            <div class="bf-row-meta">
+              <span class="bf-badge status-{{ status_value }}">{{ status_value.title() }}</span>
+              <span>{{ req.preferred_time or "Time not set" }}</span>
+              {% if req.duration_minutes %}
+                <span>{{ '%.2f'|format(req.duration_minutes / 60.0) }} hrs</span>
+              {% endif %}
+            </div>
+            {% if req.message %}
+              <div class="bf-row-note">{{ req.message }}</div>
+            {% endif %}
+          </div>
+          <div class="bf-row-side">
+            <div class="bf-row-badges">
+              <span class="bf-pill">Deposit: {{ "Paid" if deposit_paid else ("Due" if req.status == BookingStatus.accepted else "Waiting") }}</span>
+            </div>
+            {% if req.status == BookingStatus.pending %}
+              <a class="btn btn-primary" href="{{ url_for('bookme_request_accept_confirm', req_id=req.id) }}">Review request</a>
+            {% else %}
+              <a class="btn btn-secondary" href="{{ url_for('booking_detail', booking_id=req.booking_id) if req.booking_id else url_for('bookme_requests') }}">View</a>
+            {% endif %}
+          </div>
+        </article>
+      {% endfor %}
+    {% else %}
+      <p class="empty-state">No incoming requests yet.</p>
+    {% endif %}
+  </div>
+
+  <div class="bf-list is-hidden" data-tab="requests" data-segment="sent">
+    {% if sent_requests %}
+      {% for req in sent_requests %}
+        {% set status_value = (req.status.value if req.status else "pending")|lower %}
+        {% set deposit_paid = request_deposit_paid.get(req.id, False) %}
+        {% set needs_action = (req.status == BookingStatus.accepted and not deposit_paid) %}
+        <article class="bf-row-card {% if needs_action %}needs-action{% endif %}" data-status="{{ status_value }}" data-search="{{ req.provider.username }} {{ req.preferred_time or '' }}">
+          <div class="bf-row-main">
+            <div class="bf-row-title">@{{ req.provider.username }}</div>
+            <div class="bf-row-meta">
+              <span class="bf-badge status-{{ status_value }}">{{ status_value.title() }}</span>
+              <span>{{ req.preferred_time or "Time not set" }}</span>
+              {% if req.duration_minutes %}
+                <span>{{ '%.2f'|format(req.duration_minutes / 60.0) }} hrs</span>
+              {% endif %}
+            </div>
+            {% if req.message %}
+              <div class="bf-row-note">{{ req.message }}</div>
+            {% endif %}
+          </div>
+          <div class="bf-row-side">
+            <div class="bf-row-badges">
+              <span class="bf-pill">Deposit: {{ "Paid" if deposit_paid else ("Due" if req.status == BookingStatus.accepted else "Waiting") }}</span>
+            </div>
+            {% if req.status == BookingStatus.accepted and not deposit_paid %}
+              {% if req.booking_id %}
+              <button class="btn btn-primary pay-hold-fee-btn" type="button" data-action="pay-hold" data-booking-id="{{ req.booking_id }}" data-request-id="{{ req.id }}">
+                Pay hold fee (${{ '%.2f'|format(HOLD_FEE_CENTS / 100.0) }})
+              </button>
+              {% else %}
+                <span class="btn btn-disabled">Awaiting setup</span>
+              {% endif %}
+            {% elif req.status == BookingStatus.accepted and deposit_paid %}
+              <span class="bf-pill">Hold paid</span>
+            {% elif req.status == BookingStatus.pending %}
+              <form method="post" action="{{ url_for('bookme_request_status', req_id=req.id) }}">
+                <input type="hidden" name="action" value="cancel" />
+                <button class="btn btn-secondary" type="submit">Cancel request</button>
+              </form>
+            {% else %}
+              <a class="btn btn-secondary" href="{{ url_for('booking_detail', booking_id=req.booking_id) if req.booking_id else url_for('bookme_requests') }}">View</a>
+            {% endif %}
+          </div>
+        </article>
+      {% endfor %}
+    {% else %}
+      <p class="empty-state">No sent requests yet.</p>
+    {% endif %}
+  </div>
+
+  <div class="bf-list is-hidden" data-tab="bookings" data-segment="incoming">
+    {% if provider_bookings %}
+      {% for booking in provider_bookings %}
+        {% set meta = booking_payment_meta.get(booking.id, {}) %}
+        {% set deposit_paid = meta.get('deposit_paid', False) %}
+        {% set remaining_base = meta.get('remaining_base_cents') %}
+        {% set status_value = (booking.status or 'pending')|lower %}
+        {% set needs_action = (booking.status == 'accepted' and not booking.quoted_total_cents) %}
+        <article class="bf-row-card {% if needs_action %}needs-action{% endif %}" data-status="{{ status_value }}" data-search="{{ booking.client.username }} {{ booking.event_datetime or '' }}">
+          <div class="bf-row-main">
+            <div class="bf-row-title">{{ booking.event_title }}</div>
+            <div class="bf-row-meta">
+              <span class="bf-badge status-{{ status_value }}">{{ status_value.title() }}</span>
+              <span>@{{ booking.client.username }}</span>
+              <span>
+                {% if booking.event_datetime %}
+                  {{ booking.event_datetime.strftime('%Y-%m-%d %H:%M') }}
+                {% else %}
+                  Date not set
+                {% endif %}
+              </span>
+              {% if booking.duration_minutes %}
+                <span>{{ '%.2f'|format(booking.duration_minutes / 60.0) }} hrs</span>
+              {% endif %}
+            </div>
+            {% if booking.quoted_total_cents %}
+              <div class="bf-row-note">Total: ${{ '%.2f'|format(booking.quoted_total_cents / 100.0) }}</div>
+            {% endif %}
+          </div>
+          <div class="bf-row-side">
+            <div class="bf-row-badges">
+              <span class="bf-pill">Deposit: {{ "Paid" if deposit_paid else "Due" }}</span>
+              <span class="bf-pill">Balance: {{ "Due" if remaining_base and remaining_base > 0 else "Paid" if remaining_base == 0 else "Pending" }}</span>
+            </div>
+            <a class="btn btn-secondary" href="{{ url_for('booking_detail', booking_id=booking.id) }}">View details</a>
+          </div>
+        </article>
+      {% endfor %}
+    {% else %}
+      <p class="empty-state">No bookings as provider yet.</p>
+    {% endif %}
+  </div>
+
+  <div class="bf-list is-hidden" data-tab="bookings" data-segment="sent">
+    {% if client_bookings %}
+      {% for booking in client_bookings %}
+        {% set meta = booking_payment_meta.get(booking.id, {}) %}
+        {% set deposit_paid = meta.get('deposit_paid', False) %}
+        {% set remaining_base = meta.get('remaining_base_cents') %}
+        {% set status_value = (booking.status or 'pending')|lower %}
+        <article class="bf-row-card" data-status="{{ status_value }}" data-search="{{ booking.provider.username }} {{ booking.event_datetime or '' }}">
+          <div class="bf-row-main">
+            <div class="bf-row-title">{{ booking.event_title }}</div>
+            <div class="bf-row-meta">
+              <span class="bf-badge status-{{ status_value }}">{{ status_value.title() }}</span>
+              <span>@{{ booking.provider.username }}</span>
+              <span>
+                {% if booking.event_datetime %}
+                  {{ booking.event_datetime.strftime('%Y-%m-%d %H:%M') }}
+                {% else %}
+                  Date not set
+                {% endif %}
+              </span>
+              {% if booking.duration_minutes %}
+                <span>{{ '%.2f'|format(booking.duration_minutes / 60.0) }} hrs</span>
+              {% endif %}
+            </div>
+            {% if booking.quoted_total_cents %}
+              <div class="bf-row-note">Total: ${{ '%.2f'|format(booking.quoted_total_cents / 100.0) }}</div>
+            {% endif %}
+          </div>
+          <div class="bf-row-side">
+            <div class="bf-row-badges">
+              <span class="bf-pill">Deposit: {{ "Paid" if deposit_paid else "Due" }}</span>
+              <span class="bf-pill">Balance: {{ "Due" if remaining_base and remaining_base > 0 else "Paid" if remaining_base == 0 else "Pending" }}</span>
+            </div>
+            <a class="btn btn-secondary" href="{{ url_for('booking_detail', booking_id=booking.id) }}">View details</a>
+          </div>
+        </article>
+      {% endfor %}
+    {% else %}
+      <p class="empty-state">No bookings as client yet.</p>
+    {% endif %}
+  </div>
+
+  <section class="hold-fee-note">
+    <strong>Note:</strong> Accepting a BookMe request reserves a ${{ '%.2f'|format(HOLD_FEE_CENTS / 100.0) }} hold fee plus applicable fees.
+  </section>
+</div>
+
+<div class="bf-modal is-hidden" id="hold-fee-modal">
+  <div class="bf-modal-overlay" data-close="true"></div>
+  <div class="bf-modal-body">
+    <div class="bf-modal-header">
+      <h3>Pay hold fee</h3>
+      <button class="bf-icon-btn" type="button" data-close="true">Close</button>
+    </div>
+    <div class="bf-modal-content">
+      <p class="bf-modal-text">
+        Your hold fee reserves the session and is credited toward the service.
+        Processing fees are non-refundable. BeatFund service fee applies when you pay the remaining balance.
+      </p>
+      <div class="bf-breakdown">
+        <div class="bf-break-row">
+          <span>Hold amount (credited)</span>
+          <strong id="hold-fee-base">${{ '%.2f'|format(HOLD_FEE_CENTS / 100.0) }}</strong>
+        </div>
+        <div class="bf-break-row">
+          <span>Payment processing fee (non-refundable)</span>
+          <strong id="holdProcFee">--</strong>
+        </div>
+        <div class="bf-break-row total">
+          <span>Total due now</span>
+          <strong id="holdTotalDue">${{ '%.2f'|format(HOLD_FEE_CENTS / 100.0) }}</strong>
+        </div>
+      </div>
+      <div class="bf-refund-note">BeatFund service fee (5.17%) applies when you pay the remaining balance. Processing fees are non-refundable.</div>
+      <div id="stripe-payment-element"></div>
+      <div id="holdError" class="bf-error"></div>
+    </div>
+    <div class="bf-modal-actions">
+      <button class="btn btn-primary" type="button" id="holdPayBtn" aria-disabled="true">Pay $--</button>
+    </div>
+  </div>
+</div>
+</div>
+
+<style>
+  .bookme-requests-page {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding-bottom: calc(100px + env(safe-area-inset-bottom));
+  }
+  .summary-strip {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0.75rem;
+    margin-top: 1rem;
+  }
+  .summary-pill {
+    background: #050b1a;
+    border: 1px solid rgba(148, 163, 184, 0.25);
+    border-radius: 12px;
+    padding: 0.65rem 0.85rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.85rem;
+  }
+  .bf-action-card {
+    margin-top: 1.25rem;
+    background: rgba(15, 23, 42, 0.85);
+    border: 1px solid rgba(148, 163, 184, 0.35);
+    border-radius: 14px;
+    padding: 0.9rem 1rem;
+  }
+  .bf-action-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.9rem;
+    margin-bottom: 0.75rem;
+  }
+  .bf-action-list {
+    display: grid;
+    gap: 0.75rem;
+  }
+  .bf-action-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    align-items: center;
+    background: rgba(2, 6, 23, 0.45);
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    border-radius: 12px;
+    padding: 0.75rem 0.85rem;
+  }
+  .bf-action-title {
+    font-weight: 600;
+  }
+  .bf-action-meta {
+    font-size: 0.8rem;
+    opacity: 0.8;
+  }
+  .bf-action-side {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+  .bf-toolbar {
+    margin-top: 1.5rem;
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+  }
+  .bf-tabs {
+    display: inline-flex;
+    gap: 0.5rem;
+  }
+  .bf-tab {
+    border: 1px solid rgba(148, 163, 184, 0.3);
+    background: rgba(15, 23, 42, 0.85);
+    color: #e2e8f0;
+    padding: 0.4rem 0.9rem;
+    border-radius: 999px;
+    cursor: pointer;
+  }
+  .bf-tab.is-active {
+    background: linear-gradient(135deg, #22c55e, #16a34a);
+    border-color: transparent;
+    color: #fff;
+  }
+  .bf-filters {
+    display: flex;
+    gap: 0.6rem;
+  }
+  .bf-filters input,
+  .bf-filters select {
+    background: rgba(15, 23, 42, 0.7);
+    border: 1px solid rgba(148, 163, 184, 0.35);
+    border-radius: 10px;
+    padding: 0.4rem 0.6rem;
+    color: #e2e8f0;
+    font-size: 0.85rem;
+  }
+  .bf-segmented {
+    margin-top: 1rem;
+    display: inline-flex;
+    gap: 0.4rem;
+    background: rgba(15, 23, 42, 0.7);
+    border: 1px solid rgba(148, 163, 184, 0.25);
+    padding: 0.25rem;
+    border-radius: 999px;
+  }
+  .bf-seg {
+    border: none;
+    background: transparent;
+    color: #cbd5f5;
+    padding: 0.35rem 0.85rem;
+    border-radius: 999px;
+    cursor: pointer;
+    font-size: 0.85rem;
+  }
+  .bf-seg.is-active {
+    background: rgba(59, 130, 246, 0.2);
+    color: #e2e8f0;
+  }
+  .bf-list {
+    margin-top: 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+  .bf-row-card {
+    background: #050b1a;
+    border-radius: 14px;
+    border: 1px solid rgba(30, 64, 175, 0.35);
+    padding: 0.9rem 1rem;
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+  .bf-row-card.needs-action {
+    border-color: rgba(251, 191, 36, 0.6);
+    box-shadow: 0 0 0 1px rgba(251, 191, 36, 0.2);
+  }
+  .bf-row-title {
+    font-weight: 600;
+    font-size: 1rem;
+  }
+  .bf-row-meta {
+    margin-top: 0.2rem;
+    font-size: 0.8rem;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    opacity: 0.85;
+  }
+  .bf-row-note {
+    margin-top: 0.35rem;
+    font-size: 0.82rem;
+    opacity: 0.85;
+  }
+  .bf-row-side {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 0.5rem;
+    min-width: 180px;
+  }
+  .bf-row-badges {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+  }
+  .bf-pill {
+    background: rgba(148, 163, 184, 0.18);
+    border-radius: 999px;
+    padding: 0.2rem 0.6rem;
+    font-size: 0.72rem;
+    text-align: right;
+  }
+  .bf-badge {
+    font-size: 0.7rem;
+    padding: 0.15rem 0.45rem;
+    border-radius: 999px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .status-pending {
+    background: rgba(251, 191, 36, 0.15);
+    color: #facc15;
+  }
+  .status-accepted,
+  .status-confirmed {
+    background: rgba(34, 197, 94, 0.15);
+    color: #4ade80;
+  }
+  .status-quoted {
+    background: rgba(59, 130, 246, 0.18);
+    color: #93c5fd;
+  }
+  .status-declined,
+  .status-cancelled,
+  .status-canceled {
+    background: rgba(239, 68, 68, 0.15);
+    color: #fca5a5;
+  }
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    padding: 0.3rem 0.9rem;
+    font-size: 0.78rem;
+    border: none;
+    cursor: pointer;
+    text-decoration: none;
+  }
+  .btn-primary {
+    background: linear-gradient(135deg, #22c55e, #16a34a);
+    color: #fff;
+  }
+  .btn-secondary {
+    background: rgba(15, 23, 42, 0.9);
+    color: #e5e7eb;
+    border: 1px solid rgba(148, 163, 184, 0.4);
+  }
+  .btn-disabled {
+    background: rgba(51, 65, 85, 0.6);
+    color: rgba(148, 163, 184, 0.9);
+    cursor: default;
+  }
+  .empty-state {
+    opacity: 0.8;
+  }
+  .hold-fee-note {
+    margin-top: 1.5rem;
+    font-size: 0.8rem;
+    opacity: 0.8;
+  }
+  .is-hidden {
+    display: none;
+  }
+  .bf-modal {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+    pointer-events: auto;
+  }
+  .bf-modal-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(2, 6, 23, 0.7);
+    z-index: 0;
+    pointer-events: auto;
+  }
+  .bf-modal-body {
+    position: relative;
+    background: #0b1324;
+    border-radius: 16px;
+    border: 1px solid rgba(148, 163, 184, 0.3);
+    padding: 1rem;
+    width: min(500px, 92vw);
+    z-index: 1;
+    pointer-events: auto;
+  }
+  .bf-modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.75rem;
+  }
+  .bf-icon-btn {
+    background: transparent;
+    border: none;
+    color: #cbd5f5;
+    cursor: pointer;
+  }
+  .bf-modal-content {
+    margin-bottom: 1rem;
+  }
+  .bf-modal-text {
+    font-size: 0.85rem;
+    opacity: 0.85;
+    margin-bottom: 0.75rem;
+  }
+  .bf-breakdown {
+    border: 1px solid rgba(148, 163, 184, 0.25);
+    border-radius: 12px;
+    padding: 0.7rem 0.8rem;
+    background: rgba(2, 6, 23, 0.4);
+    margin-bottom: 0.75rem;
+  }
+  .bf-break-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.82rem;
+    margin-bottom: 0.35rem;
+  }
+  .bf-break-row.total {
+    border-top: 1px solid rgba(148, 163, 184, 0.2);
+    padding-top: 0.35rem;
+    margin-bottom: 0;
+    font-weight: 600;
+  }
+  .bf-refund-note {
+    font-size: 0.75rem;
+    opacity: 0.75;
+    margin-bottom: 0.75rem;
+  }
+  .bf-modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+  }
+  .bf-error {
+    color: #fca5a5;
+    font-size: 0.8rem;
+    margin-top: 0.5rem;
+  }
+  @media (max-width: 900px) {
+    .summary-strip {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .bf-row-card {
+      flex-direction: column;
+      align-items: flex-start;
+    }
+    .bf-row-side {
+      align-items: flex-start;
+    }
+  }
+  @media (max-width: 600px) {
+    .summary-strip {
+      grid-template-columns: 1fr;
+    }
+    .bf-toolbar {
+      flex-direction: column;
+      align-items: flex-start;
+    }
+  }
+  /* Hard modal clickability override */
+  #hold-fee-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 99999;
+    pointer-events: auto;
+  }
+  #hold-fee-modal.is-hidden {
+    display: none;
+  }
+  #hold-fee-modal .bf-modal-overlay {
+    z-index: 0;
+    pointer-events: auto;
+  }
+  #hold-fee-modal .bf-modal-body {
+    z-index: 1;
+    pointer-events: auto;
+  }
+  #hold-fee-modal button {
+    pointer-events: auto;
+  }
+</style>
+
+<script nonce="{{ csp_nonce }}">
+  function initBookmeRequests() {
+    const tabs = document.querySelectorAll('.bf-tab');
+    const segButtons = document.querySelectorAll('.bf-seg');
+    const segmentGroups = document.querySelectorAll('.bf-segmented');
+    const lists = document.querySelectorAll('.bf-list');
+    const statusFilter = document.getElementById('bf-status-filter');
+    const searchInput = document.getElementById('bf-search');
+
+    function showList(tab, segment) {
+      lists.forEach(list => {
+        const match = list.dataset.tab === tab && list.dataset.segment === segment;
+        list.classList.toggle('is-hidden', !match);
+      });
+      segmentGroups.forEach(group => {
+        group.classList.toggle('is-hidden', group.dataset.tab !== tab);
+      });
+      updateFilters();
+    }
+
+    function updateFilters() {
+      const activeList = document.querySelector('.bf-list:not(.is-hidden)');
+      if (!activeList) return;
+      const statusVal = statusFilter ? statusFilter.value : 'all';
+      const searchVal = (searchInput ? searchInput.value : '').toLowerCase().trim();
+      activeList.querySelectorAll('.bf-row-card').forEach(card => {
+        const status = (card.dataset.status || '').toLowerCase();
+        const search = (card.dataset.search || '').toLowerCase();
+        const statusOk = statusVal === 'all' || status === statusVal;
+        const searchOk = !searchVal || search.includes(searchVal);
+        card.style.display = (statusOk && searchOk) ? '' : 'none';
+      });
+    }
+
+    tabs.forEach(tab => {
+      tab.addEventListener('click', () => {
+        tabs.forEach(t => t.classList.remove('is-active'));
+        tab.classList.add('is-active');
+        const tabVal = tab.dataset.tab;
+        const group = document.querySelector(`.bf-segmented[data-tab="${tabVal}"]`);
+        const firstSeg = group ? group.querySelector('.bf-seg') : null;
+        if (firstSeg) {
+          group.querySelectorAll('.bf-seg').forEach(seg => seg.classList.remove('is-active'));
+          firstSeg.classList.add('is-active');
+          showList(tabVal, firstSeg.dataset.segment);
+        }
+      });
+    });
+
+    segButtons.forEach(seg => {
+      seg.addEventListener('click', () => {
+        const group = seg.closest('.bf-segmented');
+        if (!group) return;
+        group.querySelectorAll('.bf-seg').forEach(s => s.classList.remove('is-active'));
+        seg.classList.add('is-active');
+        const tabVal = group.dataset.tab;
+        showList(tabVal, seg.dataset.segment);
+      });
+    });
+
+    if (statusFilter) statusFilter.addEventListener('change', updateFilters);
+    if (searchInput) searchInput.addEventListener('input', updateFilters);
+    showList('requests', {{ default_request_segment|tojson }});
+
+    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
+    const holdFeeError = document.getElementById('holdFeeError');
+
+    function setHoldFeeError(message) {
+      if (holdFeeError) {
+        holdFeeError.textContent = message || '';
+      }
+    }
+
+    async function startHoldFeeCheckout(button) {
+      if (!button) return;
+      if (!csrfToken) {
+        setHoldFeeError('Missing CSRF token. Refresh and try again.');
+        return;
+      }
+      const bookingId = button.dataset.bookingId;
+      const requestId = button.dataset.requestId;
+      if (!bookingId && !requestId) {
+        setHoldFeeError('Missing booking details. Refresh and try again.');
+        return;
+      }
+
+      const original = button.textContent;
+      button.disabled = true;
+      button.textContent = 'Redirecting...';
+      setHoldFeeError('');
+
+      try {
+        const resp = await fetch('/create-checkout-session-hold-fee', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': csrfToken
+          },
+          body: JSON.stringify({
+            booking_request_id: requestId,
+            booking_id: bookingId
+          })
+        });
+        const raw = await resp.text();
+        let data = {};
+        try {
+          data = raw ? JSON.parse(raw) : {};
+        } catch (err) {
+          data = {};
+        }
+        if (!resp.ok) {
+          throw new Error(data.error || 'Unable to start Stripe checkout.');
+        }
+        const url = data.url;
+        if (!url) {
+          throw new Error('Stripe checkout URL missing.');
+        }
+        window.location.href = url;
+      } catch (err) {
+        setHoldFeeError(err && err.message ? err.message : 'Unable to start hold fee checkout.');
+        button.disabled = false;
+        button.textContent = original;
+      }
+    }
+
+    document.addEventListener('click', (event) => {
+      const btn = event.target.closest('.pay-hold-fee-btn');
+      if (!btn) return;
+      event.preventDefault();
+      startHoldFeeCheckout(btn);
+    });
+  }
+
+  document.addEventListener('DOMContentLoaded', initBookmeRequests);
+  window.BeatFundPageInit = initBookmeRequests;
+</script>
+{% endblock %}

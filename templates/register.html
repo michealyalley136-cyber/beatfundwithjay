@@ -1,0 +1,611 @@
+{% extends "base.html" %}
+{% block title %}Create account · BeatFund{% endblock %}
+
+{% block extra_head %}
+<style>
+  .auth-page {
+    max-width: 1120px;
+    margin: 40px auto 48px;
+    padding-inline: 16px;
+    display: flex;
+    gap: 32px;
+    align-items: stretch;
+  }
+
+  @media (max-width: 900px) {
+    .auth-page {
+      flex-direction: column;
+    }
+  }
+
+  .auth-hero {
+    flex: 1.05;
+    padding: 20px 18px 18px;
+    border-radius: 24px;
+    border: 1px solid rgba(148, 163, 184, 0.4);
+    background:
+      radial-gradient(circle at top left, rgba(56, 189, 248, 0.28), transparent 55%),
+      radial-gradient(circle at bottom right, rgba(129, 140, 248, 0.3), transparent 60%),
+      rgba(15, 23, 42, 0.96);
+    box-shadow:
+      0 26px 55px rgba(15, 23, 42, 0.95),
+      0 0 0 1px rgba(15, 23, 42, 1) inset;
+    color: #e5e7eb;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .auth-hero::before {
+    content: "";
+    position: absolute;
+    inset: -40%;
+    background:
+      radial-gradient(circle at 10% 0%, rgba(59, 130, 246, 0.35), transparent 55%),
+      radial-gradient(circle at 90% 100%, rgba(45, 212, 191, 0.3), transparent 55%);
+    opacity: 0.45;
+    mix-blend-mode: screen;
+    pointer-events: none;
+  }
+
+  .auth-hero-inner {
+    position: relative;
+    z-index: 1;
+  }
+
+  .auth-kicker {
+    font-size: 11px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: #a5b4fc;
+    margin-bottom: 6px;
+  }
+
+  .auth-hero-title {
+    font-size: 26px;
+    font-weight: 650;
+    letter-spacing: 0.02em;
+    margin-bottom: 8px;
+  }
+
+  .auth-hero-sub {
+    font-size: 13px;
+    color: #cbd5f5;
+    max-width: 420px;
+    margin-bottom: 18px;
+  }
+
+  .auth-pill-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+
+  .auth-pill {
+    font-size: 11px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    border: 1px solid rgba(148, 163, 184, 0.5);
+    background: radial-gradient(circle at top, rgba(15, 23, 42, 0.9), rgba(15, 23, 42, 1));
+    color: #e5e7eb;
+  }
+
+  .auth-hero-footer {
+    font-size: 11px;
+    color: #9ca3c8;
+    margin-top: 8px;
+  }
+
+  .auth-card {
+    flex: 0.95;
+    border-radius: 22px;
+    border: 1px solid rgba(30, 64, 175, 0.8);
+    background:
+      linear-gradient(135deg, rgba(15, 23, 42, 0.96), rgba(12, 10, 30, 0.98));
+    box-shadow:
+      0 26px 50px rgba(15, 23, 42, 0.95),
+      0 0 0 1px rgba(15, 23, 42, 1) inset;
+    padding: 20px 22px 26px; /* extra bottom padding */
+    position: relative;
+    overflow: visible;       /* <-- key change so dropdown isn't clipped */
+  }
+
+  .auth-card::before {
+    content: "";
+    position: absolute;
+    inset: -40%;
+    background:
+      radial-gradient(circle at 0% 0%, rgba(59, 130, 246, 0.25), transparent 60%),
+      radial-gradient(circle at 100% 100%, rgba(79, 70, 229, 0.3), transparent 60%);
+    opacity: 0.22;
+    pointer-events: none;
+  }
+
+  .auth-card-inner {
+    position: relative;
+    z-index: 1;
+  }
+
+  .auth-card-title {
+    font-size: 18px;
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+
+  .auth-card-sub {
+    font-size: 12px;
+    color: #9aa4c2;
+    margin-bottom: 18px;
+  }
+
+  .auth-form {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .auth-field-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #8f9bc6;
+    margin-bottom: 3px;
+  }
+
+  .auth-input {
+    width: 100%;
+    border-radius: 11px;
+    border: 1px solid #303a5c;
+    background: radial-gradient(circle at top, rgba(15, 23, 42, 0.9), rgba(15, 23, 42, 1));
+    color: #e3e9ff;
+    padding: 9px 11px;
+    font-size: 13px;
+    outline: none;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease, transform 0.06s ease;
+  }
+  .auth-input::placeholder {
+    color: #6f7aa4;
+  }
+  .auth-input:focus {
+    border-color: #4f8bff;
+    box-shadow: 0 0 0 1px rgba(79, 139, 255, 0.5);
+    transform: translateY(-0.5px);
+  }
+
+  .auth-row-inline {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+
+  @media (max-width: 640px) {
+    .auth-row-inline {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .auth-btn-primary {
+    border-radius: 999px;
+    padding: 9px 18px;
+    font-size: 14px;
+    border: none;
+    cursor: pointer;
+    background: linear-gradient(135deg, #4de3ff, #6366f1);
+    color: #ffffff;
+    box-shadow: 0 7px 20px rgba(56, 189, 248, 0.45);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    margin-top: 6px;
+    transition: transform 0.1s ease, box-shadow 0.1s ease, background 0.12s ease;
+  }
+  .auth-btn-primary:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 11px 28px rgba(79, 70, 229, 0.55);
+  }
+  .auth-btn-primary:active {
+    transform: translateY(0);
+    box-shadow: 0 4px 12px rgba(30, 64, 175, 0.7);
+  }
+
+  .auth-footer-text {
+    font-size: 12px;
+    color: #9aa4c2;
+    margin-top: 12px;
+    text-align: center;
+  }
+
+  .auth-link {
+    font-size: 12px;
+    color: #60a5fa;
+    text-decoration: none;
+    position: relative;
+  }
+  .auth-link::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: -1px;
+    height: 1px;
+    background: linear-gradient(90deg, #38bdf8, #a855f7);
+    opacity: 0.9;
+  }
+
+  .auth-help-text {
+    font-size: 11px;
+    color: #9aa4c2;
+    margin-top: 4px;
+  }
+
+  /* FLASH MESSAGES */
+  .flash-group {
+    margin-bottom: 10px;
+  }
+  .flash {
+    font-size: 12px;
+    padding: 8px 10px;
+    border-radius: 10px;
+    margin-bottom: 6px;
+    background: rgba(30, 64, 175, 0.85);
+    color: #e5e7eb;
+  }
+  .flash-error,
+  .flash-danger {
+    background: rgba(185, 28, 28, 0.9);
+  }
+  .flash-success {
+    background: rgba(22, 163, 74, 0.9);
+  }
+  .flash-info {
+    background: rgba(37, 99, 235, 0.9);
+  }
+
+  /* ==========================
+     Custom role dropdown
+     ========================== */
+  .role-dropdown {
+    position: relative;
+  }
+
+  .role-trigger {
+    width: 100%;
+    border-radius: 11px;
+    border: 1px solid #303a5c;
+    background: radial-gradient(circle at top, rgba(15, 23, 42, 0.9), rgba(15, 23, 42, 1));
+    color: #e3e9ff;
+    padding: 9px 12px;
+    font-size: 13px;
+    outline: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    cursor: pointer;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease, transform 0.06s ease;
+  }
+
+  .role-trigger:hover {
+    border-color: #4f8bff;
+  }
+
+  .role-trigger:focus-visible {
+    border-color: #4f8bff;
+    box-shadow: 0 0 0 1px rgba(79, 139, 255, 0.5);
+    transform: translateY(-0.5px);
+  }
+
+  .role-label-placeholder {
+    color: #6f7aa4;
+  }
+
+  .role-chevron {
+    font-size: 11px;
+    color: #9ca3af;
+    margin-left: 8px;
+  }
+
+  .role-menu {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    right: 0;
+    border-radius: 14px;
+    border: 1px solid #303a5c;
+    background: #020617;
+    box-shadow:
+      0 18px 45px rgba(15, 23, 42, 0.95),
+      0 0 0 1px rgba(15, 23, 42, 1) inset;
+    max-height: 260px;
+    overflow-y: auto;
+    padding: 6px 0;
+    z-index: 40;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(4px);
+    transition: opacity 0.12s ease, transform 0.12s ease;
+  }
+
+  .role-menu.open {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateY(0);
+  }
+
+  .role-group-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #6b7280;
+    padding: 6px 12px 4px;
+  }
+
+  .role-option {
+    width: 100%;
+    text-align: left;
+    padding: 6px 12px;
+    font-size: 13px;
+    background: transparent;
+    border: none;
+    color: #e5e7eb;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
+  .role-option:hover {
+    background: rgba(37, 99, 235, 0.35);
+  }
+
+  .role-option:focus-visible {
+    outline: none;
+    background: rgba(37, 99, 235, 0.6);
+  }
+</style>
+
+<script nonce="{{ csp_nonce }}">
+  document.addEventListener('DOMContentLoaded', function () {
+    const trigger = document.getElementById('role-trigger');
+    const menu = document.getElementById('role-menu');
+    const label = document.getElementById('role-label');
+    const hiddenInput = document.getElementById('role-input');
+    const form = document.querySelector('.auth-form');
+
+    if (!trigger || !menu) return;
+
+    function closeMenu() {
+      menu.classList.remove('open');
+    }
+
+    trigger.addEventListener('click', function (e) {
+      e.preventDefault();
+      menu.classList.toggle('open');
+    });
+
+    menu.addEventListener('click', function (e) {
+      const btn = e.target.closest('[data-role]');
+      if (!btn) return;
+      const role = btn.getAttribute('data-role');
+      const text = btn.textContent.trim();
+      hiddenInput.value = role;
+      label.textContent = text;
+      label.classList.remove('role-label-placeholder');
+      closeMenu();
+    });
+
+    document.addEventListener('click', function (e) {
+      if (!menu.contains(e.target) && !trigger.contains(e.target)) {
+        closeMenu();
+      }
+    });
+
+    if (form) {
+      form.addEventListener('submit', function (e) {
+        if (!hiddenInput.value) {
+          e.preventDefault();
+          alert('Please select your main role.');
+          trigger.focus();
+        }
+      });
+    }
+  });
+</script>
+{% endblock %}
+
+{% block content %}
+<div class="auth-page">
+  <section class="auth-hero" aria-hidden="true">
+    <div class="auth-hero-inner">
+      <div class="auth-kicker">Get started</div>
+      <h1 class="auth-hero-title">Create your BeatFund account</h1>
+      <p class="auth-hero-sub">
+        One account for everything: beats, bookings, wallet balance, and payouts — built for artists,
+        producers, and creative service providers.
+      </p>
+
+      <div class="auth-pill-row">
+        <span class="auth-pill">Artists &amp; creators</span>
+        <span class="auth-pill">Producers &amp; beatmakers</span>
+        <span class="auth-pill">Studios, videographers, talent</span>
+      </div>
+
+      <p class="auth-hero-footer">
+        You can always add provider profiles later if you start offering services through BeatFund.
+      </p>
+    </div>
+  </section>
+
+  <section class="auth-card" aria-label="Create account form">
+    <div class="auth-card-inner">
+      <h2 class="auth-card-title">Create your account</h2>
+      <p class="auth-card-sub">
+        We’ll create your BeatFund wallet and give you access to the marketplace instantly.
+      </p>
+
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          <div class="flash-group">
+            {% for category, message in messages %}
+              <div class="flash flash-{{ category }}">{{ message }}</div>
+            {% endfor %}
+          </div>
+        {% endif %}
+      {% endwith %}
+
+      <form method="POST" action="{{ url_for('register') }}" class="auth-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+        <div class="auth-row-inline">
+          <div>
+            <div class="auth-field-label">Name</div>
+            <input
+              type="text"
+              name="name"
+              class="auth-input"
+              placeholder="Your full name"
+              required
+            >
+          </div>
+
+          <div>
+            <div class="auth-field-label">Artist / brand name</div>
+            <input
+              type="text"
+              name="artist_name"
+              class="auth-input"
+              placeholder="e.g. Zarley Marley"
+            >
+          </div>
+        </div>
+
+        <div class="auth-row-inline">
+          <div>
+            <div class="auth-field-label">Email</div>
+            <input
+              type="email"
+              name="email"
+              class="auth-input"
+              placeholder="you@example.com"
+              required
+            >
+          </div>
+
+          <div>
+            <div class="auth-field-label">Username</div>
+            <input
+              type="text"
+              name="username"
+              class="auth-input"
+              placeholder="@handle"
+              required
+            >
+          </div>
+        </div>
+
+        <div class="auth-row-inline">
+          <div>
+            <div class="auth-field-label">Password</div>
+            <input
+              type="password"
+              name="password"
+              class="auth-input"
+              placeholder="Create a password"
+              required
+            >
+          </div>
+
+          <div>
+            <div class="auth-field-label">Confirm password</div>
+            <input
+              type="password"
+              name="confirm_password"
+              class="auth-input"
+              placeholder="Repeat your password"
+              required
+            >
+          </div>
+        </div>
+
+        <div>
+          <div class="auth-field-label">Referral code (optional)</div>
+          <input
+            type="text"
+            name="referral_code"
+            class="auth-input"
+            placeholder="Referral code"
+            value="{{ referral_code or '' }}"
+          >
+        </div>
+
+        <div>
+          <div class="auth-field-label">Account type (main role)</div>
+
+          <div class="role-dropdown">
+            <button type="button" class="role-trigger" id="role-trigger">
+              <span id="role-label" class="role-label-placeholder">Select your main role</span>
+              <span class="role-chevron">▾</span>
+            </button>
+
+            <div class="role-menu" id="role-menu">
+              <div class="role-group-label">Artists &amp; creators</div>
+              <button type="button" class="role-option" data-role="artist">Artist / creator</button>
+
+              <div class="role-group-label">Producers &amp; studios</div>
+              <button type="button" class="role-option" data-role="producer">Producer / beatmaker</button>
+              <button type="button" class="role-option" data-role="studio">Studio</button>
+              <button type="button" class="role-option" data-role="engineer">Mix / master engineer</button>
+
+              <div class="role-group-label">Video &amp; visuals</div>
+              <button type="button" class="role-option" data-role="videographer">Videographer / director</button>
+              <button type="button" class="role-option" data-role="designer">Designer / graphics / cover art</button>
+              <button type="button" class="role-option" data-role="photographer">Photographer</button>
+              <button type="button" class="role-option" data-role="lighting_designer">Lighting designer</button>
+              <button type="button" class="role-option" data-role="stage_set_designer">Stage / set designer</button>
+
+              <div class="role-group-label">Talent &amp; performance</div>
+              <button type="button" class="role-option" data-role="dj">DJ</button>
+              <button type="button" class="role-option" data-role="dancer_choreographer">Dancer / choreographer</button>
+              <button type="button" class="role-option" data-role="emcee_host_hypeman">MC / host / hypeman</button>
+
+              <div class="role-group-label">Glam, events &amp; vendors</div>
+              <button type="button" class="role-option" data-role="makeup_artist">Makeup artist</button>
+              <button type="button" class="role-option" data-role="hair_stylist_barber">Hair stylist / barber</button>
+              <button type="button" class="role-option" data-role="wardrobe_stylist">Wardrobe stylist</button>
+              <button type="button" class="role-option" data-role="event_planner">Event planner</button>
+              <button type="button" class="role-option" data-role="decor_vendor">Decor vendor</button>
+              <button type="button" class="role-option" data-role="caterer_food_truck">Caterer / food truck</button>
+              <button type="button" class="role-option" data-role="vendor">Vendor / equipment / rentals</button>
+              <button type="button" class="role-option" data-role="security_usher_crowd_control">
+                Security / ushers / crowd control
+              </button>
+
+              <div class="role-group-label">Business &amp; promo</div>
+              <button type="button" class="role-option" data-role="manager">Manager / label / A&amp;R</button>
+              <button type="button" class="role-option" data-role="brand_pr_consultant">Brand / PR consultant</button>
+              <button type="button" class="role-option" data-role="social_media_manager">Social media manager</button>
+
+              <div class="role-group-label">Money side</div>
+              <button type="button" class="role-option" data-role="client">Client / buyer / fan</button>
+            </div>
+
+            <input type="hidden" name="role" id="role-input">
+          </div>
+
+          <p class="auth-help-text">
+            This sets your default dashboard and tools. It doesn’t auto-change later —
+            if you ever need to switch roles, a BeatFund admin or support can help update it.
+          </p>
+        </div>
+
+        <button type="submit" class="auth-btn-primary">
+          Create account
+        </button>
+      </form>
+
+      <p class="auth-footer-text">
+        Already have an account?
+        <a href="{{ url_for('login') }}" class="auth-link">Sign in</a>
+      </p>
+    </div>
+  </section>
+</div>
+{% endblock %}

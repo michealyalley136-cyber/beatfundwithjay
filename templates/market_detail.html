@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}{{ item.title }}{% endblock %}
+{% block content %}
+<div style="display:grid; grid-template-columns: 320px 1fr; gap:22px; align-items:start">
+  <div>
+    <div style="height:300px;border-radius:12px;background:#f2f6fb url('{{ item.cover_url or url_for('static', filename='beats/placeholder.jpg') }}') center/cover"></div>
+    {% if item.preview_url %}
+      <audio controls style="width:100%;margin-top:10px">
+        <source src="{{ item.preview_url }}" type="audio/mpeg">
+      </audio>
+    {% else %}
+      <div style="margin-top:10px; font-size:12px; opacity:.75;">Preview unavailable.</div>
+    {% endif %}
+  </div>
+
+  <div>
+    <h2 style="margin:.2rem 0">{{ item.title }}</h2>
+    <div style="opacity:.75">by <strong>@{{ item.seller.username }}</strong></div>
+    <div style="margin-top:8px">
+      {% if item.genre %}Genre: {{ item.genre }} · {% endif %}
+      {% if item.bpm %}{{ item.bpm }} BPM · {% endif %}
+      {% if item.musical_key %}Key {{ item.musical_key }}{% endif %}
+    </div>
+
+    <div style="margin-top:16px; font-size:1.2rem">
+      Price: <strong>${{ '%.2f'|format(item.price_cents/100) }}</strong><br>
+      Buyer fee ({{ (fee_rate*100)|round(0) }}%): <strong>${{ '%.2f'|format((item.price_cents*fee_rate)/100) }}</strong>
+    </div>
+
+    {% if not current_user.is_authenticated %}
+      <p style="margin-top:14px"><a href="{{ url_for('login') }}">Log in</a> to buy.</p>
+    {% elif current_user.id == item.seller_id %}
+      <p style="margin-top:14px;opacity:.7">You are the seller.</p>
+    {% else %}
+      <a href="{{ url_for('market_confirm', beat_id=item.id) }}" style="display:inline-block; margin-top:14px; padding:10px 16px; background:#111; color:#fff; border:none; border-radius:8px; cursor:pointer; text-decoration:none">
+        Buy Now
+      </a>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

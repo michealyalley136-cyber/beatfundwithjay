@@ -1,0 +1,171 @@
+{% extends "base.html" %}
+{% block title %}Applications for {{ job.title }} · BeatFund Admin{% endblock %}
+
+{% block extra_head %}
+<style>
+  .admin-page-title {
+    font-size: 22px;
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+  .admin-page-subtitle {
+    font-size: 13px;
+    color: #9aa4c2;
+    margin-bottom: 18px;
+  }
+  
+  .applications-table {
+    background: linear-gradient(135deg, #0b1220, #020617);
+    border-radius: 16px;
+    border: 1px solid #20263b;
+    padding: 16px;
+    overflow-x: auto;
+  }
+  
+  table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  
+  th {
+    text-align: left;
+    padding: 10px;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: #9aa4c2;
+    border-bottom: 1px solid #1f2937;
+  }
+  
+  td {
+    padding: 12px 10px;
+    border-bottom: 1px solid #1f2937;
+    color: #e5e7eb;
+    font-size: 13px;
+  }
+  
+  .status-select {
+    background: #020617;
+    border: 1px solid #1f2937;
+    border-radius: 4px;
+    color: #e5e7eb;
+    padding: 4px 8px;
+    font-size: 12px;
+  }
+  
+  .application-detail {
+    margin-top: 16px;
+    padding: 16px;
+    background: rgba(15, 23, 42, 0.5);
+    border-radius: 8px;
+    border: 1px solid #1f2937;
+  }
+  
+  .application-detail h3 {
+    font-size: 14px;
+    margin: 0 0 8px;
+    color: #e5e7eb;
+  }
+  
+  .application-detail p {
+    font-size: 13px;
+    color: #cbd5f5;
+    white-space: pre-wrap;
+    margin: 0;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div style="max-width: 1200px; margin: 32px auto; padding: 0 16px;">
+  <h1 class="admin-page-title">Applications for {{ job.title }}</h1>
+  <p class="admin-page-subtitle">
+    <a href="{{ url_for('admin_jobs') }}" style="color: #4f8bff;">← Back to Jobs</a>
+  </p>
+  
+  <div class="applications-table">
+    {% if applications %}
+      <table>
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Email</th>
+            <th>Phone</th>
+            <th>Resume</th>
+            <th>Status</th>
+            <th>Applied</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for app in applications %}
+            <tr>
+              <td><strong>{{ app.full_name }}</strong></td>
+              <td>{{ app.email }}</td>
+              <td>{{ app.phone or '-' }}</td>
+              <td>
+                {% if app.resume_filename %}
+                  <a href="{{ url_for('media_file', filename=app.resume_filename) }}" target="_blank" style="color: #4f8bff;">View</a>
+                {% else %}
+                  -
+                {% endif %}
+              </td>
+              <td>
+                <form method="POST" action="{{ url_for('admin_job_application_status', app_id=app.id) }}" style="display: inline;">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <select name="status" class="status-select" onchange="this.form.submit()">
+                    <option value="new" {% if app.status == 'new' %}selected{% endif %}>New</option>
+                    <option value="reviewed" {% if app.status == 'reviewed' %}selected{% endif %}>Reviewed</option>
+                    <option value="interviewing" {% if app.status == 'interviewing' %}selected{% endif %}>Interviewing</option>
+                    <option value="rejected" {% if app.status == 'rejected' %}selected{% endif %}>Rejected</option>
+                    <option value="hired" {% if app.status == 'hired' %}selected{% endif %}>Hired</option>
+                  </select>
+                </form>
+              </td>
+              <td>{{ app.created_at.strftime('%Y-%m-%d %H:%M') if app.created_at else '-' }}</td>
+              <td>
+                <button onclick="toggleDetail({{ app.id }})" style="background: rgba(79, 139, 255, 0.2); color: #4f8bff; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 11px;">
+                  Details
+                </button>
+              </td>
+            </tr>
+            <tr id="detail-{{ app.id }}" style="display: none;">
+              <td colspan="7">
+                <div class="application-detail">
+                  {% if app.portfolio_url %}
+                    <div style="margin-bottom: 12px;">
+                      <strong>Portfolio:</strong> <a href="{{ app.portfolio_url }}" target="_blank" style="color: #4f8bff;">{{ app.portfolio_url }}</a>
+                    </div>
+                  {% endif %}
+                  {% if app.linkedin_url %}
+                    <div style="margin-bottom: 12px;">
+                      <strong>LinkedIn:</strong> <a href="{{ app.linkedin_url }}" target="_blank" style="color: #4f8bff;">{{ app.linkedin_url }}</a>
+                    </div>
+                  {% endif %}
+                  {% if app.cover_letter %}
+                    <div>
+                      <h3>Cover Letter:</h3>
+                      <p>{{ app.cover_letter }}</p>
+                    </div>
+                  {% endif %}
+                </div>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <div style="text-align: center; color: #9aa4c2; padding: 32px;">
+        No applications yet for this job.
+      </div>
+    {% endif %}
+  </div>
+</div>
+
+<script nonce="{{ csp_nonce }}">
+  function toggleDetail(appId) {
+    const detail = document.getElementById('detail-' + appId);
+    detail.style.display = detail.style.display === 'none' ? 'table-row' : 'none';
+  }
+</script>
+{% endblock %}

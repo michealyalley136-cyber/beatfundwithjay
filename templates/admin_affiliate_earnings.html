@@ -1,0 +1,59 @@
+{% extends "base_admin.html" %}
+
+{% block title %}BeatFund · Admin · Affiliate Earnings{% endblock %}
+
+{% block admin_content %}
+<div class="admin-page-header">
+  <h1>Affiliate Earnings</h1>
+  <p>Commission ledger (pending/available/paid/reversed).</p>
+</div>
+
+<div class="card">
+  <h2>Summary</h2>
+  <div class="grid">
+    {% for status, row in summary.items() %}
+      <div>
+        <div class="stat-label">{{ status|replace('_',' ')|title }}</div>
+        <div class="stat-value">${{ format_cents_dollars(row.total_cents) }}</div>
+        <div class="stat-pill">{{ row.count }} entries</div>
+      </div>
+    {% else %}
+      <div class="stat-label">No earnings yet</div>
+    {% endfor %}
+  </div>
+</div>
+
+<div class="card">
+  <h2>Recent Earnings</h2>
+  <div style="overflow:auto;">
+    <table style="width:100%; border-collapse:collapse;">
+      <thead>
+        <tr>
+          <th style="text-align:left; padding:8px; border-bottom:1px solid rgba(148,163,184,0.2);">Affiliate</th>
+          <th style="text-align:left; padding:8px; border-bottom:1px solid rgba(148,163,184,0.2);">Order</th>
+          <th style="text-align:left; padding:8px; border-bottom:1px solid rgba(148,163,184,0.2);">Base fee</th>
+          <th style="text-align:left; padding:8px; border-bottom:1px solid rgba(148,163,184,0.2);">Commission</th>
+          <th style="text-align:left; padding:8px; border-bottom:1px solid rgba(148,163,184,0.2);">Status</th>
+          <th style="text-align:left; padding:8px; border-bottom:1px solid rgba(148,163,184,0.2);">Available</th>
+          <th style="text-align:left; padding:8px; border-bottom:1px solid rgba(148,163,184,0.2);">Created</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+        <tr>
+          <td style="padding:8px;">{{ row.affiliate.code if row.affiliate else '—' }}</td>
+          <td style="padding:8px;">#{{ row.order_id }}</td>
+          <td style="padding:8px;">${{ format_cents_dollars(row.base_platform_fee_cents or 0) }}</td>
+          <td style="padding:8px;">${{ format_cents_dollars(row.commission_cents or 0) }}</td>
+          <td style="padding:8px;">{{ row.status.value if row.status else '—' }}</td>
+          <td style="padding:8px;">{{ row.available_at.strftime('%Y-%m-%d') if row.available_at else '—' }}</td>
+          <td style="padding:8px;">{{ row.created_at.strftime('%Y-%m-%d %H:%M') if row.created_at else '—' }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="7" style="padding:12px; color:#9ca3af;">No earnings found.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,7 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+<h2>Limited Dashboard Access</h2>
+<p>Your KYC status is <strong>{{ status.value }}</strong>. Complete verification to access your full dashboard.</p>
+<p><a href="{{ url_for('kyc') }}">Go to KYC</a></p>
+{% endblock %}

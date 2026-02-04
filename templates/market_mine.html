@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}My Listings{% endblock %}
+{% block content %}
+<h2>My Listings</h2>
+<p><a href="{{ url_for('market_upload') }}">+ Upload Beat</a></p>
+{% if items %}
+<table style="width:100%;background:#fff;border-radius:10px;overflow:hidden">
+  <tr style="background:#f7f7f7">
+    <th style="text-align:left;padding:10px">Title</th>
+    <th>Price</th>
+    <th>Created</th>
+    <th>Status</th>
+  </tr>
+  {% for it in items %}
+  <tr>
+    <td style="padding:10px"><a href="{{ url_for('market_detail', item_id=it.id) }}">{{ it.title }}</a></td>
+    <td style="text-align:center">${{ '%.2f'|format(it.price_cents/100) }}</td>
+    <td style="text-align:center">{{ it.created_at.strftime('%Y-%m-%d') }}</td>
+    <td style="text-align:center">{{ 'Active' if it.is_active else 'Hidden' }}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% else %}
+<p>No listings yet.</p>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,29 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+venv/
+.env
+.env.*
+.venv/
+
+# SQLite / local data
+instance/
+*.db
+
+# Flask uploads
+uploads/
+
+# Logs
+*.log
+
+# OS / editor junk
+.DS_Store
+Thumbs.db
+.vscode/
+~$*
+
+# Local docs/artifacts
+docs/BeatFund_Business_Plan.pdf

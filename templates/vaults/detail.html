@@ -1,0 +1,522 @@
+{% extends "base.html" %}
+{% block title %}{{ vault.name }} · Project Vault{% endblock %}
+
+{% block extra_head %}
+<style>
+  .vaults-page {
+    max-width: 1000px;
+    margin: 0 auto;
+    padding: 20px 16px;
+  }
+
+  .vaults-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 28px;
+    flex-wrap: wrap;
+    gap: 16px;
+  }
+
+  .vaults-title {
+    font-size: 1.75rem;
+    font-weight: 800;
+    margin: 0 0 8px;
+  }
+
+  .vaults-subtitle {
+    opacity: .8;
+    font-size: .95rem;
+  }
+
+  .vault-btn {
+    padding: 10px 18px;
+    border-radius: 10px;
+    text-decoration: none;
+    font-weight: 600;
+    font-size: .9rem;
+    background: rgba(255,255,255,.08);
+    border: 1px solid rgba(255,255,255,.12);
+    color: #cbd5f5;
+    transition: all 0.2s ease;
+  }
+
+  .vault-btn:hover {
+    background: rgba(255,255,255,.12);
+  }
+
+  .vault-card {
+    border: 1px solid rgba(255,255,255,.12);
+    background: rgba(255,255,255,.06);
+    border-radius: 18px;
+    padding: 32px;
+    margin-bottom: 24px;
+  }
+
+  .vault-progress-section {
+    margin: 24px 0;
+  }
+
+  .vault-progress-bar {
+    width: 100%;
+    height: 12px;
+    background: rgba(0,0,0,.3);
+    border-radius: 999px;
+    overflow: hidden;
+    margin-bottom: 12px;
+  }
+
+  .vault-progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #4de3ff, #a855f7);
+    border-radius: 999px;
+    transition: width 0.3s ease;
+  }
+
+  .vault-stats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+    margin: 24px 0;
+  }
+
+  .vault-stat {
+    text-align: center;
+    padding: 16px;
+    background: rgba(0,0,0,.2);
+    border-radius: 12px;
+    border: 1px solid rgba(255,255,255,.08);
+  }
+
+  .vault-stat-label {
+    font-size: .85rem;
+    opacity: .7;
+    margin-bottom: 8px;
+  }
+
+  .vault-stat-value {
+    font-size: 1.5rem;
+    font-weight: 800;
+    background: linear-gradient(135deg, #4de3ff, #a855f7);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  .vault-actions-section {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-top: 24px;
+  }
+
+  .action-card {
+    padding: 20px;
+    background: rgba(0,0,0,.2);
+    border-radius: 12px;
+    border: 1px solid rgba(255,255,255,.08);
+  }
+
+  .action-card-title {
+    font-size: 1.1rem;
+    font-weight: 700;
+    margin: 0 0 12px;
+  }
+
+  .form-group {
+    margin-bottom: 16px;
+  }
+
+  .form-label {
+    display: block;
+    margin-bottom: 6px;
+    font-weight: 600;
+    font-size: .9rem;
+  }
+
+  .form-input {
+    width: 100%;
+    padding: 10px 14px;
+    border-radius: 8px;
+    background: rgba(255,255,255,.08);
+    border: 1px solid rgba(255,255,255,.12);
+    color: #fff;
+    font-size: .95rem;
+    box-sizing: border-box;
+  }
+
+  .form-input:focus {
+    outline: none;
+    border-color: rgba(6,182,212,.5);
+  }
+
+  .btn {
+    padding: 12px 20px;
+    border-radius: 10px;
+    text-decoration: none;
+    font-weight: 600;
+    font-size: .95rem;
+    text-align: center;
+    transition: all 0.2s ease;
+    border: none;
+    cursor: pointer;
+    display: block;
+    width: 100%;
+  }
+
+  .btn-primary {
+    background: linear-gradient(135deg, rgba(6,182,212,.4), rgba(34,197,94,.3));
+    border: 1px solid rgba(6,182,212,.5);
+    color: #fff;
+  }
+
+  .btn-primary:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(6,182,212,.3);
+  }
+
+  .btn-danger {
+    background: rgba(239,68,68,.2);
+    border: 1px solid rgba(239,68,68,.4);
+    color: #ef4444;
+  }
+
+  .btn-danger:hover {
+    background: rgba(239,68,68,.3);
+  }
+
+  .transactions-section {
+    margin-top: 32px;
+  }
+
+  .transaction-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .transaction-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px;
+    background: rgba(0,0,0,.2);
+    border-radius: 10px;
+    border: 1px solid rgba(255,255,255,.08);
+  }
+
+  .transaction-info {
+    flex: 1;
+  }
+
+  .transaction-type {
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+
+  .transaction-meta {
+    font-size: .85rem;
+    opacity: .7;
+  }
+
+  .transaction-amount {
+    font-size: 1.1rem;
+    font-weight: 700;
+  }
+
+  .transaction-amount.positive {
+    color: #22c55e;
+  }
+
+  .transaction-amount.negative {
+    color: #ef4444;
+  }
+
+  .auto-fund-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    background: rgba(6,182,212,.2);
+    border: 1px solid rgba(6,182,212,.4);
+    border-radius: 999px;
+    font-size: .85rem;
+    margin-top: 12px;
+  }
+
+  .quick-amount-btn {
+    padding: 6px 12px;
+    border-radius: 8px;
+    border: 1px solid rgba(255,255,255,.2);
+    background: rgba(255,255,255,.08);
+    color: #cbd5f5;
+    font-size: .85rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .quick-amount-btn:hover {
+    background: rgba(6,182,212,.2);
+    border-color: rgba(6,182,212,.4);
+    color: #4de3ff;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="vaults-page">
+  <div class="vaults-header">
+    <div>
+      <h1 class="vaults-title">{{ vault.name }}</h1>
+      {% if vault.description %}
+        <p class="vaults-subtitle">{{ vault.description }}</p>
+      {% endif %}
+    </div>
+    <div style="display: flex; gap: 10px;">
+      <a href="{{ url_for('vaults_settings', vault_id=vault.id) }}" class="vault-btn">⚙️ Settings</a>
+      <a href="{{ url_for('vaults_index') }}" class="vault-btn">← Back</a>
+    </div>
+  </div>
+
+  <div class="vault-card">
+    {% if vault.is_completed %}
+      <div style="padding: 16px; background: rgba(34,197,94,.2); border: 1px solid rgba(34,197,94,.4); border-radius: 12px; margin-bottom: 20px; text-align: center;">
+        <div style="font-size: 1.2rem; font-weight: 700; color: #22c55e; margin-bottom: 4px;">🎉 Target Reached!</div>
+        <div style="opacity: .9;">This vault has reached its funding goal.</div>
+      </div>
+    {% endif %}
+
+    {% if vault.is_locked_now() %}
+      <div style="padding: 16px; background: rgba(251,191,36,.2); border: 1px solid rgba(251,191,36,.4); border-radius: 12px; margin-bottom: 20px; text-align: center;">
+        <div style="font-size: 1.2rem; font-weight: 700; color: #fbbf24; margin-bottom: 4px;">🔒 Vault Locked</div>
+        <div style="opacity: .9;">
+          {% if vault.lock_until_date %}
+            Locked until {{ vault.lock_until_date.strftime('%B %d, %Y') }}
+          {% elif vault.lock_until_goal %}
+            Locked until goal is reached
+          {% else %}
+            This vault is currently locked
+          {% endif %}
+        </div>
+      </div>
+    {% endif %}
+
+    <div class="vault-progress-section">
+      <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+        <span style="font-weight: 600;">Progress</span>
+        <span style="opacity: .8;">{{ '%.0f'|format(vault.progress_percent) }}%</span>
+      </div>
+      <div class="vault-progress-bar">
+        <div class="vault-progress-fill" style="width: {{ vault.progress_percent }}%"></div>
+      </div>
+    </div>
+
+    <div class="vault-stats">
+      <div class="vault-stat">
+        <div class="vault-stat-label">Current Balance</div>
+        <div class="vault-stat-value">${{ '%.2f'|format(vault.current_balance_dollars) }}</div>
+      </div>
+      <div class="vault-stat">
+        <div class="vault-stat-label">Target Amount</div>
+        <div class="vault-stat-value" style="background: linear-gradient(135deg, #a855f7, #ec4899); -webkit-background-clip: text; background-clip: text; color: transparent;">${{ '%.2f'|format(vault.target_dollars) }}</div>
+      </div>
+      <div class="vault-stat">
+        <div class="vault-stat-label">Remaining</div>
+        <div class="vault-stat-value" style="color: {% if vault.remaining_dollars > 0 %}#fbbf24{% else %}#22c55e{% endif %};">
+          ${{ '%.2f'|format(vault.remaining_dollars) }}
+        </div>
+      </div>
+    </div>
+
+    {% if vault.auto_fund_enabled %}
+      <div class="auto-fund-badge">
+        🔄 Auto-funding enabled: {{ vault.auto_fund_percent }}% of income
+        {% if vault.auto_fund_min_cents %}
+          (min ${{ '%.2f'|format(vault.auto_fund_min_cents / 100.0) }})
+        {% endif %}
+      </div>
+    {% endif %}
+
+    <div class="vault-actions-section">
+      <div class="action-card">
+        <h3 class="action-card-title">Fund Vault</h3>
+        <div style="margin-bottom: 12px; padding: 12px; background: rgba(0,0,0,.2); border-radius: 8px; font-size: .9rem;">
+          <strong>Wallet Balance:</strong> ${{ '%.2f'|format(wallet_balance) }}
+        </div>
+        <form method="POST" action="{{ url_for('vaults_fund', vault_id=vault.id) }}" id="fund-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <div class="form-group">
+            <label class="form-label" for="amount">Amount ($)</label>
+            <input
+              type="number"
+              id="amount"
+              name="amount"
+              class="form-input"
+              placeholder="0.00"
+              step="0.01"
+              min="0.01"
+              max="{{ vault.remaining_dollars }}"
+              required
+            >
+            <div style="display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap;">
+              <button type="button" class="quick-amount-btn" data-percent="10">10%</button>
+              <button type="button" class="quick-amount-btn" data-percent="25">25%</button>
+              <button type="button" class="quick-amount-btn" data-percent="50">50%</button>
+              <button type="button" class="quick-amount-btn" data-percent="100">Max</button>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="notes">Notes (optional)</label>
+            <input
+              type="text"
+              id="notes"
+              name="notes"
+              class="form-input"
+              placeholder="e.g., From beat sale"
+              maxlength="200"
+            >
+          </div>
+          <button type="submit" class="btn btn-primary" {% if vault.is_completed or vault.remaining_dollars <= 0 or vault.is_locked_now() %}disabled{% endif %}>
+            Fund from Wallet
+          </button>
+        </form>
+      </div>
+
+      <div class="action-card">
+        <h3 class="action-card-title">Withdraw</h3>
+        <form method="POST" action="{{ url_for('vaults_withdraw', vault_id=vault.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <div class="form-group">
+            <label class="form-label" for="withdraw_amount">Amount ($)</label>
+            <input
+              type="number"
+              id="withdraw_amount"
+              name="amount"
+              class="form-input"
+              placeholder="0.00"
+              step="0.01"
+              min="0.01"
+              max="{{ vault.current_balance_dollars }}"
+              required
+            >
+          </div>
+          <button type="submit" class="btn btn-danger" {% if vault.current_balance_dollars <= 0 or vault.is_locked_now() %}disabled{% endif %}>
+            Withdraw to Wallet
+          </button>
+        </form>
+      </div>
+    </div>
+
+    <div style="margin-top: 24px; padding-top: 24px; border-top: 1px solid rgba(255,255,255,.1);">
+      <h3 style="margin: 0 0 16px; font-size: 1.1rem; font-weight: 700;">Vault Lock</h3>
+      {% if vault.is_locked_now() %}
+        <form method="POST" action="{{ url_for('vaults_lock', vault_id=vault.id) }}" style="display: inline;">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="action" value="unlock">
+          <button type="submit" class="btn btn-secondary">🔓 Unlock Vault</button>
+        </form>
+      {% else %}
+        <form method="POST" action="{{ url_for('vaults_lock', vault_id=vault.id) }}" id="lock-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="action" value="lock">
+          <div class="form-group" style="margin-bottom: 12px;">
+            <label class="form-checkbox" style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+              <input type="checkbox" name="lock_until_goal" id="lock_until_goal">
+              <span>Lock until goal is reached</span>
+            </label>
+          </div>
+          <div class="form-group" style="margin-bottom: 12px;">
+            <label class="form-label" for="lock_until_date">Or lock until date (optional)</label>
+            <input
+              type="date"
+              id="lock_until_date"
+              name="lock_until_date"
+              class="form-input"
+            >
+          </div>
+          <button type="submit" class="btn btn-secondary">🔒 Lock Vault</button>
+        </form>
+      {% endif %}
+    </div>
+
+    {% if vault.current_balance_cents == 0 %}
+      <form method="POST" action="{{ url_for('vaults_delete', vault_id=vault.id) }}" style="margin-top: 16px;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="btn btn-danger" onclick="return confirm('Are you sure you want to delete this vault?')">
+          Delete Vault
+        </button>
+      </form>
+    {% endif %}
+  </div>
+
+  {% if transactions %}
+    <div class="vault-card transactions-section">
+      <h3 style="margin: 0 0 20px; font-size: 1.2rem; font-weight: 700;">Transaction History</h3>
+      <div class="transaction-list">
+        {% for txn in transactions %}
+          <div class="transaction-item">
+            <div class="transaction-info">
+              <div class="transaction-type">
+                {{ txn.transaction_type|replace('_', ' ')|title }}
+                {% if txn.transaction_type == 'auto_fund' %}
+                  🔄
+                {% endif %}
+              </div>
+              <div class="transaction-meta">
+                {{ txn.created_at.strftime('%b %d, %Y at %I:%M %p') }}
+                {% if txn.notes %}
+                  · {{ txn.notes }}
+                {% endif %}
+              </div>
+            </div>
+            <div class="transaction-amount {% if txn.amount_cents > 0 %}positive{% else %}negative{% endif %}">
+              {% if txn.amount_cents > 0 %}+{% else %}-{% endif %}${{ '%.2f'|format(abs(txn.amount_cents) / 100.0) }}
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+  {% endif %}
+</div>
+
+<script nonce="{{ csp_nonce }}">
+  // Quick amount buttons
+  document.querySelectorAll('.quick-amount-btn').forEach(btn => {
+    btn.addEventListener('click', function() {
+      const percent = parseFloat(this.dataset.percent);
+      const walletBalance = {{ wallet_balance }};
+      const remaining = {{ vault.remaining_dollars }};
+      const maxAmount = Math.min(walletBalance, remaining);
+      
+      let amount;
+      if (percent === 100) {
+        amount = maxAmount;
+      } else {
+        amount = (walletBalance * percent) / 100;
+        if (amount > remaining) {
+          amount = remaining;
+        }
+      }
+      
+      document.getElementById('amount').value = amount.toFixed(2);
+    });
+  });
+
+  // Prevent form submission if both lock options are selected
+  const lockForm = document.getElementById('lock-form');
+  if (lockForm) {
+    lockForm.addEventListener('submit', function(e) {
+      const lockUntilGoal = document.getElementById('lock_until_goal').checked;
+      const lockUntilDate = document.getElementById('lock_until_date').value;
+      
+      if (!lockUntilGoal && !lockUntilDate) {
+        e.preventDefault();
+        alert('Please select at least one lock option (until goal or until date).');
+        return false;
+      }
+    });
+  }
+</script>
+{% endblock %}
+

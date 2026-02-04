@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Wallet Audit Access · BeatFund Admin{% endblock %}
+
+{% block content %}
+<h1 style="font-size:22px; font-weight:600; margin-bottom:6px;">
+  Access @{{ customer.username }}’s wallet
+</h1>
+<p style="font-size:13px; color:#9aa4c2; margin-bottom:12px;">
+  For compliance, any admin viewing a customer’s wallet must record a reason.
+</p>
+
+<form method="POST" class="audit-form"
+      style="max-width:520px; padding:16px; border-radius:14px; background:#020617; border:1px solid #1f2937;">
+  <!-- ✅ CSRF token -->
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+  <label for="reason"
+         style="display:block; font-size:12px; text-transform:uppercase; letter-spacing:0.08em; color:#9ca3af; margin-bottom:4px;">
+    Reason for access
+  </label>
+  <textarea id="reason" name="reason" rows="4" required
+            style="width:100%; border-radius:10px; border:1px solid #1f2937; background:#020617; color:#e5e7eb;
+                   padding:8px 10px; font-size:13px; margin-bottom:10px;"></textarea>
+
+  <div style="display:flex; gap:8px; margin-top:6px;">
+    <button type="submit"
+            style="padding:8px 14px; border-radius:999px; border:none;
+                   background:#2563eb; color:#fff; font-size:13px;">
+      Confirm & view wallet
+    </button>
+    <a href="{{ url_for('admin_transactions') }}"
+       style="padding:8px 14px; border-radius:999px; border:1px solid #4b5563;
+              color:#e5e7eb; font-size:13px; text-decoration:none;">
+      Cancel
+    </a>
+  </div>
+</form>
+{% endblock %}

@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% block title %}Ticket #{{ ticket.id }} · BeatFund Admin{% endblock %}
+
+{% block content %}
+<h1 style="font-size:22px; font-weight:600; margin-bottom:6px;">
+  Ticket #{{ ticket.id }} - {{ ticket.subject }}
+</h1>
+<p style="font-size:13px; color:#9aa4c2; margin-bottom:10px;">
+  For @{{ ticket.user.username }} · Type: {{ ticket.type.value.replace('_',' ')|title }}
+</p>
+
+<div style="display:grid; grid-template-columns:2fr 1.4fr; gap:16px;">
+  <!-- Left: main ticket body + thread -->
+  <div style="background:#020617; border-radius:14px; border:1px solid #1f2937; padding:14px;">
+    <h2 style="font-size:15px; font-weight:600; margin-bottom:6px;">Details</h2>
+    <p style="font-size:13px; color:#e5e7eb; white-space:pre-line; margin-bottom:10px;">
+      {{ ticket.description }}
+    </p>
+
+    <h3 style="font-size:14px; font-weight:600; margin:10px 0 6px;">Thread</h3>
+    <div style="font-size:13px; color:#e5e7eb;">
+      {% if thread %}
+        {% for c in thread %}
+          <div style="border-top:1px solid rgba(15,23,42,0.9); padding-top:6px; margin-top:6px;">
+            <div style="font-size:12px; color:#9ca3af;">
+              @{{ c.author.username }} · {{ c.created_at.strftime('%Y-%m-%d %H:%M') }}{% if c.internal %} · Internal{% endif %}
+            </div>
+            <div style="margin-top:2px; white-space:pre-line;">
+              {{ c.body }}
+            </div>
+          </div>
+        {% endfor %}
+      {% else %}
+        <p style="color:#9ca3af;">No messages yet.</p>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Right: update form -->
+  <div style="background:#020617; border-radius:14px; border:1px solid #1f2937; padding:14px;">
+    <h2 style="font-size:15px; font-weight:600; margin-bottom:8px;">Update ticket</h2>
+
+    <form method="POST">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+      <!-- Status -->
+      <label for="status"
+             style="display:block; font-size:12px; text-transform:uppercase; letter-spacing:0.08em; color:#9ca3af; margin-bottom:4px;">
+        Status
+      </label>
+      <select id="status" name="status"
+              style="width:100%; border-radius:10px; border:1px solid #1f2937; background:#020617; color:#e5e7eb;
+                     padding:8px 10px; font-size:13px; margin-bottom:10px;">
+        {% for s in TicketStatus %}
+          <option value="{{ s.value }}" {% if ticket.status.value == s.value %}selected{% endif %}>
+            {{ s.value.replace('_',' ')|title }}
+          </option>
+        {% endfor %}
+      </select>
+
+      <!-- Priority -->
+      <label for="priority"
+             style="display:block; font-size:12px; text-transform:uppercase; letter-spacing:0.08em; color:#9ca3af; margin-bottom:4px;">
+        Priority
+      </label>
+      <select id="priority" name="priority"
+              style="width:100%; border-radius:10px; border:1px solid #1f2937; background:#020617; color:#e5e7eb;
+                     padding:8px 10px; font-size:13px; margin-bottom:10px;">
+        <option value="low"    {% if ticket.priority == "low" %}selected{% endif %}>Low</option>
+        <option value="normal" {% if ticket.priority == "normal" %}selected{% endif %}>Normal</option>
+        <option value="high"   {% if ticket.priority == "high" %}selected{% endif %}>High</option>
+      </select>
+
+      <!-- Reply -->
+      <label for="reply_body"
+             style="display:block; font-size:12px; text-transform:uppercase; letter-spacing:0.08em; color:#9ca3af; margin-bottom:4px;">
+        Reply to user
+      </label>
+      <textarea id="reply_body" name="reply_body" rows="4"
+                style="width:100%; border-radius:10px; border:1px solid #1f2937; background:#020617; color:#e5e7eb;
+                       padding:8px 10px; font-size:13px; margin-bottom:12px;"></textarea>
+
+      <!-- Internal note -->
+      <label for="comment_body"
+             style="display:block; font-size:12px; text-transform:uppercase; letter-spacing:0.08em; color:#9ca3af; margin-bottom:4px;">
+        Add internal note (optional)
+      </label>
+      <textarea id="comment_body" name="comment_body" rows="4"
+                style="width:100%; border-radius:10px; border:1px solid #1f2937; background:#020617; color:#e5e7eb;
+                       padding:8px 10px; font-size:13px; margin-bottom:12px;"></textarea>
+
+      <button type="submit"
+              style="padding:8px 14px; border-radius:999px; border:none;
+                     background:#2563eb; color:#fff; font-size:13px;">
+        Save changes
+      </button>
+      <a href="{{ url_for('admin_tickets') }}"
+         style="margin-left:8px; padding:8px 14px; border-radius:999px; border:1px solid #4b5563;
+                color:#e5e7eb; font-size:13px; text-decoration:none;">
+        Back to tickets
+      </a>
+    </form>
+  </div>
+</div>
+{% endblock %}

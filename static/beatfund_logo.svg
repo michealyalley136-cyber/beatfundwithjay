@@ -1,0 +1,186 @@
+<svg width="1400" height="420" viewBox="0 0 1400 420" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- Outer ring gradient -->
+    <radialGradient id="ringGrad" cx="30%" cy="25%" r="80%">
+      <stop offset="0%" stop-color="#2F4F73"/>
+      <stop offset="60%" stop-color="#142A44"/>
+      <stop offset="100%" stop-color="#0B1830"/>
+    </radialGradient>
+
+    <!-- Inner circle gradient -->
+    <radialGradient id="innerGrad" cx="35%" cy="30%" r="75%">
+      <stop offset="0%" stop-color="#203B5E"/>
+      <stop offset="100%" stop-color="#0E233E"/>
+    </radialGradient>
+
+    <!-- Bars gradient -->
+    <linearGradient id="barGrad1" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#7FA0CB"/>
+      <stop offset="100%" stop-color="#3E649C"/>
+    </linearGradient>
+    <linearGradient id="barGrad2" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#6C90BE"/>
+      <stop offset="100%" stop-color="#2F5590"/>
+    </linearGradient>
+    <linearGradient id="barGrad3" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#5F83B4"/>
+      <stop offset="100%" stop-color="#244A85"/>
+    </linearGradient>
+
+    <!-- Note gradient (silver) -->
+    <linearGradient id="noteGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="55%" stop-color="#E9ECEF"/>
+      <stop offset="100%" stop-color="#C9CED6"/>
+    </linearGradient>
+
+    <!-- Soft shadow -->
+    <filter id="softShadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="6" stdDeviation="8" flood-color="#0A0A0A" flood-opacity="0.25"/>
+    </filter>
+
+    <!-- Wordmark subtle emboss shadow -->
+    <filter id="emboss" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="1.5" dy="2" stdDeviation="1.5" flood-color="#000000" flood-opacity="0.18"/>
+      <feDropShadow dx="-1" dy="-1" stdDeviation="1" flood-color="#FFFFFF" flood-opacity="0.7"/>
+    </filter>
+  </defs>
+
+  <!-- ======= ANIMATION STYLES ======= -->
+  <style>
+    /* Works in modern browsers */
+    .bf-ring {
+      transform-box: fill-box;
+      transform-origin: center;
+      animation: ringPulse 4.5s ease-in-out infinite;
+      filter: drop-shadow(0 0 10px rgba(0,180,255,0.35));
+    }
+    .bf-inner {
+      animation: innerGlow 6s ease-in-out infinite;
+    }
+    .bf-bar {
+      transform-box: fill-box;
+      transform-origin: bottom;
+      animation: barBounce 1.4s ease-in-out infinite;
+    }
+    .bf-bar.b1 { animation-delay: 0s; }
+    .bf-bar.b2 { animation-delay: 0.18s; }
+    .bf-bar.b3 { animation-delay: 0.36s; }
+
+    .bf-note {
+      transform-box: fill-box;
+      transform-origin: center;
+      animation: noteFloat 3.2s ease-in-out infinite;
+      filter: drop-shadow(0 0 6px rgba(255,255,255,0.35));
+    }
+
+    .bf-wordmark {
+      animation: wordGlow 5.5s ease-in-out infinite;
+    }
+
+    @keyframes ringPulse {
+      0%, 100% { transform: scale(1); opacity: 1; }
+      50%      { transform: scale(1.03); opacity: 0.95; }
+    }
+    @keyframes innerGlow {
+      0%, 100% { filter: brightness(1); }
+      50%      { filter: brightness(1.12); }
+    }
+    @keyframes barBounce {
+      0%, 100% { transform: scaleY(0.85); }
+      50%      { transform: scaleY(1.25); }
+    }
+    @keyframes noteFloat {
+      0%, 100% { transform: translateY(0px) rotate(0deg); }
+      50%      { transform: translateY(-6px) rotate(-1deg); }
+    }
+    @keyframes wordGlow {
+      0%, 100% { filter: drop-shadow(0 0 0px rgba(0,180,255,0)); }
+      50%      { filter: drop-shadow(0 0 12px rgba(0,180,255,0.55)); }
+    }
+
+    /* Respect reduced motion */
+    @media (prefers-reduced-motion: reduce) {
+      .bf-ring, .bf-inner, .bf-bar, .bf-note, .bf-wordmark {
+        animation: none !important;
+      }
+    }
+  </style>
+
+  <!-- ICON -->
+  <g transform="translate(80,60)" filter="url(#softShadow)">
+    <!-- Outer ring -->
+    <circle class="bf-ring" cx="150" cy="150" r="145" fill="url(#ringGrad)"/>
+    <!-- Inner circle -->
+    <circle class="bf-inner" cx="150" cy="150" r="108" fill="url(#innerGrad)"/>
+    <!-- Inner highlight (very subtle) -->
+    <circle cx="150" cy="150" r="108" fill="white" fill-opacity="0.03"/>
+
+    <!-- Bars (equalizer) -->
+    <g transform="translate(78,165)">
+      <rect class="bf-bar b1" x="0"   y="-15" width="38" height="85" rx="8" fill="url(#barGrad1)"/>
+      <rect class="bf-bar b2" x="52"  y="-55" width="38" height="125" rx="8" fill="url(#barGrad2)"/>
+      <rect class="bf-bar b3" x="104" y="0"  width="38" height="70" rx="8" fill="url(#barGrad3)"/>
+    </g>
+
+    <!-- Music note -->
+    <g class="bf-note" transform="translate(92,52)">
+      <!-- Stem + flag -->
+      <path d="
+        M110 0
+        C140 8, 162 25, 168 46
+        C172 63, 160 78, 142 84
+        L142 67
+        C152 63, 158 54, 154 45
+        C150 30, 132 18, 110 13
+        Z"
+        fill="url(#noteGrad)"
+        stroke="#B8BEC7" stroke-width="2" opacity="0.95"/>
+
+      <!-- Main stem -->
+      <rect x="96" y="0" width="22" height="170" rx="11"
+            fill="url(#noteGrad)" stroke="#B8BEC7" stroke-width="2"/>
+
+      <!-- Note head outer -->
+      <ellipse cx="72" cy="142" rx="44" ry="34"
+               fill="url(#noteGrad)" stroke="#B8BEC7" stroke-width="2"/>
+      <!-- Note head inner shadow -->
+      <ellipse cx="72" cy="145" rx="32" ry="24" fill="#D7DBE1" opacity="0.55"/>
+
+      <!-- Connecting neck -->
+      <path d="
+        M96 98
+        C72 88, 48 98, 42 120
+        C36 144, 52 165, 72 170
+        C58 160, 54 138, 61 122
+        C68 108, 83 104, 96 110
+        Z"
+        fill="url(#noteGrad)" stroke="#B8BEC7" stroke-width="2"/>
+    </g>
+  </g>
+
+  <!-- WORDMARK -->
+  <g class="bf-wordmark" transform="translate(380,120)" filter="url(#emboss)">
+    <text x="0" y="120"
+          font-family="Poppins, Montserrat, Arial, sans-serif"
+          font-size="150"
+          font-weight="700"
+          fill="#E9E9E9"
+          stroke="#CFCFCF"
+          stroke-width="2"
+          letter-spacing="1">
+      BeatFund
+    </text>
+
+    <text x="760" y="185"
+          font-family="Poppins, Montserrat, Arial, sans-serif"
+          font-size="70"
+          font-weight="700"
+          fill="#BFC5CC"
+          stroke="#9AA3AD"
+          stroke-width="1.5"
+          letter-spacing="0.5">
+      Inc.
+    </text>
+  </g>
+</svg>

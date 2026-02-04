@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}My Beat Sales{% endblock %}
+
+{% block content %}
+<div class="bf-page-shell">
+  <div class="bf-page-header">
+    <h1>My Beat Sales</h1>
+    <p class="bf-muted">
+      These are beats you’ve sold through BeatFund. Amounts are what hit your
+      BeatFund wallet (demo logic).
+    </p>
+  </div>
+
+  {% if sales %}
+    <div class="bm-panel" style="margin-top: 20px;">
+      {% for s in sales %}
+        <div class="bm-provider-card" style="margin-bottom: 10px;">
+          <div class="bm-provider-main">
+            <div class="bm-provider-name-row">
+              <span class="bm-provider-name">
+                {{ s.beat.title }}
+              </span>
+              <span class="bm-provider-handle">
+                order #{{ s.order.id }}
+              </span>
+            </div>
+
+            <div class="bm-provider-location" style="margin-top: 4px;">
+              Sold to
+              {% if s.buyer %}
+                @{{ s.buyer.username }}
+              {% else %}
+                (deleted user)
+              {% endif %}
+              &middot;
+              {{ s.order.created_at }}
+            </div>
+
+            <div class="bm-provider-tags" style="margin-top: 6px;">
+              {% if s.beat.genre %}
+                <span class="bm-tag">{{ s.beat.genre }}</span>
+              {% endif %}
+              {% if s.beat.bpm %}
+                <span class="bm-tag">{{ s.beat.bpm }} BPM</span>
+              {% endif %}
+            </div>
+          </div>
+
+          <div class="bm-provider-actions">
+            <div class="bm-provider-rate">
+              <strong>${{ "%.2f" | format(s.order.amount_cents / 100.0) }}</strong>
+            </div>
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="bm-panel" style="margin-top: 20px;">
+      <p class="bm-empty">
+        You haven’t sold any beats yet. Once artists buy your beats, your sales
+        will show up here with buyer name, date, and amount.
+      </p>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}New Support Ticket · BeatFund Admin{% endblock %}
+
+{% block content %}
+<h1 style="font-size:22px; font-weight:600; margin-bottom:6px;">
+  New ticket for @{{ customer.username }}
+</h1>
+<p style="font-size:13px; color:#9aa4c2; margin-bottom:12px;">
+  Create a support or compliance ticket about this customer.
+  {% if ledger %}
+    Linked transaction: <strong>#{{ ledger.id }}</strong> ({{ ledger.entry_type.value }})
+  {% endif %}
+</p>
+
+<form method="POST"
+      style="max-width:560px; padding:16px; border-radius:14px; background:#020617; border:1px solid #1f2937;">
+  <!-- ✅ CSRF token -->
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+  <!-- Ticket type -->
+  <label for="type"
+         style="display:block; font-size:12px; text-transform:uppercase; letter-spacing:0.08em; color:#9ca3af; margin-bottom:4px;">
+    Ticket Type
+  </label>
+  <select id="type" name="type"
+          style="width:100%; border-radius:10px; border:1px solid #1f2937; background:#020617; color:#e5e7eb;
+                 padding:8px 10px; font-size:13px; margin-bottom:10px;">
+    {% for t in TicketType %}
+      <option value="{{ t.value }}" {% if type_value == t.value %}selected{% endif %}>
+        {{ t.value.replace('_',' ')|title }}
+      </option>
+    {% endfor %}
+  </select>
+
+  <!-- Subject -->
+  <label for="subject"
+         style="display:block; font-size:12px; text-transform:uppercase; letter-spacing:0.08em; color:#9ca3af; margin-bottom:4px;">
+    Subject
+  </label>
+  <input id="subject" name="subject" type="text" required
+         value="{{ subject }}"
+         style="width:100%; border-radius:10px; border:1px solid #1f2937; background:#020617; color:#e5e7eb;
+                padding:8px 10px; font-size:13px; margin-bottom:10px;">
+
+  <!-- Description -->
+  <label for="description"
+         style="display:block; font-size:12px; text-transform:uppercase; letter-spacing:0.08em; color:#9ca3af; margin-bottom:4px;">
+    Description
+  </label>
+  <textarea id="description" name="description" rows="5" required
+            style="width:100%; border-radius:10px; border:1px solid #1f2937; background:#020617; color:#e5e7eb;
+                   padding:8px 10px; font-size:13px; margin-bottom:10px;">{{ description }}</textarea>
+
+  <!-- Priority -->
+  <label for="priority"
+         style="display:block; font-size:12px; text-transform:uppercase; letter-spacing:0.08em; color:#9ca3af; margin-bottom:4px;">
+    Priority
+  </label>
+  <select id="priority" name="priority"
+          style="width:100%; border-radius:10px; border:1px solid #1f2937; background:#020617; color:#e5e7eb;
+                 padding:8px 10px; font-size:13px; margin-bottom:14px;">
+    <option value="low"    {% if priority == "low" %}selected{% endif %}>Low</option>
+    <option value="normal" {% if priority == "normal" %}selected{% endif %}>Normal</option>
+    <option value="high"   {% if priority == "high" %}selected{% endif %}>High</option>
+  </select>
+
+  <div style="display:flex; gap:8px;">
+    <button type="submit"
+            style="padding:8px 14px; border-radius:999px; border:none;
+                   background:#2563eb; color:#fff; font-size:13px;">
+      Create ticket
+    </button>
+    <a href="{{ url_for('admin_tickets') }}"
+       style="padding:8px 14px; border-radius:999px; border:1px solid #4b5563;
+              color:#e5e7eb; font-size:13px; text-decoration:none;">
+      Cancel
+    </a>
+  </div>
+</form>
+{% endblock %}

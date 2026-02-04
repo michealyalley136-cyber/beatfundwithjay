@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Support Ticket #{{ ticket.id }}{% endblock %}
+{% block content %}
+<div class="page" style="max-width:860px;margin:0 auto;padding:24px 16px;">
+  <div class="card">
+    <h2 style="margin-top:0;">Ticket #{{ ticket.id }} - {{ ticket.subject }}</h2>
+    <p class="muted">Status: {{ ticket.status.value|replace('_',' ')|title }} - Type: {{ ticket.type.value|replace('_',' ')|title }}</p>
+    <p style="white-space:pre-line;">{{ ticket.description }}</p>
+  </div>
+
+  <div class="card" style="margin-top:16px;">
+    <h3 style="margin-top:0;">Thread</h3>
+    {% if thread %}
+      {% for item in thread %}
+        <div style="border-top:1px solid #eee;padding-top:8px;margin-top:8px;">
+          <div style="font-size:12px;color:#6b7280;">
+            @{{ item.author.username }} - {{ item.created_at.strftime('%Y-%m-%d %H:%M') }}
+            {% if item.internal %} - Internal{% endif %}
+          </div>
+          <div style="margin-top:4px;white-space:pre-line;">{{ item.body }}</div>
+        </div>
+      {% endfor %}
+    {% else %}
+      <p class="muted">No messages yet.</p>
+    {% endif %}
+
+    <form method="POST" action="{{ url_for('support_ticket_reply', ticket_id=ticket.id) }}" style="margin-top:12px;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <textarea name="body" rows="4" maxlength="4000"
+                style="width:100%;padding:10px;border-radius:8px;border:1px solid #ddd;"></textarea>
+      <div style="margin-top:8px;">
+        <button type="submit" class="btn btn-secondary">Send reply</button>
+        <a href="{{ url_for('support_home') }}" class="btn btn-secondary">Back</a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

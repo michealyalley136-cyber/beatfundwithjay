@@ -1,0 +1,67 @@
+/* --- BOOKME FILTER BAR --- */
+
+.filter-bar {
+    display: flex;
+    gap: 10px;
+    padding: 12px;
+    background: rgba(255, 255, 255, 0.06);
+    border-radius: 10px;
+    margin-bottom: 20px;
+    align-items: center;
+    backdrop-filter: blur(5px);
+}
+
+.filter-input,
+.filter-select {
+    padding: 8px 12px;
+    border-radius: 8px;
+    border: 1px solid rgba(255,255,255,0.15);
+    background: rgba(0,0,0,0.35);
+    color: white;
+    font-size: 14px;
+    width: 150px;
+    outline: none;
+}
+
+.filter-input::placeholder {
+    color: #aaa;
+}
+
+.filter-select option {
+    background: #1e1e1e;
+    color: white;
+}
+
+.filter-input:focus,
+.filter-select:focus {
+    border-color: #3fa9ff;
+    box-shadow: 0px 0px 6px #3fa9ff55;
+}
+
+/* Filter button */
+.filter-btn {
+    padding: 8px 16px;
+    background: #3fa9ff;
+    border: none;
+    border-radius: 8px;
+    color: #000;
+    font-weight: bold;
+    cursor: pointer;
+}
+
+.filter-btn:hover {
+    background: #6bc4ff;
+}
+
+/* Mobile responsive */
+@media (max-width: 768px) {
+    .filter-bar {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    .filter-input,
+    .filter-select,
+    .filter-btn {
+        width: 100%;
+    }
+}

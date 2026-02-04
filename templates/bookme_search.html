@@ -1,0 +1,681 @@
+{% extends "base.html" %}
+{% block title %}BookMe Directory · BeatFund{% endblock %}
+
+{% block extra_head %}
+<link
+  rel="stylesheet"
+  href="{{ url_for('static', filename='leaflet/leaflet.css') }}"
+/>
+<script
+  src="{{ url_for('static', filename='leaflet/leaflet.js') }}"
+></script>
+
+<style>
+  /* Make sure the page itself handles scrolling */
+  html, body {
+    height: auto !important;
+    overflow-y: auto !important;
+  }
+
+  .bookme-page {
+    max-width: 1180px;
+    margin: 32px auto 40px;
+    padding: 0 16px;
+  }
+
+  .bookme-header-title {
+    font-size: 22px;
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+
+  .bookme-header-sub {
+    font-size: 13px;
+    color: #9ca3c8;
+    margin-bottom: 18px;
+  }
+
+  .bookme-layout {
+    display: grid;
+    grid-template-columns: minmax(250px, 310px) minmax(0, 1fr);
+    gap: 20px;
+    align-items: flex-start;
+  }
+
+  @media (max-width: 900px) {
+    .bookme-layout {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  /* Sidebar filters */
+  .bookme-filters-card {
+    border-radius: 18px;
+    border: 1px solid rgba(30, 64, 175, 0.6);
+    background: radial-gradient(circle at top, #020617, #020617 60%, #020322);
+    box-shadow:
+      0 18px 38px rgba(15, 23, 42, 0.9),
+      0 0 0 1px rgba(15, 23, 42, 0.9) inset;
+    padding: 16px 16px 18px;
+    position: sticky;
+    top: 88px; /* sticks while the page scrolls */
+  }
+
+  .bookme-filters-title {
+    font-size: 13px;
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+
+  .bookme-filters-sub {
+    font-size: 11px;
+    color: #9ca3c8;
+    margin-bottom: 12px;
+  }
+
+  .bookme-filters-form {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .field-group {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .field-label {
+    font-size: 11px;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: #8f9bc6;
+  }
+
+  .bookme-input,
+  .bookme-select {
+    border-radius: 10px;
+    border: 1px solid #303a5c;
+    background: radial-gradient(circle at top, rgba(15, 23, 42, 0.95), rgba(15, 23, 42, 1));
+    color: #e3e9ff;
+    padding: 7px 10px;
+    font-size: 13px;
+    outline: none;
+    width: 100%;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.06s ease;
+  }
+
+  .bookme-input::placeholder {
+    color: #6f7aa4;
+  }
+
+  .bookme-input:focus,
+  .bookme-select:focus {
+    border-color: #4f8bff;
+    box-shadow: 0 0 0 1px rgba(79, 139, 255, 0.5);
+    transform: translateY(-0.5px);
+  }
+
+  .filters-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 4px;
+  }
+
+  .btn-primary,
+  .btn-secondary,
+  .btn-outline,
+  .btn-ghost {
+    border-radius: 999px;
+    padding: 7px 14px;
+    font-size: 12px;
+    border: none;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    text-decoration: none;
+    white-space: nowrap;
+  }
+
+  .btn-primary {
+    background: linear-gradient(135deg, #22c55e, #16a34a);
+    color: #ffffff;
+    box-shadow: 0 7px 18px rgba(22, 163, 74, 0.45);
+  }
+
+  .btn-primary:hover {
+    box-shadow: 0 10px 24px rgba(22, 163, 74, 0.6);
+    transform: translateY(-1px);
+  }
+
+  .btn-secondary {
+    background: transparent;
+    border: 1px solid #4b5563;
+    color: #e5e7eb;
+  }
+
+  .btn-secondary:hover {
+    background: rgba(15, 23, 42, 0.9);
+  }
+
+  .btn-outline {
+    background: transparent;
+    border: 1px solid rgba(148, 163, 184, 0.9);
+    color: #e5e7eb;
+    padding-inline: 12px;
+  }
+
+  .btn-outline:hover {
+    border-color: #60a5fa;
+    background: rgba(15, 23, 42, 0.9);
+  }
+
+  .btn-ghost {
+    background: rgba(22, 163, 74, 0.12);
+    border: 1px solid rgba(22, 163, 74, 0.5);
+    color: #bbf7d0;
+    padding-inline: 12px;
+  }
+
+  .btn-ghost:hover {
+    background: rgba(22, 163, 74, 0.22);
+  }
+
+  /* Right side: map + list */
+  .bookme-main-card {
+    border-radius: 20px;
+    border: 1px solid rgba(30, 64, 175, 0.7);
+    background:
+      radial-gradient(circle at 0% 0%, rgba(37, 99, 235, 0.26), transparent 55%),
+      radial-gradient(circle at 100% 100%, rgba(56, 189, 248, 0.22), transparent 55%),
+      #020617;
+    box-shadow:
+      0 22px 45px rgba(15, 23, 42, 0.95),
+      0 0 0 1px rgba(15, 23, 42, 1) inset;
+    padding: 14px 16px 20px;
+
+    /* 🔥 HARD OVERRIDE: this card must NOT scroll by itself */
+    max-height: none !important;
+    overflow: visible !important;
+  }
+
+  /* Also make sure the inner results area never creates its own scroll */
+  .bookme-results {
+    max-height: none !important;
+    overflow: visible !important;
+  }
+
+  #provider-map {
+    width: 100%;
+    height: 260px;
+    min-height: 260px;
+    border-radius: 16px;
+    overflow: hidden;
+    margin-bottom: 14px;
+    background: #0f172a;
+    position: relative;
+    z-index: 1;
+  }
+
+  #provider-map .leaflet-container {
+    background: #0f172a;
+    border-radius: 16px;
+    height: 100%;
+    width: 100%;
+  }
+
+  /* Ensure Leaflet tiles and markers are visible */
+  .leaflet-tile-container img {
+    max-width: none !important;
+  }
+
+  .bookme-results-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 12px;
+    margin-bottom: 8px;
+  }
+
+  .bookme-results-header h2 {
+    font-size: 15px;
+    font-weight: 600;
+  }
+
+  .bookme-results-header p {
+    font-size: 11px;
+    color: #9ca3c8;
+  }
+
+  .provider-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .provider-card {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 12px;
+    border-radius: 14px;
+    background: radial-gradient(circle at top left, #020617, #020617 60%, #020617);
+    border: 1px solid rgba(30, 64, 175, 0.6);
+  }
+
+  @media (max-width: 640px) {
+    .provider-card {
+      flex-direction: column;
+      align-items: flex-start;
+    }
+  }
+
+  .provider-main {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    min-width: 0;
+  }
+
+  .provider-avatar-circle {
+    width: 32px;
+    height: 32px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #6366f1, #22c55e);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    font-weight: 600;
+    color: white;
+    flex-shrink: 0;
+  }
+
+  .provider-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+
+  .provider-name-line {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    align-items: baseline;
+  }
+
+  .provider-name {
+    font-size: 14px;
+    font-weight: 600;
+  }
+
+  .provider-handle {
+    font-size: 12px;
+    color: #9ca3c8;
+  }
+
+  .provider-role {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #a5b4fc;
+  }
+
+  .provider-meta {
+    font-size: 11px;
+    color: #9ca3c8;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .provider-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    align-items: flex-end;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  @media (max-width: 640px) {
+    .provider-actions {
+      flex-direction: row-reverse;
+      align-items: center;
+    }
+  }
+
+  .pill {
+    border-radius: 999px;
+    padding: 4px 10px;
+    font-size: 11px;
+  }
+
+  .pill-muted {
+    background: rgba(148, 163, 184, 0.25);
+    color: #e5e7eb;
+    border: 1px solid rgba(148, 163, 184, 0.5);
+  }
+
+  .bookme-empty {
+    font-size: 12px;
+    color: #9ca3c8;
+    padding: 10px 2px 4px;
+  }
+</style>
+
+<script nonce="{{ csp_nonce }}">
+  (function() {
+    // Configure Leaflet default icon path (if needed)
+    if (typeof L !== 'undefined') {
+      delete L.Icon.Default.prototype._getIconUrl;
+      L.Icon.Default.mergeOptions({
+        iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png',
+        iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png',
+        shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
+      });
+    }
+
+    function initMap() {
+      const mapEl = document.getElementById('provider-map');
+      if (!mapEl) {
+        console.error('Map container not found');
+        return;
+      }
+
+      // Check if Leaflet is loaded
+      if (typeof L === 'undefined') {
+        console.log('Waiting for Leaflet to load...');
+        setTimeout(initMap, 200);
+        return;
+      }
+
+      // Clear loading message
+      mapEl.innerHTML = '';
+
+      try {
+        const providers = {{ providers_json | safe }};
+        console.log('Initializing map with', providers ? providers.length : 0, 'providers');
+
+        // Initialize map
+        const map = L.map('provider-map', {
+          scrollWheelZoom: false,
+          zoomControl: true,
+          attributionControl: true
+        });
+
+        // Add tile layer
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+          maxZoom: 19
+        }).addTo(map);
+
+        // Add markers for providers with coordinates
+        const markers = [];
+        
+        if (providers && Array.isArray(providers) && providers.length > 0) {
+          providers.forEach(function (p) {
+            if (!p || p.lat == null || p.lng == null) {
+              return;
+            }
+
+            const lat = parseFloat(p.lat);
+            const lng = parseFloat(p.lng);
+
+            if (isNaN(lat) || isNaN(lng)) {
+              console.warn('Invalid coordinates for provider:', p);
+              return;
+            }
+
+            try {
+              const marker = L.marker([lat, lng]).addTo(map);
+              const role = (p.role || '').replace(/_/g, ' ');
+              const cityState = [p.city || '', p.state || ''].filter(Boolean).join(', ');
+
+              const popupContent = 
+                '<div style="min-width: 150px;">' +
+                '<strong>' + (p.display_name || 'Unknown') + '</strong><br>' +
+                (p.username ? '@' + p.username + '<br>' : '') +
+                (role ? role + '<br>' : '') +
+                (cityState || 'No location') +
+                '</div>';
+
+              marker.bindPopup(popupContent);
+              markers.push(marker);
+            } catch (e) {
+              console.error('Error adding marker:', e, p);
+            }
+          });
+        }
+
+        // Set map view
+        if (markers.length > 0) {
+          const group = L.featureGroup(markers);
+          map.fitBounds(group.getBounds().pad(0.35));
+          console.log('Map initialized with', markers.length, 'markers');
+        } else {
+          // Default view (center of USA)
+          map.setView([39.8283, -98.5795], 4);
+          console.log('Map initialized with default view (no markers)');
+        }
+
+        // Force map to invalidate size after a short delay (handles any layout issues)
+        setTimeout(function() {
+          map.invalidateSize();
+        }, 200);
+
+      } catch (error) {
+        console.error('Error initializing map:', error);
+        mapEl.innerHTML = '<div style="padding: 20px; text-align: center; color: #ef4444;">Error loading map: ' + error.message + '</div>';
+      }
+    }
+
+    // Start initialization when DOM is ready
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', function() {
+        // Wait for Leaflet to load
+        setTimeout(initMap, 300);
+      });
+    } else {
+      // DOM already loaded, wait for Leaflet
+      setTimeout(initMap, 300);
+    }
+  })();
+</script>
+{% endblock %}
+
+{% block content %}
+<div class="bookme-page">
+  <header class="bookme-header">
+    <h1 class="bookme-header-title">BookMe Directory</h1>
+    <p class="bookme-header-sub">
+      Search for studios, videographers, DJs, glam teams, and more.  
+      Use filters to narrow down by role or location.
+    </p>
+  </header>
+
+  <div class="bookme-layout">
+    <!-- Filters sidebar -->
+    <aside class="bookme-filters-card">
+      <h2 class="bookme-filters-title">Filters</h2>
+      <p class="bookme-filters-sub">
+        Start broad, then narrow down by role or city.
+      </p>
+
+      <form method="GET" action="{{ url_for('bookme_search') }}" class="bookme-filters-form">
+        <div class="field-group">
+          <label for="role" class="field-label">Role</label>
+          <select name="role" id="role" class="bookme-select">
+            <option value="">Any role</option>
+            <option value="artist" {% if current_filters.role == 'artist' %}selected{% endif %}>Artist / creator</option>
+            <option value="producer" {% if current_filters.role == 'producer' %}selected{% endif %}>Producer / beatmaker</option>
+            <option value="studio" {% if current_filters.role == 'studio' %}selected{% endif %}>Studio</option>
+            <option value="videographer" {% if current_filters.role == 'videographer' %}selected{% endif %}>Videographer / director</option>
+            <option value="designer" {% if current_filters.role == 'designer' %}selected{% endif %}>Designer / graphics</option>
+            <option value="photographer" {% if current_filters.role == 'photographer' %}selected{% endif %}>Photographer</option>
+            <option value="dj" {% if current_filters.role == 'dj' %}selected{% endif %}>DJ</option>
+            <option value="dancer_choreographer" {% if current_filters.role == 'dancer_choreographer' %}selected{% endif %}>Dancer / choreographer</option>
+            <option value="emcee_host_hypeman" {% if current_filters.role == 'emcee_host_hypeman' %}selected{% endif %}>MC / host / hypeman</option>
+            <option value="event_planner" {% if current_filters.role == 'event_planner' %}selected{% endif %}>Event planner</option>
+            <option value="manager" {% if current_filters.role == 'manager' %}selected{% endif %}>Manager / label / A&amp;R</option>
+            <option value="vendor" {% if current_filters.role == 'vendor' %}selected{% endif %}>Vendor / rentals</option>
+          </select>
+        </div>
+
+        <div class="field-group">
+          <label for="q" class="field-label">Name / Service</label>
+          <input
+            type="text"
+            id="q"
+            name="q"
+            class="bookme-input"
+            placeholder="Search display name, service, city..."
+            value="{{ current_filters.q }}"
+          >
+        </div>
+
+        <div class="field-group">
+          <label for="city" class="field-label">City</label>
+          <input
+            type="text"
+            id="city"
+            name="city"
+            class="bookme-input"
+            placeholder="e.g. Sevierville"
+            value="{{ current_filters.city }}"
+          >
+        </div>
+
+        <div class="field-group">
+          <label for="state" class="field-label">State</label>
+          <input
+            type="text"
+            id="state"
+            name="state"
+            class="bookme-input"
+            placeholder="e.g. TN"
+            value="{{ current_filters.state }}"
+          >
+        </div>
+
+        <div class="field-group">
+          <label for="zip" class="field-label">ZIP</label>
+          <input
+            type="text"
+            id="zip"
+            name="zip"
+            class="bookme-input"
+            placeholder="ZIP code"
+            value="{{ current_filters.zip }}"
+          >
+        </div>
+
+        <div class="filters-actions">
+          <button type="submit" class="btn-primary">Apply filters</button>
+          <a href="{{ url_for('bookme_search') }}" class="btn-secondary">Clear filters</a>
+        </div>
+      </form>
+    </aside>
+
+    <!-- Map + provider list -->
+    <section class="bookme-main-card">
+      <div id="provider-map">
+        <div style="padding: 100px 20px; text-align: center; color: #9ca3c8;">
+          Loading map...
+        </div>
+      </div>
+
+      <div class="bookme-results">
+        <div class="bookme-results-header">
+          <h2>Providers ({{ profiles|length }})</h2>
+          <p>Showing providers that match your filters.</p>
+        </div>
+
+        {% if profiles %}
+          <ul class="provider-list">
+            {% for prof in profiles %}
+              {% set u = prof.user %}
+              <li class="provider-card">
+                <div class="provider-main">
+                  <div class="provider-avatar-circle">
+                    {% if u and u.full_name %}
+                      {{ u.full_name[0] | upper }}
+                    {% elif u and u.username %}
+                      {{ u.username[0] | upper }}
+                    {% else %}
+                      ?
+                    {% endif %}
+                  </div>
+                  <div class="provider-text">
+                    <div class="provider-name-line">
+                      <span class="provider-name">
+                        {{ prof.display_name or (u.username if u else "Provider") }}
+                      </span>
+                      {% if u %}
+                        <span class="provider-handle">@{{ u.username }}</span>
+                      {% endif %}
+                    </div>
+                    <div class="provider-role">
+                      {% if u and u.role %}
+                        {{ get_role_display(u.role) }}
+                      {% else %}
+                        Service provider
+                      {% endif %}
+                      {% if not prof.is_visible %}
+                        <span class="pill" style="background: rgba(239,68,68,.2); border-color: rgba(239,68,68,.4); margin-left: 8px; font-size: 0.85rem;">Inactive</span>
+                      {% endif %}
+                    </div>
+                    <div class="provider-meta">
+                      {% if prof.service_types %}
+                        <span>{{ prof.service_types }}</span>
+                      {% endif %}
+                      {% if prof.city or prof.state %}
+                        <span>
+                          {{ prof.city }}{% if prof.city and prof.state %}, {% endif %}{{ prof.state }}
+                        </span>
+                      {% endif %}
+                    </div>
+                  </div>
+                </div>
+
+                <div class="provider-actions">
+                  {% if u and u.id == current_user.id %}
+                    <span class="pill pill-muted">This is you</span>
+                  {% elif not prof.is_visible %}
+                    <span class="pill pill-muted" style="opacity: 0.7;">Not accepting bookings</span>
+                  {% else %}
+                    <a
+                      href="{{ url_for('bookme_book_provider', username=u.username) }}"
+                      class="btn-ghost"
+                    >
+                      Request booking
+                    </a>
+                  {% endif %}
+
+                  {% if u %}
+                    <a
+                      href="{{ url_for('provider_portfolio_public', username=u.username) }}"
+                      class="btn-outline"
+                    >
+                      View profile
+                    </a>
+                  {% endif %}
+                </div>
+              </li>
+            {% endfor %}
+          </ul>
+        {% else %}
+          <p class="bookme-empty">
+            No providers match your filters yet. Try clearing filters or widening your search area.
+          </p>
+        {% endif %}
+      </div>
+    </section>
+  </div>
+</div>
+{% endblock %}

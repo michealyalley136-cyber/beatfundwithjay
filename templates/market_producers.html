@@ -1,0 +1,332 @@
+{% extends "base.html" %}
+{% block title %}Producer catalog · BeatFund{% endblock %}
+
+{% block extra_head %}
+<style>
+  .mk-page {
+    max-width: 1120px;
+    margin: 32px auto 40px;
+    padding-inline: 16px;
+  }
+
+  .mk-page-header {
+    margin-bottom: 24px;
+  }
+
+  .mk-kicker {
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: #6b8bff;
+    margin-bottom: 4px;
+  }
+
+  .mk-page-title {
+    font-size: 26px;
+    font-weight: 650;
+    letter-spacing: 0.01em;
+    margin: 0 0 6px;
+  }
+
+  .mk-page-sub {
+    font-size: 13px;
+    color: #9aa4c2;
+    margin: 0;
+  }
+
+  .mk-producer-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 16px;
+    margin-top: 20px;
+  }
+
+  .mk-card {
+    position: relative;
+    border-radius: 18px;
+    border: 1px solid rgba(30, 64, 175, 0.7);
+    background:
+      linear-gradient(135deg, rgba(15, 23, 42, 0.96), rgba(12, 10, 30, 0.98));
+    box-shadow:
+      0 20px 38px rgba(15, 23, 42, 0.85),
+      0 0 0 1px rgba(15, 23, 42, 1) inset;
+    padding: 14px 16px 12px;
+    overflow: hidden;
+  }
+
+  .mk-card::before {
+    content: "";
+    position: absolute;
+    inset: -40%;
+    background:
+      radial-gradient(circle at 0% 0%, rgba(59, 130, 246, 0.22), transparent 55%),
+      radial-gradient(circle at 100% 100%, rgba(16, 185, 129, 0.22), transparent 55%);
+    opacity: 0.22;
+    mix-blend-mode: screen;
+    pointer-events: none;
+  }
+
+  .mk-card-inner {
+    position: relative;
+    z-index: 1;
+  }
+
+  .mk-prod-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 8px;
+  }
+
+  .mk-prod-avatar {
+    width: 46px;
+    height: 46px;
+    border-radius: 999px;
+    overflow: hidden;
+    flex-shrink: 0;
+    border: 1px solid rgba(148, 163, 184, 0.6);
+    background: radial-gradient(circle at 0 0, #1f2937, #020617);
+  }
+
+  .mk-prod-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
+  .mk-prod-main {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .mk-prod-name {
+    font-size: 14px;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .mk-prod-handle {
+    font-size: 12px;
+    color: #9ca3c8;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .mk-prod-meta {
+    font-size: 11px;
+    color: #9aa4c2;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 6px;
+  }
+
+  .mk-prod-meta-pill {
+    padding: 3px 8px;
+    border-radius: 999px;
+    border: 1px solid rgba(148, 163, 184, 0.4);
+    background: radial-gradient(circle at top left, rgba(15, 23, 42, 0.9), rgba(15, 23, 42, 1));
+    white-space: nowrap;
+  }
+
+  .mk-prod-secondary {
+    font-size: 11px;
+    color: #a5b0d8;
+    margin-bottom: 8px;
+  }
+
+  .mk-prod-secondary span + span::before {
+    content: "·";
+    margin: 0 4px;
+    color: #4b5563;
+  }
+
+  .mk-prod-actions {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    margin-top: 6px;
+  }
+
+  .mk-btn-primary,
+  .mk-btn-ghost {
+    border-radius: 999px;
+    padding: 6px 13px;
+    font-size: 12px;
+    border: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    text-decoration: none;
+    white-space: nowrap;
+    transition: transform 0.1s ease, box-shadow 0.1s ease, background 0.12s ease, border-color 0.12s ease;
+  }
+
+  .mk-btn-primary {
+    background: linear-gradient(135deg, #4de3ff, #6366f1);
+    color: #ffffff;
+    box-shadow: 0 6px 16px rgba(56, 189, 248, 0.4);
+  }
+
+  .mk-btn-primary:hover:enabled {
+    transform: translateY(-1px);
+    box-shadow: 0 10px 24px rgba(79, 70, 229, 0.55);
+  }
+
+  .mk-btn-primary:disabled {
+    opacity: 0.55;
+    cursor: default;
+  }
+
+  .mk-btn-ghost {
+    background: rgba(15, 23, 42, 0.7);
+    color: #c1ccff;
+    border: 1px solid #3b476b;
+  }
+
+  .mk-btn-ghost:hover:enabled {
+    background: rgba(34, 43, 75, 0.96);
+    border-color: #4f8bff;
+  }
+
+  .mk-btn-ghost:disabled {
+    opacity: 0.6;
+    cursor: default;
+  }
+
+  .mk-prod-rating {
+    font-size: 11px;
+    color: #fbbf24;
+  }
+
+  .mk-empty {
+    font-size: 13px;
+    color: #9aa4c2;
+    margin-top: 18px;
+  }
+
+  .mk-back-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: #93c5fd;
+    text-decoration: none;
+    margin-bottom: 10px;
+  }
+
+  .mk-back-link:hover {
+    text-decoration: underline;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="mk-page">
+  <header class="mk-page-header">
+    <a href="{{ url_for('market_index') }}" class="mk-back-link">← Back to beat marketplace</a>
+    <div>
+      <div class="mk-kicker">Producer catalog</div>
+      <h1 class="mk-page-title">Discover producers on BeatFund</h1>
+      <p class="mk-page-sub">
+        Browse producers who have beats in the marketplace. View their main genres and how many beats they’ve uploaded.
+        Follow and detailed catalogs are coming next.
+      </p>
+    </div>
+  </header>
+
+  {% if producers %}
+    <div class="mk-producer-grid">
+      {% for row in producers %}
+        {% set p = row.producer %}
+        {% set genres = row.genres %}
+        {% set beat_count = row.beat_count %}
+        {% set followers = row.followers_count %}
+        {% set rating = row.rating %}
+        <article class="mk-card">
+          <div class="mk-card-inner">
+            <div class="mk-prod-header">
+              <div class="mk-prod-avatar">
+                <img
+                  src="{{ p.avatar_url or url_for('static', filename='img/user-avatar-placeholder.png') }}"
+                  alt="{{ p.display_name or p.username or p.email }} avatar"
+                >
+              </div>
+              <div class="mk-prod-main">
+                <div class="mk-prod-name">
+                  {{ p.display_name or p.username or p.email }}
+                </div>
+                <div class="mk-prod-handle">
+                  @{{ p.username }}
+                </div>
+              </div>
+            </div>
+
+            <div class="mk-prod-meta">
+              <span class="mk-prod-meta-pill">
+                {{ beat_count }} beat{{ beat_count != 1 and 's' or '' }}
+              </span>
+              {% if genres %}
+                <span class="mk-prod-meta-pill">
+                  {{ genres|join(", ") }}
+                </span>
+              {% endif %}
+            </div>
+
+            <div class="mk-prod-secondary">
+              <span>
+                {% if rating %}
+                  ★ {{ "%.1f"|format(rating) }} rating
+                {% else %}
+                  No rating yet
+                {% endif %}
+              </span>
+              <span>
+                {{ followers }} follower{{ followers != 1 and 's' or '' }}
+              </span>
+              {# Optional: location if your User model has city/state/country #}
+              {% if p.city or p.state or p.country %}
+                <span>
+                  {% if p.city %}{{ p.city }}{% endif %}
+                  {% if p.city and (p.state or p.country) %}, {% endif %}
+                  {% if p.state %}{{ p.state }}{% endif %}
+                  {% if p.country and not p.state %}{{ p.country }}{% endif %}
+                </span>
+              {% endif %}
+            </div>
+
+            <div class="mk-prod-actions">
+              <button
+                type="button"
+                class="mk-btn-ghost"
+                disabled
+                title="Follow system coming soon"
+              >
+                Follow
+              </button>
+              <button
+                type="button"
+                class="mk-btn-primary"
+                disabled
+                title="Per-producer catalog page coming soon"
+              >
+                View catalog
+              </button>
+            </div>
+          </div>
+        </article>
+      {% endfor %}
+    </div>
+  {% else %}
+    <p class="mk-empty">
+      No producers have marketplace beats yet. Once producers upload beats, they’ll appear here.
+    </p>
+  {% endif %}
+</div>
+{% endblock %}

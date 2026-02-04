@@ -1,0 +1,369 @@
+{% extends "base.html" %}
+
+{% block title %}Support Tickets · BeatFund Admin{% endblock %}
+
+{% block extra_head %}
+<style>
+  .admin-page-title {
+    font-size: 22px;
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+  .admin-page-subtitle {
+    font-size: 13px;
+    color: #9aa4c2;
+    margin-bottom: 18px;
+  }
+
+  .filter-bar {
+    background: linear-gradient(135deg, #020617, #020617);
+    border-radius: 16px;
+    border: 1px solid #20263b;
+    box-shadow: 0 18px 35px rgba(15, 23, 42, 0.9);
+    padding: 16px 18px;
+    margin-bottom: 18px;
+  }
+  .filter-grid {
+    display: grid;
+    grid-template-columns: 2.3fr 1.6fr auto;
+    gap: 10px;
+    align-items: end;
+  }
+  @media (max-width: 900px) {
+    .filter-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+  .filter-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: #64748b;
+    margin-bottom: 4px;
+  }
+  .filter-input,
+  .filter-select {
+    width: 100%;
+    padding: 7px 11px;
+    border-radius: 999px;
+    border: 1px solid #111827;
+    background: #020617;
+    color: #e5e7eb;
+    font-size: 13px;
+  }
+  .btn-filter {
+    padding: 7px 16px;
+    border-radius: 999px;
+    border: none;
+    font-size: 13px;
+    background: linear-gradient(to right, #0ea5e9, #22c55e);
+    color: #020617;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .btn-filter-clear {
+    padding: 7px 12px;
+    border-radius: 999px;
+    border: 1px solid #374151;
+    font-size: 13px;
+    background: transparent;
+    color: #9aa4c2;
+    cursor: pointer;
+    margin-left: 6px;
+  }
+
+  .card-table {
+    background: linear-gradient(135deg, #0b1220, #020617);
+    border-radius: 16px;
+    border: 1px solid #20263b;
+    box-shadow: 0 18px 35px rgba(15, 23, 42, 0.9);
+    padding: 16px 18px 6px;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  thead tr {
+    border-bottom: 1px solid #111827;
+  }
+  th, td {
+    padding: 9px 6px;
+    text-align: left;
+  }
+  th {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: #64748b;
+  }
+  tbody tr + tr {
+    border-top: 1px solid rgba(15, 23, 42, 0.9);
+  }
+
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 3px 9px;
+    border-radius: 999px;
+    border: 1px solid rgba(148, 163, 184, 0.5);
+    font-size: 11px;
+    white-space: nowrap;
+  }
+  .pill-status-open,
+  .pill-status-in_review {
+    border-color: #0ea5e9;
+    color: #bae6fd;
+  }
+  .pill-status-approved {
+    border-color: #22c55e;
+    color: #bbf7d0;
+  }
+  .pill-status-rejected {
+    border-color: #f97373;
+    color: #fecaca;
+  }
+  .pill-status-resolved {
+    border-color: #22c55e;
+    color: #bbf7d0;
+  }
+  .pill-priority-high {
+    border-color: #eab308;
+    color: #fef08a;
+  }
+  .pill-priority-normal {
+    border-color: #6b7280;
+    color: #d1d5db;
+  }
+  .pill-priority-low {
+    border-color: #4b5563;
+    color: #9ca3af;
+  }
+
+  .actions-inline {
+    display: inline-flex;
+    gap: 6px;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+  }
+  .btn-small {
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 11px;
+    border: none;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .btn-view-ticket {
+    background: rgba(148, 163, 184, 0.16);
+    color: #e5e7eb;
+    border: 1px solid rgba(148, 163, 184, 0.6);
+  }
+  .btn-view-ticket:hover {
+    filter: brightness(1.08);
+  }
+  .btn-open-wallet {
+    background: rgba(59, 130, 246, 0.12);
+    color: #bfdbfe;
+    border: 1px solid rgba(59, 130, 246, 0.8);
+  }
+  .btn-open-wallet:hover {
+    filter: brightness(1.08);
+  }
+  .btn-user-details {
+    background: rgba(34, 197, 94, 0.12);
+    color: #bbf7d0;
+    border: 1px solid rgba(34, 197, 94, 0.8);
+  }
+  .btn-user-details:hover {
+    filter: brightness(1.08);
+  }
+
+  .pagination {
+    display: flex;
+    justify-content: flex-end;
+    gap: 6px;
+    margin-top: 10px;
+    font-size: 12px;
+  }
+  .page-link {
+    padding: 4px 8px;
+    border-radius: 999px;
+    border: 1px solid #1f2937;
+    color: #9aa4c2;
+  }
+  .page-link-active {
+    border-color: #0ea5e9;
+    color: #e0f2fe;
+    background: rgba(14, 165, 233, 0.12);
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="admin-page-title">Support Tickets</div>
+<div class="admin-page-subtitle">
+  Track and manage customer issues. Use the quick links to jump into the customer's wallet
+  or see their user record before making decisions.
+</div>
+
+<div class="filter-bar">
+  <form method="get" action="{{ url_for('admin_tickets') }}">
+    <div class="filter-grid">
+      <div>
+        <div class="filter-label">Search by username</div>
+        <input
+          type="text"
+          name="q"
+          class="filter-input"
+          placeholder="e.g. artist1"
+          value="{{ q or '' }}"
+        >
+      </div>
+
+      <div>
+        <div class="filter-label">Status</div>
+        <select name="status" class="filter-select">
+          <option value="">All statuses</option>
+          {% for s in TicketStatus %}
+            <option value="{{ s.value }}" {% if status == s.value %}selected{% endif %}>
+              {{ s.value.replace('_',' ')|title }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div style="display:flex; gap:6px; justify-content:flex-end;">
+        <button type="submit" class="btn-filter">Apply</button>
+        <a href="{{ url_for('admin_tickets') }}" class="btn-filter-clear">Clear</a>
+      </div>
+    </div>
+  </form>
+</div>
+
+<div class="card-table">
+  <table>
+    <thead>
+      <tr>
+        <th style="width:60px;">Ticket</th>
+        <th style="width:150px;">Created</th>
+        <th>Customer</th>
+        <th>Type</th>
+        <th>Status</th>
+        <th>Priority</th>
+        <th>Subject</th>
+        <th style="width:280px; text-align:right;">Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% if tickets %}
+        {% for t in tickets %}
+          <tr>
+            <td>#{{ t.id }}</td>
+            <td>
+              {{ t.created_at.strftime('%Y-%m-%d %H:%M') if t.created_at else '—' }}
+            </td>
+            <td>
+              {% if t.user %}
+                @{{ t.user.username }}<br>
+                <span style="font-size:11px; color:#64748b;">
+                  User ID: {{ t.user.id }}
+                </span>
+              {% else %}
+                <span style="color:#9aa4c2;">(user deleted)</span>
+              {% endif %}
+            </td>
+            <td>
+              <span class="pill">
+                {{ t.type.value.replace('_',' ')|title }}
+              </span>
+            </td>
+            <td>
+              {% set st = t.status.value %}
+              <span class="pill
+                {% if st in ['open','in_review'] %}pill-status-open
+                {% elif st == 'approved' %}pill-status-approved
+                {% elif st == 'rejected' %}pill-status-rejected
+                {% elif st == 'resolved' %}pill-status-resolved
+                {% endif %}
+              ">
+                {{ st.replace('_',' ')|title }}
+              </span>
+            </td>
+            <td>
+              {% set pr = (t.priority or 'normal')|lower %}
+              <span class="pill
+                {% if pr == 'high' %}pill-priority-high
+                {% elif pr == 'low' %}pill-priority-low
+                {% else %}pill-priority-normal
+                {% endif %}
+              ">
+                {{ pr|capitalize }}
+              </span>
+            </td>
+            <td>
+              {{ t.subject }}
+            </td>
+            <td style="text-align:right;">
+              <div class="actions-inline">
+                <!-- View ticket (details + internal notes) -->
+                <a href="{{ url_for('admin_ticket_detail', ticket_id=t.id) }}"
+                   class="btn-small btn-view-ticket">
+                  View ticket
+                </a>
+
+                {% if t.user %}
+                  <!-- Quick link: open user's wallet via audit flow -->
+                  <a href="{{ url_for('admin_audit_access', user_id=t.user.id) }}"
+                     class="btn-small btn-open-wallet">
+                    Securely open wallet
+                  </a>
+
+                  <!-- Quick link: jump to Users page filtered to this customer -->
+                  <a href="{{ url_for('admin_users', q=t.user.username) }}"
+                     class="btn-small btn-user-details">
+                    User details
+                  </a>
+                {% endif %}
+              </div>
+            </td>
+          </tr>
+        {% endfor %}
+      {% else %}
+        <tr>
+          <td colspan="8" style="padding:14px 6px; color:#9aa4c2; font-size:13px;">
+            No tickets match these filters.
+          </td>
+        </tr>
+      {% endif %}
+    </tbody>
+  </table>
+
+  {% if pagination and pagination.pages > 1 %}
+    <div class="pagination">
+      {% if pagination.has_prev %}
+        <a class="page-link"
+           href="{{ url_for('admin_tickets',
+                            page=pagination.prev_num,
+                            q=q, status=status) }}">
+          ‹ Prev
+        </a>
+      {% endif %}
+
+      <span class="page-link page-link-active">
+        Page {{ pagination.page }} / {{ pagination.pages }}
+      </span>
+
+      {% if pagination.has_next %}
+        <a class="page-link"
+           href="{{ url_for('admin_tickets',
+                            page=pagination.next_num,
+                            q=q, status=status) }}">
+          Next ›
+        </a>
+      {% endif %}
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

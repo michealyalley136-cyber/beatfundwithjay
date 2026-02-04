@@ -1,0 +1,398 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>{% block title %}BeatFund · Admin{% endblock %}</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <!-- Simple inline styling for a clean admin look -->
+    <style>
+        :root {
+            --admin-bg: #050818;
+            --admin-bg-alt: #0b1024;
+            --admin-card-bg: rgba(10, 15, 35, 0.95);
+            --admin-border: rgba(255, 255, 255, 0.06);
+            --admin-accent: #4f46e5;
+            --admin-accent-soft: rgba(79, 70, 229, 0.2);
+            --admin-text: #f9fafb;
+            --admin-muted: #9ca3af;
+            --admin-danger: #f97373;
+            --admin-success: #22c55e;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            background: radial-gradient(circle at top left, #111827 0, #020617 45%, #000000 100%);
+            color: var(--admin-text);
+        }
+
+        a {
+            color: var(--admin-accent);
+            text-decoration: none;
+        }
+        a:hover {
+            text-decoration: underline;
+        }
+
+        .admin-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0.75rem 2.5rem;
+            background: linear-gradient(to right, #020617, #020617f5);
+            border-bottom: 1px solid rgba(148, 163, 184, 0.25);
+            position: sticky;
+            top: 0;
+            z-index: 40;
+        }
+
+        .admin-brand {
+            font-weight: 700;
+            letter-spacing: 0.2em;
+            font-size: 0.85rem;
+            text-transform: uppercase;
+        }
+        .admin-brand span {
+            opacity: 0.65;
+            margin-left: 0.35rem;
+            font-weight: 500;
+        }
+
+        .admin-nav {
+            display: flex;
+            gap: 1.5rem;
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+        }
+
+        .admin-nav a {
+            color: var(--admin-muted);
+            text-decoration: none;
+            position: relative;
+            padding-bottom: 0.25rem;
+        }
+
+        .admin-badge {
+            display: none;
+            margin-left: 0.4rem;
+            background: var(--admin-accent);
+            color: #fff;
+            border-radius: 999px;
+            padding: 0.05rem 0.45rem;
+            font-size: 0.7rem;
+            line-height: 1.4;
+            font-weight: 700;
+            vertical-align: middle;
+        }
+
+        .admin-nav a:hover {
+            color: var(--admin-text);
+        }
+
+        .admin-nav a::after {
+            content: "";
+            position: absolute;
+            left: 0;
+            bottom: 0;
+            height: 2px;
+            width: 0;
+            background: var(--admin-accent);
+            transition: width 0.18s ease-out;
+        }
+
+        .admin-nav a:hover::after {
+            width: 100%;
+        }
+
+        .admin-user {
+            font-size: 0.8rem;
+            color: var(--admin-muted);
+        }
+
+        .admin-user a {
+            color: var(--admin-text);
+            margin-left: 0.35rem;
+        }
+        .admin-user a:hover {
+            color: var(--admin-accent);
+        }
+
+        .admin-main {
+            padding: 1.75rem 2.5rem 3rem;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .admin-page-header {
+            margin-bottom: 1.25rem;
+        }
+
+        .admin-page-header h1 {
+            margin: 0 0 0.25rem;
+            font-size: 1.7rem;
+            letter-spacing: 0.04em;
+        }
+
+        .admin-page-header p {
+            margin: 0;
+            font-size: 0.9rem;
+            color: var(--admin-muted);
+        }
+
+        .card {
+            background: var(--admin-card-bg);
+            border-radius: 0.9rem;
+            border: 1px solid var(--admin-border);
+            padding: 1.25rem 1.5rem;
+            margin-bottom: 1.25rem;
+            box-shadow: 0 18px 45px rgba(15, 23, 42, 0.65);
+        }
+
+        .card h2 {
+            margin-top: 0;
+            margin-bottom: 0.5rem;
+            font-size: 1.1rem;
+        }
+
+        .card-subtitle {
+            font-size: 0.85rem;
+            color: var(--admin-muted);
+            margin-bottom: 0.75rem;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 1rem;
+        }
+
+        .stat-label {
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: var(--admin-muted);
+        }
+
+        .stat-value {
+            font-size: 1.6rem;
+            font-weight: 600;
+            margin-top: 0.15rem;
+        }
+
+        .stat-pill {
+            font-size: 0.75rem;
+            padding: 0.2rem 0.55rem;
+            border-radius: 999px;
+            border: 1px solid rgba(148, 163, 184, 0.4);
+            color: var(--admin-muted);
+        }
+
+        .flash-container {
+            margin-bottom: 1rem;
+        }
+
+        .flash {
+            padding: 0.6rem 0.9rem;
+            border-radius: 0.65rem;
+            font-size: 0.85rem;
+            margin-bottom: 0.4rem;
+        }
+
+        .flash-error, .flash-danger {
+            background: rgba(248, 113, 113, 0.1);
+            border: 1px solid rgba(248, 113, 113, 0.6);
+            color: #fecaca;
+        }
+
+        .flash-success {
+            background: rgba(34, 197, 94, 0.09);
+            border: 1px solid rgba(34, 197, 94, 0.7);
+            color: #bbf7d0;
+        }
+
+        .flash-info {
+            background: rgba(59, 130, 246, 0.09);
+            border: 1px solid rgba(59, 130, 246, 0.7);
+            color: #dbeafe;
+        }
+
+        .form-group {
+            margin-bottom: 0.9rem;
+        }
+
+        .form-group label {
+            display: block;
+            font-size: 0.85rem;
+            margin-bottom: 0.25rem;
+        }
+
+        .form-control {
+            width: 100%;
+            padding: 0.45rem 0.55rem;
+            border-radius: 0.5rem;
+            border: 1px solid rgba(148, 163, 184, 0.7);
+            background: #020617;
+            color: var(--admin-text);
+            font-size: 0.9rem;
+        }
+
+        .form-control:focus {
+            outline: none;
+            border-color: var(--admin-accent);
+            box-shadow: 0 0 0 1px var(--admin-accent-soft);
+        }
+
+        .form-actions {
+            margin-top: 0.75rem;
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .btn {
+            font-size: 0.85rem;
+            border-radius: 999px;
+            padding: 0.45rem 0.95rem;
+            border: 1px solid transparent;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            text-decoration: none;
+        }
+
+        .btn-primary {
+            background: var(--admin-accent);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #4338ca;
+        }
+
+        .btn-secondary {
+            background: transparent;
+            border-color: var(--admin-border);
+            color: var(--admin-muted);
+        }
+
+        .btn-secondary:hover {
+            border-color: rgba(148, 163, 184, 0.9);
+            color: var(--admin-text);
+        }
+
+        .text-muted {
+            color: var(--admin-muted);
+        }
+        .text-xs {
+            font-size: 0.75rem;
+        }
+        .mt-2 { margin-top: 0.5rem; }
+        .max-w-md {
+            max-width: 480px;
+        }
+
+        @media (max-width: 768px) {
+            .admin-header {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 0.5rem;
+            }
+            .admin-main {
+                padding: 1.25rem 1.0rem 2.25rem;
+            }
+            .admin-nav {
+                flex-wrap: wrap;
+                gap: 0.75rem;
+            }
+        }
+    </style>
+
+    {% block extra_head %}{% endblock %}
+</head>
+<body>
+<header class="admin-header">
+    <div class="admin-brand">
+        BEATFUND <span>ADMIN</span>
+    </div>
+
+    <nav class="admin-nav">
+        <a href="{{ url_for('admin_dashboard') }}">Admin Dashboard</a>
+        <a href="{{ url_for('admin_notifications') }}">
+            Notifications <span id="adminNotifBadge" class="admin-badge">0</span>
+        </a>
+        <a href="{{ url_for('admin_finance_events') }}">Finance Events</a>
+        <a href="{{ url_for('admin_audit') }}">Audit</a>
+        <a href="{{ url_for('admin_stripe_webhooks') }}">Stripe Webhooks</a>
+        <a href="{{ url_for('admin_payment_orders') }}">Payment Orders</a>
+        <a href="{{ url_for('admin_affiliates') }}">Affiliates</a>
+        <a href="{{ url_for('admin_affiliate_earnings') }}">Affiliate Earnings</a>
+        <a href="{{ url_for('admin_alerts') }}">Alerts</a>
+        <a href="{{ url_for('admin_uploads') }}">Uploads</a>
+        <a href="{{ url_for('admin_fees') }}">Fees</a>
+        <a href="{{ url_for('admin_users') }}">Users</a>
+        <a href="{{ url_for('admin_kyc') }}">KYC Queue</a>
+        <a href="{{ url_for('admin_transactions') }}">Transactions</a>
+        <a href="{{ url_for('admin_tickets') }}">Tickets</a>
+        <a href="{{ url_for('admin_reports') }}">Reports</a>
+        <a href="{{ url_for('admin_waitlist') }}">Waitlist</a>
+        <a href="{{ url_for('admin_team') }}">Admin Team</a>
+    </nav>
+
+    <div class="admin-user">
+        @{{ current_user.username }}
+        <a href="{{ url_for('route_to_dashboard') }}">Dashboard</a> ·
+        <form method="post" action="{{ url_for('logout') }}" class="logout-form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <button type="submit" class="nav-link-button">Logout</button>
+</form>
+    </div>
+</header>
+
+<main class="admin-main">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            <div class="flash-container">
+                {% for category, message in messages %}
+                    <div class="flash flash-{{ category }}">
+                        {{ message }}
+                    </div>
+                {% endfor %}
+            </div>
+        {% endif %}
+    {% endwith %}
+
+    {% block admin_content %}{% endblock %}
+</main>
+
+<script nonce="{{ csp_nonce }}">
+  (function() {
+    const badge = document.getElementById('adminNotifBadge');
+    if (!badge) return;
+
+    function refreshAdminNotifCount() {
+      fetch('{{ url_for("admin_notifications_unread_count") }}', { credentials: 'same-origin' })
+        .then(r => r.json())
+        .then(data => {
+          const c = (data && data.count) ? Number(data.count) : 0;
+          if (c > 0) {
+            badge.textContent = c > 99 ? '99+' : String(c);
+            badge.style.display = 'inline-flex';
+          } else {
+            badge.style.display = 'none';
+          }
+        })
+        .catch(() => {});
+    }
+
+    refreshAdminNotifCount();
+    setInterval(refreshAdminNotifCount, 20000);
+  })();
+</script>
+</body>
+</html>

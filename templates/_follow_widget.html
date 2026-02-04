@@ -1,0 +1,80 @@
+{# templates/_follow_widget.html #}
+<div class="card" style="margin-top:12px;" id="follow-card-{{ profile_user.id }}">
+  <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+    <div>
+      <div class="muted" style="line-height:1;">
+        <b id="followers-count-{{ profile_user.id }}">{{ followers_count }}</b> Followers
+      </div>
+    </div>
+
+    {% if current_user.is_authenticated and current_user.id != profile_user.id %}
+      <button
+        type="button"
+        class="btn {{ 'btn-secondary' if is_following else '' }}"
+        id="follow-btn-{{ profile_user.id }}"
+        data-url="{{ url_for('toggle_follow', user_id=profile_user.id) }}"
+        data-following="{{ '1' if is_following else '0' }}"
+        aria-pressed="{{ 'true' if is_following else 'false' }}"
+      >
+        {{ "Unfollow" if is_following else "Follow" }}
+      </button>
+    {% endif %}
+  </div>
+</div>
+
+<script nonce="{{ csp_nonce }}">
+(function () {
+  const btn = document.getElementById("follow-btn-{{ profile_user.id }}");
+  if (!btn) return;
+
+  const followersEl = document.getElementById("followers-count-{{ profile_user.id }}");
+
+  function getCsrfToken() {
+    const meta = document.querySelector('meta[name="csrf-token"]');
+    if (meta) return meta.getAttribute("content");
+    return "{{ csrf_token() }}";
+  }
+
+  function setButtonState(isFollowing) {
+    btn.dataset.following = isFollowing ? "1" : "0";
+    btn.textContent = isFollowing ? "Unfollow" : "Follow";
+    btn.setAttribute("aria-pressed", isFollowing ? "true" : "false");
+
+    // Optional style: following looks "secondary"
+    if (isFollowing) btn.classList.add("btn-secondary");
+    else btn.classList.remove("btn-secondary");
+  }
+
+  btn.addEventListener("click", async () => {
+    btn.disabled = true;
+
+    try {
+      const res = await fetch(btn.dataset.url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRFToken": getCsrfToken()
+        },
+        body: JSON.stringify({})
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.ok) {
+        alert(data.error || "Could not update follow status.");
+        return;
+      }
+
+      if (typeof data.followers_count === "number" && followersEl) {
+        followersEl.textContent = data.followers_count;
+      }
+
+      setButtonState(!!data.following);
+
+    } catch (e) {
+      alert("Network error. Try again.");
+    } finally {
+      btn.disabled = false;
+    }
+  });
+})();
+</script>

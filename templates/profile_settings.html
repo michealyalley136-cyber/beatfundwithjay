@@ -1,0 +1,43 @@
+<!-- templates/profile_settings.html -->
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Profile Settings</title>
+</head>
+<body>
+    <h1>Profile Settings</h1>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <ul>
+          {% for category, message in messages %}
+            <li class="{{ category }}">{{ message }}</li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+    {% endwith %}
+
+    <div>
+        <h3>Current profile picture</h3>
+        <img
+            src="{{ current_user.avatar_url }}"
+            alt="Profile picture"
+            style="width:120px; height:120px; border-radius:50%; object-fit:cover;"
+        >
+    </div>
+
+    <form method="POST" enctype="multipart/form-data">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <p>
+            <label for="avatar">Upload new picture:</label><br>
+            <input type="file" id="avatar" name="avatar" accept="image/*">
+        </p>
+        <button type="submit">Save</button>
+    </form>
+
+    <p>
+        <a href="{{ url_for('route_to_dashboard') }}">Back to dashboard</a>
+    </p>
+</body>
+</html>

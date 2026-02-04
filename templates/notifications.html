@@ -1,0 +1,326 @@
+{% extends "base.html" %}
+{% block title %}Notifications · BeatFund{% endblock %}
+
+{% block extra_head %}
+<style>
+  .notifications-page {
+    max-width: 800px;
+    margin: 32px auto;
+    padding: 0 16px;
+  }
+  
+  .notifications-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 24px;
+  }
+  
+  .notifications-header h1 {
+    margin: 0;
+    color: #e5e7eb;
+    font-size: 28px;
+    font-weight: 600;
+  }
+  
+  .mark-all-read-btn {
+    background: linear-gradient(135deg, #4f8bff 0%, #6b5ce6 100%);
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    transition: transform 0.2s, box-shadow 0.2s;
+  }
+  
+  .mark-all-read-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(79, 139, 255, 0.4);
+  }
+  
+  .notifications-container {
+    background: radial-gradient(circle at 0% 0%, #1f2937, #020617 70%);
+    border: 1px solid #1f2937;
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  
+  .notification-row {
+    padding: 20px;
+    border-bottom: 1px solid #1f2937;
+    cursor: pointer;
+    transition: background 0.2s;
+    position: relative;
+  }
+  
+  .notification-row:last-child {
+    border-bottom: none;
+  }
+  
+  .notification-row:hover {
+    background: rgba(79, 139, 255, 0.05);
+  }
+  
+  .notification-row.unread {
+    background: rgba(79, 139, 255, 0.08);
+    border-left: 3px solid #4f8bff;
+  }
+  
+  .notification-row.unread:hover {
+    background: rgba(79, 139, 255, 0.12);
+  }
+  
+  .notification-content {
+    display: flex;
+    justify-content: space-between;
+    align-items: start;
+    gap: 12px;
+  }
+  
+  .notification-main {
+    flex: 1;
+  }
+  
+  .notification-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+  
+  .notification-kind-dot {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  
+  .notification-kind-dot.success {
+    background: #10b981;
+    box-shadow: 0 0 8px rgba(16, 185, 129, 0.5);
+  }
+  
+  .notification-kind-dot.warning {
+    background: #f59e0b;
+    box-shadow: 0 0 8px rgba(245, 158, 11, 0.5);
+  }
+  
+  .notification-kind-dot.error {
+    background: #ef4444;
+    box-shadow: 0 0 8px rgba(239, 68, 68, 0.5);
+  }
+  
+  .notification-kind-dot.info {
+    background: #3b82f6;
+    box-shadow: 0 0 8px rgba(59, 130, 246, 0.5);
+  }
+  
+  .notification-title {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+    color: #e5e7eb;
+    line-height: 1.4;
+  }
+  
+  .notification-title.read {
+    font-weight: 400;
+    color: #9ca3af;
+  }
+  
+  .notification-title-link {
+    color: inherit;
+    text-decoration: none;
+  }
+  
+  .notification-title-link:hover {
+    color: #4f8bff;
+  }
+  
+  .notification-body {
+    margin: 8px 0 8px 20px;
+    color: #9ca3af;
+    font-size: 14px;
+    line-height: 1.6;
+  }
+  
+  .notification-time {
+    margin-left: 20px;
+    font-size: 12px;
+    color: #6b7280;
+  }
+  
+  .notification-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  
+  .mark-read-btn {
+    background: rgba(79, 139, 255, 0.1);
+    border: 1px solid rgba(79, 139, 255, 0.3);
+    padding: 6px 14px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 12px;
+    color: #4f8bff;
+    transition: background 0.2s;
+  }
+  
+  .mark-read-btn:hover {
+    background: rgba(79, 139, 255, 0.2);
+  }
+  
+  .read-badge {
+    color: #6b7280;
+    font-size: 12px;
+  }
+  
+  .notifications-empty {
+    background: radial-gradient(circle at 0% 0%, #1f2937, #020617 70%);
+    border: 1px solid #1f2937;
+    border-radius: 12px;
+    padding: 64px 32px;
+    text-align: center;
+  }
+  
+  .notifications-empty-icon {
+    font-size: 64px;
+    margin-bottom: 20px;
+    opacity: 0.5;
+  }
+  
+  .notifications-empty h2 {
+    margin: 0 0 12px;
+    color: #e5e7eb;
+    font-size: 24px;
+    font-weight: 600;
+  }
+  
+  .notifications-empty p {
+    margin: 0;
+    color: #9ca3af;
+    font-size: 14px;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="notifications-page" data-refresh-root="notifications">
+  <div class="notifications-header">
+    <h1>Notifications</h1>
+    <form method="POST" action="{{ url_for('mark_all_notifications_read_route') }}" style="display: inline;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button type="submit" class="mark-all-read-btn">Mark all read</button>
+    </form>
+  </div>
+
+  {% if notifications %}
+    <div class="notifications-container">
+      {% for notif in notifications %}
+        {% set safe_url = notif.url if notif.url and notif.url.startswith('/') else None %}
+        <div 
+          class="notification-row {% if not notif.is_read %}unread{% endif %}" 
+          role="button" 
+          tabindex="0"
+          data-notif-id="{{ notif.id }}"
+          data-is-read="{{ 'true' if notif.is_read else 'false' }}"
+          data-safe-url="{{ safe_url or '' }}"
+          onclick="handleNotificationClick(this)"
+          onkeydown="if(event.key === 'Enter' || event.key === ' ') { event.preventDefault(); handleNotificationClick(this); }"
+        >
+          <div class="notification-content">
+            <div class="notification-main">
+              <div class="notification-header">
+                <span class="notification-kind-dot {{ notif.kind or 'info' }}"></span>
+                <h3 class="notification-title {% if notif.is_read %}read{% endif %}">
+                  {% if safe_url %}
+                    <a href="{{ safe_url }}" class="notification-title-link" onclick="event.stopPropagation();">{{ notif.title }}</a>
+                  {% else %}
+                    {{ notif.title }}
+                  {% endif %}
+                </h3>
+              </div>
+              {% if notif.event_type %}
+                <div class="notification-time" style="margin-top: -6px;">
+                  {{ notif.event_type.replace('_', ' ') }}
+                  {% if notif.actor_name %} · {{ notif.actor_name }}{% endif %}
+                </div>
+              {% endif %}
+              {% if notif.body %}
+                <p class="notification-body">{{ notif.body }}</p>
+              {% endif %}
+              <div class="notification-time">
+                {{ notif.created_at.strftime('%B %d, %Y at %I:%M %p') if notif.created_at else '' }}
+              </div>
+            </div>
+            <div class="notification-actions">
+              {% if not notif.is_read %}
+                <form method="POST" action="{{ url_for('mark_notification_read_route', notif_id=notif.id) }}" style="display: inline;" onclick="event.stopPropagation();">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <button type="submit" class="mark-read-btn">Mark read</button>
+                </form>
+              {% else %}
+                <span class="read-badge">Read</span>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="notifications-empty">
+      <div class="notifications-empty-icon">🔔</div>
+      <h2>No notifications</h2>
+      <p>You're all caught up! New notifications will appear here.</p>
+    </div>
+  {% endif %}
+</div>
+
+<script nonce="{{ csp_nonce }}">
+  function handleNotificationClick(row) {
+    const notifId = row.getAttribute('data-notif-id');
+    const isRead = row.getAttribute('data-is-read') === 'true';
+    const safeUrl = row.getAttribute('data-safe-url');
+    
+    // If unread, mark as read first
+    if (!isRead) {
+      const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
+      if (csrfToken && notifId) {
+        const formData = new FormData();
+        formData.append('csrf_token', csrfToken);
+        
+        fetch(`/notifications/${notifId}/read`, {
+          method: 'POST',
+          body: formData,
+          credentials: 'same-origin'
+        })
+        .then(response => {
+          if (response.ok) {
+            // Update UI immediately
+            row.classList.remove('unread');
+            const titleEl = row.querySelector('.notification-title');
+            if (titleEl) {
+              titleEl.classList.add('read');
+            }
+            row.setAttribute('data-is-read', 'true');
+          }
+        })
+        .catch(() => {
+          // Best effort - continue navigation even if mark fails
+        });
+      }
+    }
+    
+    // Navigate to safe URL or notifications page
+    if (safeUrl) {
+      window.location.href = safeUrl;
+    } else {
+      window.location.href = '/notifications';
+    }
+  }
+</script>
+{% endblock %}

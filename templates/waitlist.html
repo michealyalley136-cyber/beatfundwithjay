@@ -1,0 +1,944 @@
+{% extends "base.html" %}
+
+{% block title %}Join the Waitlist — BeatFund{% endblock %}
+
+{% block extra_head %}
+<style>
+  .home-page {
+    max-width: 1120px;
+    margin: 32px auto 40px;
+    padding-inline: 16px;
+  }
+
+  /* HERO SECTION */
+  .hero {
+    display: grid;
+    grid-template-columns: minmax(0, 1.6fr) minmax(0, 1.1fr);
+    gap: 24px;
+    align-items: center;
+  }
+
+  @media (max-width: 960px) {
+    .hero {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .hero-heading-kicker {
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: #6b8bff;
+    margin-bottom: 6px;
+  }
+
+  .hero-heading {
+    font-size: 32px;
+    line-height: 1.1;
+    font-weight: 700;
+    margin: 0 0 10px;
+  }
+
+  @media (max-width: 720px) {
+    .hero-heading {
+      font-size: 26px;
+    }
+  }
+
+  .hero-highlight {
+    background: linear-gradient(90deg, #4de3ff, #a855f7);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  .hero-sub {
+    font-size: 14px;
+    color: #9aa4c2;
+    max-width: 520px;
+    margin: 0 0 16px;
+  }
+
+  .hero-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+
+  .hero-links a {
+    border-radius: 999px;
+    padding: 8px 18px;
+    font-size: 13px;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    white-space: nowrap;
+    transition: transform 0.1s ease, box-shadow 0.1s ease, background 0.12s ease, border-color 0.12s ease;
+  }
+
+  .hero-links a:first-child {
+    background: linear-gradient(135deg, #4de3ff, #6366f1);
+    color: #ffffff;
+    box-shadow: 0 6px 18px rgba(56, 189, 248, 0.45);
+  }
+
+  .hero-links a:first-child:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 10px 26px rgba(79, 70, 229, 0.55);
+  }
+
+  .hero-links a:nth-child(2) {
+    background: rgba(15, 23, 42, 0.7);
+    color: #c1ccff;
+    border: 1px solid #3b476b;
+  }
+
+  .hero-links a:nth-child(2):hover {
+    background: rgba(34, 43, 75, 0.96);
+    border-color: #4f8bff;
+  }
+
+  .hero-secondary-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 18px;
+  }
+
+  .hero-secondary-links a {
+    font-size: 12px;
+    color: #4aa8ff;
+    text-decoration: none;
+    position: relative;
+  }
+
+  .hero-secondary-links a::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: -1px;
+    height: 1px;
+    background: linear-gradient(90deg, #38bdf8, #a855f7);
+    opacity: 0.9;
+  }
+
+  .hero-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .hero-tags span {
+    font-size: 11px;
+    padding: 4px 9px;
+    border-radius: 999px;
+    border: 1px solid rgba(148, 163, 184, 0.35);
+    background: radial-gradient(circle at top left, rgba(148, 163, 184, 0.25), rgba(15, 23, 42, 0.7));
+    color: #e5e7eb;
+  }
+
+  /* HERO CARD */
+  .hero-card {
+    border-radius: 22px;
+    padding: 18px 18px 16px;
+    background:
+      radial-gradient(circle at top left, rgba(34, 197, 94, 0.22), transparent 55%),
+      radial-gradient(circle at bottom right, rgba(59, 130, 246, 0.28), transparent 55%),
+      rgba(15, 23, 42, 0.96);
+    border: 1px solid rgba(148, 163, 184, 0.4);
+    box-shadow:
+      0 24px 46px rgba(15, 23, 42, 0.9),
+      0 0 0 1px rgba(15, 23, 42, 0.9) inset;
+  }
+
+  .hero-card-title {
+    font-size: 15px;
+    font-weight: 600;
+    margin: 0 0 8px;
+  }
+
+  .hero-card-sub {
+    font-size: 12px;
+    color: #cbd5f5;
+    margin: 0 0 10px;
+  }
+
+  .hero-card-list {
+    list-style: none;
+    padding: 0;
+    margin: 0 0 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-size: 13px;
+  }
+
+  .hero-card-list li {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .hero-card-emoji {
+    width: 22px;
+    text-align: center;
+    font-size: 15px;
+  }
+
+  .hero-card-tip {
+    font-size: 11px;
+    color: #9aa4c2;
+    margin: 6px 0 0;
+  }
+
+  .hero-card-foot {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    margin-top: 10px;
+    font-size: 11px;
+    color: #cbd5f5;
+  }
+
+  .hero-card-foot-pill {
+    padding: 2px 8px;
+    border-radius: 999px;
+    border: 1px solid rgba(148, 163, 184, 0.45);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  /* WAITLIST FORM SECTION */
+  .waitlist-section {
+    margin-top: 32px;
+    padding: 24px;
+    border-radius: 20px;
+    background:
+      radial-gradient(circle at top left, rgba(59, 130, 246, 0.15), transparent 60%),
+      radial-gradient(circle at bottom right, rgba(168, 85, 247, 0.15), transparent 60%),
+      rgba(15, 23, 42, 0.96);
+    border: 1px solid rgba(148, 163, 184, 0.4);
+    box-shadow:
+      0 20px 40px rgba(15, 23, 42, 0.85),
+      0 0 0 1px rgba(15, 23, 42, 1) inset;
+  }
+
+  .waitlist-section h2 {
+    font-size: 20px;
+    font-weight: 600;
+    margin: 0 0 8px;
+    color: #ffffff;
+  }
+
+  .waitlist-section p {
+    font-size: 13px;
+    color: #9aa4c2;
+    margin: 0 0 20px;
+  }
+
+  .waitlist-count {
+    font-size: 12px;
+    color: #4aa8ff;
+    margin-bottom: 16px;
+  }
+
+  .waitlist-form {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .waitlist-form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .waitlist-form-group label {
+    font-size: 12px;
+    color: #cbd5f5;
+    font-weight: 500;
+  }
+
+  .waitlist-form-group input,
+  .waitlist-form-group select,
+  .waitlist-form-group textarea {
+    padding: 10px 12px;
+    border-radius: 8px;
+    border: 1px solid rgba(148, 163, 184, 0.4);
+    background: rgba(15, 23, 42, 0.8);
+    color: #ffffff;
+    font-size: 13px;
+    font-family: inherit;
+    transition: border-color 0.2s ease, background 0.2s ease;
+  }
+
+  .waitlist-form-group input:focus,
+  .waitlist-form-group select:focus,
+  .waitlist-form-group textarea:focus {
+    outline: none;
+    border-color: #4aa8ff;
+    background: rgba(15, 23, 42, 0.95);
+  }
+
+  .waitlist-form-group textarea {
+    resize: vertical;
+    min-height: 80px;
+  }
+
+  .waitlist-form-group input[required]::after {
+    content: " *";
+    color: #ef4444;
+  }
+
+  .waitlist-submit {
+    padding: 12px 24px;
+    border-radius: 999px;
+    border: none;
+    background: linear-gradient(135deg, #4de3ff, #6366f1);
+    color: #ffffff;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: transform 0.1s ease, box-shadow 0.1s ease;
+    box-shadow: 0 6px 18px rgba(56, 189, 248, 0.45);
+    margin-top: 4px;
+  }
+
+  .waitlist-submit:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 10px 26px rgba(79, 70, 229, 0.55);
+  }
+
+  .waitlist-submit:active {
+    transform: translateY(0);
+  }
+
+  /* ROLE CARDS SECTION */
+  .home-roles {
+    margin-top: 32px;
+  }
+
+  .home-roles-title {
+    font-size: 15px;
+    font-weight: 600;
+    margin-bottom: 6px;
+  }
+
+  .home-roles-sub {
+    font-size: 12px;
+    color: #9aa4c2;
+    margin-bottom: 14px;
+  }
+
+  .home-role-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 14px;
+  }
+
+  @media (max-width: 900px) {
+    .home-role-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .home-role-card {
+    border-radius: 16px;
+    padding: 12px 14px 12px;
+    background:
+      linear-gradient(135deg, rgba(15, 23, 42, 0.96), rgba(12, 10, 30, 0.98));
+    border: 1px solid rgba(30, 64, 175, 0.7);
+    box-shadow:
+      0 14px 30px rgba(15, 23, 42, 0.85),
+      0 0 0 1px rgba(15, 23, 42, 1) inset;
+  }
+
+  .home-role-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #8f9bc6;
+    margin-bottom: 4px;
+  }
+
+  .home-role-title {
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+
+  .home-role-text {
+    font-size: 12px;
+    color: #cbd5f5;
+    margin-bottom: 8px;
+  }
+
+  .home-role-link {
+    font-size: 12px;
+    color: #4aa8ff;
+    text-decoration: none;
+  }
+
+  /* HOW IT WORKS SECTION */
+  .home-how {
+    margin-top: 28px;
+  }
+
+  .home-how-title {
+    font-size: 15px;
+    font-weight: 600;
+    margin-bottom: 6px;
+  }
+
+  .home-how-sub {
+    font-size: 12px;
+    color: #9aa4c2;
+    margin-bottom: 12px;
+  }
+
+  .home-how-steps {
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 12px;
+    overflow-x: auto;
+    padding-bottom: 6px;
+    margin-bottom: -4px;
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .home-how-step {
+    flex: 0 0 220px;
+    border-radius: 16px;
+    padding: 10px 12px;
+    background:
+      radial-gradient(circle at top left, rgba(59, 130, 246, 0.2), transparent 55%),
+      radial-gradient(circle at bottom right, rgba(15, 23, 42, 1), rgba(15, 23, 42, 1));
+    border: 1px solid rgba(30, 64, 175, 0.8);
+    scroll-snap-align: start;
+    font-size: 12px;
+    color: #cbd5f5;
+  }
+
+  .home-how-step-num {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: #a5b4fc;
+    margin-bottom: 3px;
+  }
+
+  .home-how-step-title {
+    font-size: 13px;
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+
+  .home-how-step-text {
+    font-size: 12px;
+    color: #cbd5f5;
+  }
+
+  /* ANIMATED BACKGROUND ELEMENTS */
+  .animated-background {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 0;
+    overflow: hidden;
+  }
+
+  .home-page {
+    position: relative;
+    z-index: 1;
+    background: rgba(15, 23, 42, 0.85);
+    backdrop-filter: blur(1px);
+  }
+
+  .music-note {
+    position: absolute;
+    font-size: 20px;
+    opacity: 0.08;
+    color: #4f8bff;
+    animation: floatNote 20s infinite linear;
+  }
+
+  .music-note:nth-child(2n) {
+    color: #a855f7;
+    animation-duration: 22s;
+    animation-delay: -5s;
+  }
+
+  .music-note:nth-child(3n) {
+    color: #4de3ff;
+    animation-duration: 25s;
+    animation-delay: -10s;
+  }
+
+  .music-note:nth-child(4n) {
+    color: #10b981;
+    animation-duration: 18s;
+    animation-delay: -15s;
+  }
+
+  @keyframes floatNote {
+    0% {
+      transform: translateY(100vh) rotate(0deg);
+      opacity: 0;
+    }
+    10% {
+      opacity: 0.08;
+    }
+    90% {
+      opacity: 0.08;
+    }
+    100% {
+      transform: translateY(-100px) rotate(360deg);
+      opacity: 0;
+    }
+  }
+
+  .drum-element {
+    position: absolute;
+    width: 35px;
+    height: 35px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(79, 139, 255, 0.15), rgba(79, 139, 255, 0.05));
+    border: 2px solid rgba(79, 139, 255, 0.2);
+    animation: pulseDrum 4s infinite ease-in-out;
+    box-shadow: 0 0 15px rgba(79, 139, 255, 0.1);
+  }
+
+  .drum-element:nth-child(2n) {
+    background: radial-gradient(circle, rgba(168, 85, 247, 0.15), rgba(168, 85, 247, 0.05));
+    border-color: rgba(168, 85, 247, 0.2);
+    box-shadow: 0 0 15px rgba(168, 85, 247, 0.1);
+    animation-delay: -1.5s;
+  }
+
+  .drum-element:nth-child(3n) {
+    background: radial-gradient(circle, rgba(77, 227, 255, 0.15), rgba(77, 227, 255, 0.05));
+    border-color: rgba(77, 227, 255, 0.2);
+    box-shadow: 0 0 15px rgba(77, 227, 255, 0.1);
+    animation-delay: -3s;
+  }
+
+  @keyframes pulseDrum {
+    0%, 100% {
+      transform: scale(1);
+      opacity: 0.15;
+    }
+    50% {
+      transform: scale(1.15);
+      opacity: 0.25;
+    }
+  }
+
+  .sound-wave {
+    position: absolute;
+    width: 50px;
+    height: 50px;
+    border: 2px solid rgba(79, 139, 255, 0.12);
+    border-radius: 50%;
+    animation: rippleWave 3s infinite;
+  }
+
+  .sound-wave:nth-child(2) {
+    animation-delay: 1s;
+    border-color: rgba(168, 85, 247, 0.12);
+  }
+
+  .sound-wave:nth-child(3) {
+    animation-delay: 2s;
+    border-color: rgba(77, 227, 255, 0.12);
+  }
+
+  @keyframes rippleWave {
+    0% {
+      transform: scale(0.8);
+      opacity: 0.2;
+    }
+    100% {
+      transform: scale(2);
+      opacity: 0;
+    }
+  }
+
+  .vinyl-record {
+    position: absolute;
+    width: 45px;
+    height: 45px;
+    border-radius: 50%;
+    background: 
+      radial-gradient(circle at center, rgba(15, 23, 42, 0.9) 30%, transparent 31%),
+      repeating-conic-gradient(
+        from 0deg,
+        rgba(79, 139, 255, 0.06) 0deg 10deg,
+        rgba(168, 85, 247, 0.06) 10deg 20deg
+      );
+    border: 2px solid rgba(79, 139, 255, 0.15);
+    animation: spinVinyl 10s linear infinite;
+    box-shadow: 0 0 10px rgba(79, 139, 255, 0.1);
+  }
+
+  @keyframes spinVinyl {
+    0% {
+      transform: rotate(0deg);
+    }
+    100% {
+      transform: rotate(360deg);
+    }
+  }
+
+  .beat-line {
+    position: absolute;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, rgba(79, 139, 255, 0.3), transparent);
+    border-radius: 2px;
+    animation: beatPulse 2s infinite ease-in-out;
+    box-shadow: 0 0 8px rgba(79, 139, 255, 0.15);
+  }
+
+  @keyframes beatPulse {
+    0%, 100% {
+      width: 15px;
+      opacity: 0.1;
+    }
+    50% {
+      width: 60px;
+      opacity: 0.25;
+    }
+  }
+
+  /* Hero section with animated elements */
+  .hero {
+    position: relative;
+  }
+
+  .hero-animated-container {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    pointer-events: none;
+    overflow: hidden;
+    border-radius: 12px;
+  }
+
+  /* Responsive: reduce animations on mobile */
+  @media (max-width: 768px) {
+    .music-note,
+    .drum-element,
+    .sound-wave,
+    .vinyl-record,
+    .beat-line {
+      display: none;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .music-note,
+    .drum-element,
+    .sound-wave,
+    .vinyl-record,
+    .beat-line {
+      animation: none;
+      opacity: 0.1;
+    }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="animated-background" id="animatedBackground"></div>
+<div class="home-page">
+  <section class="hero">
+    <div class="hero-animated-container" id="heroAnimated"></div>
+    <div>
+      <div class="hero-heading-kicker">Creative fintech</div>
+      <h1 class="hero-heading">
+        <span class="hero-highlight">BeatFund</span> — money that
+        moves like your creative career.
+      </h1>
+
+      <p class="hero-sub">
+        Save, move money, and fund projects with a wallet and booking system
+        built for artists, producers, studios, videographers, talent, and more.
+      </p>
+
+      <div class="hero-links">
+        <a href="#waitlist" onclick="document.getElementById('waitlist').scrollIntoView({ behavior: 'smooth', block: 'start' }); return false;">Join the Waitlist</a>
+        <a href="{{ url_for('login') }}">Log in</a>
+      </div>
+
+      <div class="hero-secondary-links">
+        <a href="{{ url_for('market_index') }}">Browse the marketplace →</a>
+        <a href="{{ url_for('wallet_home') }}">Open your wallet →</a>
+      </div>
+
+      <div class="hero-tags">
+        <span>Fast KYC onboarding</span>
+        <span>Secure wallet escrow</span>
+        <span>Built-in BookMe marketplace</span>
+      </div>
+    </div>
+
+    <aside class="hero-card">
+      <h2 class="hero-card-title">Welcome to BeatFund</h2>
+      <p class="hero-card-sub">
+        One account. One wallet. Multiple ways to get paid and get work done.
+      </p>
+      <ul class="hero-card-list">
+        <li><span class="hero-card-emoji">💰</span> <span>Fund and track creative projects</span></li>
+        <li><span class="hero-card-emoji">🧑‍🤝‍🧑</span> <span>Book studios, talent, and providers</span></li>
+        <li><span class="hero-card-emoji">🎵</span> <span>Sell beats and services in one place</span></li>
+        <li><span class="hero-card-emoji">📲</span> <span>Wallet-powered, instant checkout</span></li>
+        <li><span class="hero-card-emoji">📍</span> <span>Discover BookMe providers by city</span></li>
+      </ul>
+      <p class="hero-card-tip">
+        Tip: Create a free account to unlock your dashboard, wallet, and verified bookings.
+      </p>
+      <div class="hero-card-foot">
+        <div>
+          Built for the creative economy — not just another generic banking app.
+        </div>
+        <div class="hero-card-foot-pill">
+          Beta · Product in active development
+        </div>
+      </div>
+    </aside>
+  </section>
+
+  <!-- Waitlist Form Section -->
+  <section id="waitlist" class="waitlist-section">
+    <h2>Join the Waitlist</h2>
+    <p>Be among the first to access BeatFund when we launch. Get early access to features and exclusive updates.</p>
+    {% if waitlist_count is defined and waitlist_count > 0 %}
+    <div class="waitlist-count">Join {{ waitlist_count }} others on the waitlist</div>
+    {% endif %}
+    
+    <form method="POST" action="{{ url_for('waitlist_signup') }}" class="waitlist-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      
+      <div class="waitlist-form-group">
+        <label for="email">Email <span style="color: #ef4444;">*</span></label>
+        <input type="email" id="email" name="email" required placeholder="your@email.com">
+      </div>
+      
+      <div class="waitlist-form-group">
+        <label for="full_name">Full Name</label>
+        <input type="text" id="full_name" name="full_name" placeholder="John Doe">
+      </div>
+      
+      <div class="waitlist-form-group">
+        <label for="role_interest">I'm interested in joining as</label>
+        <select id="role_interest" name="role_interest">
+          <option value="">Select a role...</option>
+          <option value="artist">Artist</option>
+          <option value="producer">Producer</option>
+          <option value="studio">Studio</option>
+          <option value="videographer">Videographer</option>
+          <option value="designer">Designer</option>
+          <option value="engineer">Engineer</option>
+          <option value="manager">Manager</option>
+          <option value="client">Client</option>
+          <option value="other">Other</option>
+        </select>
+      </div>
+      
+      <div class="waitlist-form-group">
+        <label for="note">Tell us more (optional)</label>
+        <textarea id="note" name="note" placeholder="What are you most excited about? What features would you like to see?" maxlength="300"></textarea>
+      </div>
+      
+      <button type="submit" class="waitlist-submit">Join Waitlist</button>
+    </form>
+  </section>
+
+  <!-- Roles section: artists / producers / providers -->
+  <section class="home-roles">
+    <div class="home-roles-title">One platform, different lanes</div>
+    <div class="home-roles-sub">
+      Whether you make music, run a studio, shoot videos, or provide services, BeatFund helps you
+      handle money and bookings in one workflow.
+    </div>
+
+    <div class="home-role-grid">
+      <article class="home-role-card">
+        <div class="home-role-label">For artists & creators</div>
+        <div class="home-role-title">Pay for beats & book your team</div>
+        <p class="home-role-text">
+          Load your BeatFund wallet, buy beats from the marketplace, then book studios,
+          videographers, and talent without giving out your personal banking details.
+        </p>
+        <a href="{{ url_for('market_index') }}" class="home-role-link">
+          Explore beats & services →
+        </a>
+      </article>
+
+      <article class="home-role-card">
+        <div class="home-role-label">For producers & studios</div>
+        <div class="home-role-title">Sell beats, sessions & bundles</div>
+        <p class="home-role-text">
+          Upload beats, set rates for studio time, and receive payments straight into your BeatFund
+          wallet with clear logs for every booking and sale.
+        </p>
+        <a href="{{ url_for('register') }}" class="home-role-link">
+          Create your provider account →
+        </a>
+      </article>
+
+      <article class="home-role-card">
+        <div class="home-role-label">For talent & providers</div>
+        <div class="home-role-title">Turn bookings into clean payouts</div>
+        <p class="home-role-text">
+          List your services — from makeup to choreography to event planning — and let clients
+          pay via wallet so you can focus on the work, not chasing invoices.
+        </p>
+        <a href="{{ url_for('register') }}" class="home-role-link">
+          Join as a provider →
+        </a>
+      </article>
+    </div>
+  </section>
+
+  <!-- How it works section -->
+  <section class="home-how">
+    <div class="home-how-title">How BeatFund works</div>
+    <div class="home-how-sub">
+      A simple flow for complex creative projects — from idea to final payment.
+    </div>
+
+    <div class="home-how-steps">
+      <article class="home-how-step">
+        <div class="home-how-step-num">Step 1</div>
+        <div class="home-how-step-title">Create your BeatFund account</div>
+        <p class="home-how-step-text">
+          Sign up in minutes. Choose whether you're here to buy beats, offer services,
+          or both — your wallet powers everything.
+        </p>
+      </article>
+
+      <article class="home-how-step">
+        <div class="home-how-step-num">Step 2</div>
+        <div class="home-how-step-title">Fund your wallet</div>
+        <p class="home-how-step-text">
+          Add money to your BeatFund balance and use it to buy beats, book providers,
+          or receive payouts from your own sales.
+        </p>
+      </article>
+
+      <article class="home-how-step">
+        <div class="home-how-step-num">Step 3</div>
+        <div class="home-how-step-title">Book & collaborate</div>
+        <p class="home-how-step-text">
+          Use BookMe to find studios, videographers, talent, and other providers near you,
+          then lock in sessions with wallet-powered payments.
+        </p>
+      </article>
+
+      <article class="home-how-step">
+        <div class="home-how-step-num">Step 4</div>
+        <div class="home-how-step-title">Track everything in one place</div>
+        <p class="home-how-step-text">
+          Your dashboards and wallet show balances, bookings, and transaction history
+          so you always know where your creative money is going.
+        </p>
+      </article>
+    </div>
+  </section>
+</div>
+
+<script nonce="{{ csp_nonce }}">
+  // Create animated music elements
+  (function() {
+    const animatedBg = document.getElementById('animatedBackground');
+    const heroAnimated = document.getElementById('heroAnimated');
+    
+    if (!animatedBg || !heroAnimated) return;
+
+    // Music notes - floating up (reduced from 12 to 6)
+    const musicNotes = ['♪', '♫', '♬', '♩'];
+    for (let i = 0; i < 6; i++) {
+      const note = document.createElement('div');
+      note.className = 'music-note';
+      note.textContent = musicNotes[Math.floor(Math.random() * musicNotes.length)];
+      note.style.left = Math.random() * 100 + '%';
+      note.style.animationDelay = Math.random() * 8 + 's';
+      animatedBg.appendChild(note);
+    }
+
+    // Drum elements - pulsing (reduced from 6 to 3)
+    for (let i = 0; i < 3; i++) {
+      const drum = document.createElement('div');
+      drum.className = 'drum-element';
+      drum.style.left = (20 + i * 30) + '%';
+      drum.style.top = (40 + Math.random() * 30) + '%';
+      animatedBg.appendChild(drum);
+    }
+
+    // Sound waves - rippling (reduced from 4 to 2)
+    for (let i = 0; i < 2; i++) {
+      const waveContainer = document.createElement('div');
+      waveContainer.style.position = 'absolute';
+      waveContainer.style.left = (30 + i * 40) + '%';
+      waveContainer.style.top = (50 + i * 20) + '%';
+      
+      for (let j = 0; j < 2; j++) {
+        const wave = document.createElement('div');
+        wave.className = 'sound-wave';
+        wave.style.position = 'absolute';
+        wave.style.left = '50%';
+        wave.style.top = '50%';
+        wave.style.transform = 'translate(-50%, -50%)';
+        waveContainer.appendChild(wave);
+      }
+      
+      animatedBg.appendChild(waveContainer);
+    }
+
+    // Vinyl records - spinning (reduced from 3 to 2)
+    for (let i = 0; i < 2; i++) {
+      const vinyl = document.createElement('div');
+      vinyl.className = 'vinyl-record';
+      vinyl.style.left = (25 + i * 50) + '%';
+      vinyl.style.top = (65 + Math.random() * 15) + '%';
+      animatedBg.appendChild(vinyl);
+    }
+
+    // Beat lines - pulsing (reduced from 8 to 4)
+    for (let i = 0; i < 4; i++) {
+      const beat = document.createElement('div');
+      beat.className = 'beat-line';
+      beat.style.left = (15 + i * 25) + '%';
+      beat.style.top = (25 + Math.random() * 50) + '%';
+      beat.style.animationDelay = (i * 0.4) + 's';
+      animatedBg.appendChild(beat);
+    }
+
+    // Hero section specific animations (very subtle)
+    const heroNotes = ['♪', '♫'];
+    for (let i = 0; i < 2; i++) {
+      const note = document.createElement('div');
+      note.className = 'music-note';
+      note.textContent = heroNotes[Math.floor(Math.random() * heroNotes.length)];
+      note.style.fontSize = '16px';
+      note.style.opacity = '0.06';
+      note.style.left = (30 + i * 40) + '%';
+      note.style.animationDuration = (15 + Math.random() * 5) + 's';
+      note.style.animationDelay = Math.random() * 5 + 's';
+      heroAnimated.appendChild(note);
+    }
+  })();
+</script>
+{% endblock %}

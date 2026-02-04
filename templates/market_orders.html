@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}My Orders{% endblock %}
+{% block content %}
+<h2>Orders</h2>
+{% if orders %}
+<table style="width:100%;background:#fff;border-radius:10px;overflow:hidden">
+  <tr style="background:#f7f7f7">
+    <th style="text-align:left;padding:10px">Item</th>
+    <th>Buyer</th>
+    <th>Seller</th>
+    <th>Price</th>
+    <th>Fee</th>
+    <th>Date</th>
+  </tr>
+  {% for o in orders %}
+  <tr>
+    <td style="padding:10px"><a href="{{ url_for('market_detail', item_id=o.item_id) }}">{{ o.item.title }}</a></td>
+    <td style="text-align:center">@{{ o.buyer.username }}</td>
+    <td style="text-align:center">@{{ o.seller.username }}</td>
+    <td style="text-align:center">${{ '%.2f'|format(o.price_cents/100) }}</td>
+    <td style="text-align:center">${{ '%.2f'|format(o.fee_cents/100) }}</td>
+    <td style="text-align:center">{{ o.created_at.strftime('%Y-%m-%d') }}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% else %}
+<p>No orders yet.</p>
+{% endif %}
+{% endblock %}

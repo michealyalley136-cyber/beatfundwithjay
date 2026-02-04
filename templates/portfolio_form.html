@@ -1,0 +1,203 @@
+{% extends "base.html" %}
+{% block title %}
+  {% if item %}Edit portfolio item{% else %}Add portfolio item{% endif %} — BeatFund
+{% endblock %}
+
+{% block content %}
+<div class="page-shell">
+  <div class="form-card">
+    <h1>
+      {% if item %}Edit portfolio item{% else %}Add portfolio item{% endif %}
+    </h1>
+    <p class="subtitle">
+      Upload a strong image and add a short description so clients see your best work.
+    </p>
+
+    <form method="post" enctype="multipart/form-data">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+      <label class="field-label" for="title">Project title</label>
+      <input
+        id="title"
+        name="title"
+        type="text"
+        required
+        class="field-input"
+        value="{{ item.title if item else '' }}"
+        placeholder="e.g. Afrobeats Wedding Performance, Bridal glam, Club night DJ set"
+      >
+
+      <label class="field-label" for="role_label">Role shown on this project (optional)</label>
+      <input
+        id="role_label"
+        name="role_label"
+        type="text"
+        class="field-input"
+        value="{{ item.role_label if item and item.role_label else '' }}"
+        placeholder="e.g. Choreographer/Dancer, DJ, Makeup artist"
+      >
+
+      <label class="field-label" for="description">Description (what was this?)</label>
+      <textarea
+        id="description"
+        name="description"
+        rows="4"
+        class="field-input"
+        placeholder="Short story about the project, event type, artist you worked with, etc."
+      >{{ item.description if item and item.description else '' }}</textarea>
+
+      <div class="field-grid">
+        <div>
+          <label class="field-label" for="location">Location (city, venue)</label>
+          <input
+            id="location"
+            name="location"
+            type="text"
+            class="field-input"
+            value="{{ item.location if item and item.location else '' }}"
+            placeholder="e.g. Accra, Ghana · La Palm, or Nashville, TN"
+          >
+        </div>
+        <div>
+          <label class="field-label" for="event_date">Event date</label>
+          <input
+            id="event_date"
+            name="event_date"
+            type="date"
+            class="field-input"
+            value="{{ item.event_date.isoformat() if item and item.event_date else '' }}"
+          >
+        </div>
+      </div>
+
+      <label class="field-label" for="main_image">
+        Main image {% if not item or not item.main_image_path %}(upload at least one){% endif %}
+      </label>
+      <input
+        id="main_image"
+        name="main_image"
+        type="file"
+        accept=".png,.jpg,.jpeg"
+        class="field-input"
+      >
+      {% if item and item.main_image_url %}
+        <p class="hint">Current image:</p>
+        <img src="{{ item.main_image_url }}" alt="Current" class="preview-img">
+      {% endif %}
+      <p class="hint">Recommended: horizontal image, clear and not too dark.</p>
+
+      <label class="field-label" for="video_url">Video link (optional)</label>
+      <input
+        id="video_url"
+        name="video_url"
+        type="url"
+        class="field-input"
+        value="{{ item.video_url if item and item.video_url else '' }}"
+        placeholder="YouTube, Instagram Reel, TikTok, Vimeo..."
+      >
+
+      <label class="field-label" for="external_link">Project link (optional)</label>
+      <input
+        id="external_link"
+        name="external_link"
+        type="url"
+        class="field-input"
+        value="{{ item.external_link if item and item.external_link else '' }}"
+        placeholder="Spotify / Apple Music / website / press article"
+      >
+
+      <div class="actions-row">
+        <button type="submit" class="btn-primary">
+          {% if item %}Save changes{% else %}Create portfolio item{% endif %}
+        </button>
+        <a href="{{ url_for('portfolio_index') }}" class="btn-link">Cancel</a>
+      </div>
+    </form>
+  </div>
+</div>
+
+<style>
+.page-shell {
+  max-width: 720px;
+  margin: 24px auto;
+  padding: 0 14px 40px;
+}
+.form-card {
+  background: #0b0f1e;
+  border-radius: 16px;
+  padding: 20px 18px 24px;
+  border: 1px solid #232842;
+  box-shadow: 0 18px 40px rgba(0,0,0,0.55);
+}
+.form-card h1 {
+  margin: 0 0 4px;
+}
+.subtitle {
+  margin: 0 0 16px;
+  opacity: 0.85;
+  font-size: 14px;
+}
+.field-label {
+  display: block;
+  margin-top: 10px;
+  margin-bottom: 4px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.field-input {
+  width: 100%;
+  border-radius: 12px;
+  border: 1px solid #303a5c;
+  background: #050716;
+  color: #e5e7eb;
+  padding: 9px 11px;
+  font-size: 14px;
+}
+.field-input::placeholder {
+  color: #6b7280;
+}
+textarea.field-input {
+  resize: vertical;
+}
+.field-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
+  gap: 10px;
+}
+.hint {
+  font-size: 12px;
+  opacity: 0.8;
+  margin: 4px 0;
+}
+.preview-img {
+  display: block;
+  max-width: 220px;
+  max-height: 140px;
+  border-radius: 8px;
+  margin: 4px 0 6px;
+  object-fit: cover;
+}
+.actions-row {
+  margin-top: 16px;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.btn-primary {
+  border-radius: 999px;
+  padding: 9px 16px;
+  border: none;
+  background: linear-gradient(135deg, #3a7bff, #7c3bff);
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+}
+.btn-link {
+  display: inline-flex;
+  align-items: center;
+  font-size: 14px;
+  color: #9ca3af;
+  text-decoration: underline;
+}
+</style>
+{% endblock %}

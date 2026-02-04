@@ -1,0 +1,141 @@
+{% extends "base.html" %}
+{% block title %}{{ provider.display_name }} · BookMe · BeatFund{% endblock %}
+
+{% block content %}
+<div class="page">
+
+  <div class="card">
+    <div style="display:flex; align-items:center; gap:14px; flex-wrap:wrap;">
+      <img src="{{ provider.avatar_url }}" alt="avatar"
+           style="width:72px;height:72px;border-radius:16px;object-fit:cover;">
+      <div style="flex:1; min-width:240px;">
+        <h2 style="margin:0;">{{ prof.display_name }}</h2>
+        <div class="muted">@{{ provider.username }} · {{ get_role_display(provider.role) }}</div>
+        <div class="muted">
+          {% if prof.city or prof.state %}
+            {{ prof.city or "" }}{% if prof.city and prof.state %}, {% endif %}{{ prof.state or "" }}
+          {% endif %}
+        </div>
+      </div>
+
+      {% if current_user.is_authenticated and current_user.id != provider.id %}
+        {% if (prof and not prof.is_visible) or (settings and not settings.accepting_new_requests) %}
+          <span class="btn" style="opacity: 0.6; cursor: not-allowed; background: rgba(239,68,68,.2); border-color: rgba(239,68,68,.4);">Not accepting bookings</span>
+        {% else %}
+          <a class="btn" href="{{ url_for('bookme_book_provider', username=provider.username) }}">Request booking</a>
+        {% endif %}
+      {% endif %}
+    </div>
+  </div>
+
+  {# FOLLOW WIDGET (your requested addition) #}
+  {% set profile_user = provider %}
+  {% include "_follow_widget.html" %}
+
+  <div class="card">
+    <h3 style="margin-top:0;">About</h3>
+    {% if prof.service_types %}
+      <div><b>Services:</b> {{ prof.service_types }}</div>
+    {% endif %}
+    {% if prof.rate_notes %}
+      <div style="margin-top:8px;"><b>Rates:</b> {{ prof.rate_notes }}</div>
+    {% endif %}
+    {% if prof.contact_phone %}
+      <div style="margin-top:8px;"><b>Phone:</b> {{ prof.contact_phone }}</div>
+    {% endif %}
+    {% if prof.bio %}
+      <div style="margin-top:10px;" class="muted">{{ prof.bio }}</div>
+    {% else %}
+      <div class="muted">No bio provided yet.</div>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0;">Ratings</h3>
+    <div>
+      <strong>{{ rating_summary.avg }}</strong> / 5
+      <span class="muted">({{ rating_summary.count }} review{{ rating_summary.count != 1 and 's' or '' }})</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0;">Availability & Modes</h3>
+    <div class="muted">
+      Accepting new requests: {{ "Yes" if (settings and settings.accepting_new_requests) else "No" }}
+    </div>
+    <div class="muted" style="margin-top:6px;">
+      Modes:
+      {% if settings and settings.onsite %}On-site{% endif %}
+      {% if settings and settings.remote %}{% if settings.onsite %} · {% endif %}Remote{% endif %}
+      {% if not settings or (not settings.onsite and not settings.remote) %}Not specified{% endif %}
+    </div>
+    {% if settings and settings.travel_radius_miles %}
+      <div class="muted" style="margin-top:6px;">Travel radius: {{ settings.travel_radius_miles }} miles</div>
+    {% endif %}
+    {% if settings and settings.base_location %}
+      <div class="muted" style="margin-top:6px;">Base location: {{ settings.base_location }}</div>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0;">Portfolio</h3>
+
+    {% if items and items|length > 0 %}
+      <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap:12px;">
+        {% for item in items %}
+          <div class="card" style="padding:12px;">
+            <div style="font-weight:700;">{{ item.title }}</div>
+            {% if item.description %}
+              <div class="muted" style="margin:6px 0 10px;">{{ item.description }}</div>
+            {% endif %}
+
+            {% if item.media_type.value == "image" %}
+              <img src="{{ item.media_url }}" alt="{{ item.title }}"
+                   style="width:100%; max-height:240px; object-fit:cover; border-radius:12px;">
+
+            {% elif item.media_type.value == "audio" %}
+              <audio controls style="width:100%;">
+                <source src="{{ item.media_url }}">
+              </audio>
+
+            {% elif item.media_type.value == "video" %}
+              {% if item.stored_filename %}
+                <video controls style="width:100%; border-radius:12px;">
+                  <source src="{{ item.media_url }}">
+                </video>
+              {% else %}
+                <a class="btn btn-secondary" href="{{ item.media_url }}" target="_blank" rel="noopener">Open video</a>
+              {% endif %}
+
+            {% else %}
+              <a class="btn btn-secondary" href="{{ item.media_url }}" target="_blank" rel="noopener">Open link</a>
+            {% endif %}
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="muted">No portfolio items yet.</div>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0;">Reviews</h3>
+    {% if reviews %}
+      {% for r in reviews %}
+        <div style="border-top:1px solid #eee;padding-top:8px;margin-top:8px;">
+          <div style="font-weight:600;">{{ r.rating }}/5{% if r.title %} · {{ r.title }}{% endif %}</div>
+          <div class="muted" style="font-size:0.85rem;">
+            @{{ r.reviewer.username }} · {{ r.created_at.strftime('%Y-%m-%d') }}
+          </div>
+          {% if r.body %}
+            <div style="margin-top:6px;white-space:pre-line;">{{ r.body }}</div>
+          {% endif %}
+        </div>
+      {% endfor %}
+    {% else %}
+      <div class="muted">No reviews yet.</div>
+    {% endif %}
+  </div>
+
+</div>
+{% endblock %}

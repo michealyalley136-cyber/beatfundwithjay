@@ -1,0 +1,176 @@
+{% extends "base.html" %}
+{% block title %}My portfolio — BeatFund{% endblock %}
+
+{% block content %}
+<div class="page-shell">
+  <div class="page-header">
+    <h1>My portfolio</h1>
+    <p>Showcase your best work to clients, promoters and collaborators.</p>
+    <a href="{{ url_for('portfolio_new') }}" class="btn-primary">Add project</a>
+  </div>
+
+  {% if items %}
+    <div class="portfolio-grid">
+      {% for item in items %}
+        <article class="portfolio-card">
+          {% if item.main_image_url %}
+            <div class="portfolio-thumb">
+              <img src="{{ item.main_image_url }}" alt="{{ item.title }}">
+            </div>
+          {% endif %}
+          <div class="portfolio-body">
+            <h2>{{ item.title }}</h2>
+            {% if item.role_label %}
+              <div class="pill">{{ item.role_label }}</div>
+            {% endif %}
+            {% if item.location %}
+              <p class="meta">{{ item.location }}</p>
+            {% endif %}
+            {% if item.event_date %}
+              <p class="meta">Date: {{ item.event_date.strftime("%b %d, %Y") }}</p>
+            {% endif %}
+            {% if item.description %}
+              <p class="desc">{{ item.description[:160] }}{% if item.description|length > 160 %}…{% endif %}</p>
+            {% endif %}
+
+            <div class="card-actions">
+              <a href="{{ url_for('portfolio_edit', item_id=item.id) }}" class="btn-sm">Edit</a>
+
+              <form method="post"
+                    action="{{ url_for('portfolio_delete', item_id=item.id) }}"
+                    onsubmit="return confirm('Delete this item?');">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="btn-sm btn-danger">Delete</button>
+              </form>
+            </div>
+
+            <div class="links-row">
+              {% if item.video_url %}
+                <a href="{{ item.video_url }}" target="_blank" rel="noopener">Video link ↗</a>
+              {% endif %}
+              {% if item.external_link %}
+                <a href="{{ item.external_link }}" target="_blank" rel="noopener">Project link ↗</a>
+              {% endif %}
+            </div>
+          </div>
+        </article>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="empty-state">
+      <p>You haven’t added anything to your portfolio yet.</p>
+      <a href="{{ url_for('portfolio_new') }}" class="btn-primary">Add your first project</a>
+    </div>
+  {% endif %}
+</div>
+
+<style>
+.page-shell {
+  max-width: 960px;
+  margin: 24px auto;
+  padding: 0 14px 40px;
+}
+.page-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.page-header p {
+  margin: 0;
+  opacity: 0.8;
+}
+.btn-primary {
+  border-radius: 999px;
+  padding: 8px 14px;
+  border: none;
+  background: linear-gradient(135deg, #33b5ff, #7c3bff);
+  color: #fff;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+}
+.portfolio-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 14px;
+}
+.portfolio-card {
+  background: #0b0f1e;
+  border-radius: 14px;
+  overflow: hidden;
+  border: 1px solid #222745;
+  display: flex;
+  flex-direction: column;
+}
+.portfolio-thumb img {
+  width: 100%;
+  display: block;
+  object-fit: cover;
+  max-height: 190px;
+}
+.portfolio-body {
+  padding: 10px 12px 12px;
+}
+.portfolio-body h2 {
+  margin: 0 0 4px;
+  font-size: 1rem;
+}
+.pill {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(96, 165, 250, 0.12);
+  border: 1px solid rgba(96, 165, 250, 0.6);
+  font-size: 11px;
+  margin-bottom: 4px;
+}
+.meta {
+  font-size: 12px;
+  opacity: 0.8;
+  margin: 0;
+}
+.desc {
+  font-size: 13px;
+  margin: 6px 0 8px;
+}
+.card-actions {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+.btn-sm {
+  border-radius: 999px;
+  padding: 5px 10px;
+  font-size: 12px;
+  border: 1px solid #374151;
+  background: #111827;
+  color: #e5e7eb;
+  cursor: pointer;
+  text-decoration: none;
+}
+.btn-danger {
+  border-color: #b91c1c;
+  color: #fecaca;
+}
+.links-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 12px;
+  margin-top: 2px;
+}
+.links-row a {
+  color: #60a5fa;
+}
+.empty-state {
+  padding: 24px 16px;
+  text-align: center;
+  background: #0b0f1e;
+  border-radius: 14px;
+  border: 1px dashed #374151;
+}
+</style>
+{% endblock %}

@@ -1,0 +1,25 @@
+{% extends 'base.html' %}
+{% block title %}Funder Dashboard{% endblock %}
+{% block content %}
+    <h2>Funder Dashboard</h2>
+    <h3>All Requests</h3>
+    <table>
+        <tr><th>ID</th><th>Artist</th><th>Description</th><th>Amount</th><th>Status</th><th>Actions</th></tr>
+        {% for req in requests %}
+            <tr>
+                <td>{{ req.id }}</td>
+                <td>{{ req.artist_id }}</td>  <!-- Could join to show username -->
+                <td>{{ req.description }}</td>
+                <td>${{ req.amount }}</td>
+                <td>{{ req.status }}</td>
+                <td>
+                    {% if req.status == 'pending' %}
+                        <a href="{{ url_for('approve', request_id=req.id) }}">Approve</a>
+                    {% elif req.status == 'approved' %}
+                        <a href="{{ url_for('disburse', request_id=req.id) }}">Disburse</a>
+                    {% endif %}
+                </td>
+            </tr>
+        {% endfor %}
+    </table>
+{% endblock %}

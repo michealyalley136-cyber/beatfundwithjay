@@ -1,0 +1,347 @@
+{% extends "base.html" %}
+{% block title %}Artist Dashboard · BeatFund{% endblock %}
+
+{% block extra_head %}
+<style>
+  /* Same energetic theme as provider dashboard (scoped) */
+  .bf-dash {
+    --bg0: #070A12;
+    --bg1: #0B1220;
+    --card: rgba(255,255,255,.06);
+    --border: rgba(255,255,255,.12);
+    --text: rgba(255,255,255,.92);
+    --muted: rgba(255,255,255,.70);
+
+    --p1: #7C3AED;
+    --p2: #EC4899;
+    --p3: #22C55E;
+    --p4: #06B6D4;
+
+    --shadow: 0 18px 60px rgba(0,0,0,.55);
+    --shadow2: 0 10px 28px rgba(0,0,0,.45);
+    --r: 18px;
+
+    max-width: 1220px;
+    margin: 0 auto;
+    padding: 18px 16px 46px;
+    color: var(--text);
+  }
+
+  .bf-dash-bg{
+    position: relative;
+    border-radius: calc(var(--r) + 8px);
+    background:
+      radial-gradient(900px 500px at 10% 10%, rgba(124, 58, 237, .35), transparent 60%),
+      radial-gradient(800px 520px at 90% 20%, rgba(236, 72, 153, .28), transparent 60%),
+      radial-gradient(700px 520px at 20% 95%, rgba(34, 197, 94, .20), transparent 60%),
+      radial-gradient(650px 450px at 85% 90%, rgba(6, 182, 212, .18), transparent 55%),
+      linear-gradient(180deg, var(--bg0), var(--bg1));
+    border: 1px solid rgba(255,255,255,.08);
+    box-shadow: var(--shadow);
+    overflow: hidden;
+  }
+
+  .bf-glow{
+    position:absolute;
+    inset:-120px;
+    background:
+      radial-gradient(420px 420px at 20% 30%, rgba(124, 58, 237, .22), transparent 60%),
+      radial-gradient(420px 420px at 70% 40%, rgba(236, 72, 153, .18), transparent 60%),
+      radial-gradient(420px 420px at 55% 85%, rgba(6, 182, 212, .14), transparent 60%);
+    filter: blur(30px);
+    opacity: .9;
+    pointer-events:none;
+    animation: bfFloat 12s ease-in-out infinite;
+  }
+  @keyframes bfFloat {
+    0%,100% { transform: translate3d(0,0,0) scale(1); }
+    50%     { transform: translate3d(10px,-12px,0) scale(1.02); }
+  }
+
+  .bf-inner{ position:relative; padding:18px; }
+
+  .bf-hero{
+    display:flex;
+    align-items:flex-start;
+    justify-content:space-between;
+    gap:14px;
+    flex-wrap:wrap;
+    padding:16px;
+    border-radius: calc(var(--r) + 6px);
+    background: linear-gradient(135deg, rgba(255,255,255,.08), rgba(255,255,255,.03));
+    border: 1px solid rgba(255,255,255,.12);
+    box-shadow: var(--shadow2);
+    backdrop-filter: blur(10px);
+  }
+
+  .bf-identity{ display:flex; align-items:center; gap:12px; min-width:260px; }
+  .bf-avatar{
+    width:56px; height:56px; border-radius:999px; object-fit:cover;
+    border: 1px solid rgba(255,255,255,.18);
+    background: rgba(255,255,255,.10);
+    box-shadow: 0 12px 28px rgba(0,0,0,.35);
+  }
+
+  .bf-title h1{ margin:0; font-size:1.35rem; line-height:1.15; }
+  .bf-sub{ margin-top:6px; color: var(--muted); font-size:.95rem; max-width:650px; }
+
+  .bf-badges{ display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
+  .bf-badge{
+    display:inline-flex; align-items:center; gap:8px;
+    padding:7px 10px; border-radius:999px;
+    border: 1px solid rgba(255,255,255,.16);
+    background: rgba(0,0,0,.22);
+    font-size:.85rem;
+  }
+  .bf-badge a, a.bf-badge{
+    color: inherit;
+    text-decoration: none;
+    transition: background .15s ease, border-color .15s ease;
+  }
+  .bf-badge a:hover, a.bf-badge:hover{
+    background: rgba(255,255,255,.08);
+    border-color: rgba(255,255,255,.22);
+  }
+  .bf-dot{
+    width:9px; height:9px; border-radius:999px;
+    background: linear-gradient(135deg, var(--p1), var(--p2));
+    box-shadow: 0 0 16px rgba(236,72,153,.35);
+  }
+
+  .bf-actions{ display:flex; flex-wrap:wrap; gap:10px; justify-content:flex-end; }
+  .bf-dash .btn{
+    border-radius:999px !important;
+    padding:10px 14px !important;
+    border: 1px solid rgba(255,255,255,.14) !important;
+    background: rgba(255,255,255,.06);
+    color: var(--text) !important;
+    backdrop-filter: blur(10px);
+    transition: transform .12s ease, box-shadow .12s ease, background .12s ease;
+    text-decoration:none;
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    gap:8px;
+    font-weight:800;
+  }
+  .bf-dash .btn:hover{ transform: translateY(-1px); box-shadow: 0 12px 22px rgba(0,0,0,.35); }
+  .bf-dash .btn.btn-primary{
+    border:none !important;
+    background: linear-gradient(135deg, var(--p1), var(--p2)) !important;
+  }
+  .bf-dash .btn.btn-secondary{ background: rgba(255,255,255,.08) !important; }
+
+  .bf-grid{ display:grid; grid-template-columns: repeat(12, 1fr); gap:14px; margin-top:14px; }
+  .bf-card{
+    background: linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,.05));
+    border: 1px solid rgba(255,255,255,.12);
+    border-radius: 18px;
+    padding: 14px;
+    box-shadow: 0 10px 28px rgba(0,0,0,.45);
+    backdrop-filter: blur(10px);
+  }
+  .bf-card-title{ display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; margin-bottom:10px; }
+  .bf-card-title h2{ margin:0; font-size:1.02rem; }
+  .bf-card-title p{ margin:4px 0 0; color: rgba(255,255,255,.70); font-size:.92rem; }
+
+  .bf-cols-12{ grid-column: span 12; }
+  .bf-cols-6{ grid-column: span 6; }
+
+  @media (max-width: 820px){
+    .bf-cols-6{ grid-column: span 12; }
+    .bf-sub{ max-width:100%; }
+  }
+
+  .bf-kpis{ display:grid; grid-template-columns: repeat(6, 1fr); gap:12px; }
+  @media (max-width: 1050px){ .bf-kpis{ grid-template-columns: repeat(3, 1fr); } }
+  @media (max-width: 520px){ .bf-kpis{ grid-template-columns: repeat(2, 1fr); } }
+
+  .bf-kpi{
+    position: relative;
+    padding: 12px;
+    border-radius: 14px;
+    border: 1px solid rgba(255,255,255,.12);
+    background: rgba(0,0,0,.22);
+    overflow: hidden;
+  }
+  .bf-kpi .label{ color: rgba(255,255,255,.70); font-size:.88rem; margin-bottom:6px; }
+  .bf-kpi .value{ font-size:1.35rem; font-weight:900; line-height:1.1; }
+  .bf-kpi .hint{ margin-top:6px; color: rgba(255,255,255,.70); font-size:.85rem; }
+
+  .bf-list{ display:flex; flex-direction:column; gap:10px; margin-top:10px; }
+  .bf-row{
+    display:flex; align-items:center; justify-content:space-between; gap:12px;
+    padding: 12px; border-radius: 14px;
+    border: 1px solid rgba(255,255,255,.12);
+    background: rgba(0,0,0,.22);
+  }
+  .bf-row .left{ min-width:0; }
+  .bf-row .title{ font-weight:900; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width: 560px; }
+  .bf-row .meta{ margin-top:4px; color: rgba(255,255,255,.70); font-size:.92rem; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="bf-dash">
+  <div class="bf-dash-bg">
+    <div class="bf-glow"></div>
+
+    <div class="bf-inner">
+      {% include "_provider_rating_snippet.html" %}
+      <!-- HERO -->
+      <div class="bf-hero">
+        <div class="bf-identity">
+          <img class="bf-avatar" src="{{ current_user.avatar_url }}" alt="{{ current_user.username }}">
+          <div class="bf-title">
+            <h1>{{ role_label }} Dashboard</h1>
+            <div class="bf-sub">
+              Welcome, <strong>@{{ current_user.username }}</strong>
+              {% if prof and prof.display_name %} · {{ prof.display_name }}{% endif %}
+            </div>
+
+            <div class="bf-badges">
+              <span class="bf-badge"><span class="bf-dot"></span> Followers <strong>{{ followers_count }}</strong></span>
+              <span class="bf-badge">Following <strong>{{ following_count }}</strong></span>
+              <span class="bf-badge">
+                Gigs Profile:
+                <strong>{{ "Live" if artist_can_take_gigs else "Off" }}</strong>
+              </span>
+              <a class="bf-badge" href="{{ url_for('producer_market_upload') }}">Upload Beat</a>
+            </div>
+          </div>
+        </div>
+
+        <div class="bf-actions">
+          <a class="btn btn-primary" href="{{ url_for('wallet_home') }}">Wallet</a>
+          <a class="btn btn-secondary" href="{{ url_for('wallet_home', tab='transactions') }}">Transactions</a>
+          <a class="btn btn-secondary" href="{{ url_for('market_index') }}">Marketplace</a>
+          <a class="btn btn-secondary" href="{{ url_for('bookme_search') }}">BookMe</a>
+          <a class="btn btn-secondary" href="{{ url_for('bookme_profile') }}">
+            {{ "Edit Gig Profile" if artist_can_take_gigs else "Create Gig Profile" }}
+          </a>
+          {% if artist_can_take_gigs %}
+            <a class="btn btn-secondary" href="{{ url_for('provider_portfolio_public', username=current_user.username) }}">Public Gig Profile</a>
+          {% endif %}
+          <a class="btn btn-secondary" href="{{ url_for('profile_edit') }}">Account</a>
+        </div>
+      </div>
+
+      <!-- GRID -->
+      <div class="bf-grid">
+
+        <!-- KPI STRIP -->
+        <div class="bf-card bf-cols-12">
+          <div class="bf-card-title">
+            <div>
+              <h2>Your activity overview</h2>
+              <p>Both sides: you booking others + others booking you for gigs.</p>
+            </div>
+          </div>
+
+          <div class="bf-kpis">
+            <div class="bf-kpi">
+              <div class="label">Incoming Requests</div>
+              <div class="value">{{ incoming_requests }}</div>
+              <div class="hint">People requesting you</div>
+            </div>
+
+            <div class="bf-kpi">
+              <div class="label">Outgoing Requests</div>
+              <div class="value">{{ outgoing_requests }}</div>
+              <div class="hint">Requests you sent</div>
+            </div>
+
+            <div class="bf-kpi">
+              <div class="label">Gigs (as provider)</div>
+              <div class="value">{{ provider_bookings_count }}</div>
+              <div class="hint">Booked to perform</div>
+            </div>
+
+            <div class="bf-kpi">
+              <div class="label">Gigs pending</div>
+              <div class="value">{{ provider_pending_bookings }}</div>
+              <div class="hint">Awaiting action</div>
+            </div>
+
+            <div class="bf-kpi">
+              <div class="label">Bookings made</div>
+              <div class="value">{{ client_bookings_count }}</div>
+              <div class="hint">You booked others</div>
+            </div>
+
+            <div class="bf-kpi">
+              <div class="label">Bookings pending</div>
+              <div class="value">{{ client_pending_bookings }}</div>
+              <div class="hint">Waiting confirmation</div>
+            </div>
+          </div>
+
+          {% if not artist_can_take_gigs %}
+            <div style="margin-top:12px; color: rgba(255,255,255,.75);">
+              Want gigs? Turn on your BookMe gig profile so clients can book you.
+              <div style="margin-top:10px;">
+                <a class="btn btn-primary" href="{{ url_for('bookme_profile') }}">Create Gig Profile</a>
+              </div>
+            </div>
+          {% endif %}
+        </div>
+
+        <!-- RECENT GIGS -->
+        <div class="bf-card bf-cols-6">
+          <div class="bf-card-title">
+            <div>
+              <h2>Recent gigs (people booking you)</h2>
+              <p>Latest bookings where you are the provider.</p>
+            </div>
+          </div>
+
+          {% if provider_recent_bookings and provider_recent_bookings|length > 0 %}
+            <div class="bf-list">
+              {% for b in provider_recent_bookings %}
+                <div class="bf-row">
+                  <div class="left">
+                    <div class="title">Booking #{{ b.id }} · {{ b.status }}</div>
+                    <div class="meta">
+                      {% if b.event_datetime %}{{ b.event_datetime.strftime("%b %d, %Y %I:%M %p") }}{% endif %}
+                    </div>
+                  </div>
+                </div>
+              {% endfor %}
+            </div>
+          {% else %}
+            <div style="color: rgba(255,255,255,.70);">No gigs yet.</div>
+          {% endif %}
+        </div>
+
+        <!-- RECENT BOOKINGS YOU MADE -->
+        <div class="bf-card bf-cols-6">
+          <div class="bf-card-title">
+            <div>
+              <h2>Recent bookings (you booking others)</h2>
+              <p>Latest bookings where you are the client.</p>
+            </div>
+          </div>
+
+          {% if client_recent_bookings and client_recent_bookings|length > 0 %}
+            <div class="bf-list">
+              {% for b in client_recent_bookings %}
+                <div class="bf-row">
+                  <div class="left">
+                    <div class="title">Booking #{{ b.id }} · {{ b.status }}</div>
+                    <div class="meta">
+                      {% if b.event_datetime %}{{ b.event_datetime.strftime("%b %d, %Y %I:%M %p") }}{% endif %}
+                    </div>
+                  </div>
+                </div>
+              {% endfor %}
+            </div>
+          {% else %}
+            <div style="color: rgba(255,255,255,.70);">No bookings yet.</div>
+          {% endif %}
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

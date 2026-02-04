@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>BeatFund - Loans</title>
+    <style>
+        body { font-family: Arial; margin: 40px; background: #f4f4f4; }
+        .header { background: #1a1a1a; color: white; padding: 20px; border-radius: 10px; }
+        .btn { padding: 10px 20px; background: #00d4ff; color: black; text-decoration: none; border-radius: 5px; margin: 5px; display: inline-block; font-weight: bold; }
+        .btn:hover { background: #00aaff; }
+        .form { background: white; padding: 20px; border-radius: 10px; margin: 20px 0; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        input, select, textarea { width: 100%; padding: 10px; margin: 10px 0; border: 1px solid #ddd; border-radius: 5px; }
+        table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+        th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
+        th { background: #f0f0f0; }
+        .warning { background: #fff3cd; border: 1px solid #ffeaa7; padding: 15px; border-radius: 10px; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>BeatFund</h1>
+        <p>Hi {{ current_user.username }} | 
+           <a href="{{ url_for('dashboard') }}" style="color: #00d4ff;">Dashboard</a> | 
+           <a href="{{ url_for('wallet') }}" style="color: #00d4ff;">Wallet</a> | 
+           <a href="{{ url_for('card') }}" style="color: #00d4ff;">Virtual Card</a> | 
+           <a href="{{ url_for('logout') }}" style="color: #00d4ff;">Logout</a>
+        </p>
+    </div>
+
+    <h2>Project Funding Loans</h2>
+
+    <!-- ELIGIBILITY CHECK -->
+    {% if not eligible %}
+    <div class="warning">
+        <h3>Unlock Loans in {{ 30 - days_saved }} Days</h3>
+        <p>You need to save for <strong>30 days</strong> and have <strong>$100+</strong> in your wallet.</p>
+        <p><strong>Progress:</strong> {{ days_saved }}/30 days | Wallet: <strong>${{ "%.2f"|format(current_user.wallet_balance) }}</strong></p>
+        <a href="{{ url_for('wallet') }}" class="btn">Deposit Now</a>
+    </div>
+    {% else %}
+    <div class="form">
+        <h3>Apply for Loan</h3>
+        <form method="POST">
+            <input type="number" name="amount" placeholder="Amount (e.g. 500)" required min="100" step="10">
+            <select name="installments" required>
+                <option value="">Select Months</option>
+                <option value="3">3 months</option>
+                <option value="6">6 months</option>
+                <option value="12">12 months</option>
+            </select>
+            <input type="text" name="project" placeholder="Project (e.g. Recording Session, Beat Purchase, Show)" required>
+            <button type="submit" class="btn">Submit Loan Request</button>
+        </form>
+    </div>
+    {% endif %}
+
+    <!-- LOAN HISTORY -->
+    <h3>Your Loans</h3>
+    {% if loans %}
+    <table>
+        <tr>
+            <th>Amount</th>
+            <th>Project</th>
+            <th>Status</th>
+            <th>Monthly</th>
+            <th>Paid</th>
+        </tr>
+        {% for loan in loans %}
+        <tr>
+            <td>${{ "%.2f"|format(loan.amount) }}</td>
+            <td>{{ loan.project_type }}</td>
+            <td>{{ loan.status }}</td>
+            <td>${{ "%.2f"|format(loan.monthly_payment) }}</td>
+            <td>{{ LoanPayment.query.filter_by(loan_id=loan.id, paid=True).count() }} / {{ loan.installments }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+    {% else %}
+    <p>No loans yet.</p>
+    {% endif %}
+
+    <p><a href="{{ url_for('dashboard') }}" class="btn">Back</a></p>
+</body>
+</html>

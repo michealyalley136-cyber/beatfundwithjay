@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+{% block title %}My BookMe Profile{% endblock %}
+{% block content %}
+<style>
+  .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .form-grid label{display:block;font-weight:600;margin-bottom:4px}
+  .form-grid input, .form-grid textarea{width:100%;padding:10px;border:1px solid #d9dfeb;border-radius:8px}
+  .wide{grid-column:1 / -1}
+</style>
+
+<h2>My BookMe Profile</h2>
+<p class="muted">This is visible to clients in the BookMe search and on the map.</p>
+
+<form method="post">
+  <div class="form-grid">
+    <div>
+      <label>Display Name *</label>
+      <input name="display_name" value="{{ (prof.display_name if prof else current_user.username) or '' }}" required>
+    </div>
+    <div>
+      <label>Service Types (comma separated)</label>
+      <input name="service_types" value="{{ prof.service_types if prof else '' }}" placeholder="recording,mixing,mastering">
+    </div>
+
+    <div class="wide">
+      <label>Short Bio</label>
+      <textarea name="bio" rows="3" placeholder="Tell clients about your work...">{{ prof.bio if prof else '' }}</textarea>
+    </div>
+
+    <div>
+      <label>Rate Notes</label>
+      <input name="rate_notes" value="{{ prof.rate_notes if prof else '' }}" placeholder="$50/hr, packages available">
+    </div>
+    <div>
+      <label>ZIP</label>
+      <input name="zip" value="{{ prof.zip if prof else '' }}" placeholder="e.g., 43215">
+    </div>
+
+    <div>
+      <label>City</label>
+      <input name="city" value="{{ prof.city if prof else '' }}">
+    </div>
+    <div>
+      <label>State</label>
+      <input name="state" value="{{ prof.state if prof else '' }}">
+    </div>
+
+    <div class="wide">
+      <label>Address (optional)</label>
+      <input name="address" value="{{ prof.address if prof else '' }}" placeholder="123 Studio Ln">
+    </div>
+
+    <div>
+      <label>Latitude (optional)</label>
+      <input name="lat" value="{{ prof.lat if prof and prof.lat is not none else '' }}" placeholder="40.0" inputmode="decimal" id="lat">
+    </div>
+    <div>
+      <label>Longitude (optional)</label>
+      <input name="lng" value="{{ prof.lng if prof and prof.lng is not none else '' }}" placeholder="-83.0" inputmode="decimal" id="lng">
+    </div>
+  </div>
+
+  <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-top:10px;">
+    <button type="button" class="bf-btn-secondary" id="useMyLocation">Use my current location</button>
+    <div id="geoStatus" class="bf-inline-status" aria-live="polite"></div>
+  </div>
+
+  <p class="muted" style="margin-top:6px;">
+    Tip: Use a minus sign for west longitudes (e.g., -83.561523) or add W/E/N/S.
+  </p>
+
+  <div style="margin-top:12px">
+    <button type="submit">Save Profile</button>
+    <a href="{{ url_for('bookme_search') }}" style="margin-left:8px">Back to BookMe</a>
+  </div>
+</form>
+
+<script nonce="{{ csp_nonce }}">
+  (function () {
+    const btn = document.getElementById("useMyLocation");
+    const statusEl = document.getElementById("geoStatus");
+    const latInput = document.getElementById("lat");
+    const lngInput = document.getElementById("lng");
+
+    function setStatus(msg, kind) {
+      if (!statusEl) return;
+      statusEl.textContent = msg || "";
+      statusEl.classList.remove("ok", "err");
+      if (kind) statusEl.classList.add(kind);
+    }
+
+    if (!btn) return;
+
+    btn.addEventListener("click", function () {
+      setStatus("", null);
+      if (!navigator.geolocation) {
+        setStatus("Geolocation is not supported in this browser.", "err");
+        return;
+      }
+
+      btn.disabled = true;
+      btn.style.opacity = "0.7";
+      setStatus("Getting your location...", null);
+
+      navigator.geolocation.getCurrentPosition(
+        function (pos) {
+          const lat = pos.coords.latitude;
+          const lng = pos.coords.longitude;
+
+          if (latInput) latInput.value = Number(lat).toFixed(6);
+          if (lngInput) lngInput.value = Number(lng).toFixed(6);
+
+          setStatus("Location added. Click Save Profile to store it.", "ok");
+          btn.disabled = false;
+          btn.style.opacity = "1";
+        },
+        function (err) {
+          let msg = "Could not get location.";
+          if (err && err.message) msg += " " + err.message;
+          setStatus(msg, "err");
+          btn.disabled = false;
+          btn.style.opacity = "1";
+        },
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
+      );
+    });
+  })();
+</script>
+{% endblock %}

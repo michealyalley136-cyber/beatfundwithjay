@@ -1,0 +1,296 @@
+{% extends "base.html" %}
+{% block title %}Users · BeatFund Admin{% endblock %}
+
+{% block content %}
+<h1 style="font-size:22px; font-weight:600; margin-bottom:6px;">Users</h1>
+<p style="font-size:13px; color:#9aa4c2; margin-bottom:14px;">
+  Manage customer accounts, KYC status, and activation.
+</p>
+
+<!-- Filters (GET – no CSRF needed) -->
+<form method="GET" style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:14px;">
+  <input
+    type="text"
+    name="q"
+    value="{{ q }}"
+    placeholder="Search username..."
+    style="padding:6px 8px; border-radius:8px; border:1px solid #1f2937; background:#020617; color:#e5e7eb; font-size:13px;"
+  >
+
+  <select name="role" style="padding:6px 8px; border-radius:8px; border:1px solid #1f2937; background:#020617; color:#e5e7eb; font-size:13px;">
+    <option value="">All roles</option>
+    {% for r in RoleEnum %}
+      <option value="{{ r.value }}" {% if role == r.value %}selected{% endif %}>
+        {{ r.value|capitalize }}
+      </option>
+    {% endfor %}
+  </select>
+
+  <select name="status" style="padding:6px 8px; border-radius:8px; border:1px solid #1f2937; background:#020617; color:#e5e7eb; font-size:13px;">
+    <option value="">KYC: Any</option>
+    {% for s in KYCStatus %}
+      <option value="{{ s.value }}" {% if status == s.value %}selected{% endif %}>
+        {{ s.value.replace('_',' ')|title }}
+      </option>
+    {% endfor %}
+  </select>
+
+  <select name="active" style="padding:6px 8px; border-radius:8px; border:1px solid #1f2937; background:#020617; color:#e5e7eb; font-size:13px;">
+    <option value="">Active: Any</option>
+    <option value="active" {% if active == "active" %}selected{% endif %}>Active only</option>
+    <option value="inactive" {% if active == "inactive" %}selected{% endif %}>Inactive only</option>
+  </select>
+
+  <button type="submit"
+          style="padding:6px 12px; border-radius:999px; border:1px solid #2563eb;
+                 background:#1d4ed8; color:#fff; font-size:13px;">
+    Apply filters
+  </button>
+</form>
+
+<table style="width:100%; border-collapse:collapse; font-size:13px;">
+  <thead>
+    <tr style="border-bottom:1px solid #111827;">
+      <th style="text-align:left; padding:8px 6px;">Username</th>
+      <th style="text-align:left; padding:8px 6px;">Role</th>
+      <th style="text-align:left; padding:8px 6px;">KYC</th>
+      <th style="text-align:left; padding:8px 6px;">Active</th>
+      <th style="text-align:left; padding:8px 6px;">Actions</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% if users %}
+      {% for u in users %}
+        <tr style="border-top:1px solid rgba(15,23,42,0.9);">
+          <td style="padding:8px 6px;">
+            @{{ u.username }}
+          </td>
+          <td style="padding:8px 6px;">
+            {{ u.role|capitalize }}
+          </td>
+          <td style="padding:8px 6px;">
+            {{ u.kyc_status.replace('_',' ')|title }}
+          </td>
+          <td style="padding:8px 6px;">
+            {% if u.is_active_col %}
+              <span style="font-size:11px; padding:2px 7px; border-radius:999px; background:rgba(34,197,94,0.12); color:#bbf7d0; border:1px solid rgba(34,197,94,0.7);">
+                Active
+              </span>
+            {% else %}
+              <span style="font-size:11px; padding:2px 7px; border-radius:999px; background:rgba(239,68,68,0.12); color:#fecaca; border:1px solid rgba(248,113,113,0.7);">
+                Inactive
+              </span>
+            {% endif %}
+          </td>
+          <td style="padding:8px 6px;">
+            {% if u.role != RoleEnum.admin %}
+              <form method="POST"
+                    action="{{ url_for('admin_user_toggle_active', user_id=u.id) }}"
+                    style="display:inline;">
+                <!-- ✅ CSRF token here -->
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+                <button type="submit"
+                        style="padding:4px 10px; border-radius:999px; border:1px solid #1f2937;
+                               font-size:12px; background:#020617; color:#e5e7eb;">
+                  {% if u.is_active_col %}Deactivate{% else %}Reactivate{% endif %}
+                </button>
+              </form>
+            {% else %}
+              <span style="font-size:11px; color:#9ca3af;">Admin</span>
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+    {% else %}
+      <tr>
+        <td colspan="5" style="padding:10px 6px; color:#9aa4c2;">
+          No users found for this filter.
+        </td>
+      </tr>
+    {% endif %}
+  </tbody>
+</table>
+
+<!-- Simple pagination -->
+{% if pagination.pages > 1 %}
+  <div style="margin-top:12px; display:flex; gap:8px; align-items:center; font-size:13px;">
+    {% if pagination.has_prev %}
+      <a href="{{ url_for('admin_users', page=pagination.prev_num, q=q, role=role, status=status, active=active) }}"
+         style="padding:4px 10px; border-radius:999px; border:1px solid #1f2937; text-decoration:none; color:#e5e7eb;">
+        ← Prev
+      </a>
+    {% endif %}
+
+    <span>Page {{ pagination.page }} of {{ pagination.pages }}</span>
+
+    {% if pagination.has_next %}
+      <a href="{{ url_for('admin_users', page=pagination.next_num, q=q, role=role, status=status, active=active) }}"
+         style="padding:4px 10px; border-radius:999px; border:1px solid #1f2937; text-decoration:none; color:#e5e7eb;">
+        Next →
+      </a>
+    {% endif %}
+  </div>
+{% endif %}
+  </div>
+</div>
+
+<style>
+/* keep same page shell and panel style as BookMe */
+.bf-page-shell {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 32px 24px 48px;
+}
+.bf-page-header h1 {
+  font-size: 26px;
+  margin-bottom: 4px;
+}
+.bf-muted {
+  color: #9ca7c5;
+  font-size: 14px;
+}
+.bm-panel {
+  background: radial-gradient(circle at top left, #273760, #15192b 55%, #0b0f1e);
+  border-radius: 18px;
+  padding: 20px 22px 24px;
+  box-shadow: 0 14px 40px rgba(0,0,0,0.45);
+}
+
+/* toolbar */
+.adm-toolbar {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  margin-bottom: 12px;
+}
+.adm-count {
+  font-size: 13px;
+  color: #cbd5e1;
+}
+
+/* table layout */
+.adm-table {
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+}
+.adm-row {
+  display:grid;
+  grid-template-columns: 0.6fr 1.3fr 1fr 1fr 1fr 1.8fr;
+  gap:8px;
+  align-items:center;
+  padding:10px 12px;
+  border-radius: 12px;
+  background: rgba(8, 12, 30, 0.9);
+  border: 1px solid rgba(68, 90, 160, 0.7);
+  font-size: 14px;
+}
+.adm-head {
+  background: rgba(18, 26, 58, 0.95);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  color:#aab3d6;
+  border: 1px solid rgba(88, 109, 180, 0.9);
+}
+
+/* pills */
+.adm-pill {
+  display:inline-block;
+  padding:3px 9px;
+  font-size: 12px;
+  border-radius: 999px;
+  border:1px solid transparent;
+}
+.adm-pill-role {
+  background: rgba(57, 114, 255, 0.25);
+  color: #dfe7ff;
+  border-color: rgba(57,114,255,0.6);
+}
+.adm-pill-kyc {
+  background: rgba(255,255,255,0.06);
+  border-color: rgba(255,255,255,0.12);
+  color:#e2e8f0;
+}
+.adm-kyc-not_started { opacity: 0.7; }
+.adm-kyc-pending {
+  background: rgba(255, 193, 7, 0.15);
+  border-color: rgba(255, 193, 7, 0.6);
+  color:#ffe49a;
+}
+.adm-kyc-approved {
+  background: rgba(34, 197, 94, 0.12);
+  border-color: rgba(34, 197, 94, 0.6);
+  color:#bbf7d0;
+}
+.adm-kyc-rejected {
+  background: rgba(255, 77, 106, 0.12);
+  border-color: rgba(255, 77, 106, 0.6);
+  color:#ffb3c0;
+}
+.adm-pill-ok {
+  background: rgba(34,197,94,0.12);
+  border-color: rgba(34,197,94,0.6);
+  color:#bbf7d0;
+}
+.adm-pill-warn {
+  background: rgba(255,77,106,0.12);
+  border-color: rgba(255,77,106,0.6);
+  color:#ffb3c0;
+}
+
+/* actions */
+.adm-actions {
+  display:flex;
+  justify-content:flex-end;
+  gap:6px;
+  flex-wrap: wrap;
+}
+
+/* button styles aligned to your global buttons */
+.bm-btn-primary,
+.bm-btn-secondary {
+  border-radius: 999px;
+  padding: 6px 14px;
+  font-size: 13px;
+  border: none;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.bm-btn-primary {
+  background: linear-gradient(135deg, #33b5ff, #447aff);
+  color: #ffffff;
+  box-shadow: 0 6px 16px rgba(0,0,0,0.55);
+}
+.bm-btn-primary:hover {
+  background: linear-gradient(135deg, #45c4ff, #5688ff);
+}
+.bm-btn-secondary {
+  background: transparent;
+  color: #c1ccff;
+  border: 1px solid #3b476b;
+}
+.bm-btn-secondary:hover {
+  background: rgba(34, 43, 75, 0.9);
+}
+.bm-btn-sm {
+  padding: 5px 12px;
+  font-size: 12px;
+}
+
+@media (max-width: 900px) {
+  .adm-row {
+    grid-template-columns: 1fr 1.5fr 1fr 1fr;
+    grid-auto-rows:auto;
+  }
+  .adm-row div:nth-child(5),
+  .adm-row div:nth-child(6) {
+    grid-column: span 2;
+  }
+}
+</style>
+{% endblock %}

@@ -1,0 +1,446 @@
+{% extends "base.html" %}
+
+{% block title %}Users · BeatFund Admin{% endblock %}
+
+{% block extra_head %}
+<style>
+  .admin-page-title {
+    font-size: 22px;
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+  .admin-page-subtitle {
+    font-size: 13px;
+    color: #9aa4c2;
+    margin-bottom: 18px;
+  }
+
+  .filter-bar {
+    background: linear-gradient(135deg, #020617, #020617);
+    border-radius: 16px;
+    border: 1px solid #20263b;
+    box-shadow: 0 18px 35px rgba(15, 23, 42, 0.9);
+    padding: 16px 18px;
+    margin-bottom: 18px;
+  }
+  .filter-grid {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(180px, 1fr));
+    gap: 10px;
+    align-items: end;
+  }
+  @media (max-width: 1100px) {
+    .filter-grid {
+      grid-template-columns: repeat(2, minmax(180px, 1fr));
+    }
+    .filter-actions-right {
+      grid-column: auto;
+      justify-content: flex-start;
+    }
+  }
+  @media (max-width: 720px) {
+    .filter-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+  .filter-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: #64748b;
+    margin-bottom: 4px;
+  }
+  .filter-input,
+  .filter-select {
+    width: 100%;
+    padding: 7px 11px;
+    border-radius: 999px;
+    border: 1px solid #111827;
+    background: #020617;
+    color: #e5e7eb;
+    font-size: 13px;
+  }
+  .btn-filter {
+    padding: 7px 16px;
+    border-radius: 999px;
+    border: none;
+    font-size: 13px;
+    background: linear-gradient(to right, #0ea5e9, #22c55e);
+    color: #020617;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .btn-filter-clear {
+    padding: 7px 12px;
+    border-radius: 999px;
+    border: 1px solid #374151;
+    font-size: 13px;
+    background: transparent;
+    color: #9aa4c2;
+    cursor: pointer;
+    margin-left: 6px;
+  }
+  .filter-actions {
+    display: flex;
+    gap: 6px;
+    justify-content: flex-start;
+    align-self: end;
+  }
+  .filter-actions-right {
+    justify-content: flex-end;
+    grid-column: 5;
+  }
+
+  .card-table {
+    background: linear-gradient(135deg, #0b1220, #020617);
+    border-radius: 16px;
+    border: 1px solid #20263b;
+    box-shadow: 0 18px 35px rgba(15, 23, 42, 0.9);
+    padding: 16px 18px 6px;
+  }
+  table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0 6px;
+    font-size: 13px;
+  }
+  thead tr {
+    border-bottom: 1px solid #111827;
+  }
+  th, td {
+    padding: 10px 10px;
+    text-align: left;
+  }
+  th {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: #64748b;
+  }
+  tbody tr {
+    background: rgba(15, 23, 42, 0.55);
+    border: 1px solid rgba(30, 41, 59, 0.6);
+  }
+  tbody td:first-child { border-radius: 10px 0 0 10px; }
+  tbody td:last-child { border-radius: 0 10px 10px 0; }
+  .group-row td {
+    padding: 6px 6px 2px;
+    background: transparent;
+    color: #8aa0c5;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.2em;
+    border: none;
+  }
+
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 3px 9px;
+    border-radius: 999px;
+    border: 1px solid rgba(148, 163, 184, 0.5);
+    font-size: 11px;
+    white-space: nowrap;
+  }
+  .pill-role {
+    border-color: rgba(96, 165, 250, 0.7);
+    color: #bfdbfe;
+  }
+  .pill-kyc-approved {
+    border-color: #22c55e;
+    color: #bbf7d0;
+  }
+  .pill-kyc-pending {
+    border-color: #eab308;
+    color: #fef08a;
+  }
+  .pill-kyc-rejected {
+    border-color: #f97373;
+    color: #fecaca;
+  }
+  .pill-kyc-not_started {
+    border-color: #6b7280;
+    color: #d1d5db;
+  }
+  .pill-active {
+    border-color: #22c55e;
+    color: #bbf7d0;
+  }
+  .pill-inactive {
+    border-color: #6b7280;
+    color: #d1d5db;
+  }
+
+  .actions-inline {
+    display: inline-flex;
+    gap: 6px;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+  }
+
+  .btn-small {
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 11px;
+    border: none;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .btn-open-wallet {
+    background: rgba(59, 130, 246, 0.12);
+    color: #bfdbfe;
+    border: 1px solid rgba(59, 130, 246, 0.8);
+  }
+  .btn-open-wallet:hover {
+    filter: brightness(1.08);
+  }
+  .btn-deactivate {
+    background: rgba(239, 68, 68, 0.12);
+    color: #fecaca;
+    border: 1px solid rgba(248, 113, 113, 0.8);
+  }
+  .btn-deactivate:hover {
+    filter: brightness(1.08);
+  }
+  .btn-reactivate {
+    background: rgba(34, 197, 94, 0.12);
+    color: #bbf7d0;
+    border: 1px solid rgba(34, 197, 94, 0.8);
+  }
+  .btn-reactivate:hover {
+    filter: brightness(1.08);
+  }
+
+  .pagination {
+    display: flex;
+    justify-content: flex-end;
+    gap: 6px;
+    margin-top: 10px;
+    font-size: 12px;
+  }
+  .page-link {
+    padding: 4px 8px;
+    border-radius: 999px;
+    border: 1px solid #1f2937;
+    color: #9aa4c2;
+  }
+  .page-link-active {
+    border-color: #0ea5e9;
+    color: #e0f2fe;
+    background: rgba(14, 165, 233, 0.12);
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="admin-page-title">Users</div>
+<div class="admin-page-subtitle">
+  Search and manage customer accounts. Use the “Securely open wallet” action to view a customer's wallet
+  after logging why you're accessing their account.
+</div>
+
+<div class="filter-bar">
+  <form method="get" action="{{ url_for('admin_users') }}">
+    <div class="filter-grid">
+      <div>
+        <div class="filter-label">Search</div>
+        <input
+          type="text"
+          name="q"
+          class="filter-input"
+          placeholder="Username (email/phone later)"
+          value="{{ q or '' }}"
+        >
+      </div>
+
+      <div>
+        <div class="filter-label">Role</div>
+        <select name="role" class="filter-select">
+          <option value="">All roles</option>
+          {% for r in RoleEnum %}
+            {% if r.value != 'admin' %}
+              <option value="{{ r.value }}" {% if role == r.value %}selected{% endif %}>
+                {{ r.value|capitalize }}
+              </option>
+            {% endif %}
+          {% endfor %}
+        </select>
+      </div>
+
+      <div>
+        <div class="filter-label">KYC status</div>
+        <select name="status" class="filter-select">
+          <option value="">All</option>
+          {% for s in KYCStatus %}
+            <option value="{{ s.value }}" {% if status == s.value %}selected{% endif %}>
+              {{ s.value.replace('_',' ')|title }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div>
+        <div class="filter-label">Account</div>
+        <select name="active" class="filter-select">
+          <option value="">Active & inactive</option>
+          <option value="active" {% if active == 'active' %}selected{% endif %}>Active only</option>
+          <option value="inactive" {% if active == 'inactive' %}selected{% endif %}>Inactive only</option>
+        </select>
+      </div>
+
+      <div>
+        <div class="filter-label">Sort by</div>
+        <select name="sort" class="filter-select">
+          <option value="role" {% if sort == 'role' %}selected{% endif %}>Role</option>
+          <option value="username" {% if sort == 'username' %}selected{% endif %}>Username</option>
+          <option value="id" {% if sort == 'id' %}selected{% endif %}>ID</option>
+          <option value="kyc" {% if sort == 'kyc' %}selected{% endif %}>KYC</option>
+          <option value="status" {% if sort == 'status' %}selected{% endif %}>Status</option>
+        </select>
+      </div>
+
+      <div>
+        <div class="filter-label">Order</div>
+        <select name="order" class="filter-select">
+          <option value="asc" {% if order == 'asc' %}selected{% endif %}>A-Z</option>
+          <option value="desc" {% if order == 'desc' %}selected{% endif %}>Z-A</option>
+        </select>
+      </div>
+
+      <div>
+        <div class="filter-label">Group</div>
+        <select name="group" class="filter-select">
+          <option value="1" {% if group_by_role %}selected{% endif %}>Group by role</option>
+          <option value="0" {% if not group_by_role %}selected{% endif %}>No grouping</option>
+        </select>
+      </div>
+
+      <div class="filter-actions filter-actions-right">
+        <button type="submit" class="btn-filter">Apply</button>
+        <a href="{{ url_for('admin_users') }}" class="btn-filter-clear">Clear</a>
+      </div>
+
+    </div>
+  </form>
+</div>
+
+<div class="card-table">
+  <table>
+    <thead>
+      <tr>
+        <th style="width:40px;">ID</th>
+        <th>Username</th>
+        <th>Role</th>
+        <th>KYC</th>
+        <th>Status</th>
+        <th style="width:260px; text-align:right;">Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% if users %}
+        {% if group_by_role %}
+          {% set ns = namespace(prev_role=None) %}
+        {% endif %}
+        {% for u in users %}
+          {% if group_by_role and u.role != ns.prev_role %}
+            <tr class="group-row">
+              <td colspan="6">Role: {{ u.role|capitalize }}</td>
+            </tr>
+            {% set ns.prev_role = u.role %}
+          {% endif %}
+          <tr>
+            <td>#{{ u.id }}</td>
+            <td>@{{ u.username }}</td>
+            <td>
+              <span class="pill pill-role">
+                {{ u.role|capitalize }}
+              </span>
+            </td>
+            <td>
+              {% if u.kyc_status == KYCStatus.approved %}
+                <span class="pill pill-kyc-approved">Approved</span>
+              {% elif u.kyc_status == KYCStatus.pending %}
+                <span class="pill pill-kyc-pending">Pending</span>
+              {% elif u.kyc_status == KYCStatus.rejected %}
+                <span class="pill pill-kyc-rejected">Rejected</span>
+              {% else %}
+                <span class="pill pill-kyc-not_started">Not started</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if u.is_active_col %}
+                <span class="pill pill-active">Active</span>
+              {% else %}
+                <span class="pill pill-inactive">Inactive</span>
+              {% endif %}
+            </td>
+            <td style="text-align:right;">
+              <div class="actions-inline">
+                {% if u.id != current_user.id %}
+                  <!-- Securely open wallet (goes to audit-access page) -->
+                  <a href="{{ url_for('admin_audit_access', user_id=u.id) }}"
+                     class="btn-small btn-open-wallet">
+                    Securely open wallet
+                  </a>
+
+                  <!-- Deactivate / Reactivate -->
+                  <form method="post"
+                        action="{{ url_for('admin_user_toggle_active', user_id=u.id) }}">
+                    {% if u.is_active_col %}
+                      <button type="submit" class="btn-small btn-deactivate">
+                        Deactivate
+                      </button>
+                    {% else %}
+                      <button type="submit" class="btn-small btn-reactivate">
+                        Reactivate
+                      </button>
+                    {% endif %}
+                  </form>
+                {% else %}
+                  <span style="font-size:11px; color:#64748b;">
+                    (You)
+                  </span>
+                {% endif %}
+              </div>
+            </td>
+          </tr>
+        {% endfor %}
+      {% else %}
+        <tr>
+          <td colspan="6" style="padding:14px 6px; color:#9aa4c2; font-size:13px;">
+            No users match these filters.
+          </td>
+        </tr>
+      {% endif %}
+    </tbody>
+  </table>
+
+  {% if pagination and pagination.pages > 1 %}
+    <div class="pagination">
+      {% if pagination.has_prev %}
+        <a class="page-link"
+           href="{{ url_for('admin_users',
+                            page=pagination.prev_num,
+                            q=q, role=role, status=status, active=active, sort=sort, order=order, group=('1' if group_by_role else '0')) }}">
+          ‹ Prev
+        </a>
+      {% endif %}
+
+      <span class="page-link page-link-active">
+        Page {{ pagination.page }} / {{ pagination.pages }}
+      </span>
+
+      {% if pagination.has_next %}
+        <a class="page-link"
+           href="{{ url_for('admin_users',
+                            page=pagination.next_num,
+                            q=q, role=role, status=status, active=active, sort=sort, order=order, group=('1' if group_by_role else '0')) }}">
+          Next ›
+        </a>
+      {% endif %}
+    </div>
+  {% endif %}
+</div>
+{% endblock %}
+

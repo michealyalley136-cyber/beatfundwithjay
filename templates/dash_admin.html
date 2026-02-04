@@ -1,0 +1,365 @@
+{% extends "base.html" %}
+{% block title %}Admin Dashboard{% endblock %}
+
+{% block content %}
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap');
+
+  .admin-replica {
+    font-family: "Space Grotesk", system-ui, -apple-system, "Segoe UI", sans-serif;
+    max-width: 1220px;
+    margin: 28px auto 80px;
+    padding: 0 18px;
+  }
+
+  .admin-window {
+    background: #edf3f3;
+    border-radius: 18px 18px 0 0;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    padding: 0 16px;
+    box-shadow: 0 12px 30px rgba(2, 8, 23, 0.45);
+  }
+
+  .window-dots {
+    display: flex;
+    gap: 8px;
+  }
+
+  .window-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    display: inline-block;
+  }
+
+  .dot-red { background: #ef4444; }
+  .dot-yellow { background: #facc15; }
+  .dot-green { background: #22c55e; }
+
+  .admin-panel {
+    background: linear-gradient(140deg, #5f8a6e 0%, #3a684f 45%, #2b5342 100%);
+    border-radius: 0 0 18px 18px;
+    padding: 18px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .admin-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 14px;
+    color: rgba(255, 255, 255, 0.9);
+  }
+
+  .admin-heading h1 {
+    font-size: 16px;
+    text-transform: uppercase;
+    letter-spacing: 0.28em;
+    margin: 0;
+  }
+
+  .admin-heading span {
+    font-size: 12px;
+    opacity: 0.7;
+  }
+
+  .admin-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 14px;
+  }
+
+  .admin-card {
+    background: rgba(20, 42, 32, 0.92);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 12px;
+    padding: 14px;
+    color: #e6f2ea;
+    min-height: 190px;
+    position: relative;
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.02);
+  }
+
+  .admin-card.admin-clickable {
+    cursor: pointer;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+  }
+
+  .admin-card.admin-clickable:hover {
+    transform: translateY(-2px);
+    border-color: rgba(255, 255, 255, 0.28);
+    box-shadow: 0 16px 35px rgba(6, 18, 14, 0.45);
+  }
+
+  .admin-card h3 {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.2em;
+    margin: 0 0 8px;
+    color: rgba(255, 255, 255, 0.65);
+  }
+
+  .admin-value {
+    font-size: 30px;
+    font-weight: 600;
+    line-height: 1.1;
+    margin-bottom: 4px;
+  }
+
+  .admin-meta {
+    font-size: 11px;
+    opacity: 0.7;
+  }
+
+  .admin-table {
+    display: grid;
+    gap: 8px;
+    font-size: 12px;
+  }
+
+  .admin-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    padding-bottom: 6px;
+  }
+
+  .admin-row:last-child {
+    border-bottom: 0;
+    padding-bottom: 0;
+  }
+
+  .pill {
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    color: #e6f2ea;
+    opacity: 0.9;
+  }
+
+  .pill-warning { border-color: rgba(250, 204, 21, 0.6); color: #fde68a; }
+  .pill-success { border-color: rgba(34, 197, 94, 0.6); color: #bbf7d0; }
+  .pill-danger { border-color: rgba(248, 113, 113, 0.6); color: #fecaca; }
+
+  .mini-bars {
+    display: grid;
+    grid-auto-flow: column;
+    align-items: end;
+    gap: 6px;
+    height: 70px;
+    margin-top: 10px;
+  }
+
+  .mini-bars span {
+    width: 12px;
+    background: linear-gradient(180deg, #f97316, #f59e0b);
+    border-radius: 4px 4px 0 0;
+    box-shadow: 0 6px 10px rgba(0, 0, 0, 0.25);
+  }
+
+  .donut-wrap {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 110px;
+    margin-top: 10px;
+  }
+
+  .admin-list {
+    font-size: 12px;
+    line-height: 1.4;
+  }
+
+  .admin-list-item {
+    padding: 6px 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .admin-list-item:last-child { border-bottom: 0; }
+
+  .admin-links {
+    display: grid;
+    gap: 8px;
+    font-size: 12px;
+  }
+
+  .admin-links a {
+    color: #d8f3e2;
+    text-decoration: none;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    padding: 6px 10px;
+    border-radius: 999px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(15, 32, 25, 0.7);
+  }
+
+  .admin-links a:hover {
+    border-color: rgba(255, 255, 255, 0.5);
+  }
+
+  @media (max-width: 1100px) {
+    .admin-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+
+  @media (max-width: 700px) {
+    .admin-grid { grid-template-columns: 1fr; }
+    .admin-card { min-height: unset; }
+  }
+</style>
+
+<div class="admin-replica">
+  <div class="admin-panel">
+    <div class="admin-grid">
+      <section class="admin-card admin-clickable" data-href="{{ url_for('admin_analytics') }}">
+        <h3>Dashboard Analytics</h3>
+        <div class="admin-value">{{ total_users }}</div>
+        <div class="admin-meta">Total non-admin accounts</div>
+        <div class="mini-bars" aria-hidden="true">
+          <span style="height: 35%"></span>
+          <span style="height: 52%"></span>
+          <span style="height: 65%"></span>
+          <span style="height: 45%"></span>
+          <span style="height: 72%"></span>
+        </div>
+      </section>
+
+      <section class="admin-card admin-clickable" data-href="{{ url_for('admin_transactions') }}">
+        <h3>Marketplace Overview</h3>
+        <div class="admin-table">
+          <div class="admin-row"><span>Beats listed</span><strong>{{ total_beats }}</strong></div>
+          <div class="admin-row"><span>Orders</span><strong>{{ total_orders }}</strong></div>
+          <div class="admin-row"><span>Wallets</span><strong>{{ total_wallets }}</strong></div>
+        </div>
+        <div class="admin-meta" style="margin-top:8px;">Core marketplace metrics</div>
+      </section>
+
+      <section class="admin-card admin-clickable" data-href="{{ url_for('admin_transactions') }}">
+        <h3>Wallet Health</h3>
+        <div class="admin-value">{{ total_wallets }}</div>
+        <div class="admin-meta">Total wallets created</div>
+        <div class="admin-table" style="margin-top:10px;">
+          <div class="admin-row"><span>Active wallets</span><strong>{{ total_wallets }}</strong></div>
+          <div class="admin-row"><span>Pending payouts</span><strong>0</strong></div>
+        </div>
+      </section>
+
+      <section class="admin-card admin-clickable" data-href="{{ url_for('admin_kyc') }}">
+        <h3>KYC Queue</h3>
+        <div class="admin-table">
+          <div class="admin-row"><span>Pending</span><span class="pill pill-warning">{{ pending_kyc }}</span></div>
+          <div class="admin-row"><span>Approved</span><span class="pill pill-success">{{ approved_kyc }}</span></div>
+          <div class="admin-row"><span>Rejected</span><span class="pill pill-danger">{{ rejected_kyc }}</span></div>
+        </div>
+      </section>
+
+      <section class="admin-card admin-clickable" data-href="{{ url_for('admin_tickets') }}">
+        <h3>Support Tickets</h3>
+        <div class="admin-table">
+          <div class="admin-row"><span>Total</span><strong>{{ total_tickets }}</strong></div>
+          <div class="admin-row"><span>Open</span><strong>{{ open_tickets }}</strong></div>
+          <div class="admin-row"><span>In review</span><strong>{{ in_review_tickets }}</strong></div>
+          <div class="admin-row"><span>Resolved</span><strong>{{ resolved_tickets }}</strong></div>
+        </div>
+      </section>
+
+      <section class="admin-card admin-clickable" data-href="{{ url_for('admin_users') }}">
+        <h3>User Mix</h3>
+        <div class="donut-wrap">
+          <canvas id="roleChart" height="100"></canvas>
+        </div>
+        <div class="admin-meta">Artists vs Producers</div>
+      </section>
+
+      <section class="admin-card admin-clickable" data-href="{{ url_for('admin_audit_log') }}">
+        <h3>Recent Activity</h3>
+        {% if recent_events %}
+          <div class="admin-list">
+            {% for ev in recent_events[:4] %}
+              <div class="admin-list-item">
+                <strong>{{ ev.title }}</strong><br>
+                <span class="admin-meta">{{ ev.body }}</span>
+              </div>
+            {% endfor %}
+          </div>
+        {% else %}
+          <div class="admin-meta">No recent admin events yet.</div>
+        {% endif %}
+      </section>
+
+      <section class="admin-card">
+        <h3>Admin Tools</h3>
+        <div class="admin-links">
+          <a href="{{ url_for('admin_users') }}">Manage Users</a>
+          <a href="{{ url_for('admin_kyc') }}">KYC Review</a>
+          <a href="{{ url_for('admin_transactions') }}">Transactions</a>
+          <a href="{{ url_for('admin_reports') }}">Reports</a>
+          {% if current_user.is_authenticated and current_user.is_superadmin %}
+            <a href="{{ url_for('superadmin_unlock') }}">Owner Panel</a>
+          {% endif %}
+        </div>
+      </section>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script nonce="{{ csp_nonce }}">
+  (function () {
+    const ctx = document.getElementById('roleChart');
+    if (!ctx) return;
+
+    const totalArtists = {{ total_artists or 0 }};
+    const totalProducers = {{ total_producers or 0 }};
+    const others = Math.max({{ total_users or 0 }} - (totalArtists + totalProducers), 0);
+
+    new Chart(ctx, {
+      type: 'doughnut',
+      data: {
+        labels: ['Artists', 'Producers', 'Other'],
+        datasets: [{
+          data: [totalArtists, totalProducers, others],
+          borderWidth: 0,
+          backgroundColor: [
+            'rgba(249, 115, 22, 0.9)',
+            'rgba(34, 197, 94, 0.85)',
+            'rgba(59, 130, 246, 0.8)'
+          ]
+        }]
+      },
+      options: {
+        responsive: true,
+        plugins: {
+          legend: { display: false }
+        },
+        cutout: '68%'
+      }
+    });
+  })();
+</script>
+<script nonce="{{ csp_nonce }}">
+  (function () {
+    document.querySelectorAll('.admin-card[data-href]').forEach(function (card) {
+      card.setAttribute('role', 'button');
+      card.setAttribute('tabindex', '0');
+
+      card.addEventListener('click', function (event) {
+        if (event.target.closest('a')) return;
+        window.location.href = card.dataset.href;
+      });
+
+      card.addEventListener('keydown', function (event) {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          window.location.href = card.dataset.href;
+        }
+      });
+    });
+  })();
+</script>
+{% endblock %}

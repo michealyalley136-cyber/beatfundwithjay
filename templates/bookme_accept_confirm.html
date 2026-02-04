@@ -1,0 +1,221 @@
+{% extends "base.html" %}
+{% block title %}Confirm Accept Booking · BeatFund{% endblock %}
+
+{% block extra_head %}
+<style>
+  .confirm-page {
+    max-width: 600px;
+    margin: 40px auto;
+    padding: 0 16px;
+  }
+
+  .confirm-card {
+    background: rgba(255,255,255,.06);
+    border: 1px solid rgba(255,255,255,.12);
+    border-radius: 18px;
+    padding: 32px;
+  }
+
+  .confirm-header {
+    text-align: center;
+    margin-bottom: 32px;
+  }
+
+  .confirm-title {
+    font-size: 1.75rem;
+    font-weight: 800;
+    margin: 0 0 8px;
+  }
+
+  .confirm-subtitle {
+    opacity: .8;
+    font-size: .95rem;
+  }
+
+  .client-info {
+    display: flex;
+    gap: 16px;
+    align-items: center;
+    padding: 20px;
+    background: rgba(0,0,0,.2);
+    border-radius: 12px;
+    margin-bottom: 24px;
+    border: 1px solid rgba(255,255,255,.08);
+  }
+
+  .client-avatar {
+    width: 64px;
+    height: 64px;
+    border-radius: 12px;
+    object-fit: cover;
+    border: 2px solid rgba(255,255,255,.15);
+  }
+
+  .client-details {
+    flex: 1;
+  }
+
+  .client-name {
+    font-size: 1.2rem;
+    font-weight: 700;
+    margin: 0 0 6px;
+  }
+
+  .booking-details {
+    background: rgba(0,0,0,.2);
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 24px;
+    border: 1px solid rgba(255,255,255,.08);
+  }
+
+  .detail-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 12px 0;
+    border-bottom: 1px solid rgba(255,255,255,.08);
+  }
+
+  .detail-row:last-child {
+    border-bottom: none;
+  }
+
+  .detail-label {
+    opacity: .8;
+    font-size: .95rem;
+  }
+
+  .detail-value {
+    font-weight: 600;
+    text-align: right;
+  }
+
+  .hold-fee-info {
+    background: rgba(6,182,212,.1);
+    border: 1px solid rgba(6,182,212,.3);
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 24px;
+  }
+
+  .hold-fee-title {
+    font-weight: 700;
+    margin-bottom: 8px;
+    color: #4de3ff;
+  }
+
+  .hold-fee-text {
+    font-size: .9rem;
+    opacity: .9;
+    line-height: 1.6;
+  }
+
+  .warning-box {
+    background: rgba(239,68,68,.1);
+    border: 1px solid rgba(239,68,68,.3);
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 24px;
+    color: #ef4444;
+    font-size: .9rem;
+  }
+
+  .confirm-actions {
+    display: flex;
+    gap: 12px;
+    flex-direction: column;
+  }
+
+  .btn {
+    padding: 14px 24px;
+    border-radius: 12px;
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 1rem;
+    text-align: center;
+    transition: all 0.2s ease;
+    border: none;
+    cursor: pointer;
+    display: block;
+  }
+
+  .btn-primary {
+    background: linear-gradient(135deg, rgba(6,182,212,.4), rgba(34,197,94,.3));
+    border: 1px solid rgba(6,182,212,.5);
+    color: #fff;
+  }
+
+  .btn-primary:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(6,182,212,.3);
+  }
+
+  .btn-secondary {
+    background: rgba(255,255,255,.08);
+    border: 1px solid rgba(255,255,255,.12);
+    color: #cbd5f5;
+  }
+
+  .btn-secondary:hover {
+    background: rgba(255,255,255,.12);
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="confirm-page">
+  <div class="confirm-card">
+    <div class="confirm-header">
+      <h1 class="confirm-title">Accept Booking Request</h1>
+      <p class="confirm-subtitle">Confirm that you want to accept this booking</p>
+    </div>
+
+    {% if conflict %}
+      <div class="warning-box">
+        ⚠ Warning: This time slot may already be booked. Please verify before accepting.
+      </div>
+    {% endif %}
+
+    <div class="client-info">
+      <img class="client-avatar" src="{{ request.client.avatar_url }}" alt="{{ request.client.username }}">
+      <div class="client-details">
+        <div class="client-name">@{{ request.client.username }}</div>
+        <div style="opacity: .8; font-size: .9rem;">Client</div>
+      </div>
+    </div>
+
+    <div class="booking-details">
+      <div class="detail-row">
+        <span class="detail-label">Preferred Time</span>
+        <span class="detail-value">{{ request.preferred_time }}</span>
+      </div>
+      {% if request.message %}
+        <div class="detail-row">
+          <span class="detail-label">Message</span>
+          <span class="detail-value" style="max-width: 60%; word-wrap: break-word;">{{ request.message }}</span>
+        </div>
+      {% endif %}
+    </div>
+
+    <div class="hold-fee-info">
+      <div class="hold-fee-title">Hold Fee Information</div>
+      <div class="hold-fee-text">
+        When you accept this request, the client will need to pay a hold fee of 
+        <strong>${{ '%.2f'|format(HOLD_FEE_CENTS / 100.0) }}</strong> plus applicable fees shown at checkout to secure the booking slot.
+        This fee will be held in escrow until the booking is completed.
+      </div>
+    </div>
+
+    <div class="confirm-actions">
+      <form method="POST" action="{{ url_for('bookme_request_status', req_id=request.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="action" value="accept">
+        <input type="hidden" name="confirmed" value="true">
+        <button type="submit" class="btn btn-primary">Confirm & Accept Request</button>
+      </form>
+      <a href="{{ url_for('bookme_requests') }}" class="btn btn-secondary">Cancel</a>
+    </div>
+  </div>
+</div>
+{% endblock %}
+

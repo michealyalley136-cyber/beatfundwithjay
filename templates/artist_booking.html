@@ -1,0 +1,236 @@
+{% extends "base.html" %}
+{% block title %}Book {{ artist.username }} · BeatFund{% endblock %}
+
+{% block content %}
+<style>
+  .bf-page {
+    max-width: 700px;
+    margin: 0 auto;
+    padding: 32px 16px 64px;
+    color: #f7f9ff;
+  }
+  .bf-card {
+    background: radial-gradient(circle at top left, #182a44, #050712);
+    border-radius: 18px;
+    border: 1px solid rgba(255,255,255,0.08);
+    padding: 20px 22px 24px;
+    box-shadow: 0 16px 40px rgba(0,0,0,0.45);
+  }
+  .bf-title {
+    font-size: 1.4rem;
+    margin-bottom: 0.25rem;
+  }
+  .bf-subtitle {
+    font-size: 0.9rem;
+    opacity: 0.8;
+    margin-bottom: 1.4rem;
+  }
+  .bf-label {
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    opacity: 0.8;
+    margin-bottom: 4px;
+  }
+  .bf-input,
+  .bf-textarea,
+  .bf-select {
+    width: 100%;
+    background: rgba(15,23,42,0.9);
+    border-radius: 10px;
+    border: 1px solid rgba(148,163,184,0.6);
+    padding: 8px 10px;
+    font-size: 0.88rem;
+    color: #e5edff;
+    outline: none;
+  }
+  .bf-input:focus,
+  .bf-textarea:focus {
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 1px rgba(59,130,246,0.4);
+  }
+  .bf-textarea {
+    min-height: 80px;
+    resize: vertical;
+  }
+  .bf-row {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+  @media (max-width: 640px) {
+    .bf-row { grid-template-columns: 1fr; }
+  }
+  .bf-field {
+    margin-bottom: 12px;
+  }
+  .bf-btn {
+    border: none;
+    border-radius: 999px;
+    padding: 9px 16px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    background: linear-gradient(135deg, #2563eb, #22c55e);
+    color: #020617;
+    margin-top: 8px;
+  }
+  .bf-note {
+    font-size: 0.8rem;
+    opacity: 0.75;
+    margin-top: 8px;
+  }
+  .bf-share-box {
+    background: rgba(15,23,42,0.9);
+    border-radius: 12px;
+    border: 1px dashed rgba(148,163,184,0.7);
+    padding: 12px;
+    font-size: 0.85rem;
+    margin-top: 8px;
+    word-break: break-all;
+  }
+  .bf-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 3px 9px;
+    border-radius: 999px;
+    border: 1px solid rgba(148,163,184,0.6);
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    opacity: 0.85;
+    margin-bottom: 10px;
+  }
+</style>
+
+<div class="bf-page">
+  <div class="bf-card">
+    {% if is_owner %}
+      <div class="bf-badge">Artist Booking Link</div>
+      <div class="bf-title">
+        Share your BeatFund booking page
+      </div>
+      <div class="bf-subtitle">
+        This is what your clients will use to send you booking requests.
+        Copy the link below and send it to them by text, email, or DM.
+      </div>
+
+      <div class="bf-label">Your public booking URL</div>
+      <div class="bf-share-box">
+        {{ url_for('book_artist', username=artist.username, _external=True) }}
+      </div>
+
+      <div class="bf-note">
+        When a client opens this link and logs in or signs up, they’ll see
+        the booking form and can send you a request. You’ll see those under
+        <strong>BookMe Requests</strong> on your dashboard.
+      </div>
+    {% else %}
+      <div class="bf-badge">Booking Request</div>
+      <div class="bf-title">
+        Book @{{ artist.username }}
+      </div>
+      <div class="bf-subtitle">
+        Tell {{ artist.username }} about your event so they can review and confirm.
+      </div>
+
+      <form method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+        <div class="bf-field">
+          <div class="bf-label">Event title / description</div>
+          <input
+            class="bf-input"
+            type="text"
+            name="event_title"
+            value="{{ form_data.get('event_title', '') }}"
+            placeholder="Album listening party, club performance, video shoot..."
+            required
+          >
+        </div>
+
+        <div class="bf-row">
+          <div class="bf-field">
+            <div class="bf-label">Date</div>
+            <input
+              class="bf-input"
+              type="date"
+              name="event_date"
+              value="{{ form_data.get('event_date', '') }}"
+              required
+            >
+          </div>
+          <div class="bf-field">
+            <div class="bf-label">Time</div>
+            <input
+              class="bf-input"
+              type="time"
+              name="event_time"
+              value="{{ form_data.get('event_time', '') }}"
+              required
+            >
+          </div>
+        </div>
+
+        <div class="bf-row">
+          <div class="bf-field">
+            <div class="bf-label">Duration (required, minutes)</div>
+            <input
+              class="bf-input"
+              type="number"
+              name="duration_minutes"
+              min="30"
+              step="15"
+              value="{{ form_data.get('duration_minutes', '') }}"
+              placeholder="60"
+              required
+            >
+          </div>
+          <div class="bf-field">
+            <div class="bf-label">Budget (USD)</div>
+            <input
+              class="bf-input"
+              type="number"
+              step="0.01"
+              min="0"
+              name="price_dollars"
+              value="{{ form_data.get('price_dollars', '') }}"
+              placeholder="Optional"
+            >
+          </div>
+        </div>
+
+        <div class="bf-field">
+          <div class="bf-label">Location</div>
+          <input
+            class="bf-input"
+            type="text"
+            name="location_text"
+            value="{{ form_data.get('location_text', '') }}"
+            placeholder="Venue name, city, or online event"
+          >
+        </div>
+
+        <div class="bf-field">
+          <div class="bf-label">Notes for the artist</div>
+          <textarea
+            class="bf-textarea"
+            name="notes_from_client"
+            placeholder="Share any special details, set list ideas, dress code, etc."
+          >{{ form_data.get('notes_from_client', '') }}</textarea>
+        </div>
+
+        <button class="bf-btn" type="submit">
+          Send booking request
+        </button>
+
+        <div class="bf-note">
+          After you submit, {{ artist.username }} will receive your request
+          and respond from their BeatFund dashboard.
+        </div>
+      </form>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,54 @@
+{% extends "base_admin.html" %}
+
+{% block title %}BeatFund · Admin · Affiliates{% endblock %}
+
+{% block admin_content %}
+<div class="admin-page-header">
+  <h1>Affiliates</h1>
+  <p>Affiliate codes, status, and payout onboarding.</p>
+</div>
+
+<div class="card">
+  <h2>Affiliates</h2>
+  <div style="overflow:auto;">
+    <table style="width:100%; border-collapse:collapse;">
+      <thead>
+        <tr>
+          <th style="text-align:left; padding:8px; border-bottom:1px solid rgba(148,163,184,0.2);">Code</th>
+          <th style="text-align:left; padding:8px; border-bottom:1px solid rgba(148,163,184,0.2);">Name</th>
+          <th style="text-align:left; padding:8px; border-bottom:1px solid rgba(148,163,184,0.2);">Status</th>
+          <th style="text-align:left; padding:8px; border-bottom:1px solid rgba(148,163,184,0.2);">Commission %</th>
+          <th style="text-align:left; padding:8px; border-bottom:1px solid rgba(148,163,184,0.2);">Stripe</th>
+          <th style="text-align:left; padding:8px; border-bottom:1px solid rgba(148,163,184,0.2);">Created</th>
+          <th style="text-align:left; padding:8px; border-bottom:1px solid rgba(148,163,184,0.2);">Onboard</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for a in affiliates %}
+        <tr>
+          <td style="padding:8px; font-weight:600;">{{ a.code }}</td>
+          <td style="padding:8px;">{{ a.display_name }}</td>
+          <td style="padding:8px;">{{ a.status.value if a.status else 'pending' }}</td>
+          <td style="padding:8px;">
+            {% if a.commission_pct is not none %}
+              {{ (a.commission_pct * 100) | round(2) }}%
+            {% else %}
+              {{ (AFFILIATE_DEFAULT_PCT * 100) | round(2) }}%
+            {% endif %}
+          </td>
+          <td style="padding:8px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;">
+            {{ (a.stripe_account_id or '')[:12] }}{% if a.stripe_account_id %}…{% endif %}
+          </td>
+          <td style="padding:8px;">{{ a.created_at.strftime('%Y-%m-%d') if a.created_at else '—' }}</td>
+          <td style="padding:8px;">
+            <a class="btn btn-primary" href="{{ url_for('connect_onboard_affiliate', affiliate_id=a.id) }}">Connect</a>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="7" style="padding:12px; color:#9ca3af;">No affiliates found.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

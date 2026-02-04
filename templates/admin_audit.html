@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Admin · Audit{% endblock %}
+{% block content %}
+<h2>Audit Log</h2>
+<p>Most recent actions (latest 200)</p>
+<table style="width:100%; border-collapse:collapse;">
+  <tr>
+    <th style="text-align:left; border-bottom:1px solid #ddd; padding:8px;">Time (UTC)</th>
+    <th style="text-align:left; border-bottom:1px solid #ddd; padding:8px;">Actor</th>
+    <th style="text-align:left; border-bottom:1px solid #ddd; padding:8px;">Action</th>
+    <th style="text-align:left; border-bottom:1px solid #ddd; padding:8px;">Target</th>
+    <th style="text-align:left; border-bottom:1px solid #ddd; padding:8px;">Reason</th>
+    <th style="text-align:left; border-bottom:1px solid #ddd; padding:8px;">Meta</th>
+  </tr>
+  {% for log in logs %}
+  <tr>
+    <td style="padding:8px;">{{ log.created_at.strftime('%Y-%m-%d %H:%M:%S') if log.created_at else '-' }}</td>
+    <td style="padding:8px;">{{ log.admin.username if log.admin else '-' }}</td>
+    <td style="padding:8px;">{{ log.action }}</td>
+    <td style="padding:8px;">{{ log.user.username if log.user else '-' }}</td>
+    <td style="padding:8px;">{{ log.reason or '' }}</td>
+    <td style="padding:8px;">-</td>
+  </tr>
+  {% endfor %}
+</table>
+{% endblock %}

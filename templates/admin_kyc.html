@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}KYC Review · BeatFund Admin{% endblock %}
+
+{% block content %}
+<h1 style="font-size:22px; font-weight:600; margin-bottom:6px;">KYC Review</h1>
+<p style="font-size:13px; color:#9aa4c2; margin-bottom:14px;">
+  Review and update customer KYC status.
+</p>
+
+<h2 style="font-size:16px; font-weight:600; margin-bottom:6px;">Pending</h2>
+<table style="width:100%; border-collapse:collapse; font-size:13px; margin-bottom:16px;">
+  <thead>
+    <tr style="border-bottom:1px solid #111827;">
+      <th style="text-align:left; padding:8px 6px;">Username</th>
+      <th style="text-align:left; padding:8px 6px;">Current Status</th>
+      <th style="text-align:left; padding:8px 6px;">Actions</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% if pending %}
+      {% for u in pending %}
+        <tr style="border-top:1px solid rgba(15,23,42,0.9);">
+          <td style="padding:8px 6px;">@{{ u.username }}</td>
+          <td style="padding:8px 6px;">{{ u.kyc_status.replace('_',' ')|title }}</td>
+          <td style="padding:8px 6px;">
+            <!-- Approve -->
+            <form method="POST"
+                  action="{{ url_for('admin_kyc_update', user_id=u.id, action='approve') }}"
+                  style="display:inline;">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button type="submit"
+                      style="padding:4px 10px; border-radius:999px; border:1px solid #16a34a;
+                             background:#15803d; color:#fff; font-size:12px;">
+                Approve
+              </button>
+            </form>
+
+            <!-- Reject -->
+            <form method="POST"
+                  action="{{ url_for('admin_kyc_update', user_id=u.id, action='reject') }}"
+                  style="display:inline; margin-left:6px;">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button type="submit"
+                      style="padding:4px 10px; border-radius:999px; border:1px solid #b91c1c;
+                             background:#7f1d1d; color:#fee2e2; font-size:12px;">
+                Reject
+              </button>
+            </form>
+          </td>
+        </tr>
+      {% endfor %}
+    {% else %}
+      <tr>
+        <td colspan="3" style="padding:10px 6px; color:#9aa4c2;">
+          No pending KYC reviews.
+        </td>
+      </tr>
+    {% endif %}
+  </tbody>
+</table>
+
+<h2 style="font-size:16px; font-weight:600; margin-bottom:6px;">Approved</h2>
+<ul style="font-size:13px; color:#e5e7eb; margin-bottom:16px;">
+  {% for u in approved %}
+    <li>@{{ u.username }}</li>
+  {% else %}
+    <li style="color:#9aa4c2;">No approved users yet.</li>
+  {% endfor %}
+</ul>
+
+<h2 style="font-size:16px; font-weight:600; margin-bottom:6px;">Rejected</h2>
+<ul style="font-size:13px; color:#e5e7eb;">
+  {% for u in rejected %}
+    <li>@{{ u.username }}</li>
+  {% else %}
+    <li style="color:#9aa4c2;">No rejected users yet.</li>
+  {% endfor %}
+</ul>
+{% endblock %}

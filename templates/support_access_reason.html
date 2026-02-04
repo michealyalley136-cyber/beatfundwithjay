@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Reason for Access{% endblock %}
+{% block content %}
+
+<h2>Reason for Access</h2>
+<p>You're about to access the account of <strong>@{{ user.username }}</strong>. For compliance, please record the reason:</p>
+
+<form method="POST" action="{{ url_for('support_user_access', user_id=user.id) }}" style="max-width:640px;display:grid;gap:10px">
+  <textarea name="reason" rows="4" placeholder="e.g., User reported a missing deposit on Oct 5; verifying ledger entries and wallet balance." required style="padding:10px"></textarea>
+  <div>
+    <button type="submit">Continue</button>
+    <a href="{{ url_for('support_search') }}" style="margin-left:8px">Cancel</a>
+  </div>
+</form>
+
+{% endblock %}

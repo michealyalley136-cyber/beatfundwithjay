@@ -1,0 +1,18 @@
+{# templates/_community_card.html #}
+
+<div class="card" style="margin-top:12px;">
+  <h3 style="margin-top:0;">Community</h3>
+  <div class="muted">Grow your audience and connect with creators.</div>
+
+  <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:12px;">
+    <a class="btn btn-secondary" href="{{ url_for('producer_catalog_index') }}">Find Producers</a>
+    <a class="btn btn-secondary" href="{{ url_for('bookme_search') }}">Find Providers</a>
+    <a class="btn btn-secondary" href="{{ url_for('market_index') }}">Marketplace</a>
+    <a class="btn btn-secondary" href="{{ url_for('user_profile', username=current_user.username) }}">My public profile</a>
+  </div>
+
+  <div class="muted" style="margin-top:10px;">
+    You’re following <b>{{ my_following_count }}</b> ·
+    You have <b>{{ my_followers_count }}</b> followers
+  </div>
+</div>

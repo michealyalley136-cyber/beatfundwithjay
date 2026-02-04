@@ -1,0 +1,171 @@
+{% extends "base.html" %}
+{% block title %}Availability & Settings - BeatFund{% endblock %}
+
+{% block content %}
+<div class="page" style="max-width:980px;margin:0 auto;padding:24px 16px;">
+  <div class="card">
+    <h2 style="margin-top:0;">Availability & Settings</h2>
+    <form method="POST" action="{{ url_for('provider_settings') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+      <div class="bf-grid-2" style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+        <div>
+          <label style="display:block;font-weight:600;">Accepting new requests</label>
+          <input type="checkbox" name="accepting_new_requests" {% if settings and settings.accepting_new_requests %}checked{% endif %}>
+        </div>
+        <div>
+          <label style="display:block;font-weight:600;">Time zone</label>
+          <input type="text" name="tz" value="{{ settings.tz if settings else 'UTC' }}"
+                 style="width:100%;padding:8px;border-radius:8px;border:1px solid #ddd;">
+        </div>
+      </div>
+
+      <div class="bf-grid-2" style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:12px;">
+        <div>
+          <label style="display:block;font-weight:600;">On-site</label>
+          <input type="checkbox" name="onsite" {% if settings and settings.onsite %}checked{% endif %}>
+        </div>
+        <div>
+          <label style="display:block;font-weight:600;">Remote</label>
+          <input type="checkbox" name="remote" {% if settings and settings.remote %}checked{% endif %}>
+        </div>
+      </div>
+
+      <div class="bf-grid-2" style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:12px;">
+        <div>
+          <label style="display:block;font-weight:600;">Travel radius (miles)</label>
+          <input type="number" name="travel_radius_miles" min="0" value="{{ settings.travel_radius_miles if settings and settings.travel_radius_miles is not none else '' }}"
+                 style="width:100%;padding:8px;border-radius:8px;border:1px solid #ddd;">
+        </div>
+        <div>
+          <label style="display:block;font-weight:600;">Base location</label>
+          <input type="text" name="base_location" value="{{ settings.base_location if settings else '' }}"
+                 style="width:100%;padding:8px;border-radius:8px;border:1px solid #ddd;">
+        </div>
+      </div>
+
+      <div style="margin-top:16px;">
+        <button type="submit" class="btn btn-primary">Save settings</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="card" style="margin-top:16px;">
+    <h3 style="margin-top:0;">Weekly availability</h3>
+    <form method="POST" action="{{ url_for('provider_availability_add') }}" class="bf-grid-3" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;align-items:end;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div>
+        <label style="display:block;font-weight:600;">Day</label>
+        <select name="day_of_week" style="width:100%;padding:8px;border-radius:8px;border:1px solid #ddd;">
+          {% for day in DAY_NAMES %}
+            <option value="{{ loop.index0 }}">{{ day }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label style="display:block;font-weight:600;">Start</label>
+        <input type="time" name="start_time" required style="width:100%;padding:8px;border-radius:8px;border:1px solid #ddd;">
+      </div>
+      <div>
+        <label style="display:block;font-weight:600;">End</label>
+        <input type="time" name="end_time" required style="width:100%;padding:8px;border-radius:8px;border:1px solid #ddd;">
+      </div>
+      <div style="grid-column:1 / -1;">
+        <button type="submit" class="btn btn-secondary">Add slot</button>
+      </div>
+    </form>
+
+    {% if slots %}
+      <table style="width:100%;margin-top:12px;border-collapse:collapse;">
+        <thead>
+          <tr>
+            <th style="text-align:left;padding:6px;border-bottom:1px solid #eee;">Day</th>
+            <th style="text-align:left;padding:6px;border-bottom:1px solid #eee;">Start</th>
+            <th style="text-align:left;padding:6px;border-bottom:1px solid #eee;">End</th>
+            <th style="text-align:left;padding:6px;border-bottom:1px solid #eee;"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for s in slots %}
+          <tr>
+            <td style="padding:6px;">{{ DAY_NAMES[s.day_of_week] }}</td>
+            <td style="padding:6px;">{{ s.start_time.strftime('%H:%M') }}</td>
+            <td style="padding:6px;">{{ s.end_time.strftime('%H:%M') }}</td>
+            <td style="padding:6px;">
+              <form method="POST" action="{{ url_for('provider_availability_delete', slot_id=s.id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="btn btn-secondary">Delete</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p class="muted" style="margin-top:12px;">No weekly availability set.</p>
+    {% endif %}
+  </div>
+
+  <div class="card" style="margin-top:16px;">
+    <h3 style="margin-top:0;">Exceptions</h3>
+    <form method="POST" action="{{ url_for('provider_availability_exception_add') }}" class="bf-grid-4" style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px;align-items:end;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div>
+        <label style="display:block;font-weight:600;">Date</label>
+        <input type="date" name="date" required style="width:100%;padding:8px;border-radius:8px;border:1px solid #ddd;">
+      </div>
+      <div>
+        <label style="display:block;font-weight:600;">Start</label>
+        <input type="time" name="start_time" style="width:100%;padding:8px;border-radius:8px;border:1px solid #ddd;">
+      </div>
+      <div>
+        <label style="display:block;font-weight:600;">End</label>
+        <input type="time" name="end_time" style="width:100%;padding:8px;border-radius:8px;border:1px solid #ddd;">
+      </div>
+      <div>
+        <label style="display:block;font-weight:600;">Unavailable?</label>
+        <input type="checkbox" name="is_unavailable" checked>
+      </div>
+      <div style="grid-column:1 / -1;">
+        <button type="submit" class="btn btn-secondary">Add exception</button>
+      </div>
+    </form>
+
+    {% if exceptions %}
+      <table style="width:100%;margin-top:12px;border-collapse:collapse;">
+        <thead>
+          <tr>
+            <th style="text-align:left;padding:6px;border-bottom:1px solid #eee;">Date</th>
+            <th style="text-align:left;padding:6px;border-bottom:1px solid #eee;">Window</th>
+            <th style="text-align:left;padding:6px;border-bottom:1px solid #eee;">Type</th>
+            <th style="text-align:left;padding:6px;border-bottom:1px solid #eee;"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for e in exceptions %}
+          <tr>
+            <td style="padding:6px;">{{ e.date }}</td>
+            <td style="padding:6px;">
+              {% if e.start_time and e.end_time %}
+                {{ e.start_time.strftime('%H:%M') }} - {{ e.end_time.strftime('%H:%M') }}
+              {% else %}
+                All day
+              {% endif %}
+            </td>
+            <td style="padding:6px;">{{ "Unavailable" if e.is_unavailable else "Available" }}</td>
+            <td style="padding:6px;">
+              <form method="POST" action="{{ url_for('provider_availability_exception_delete', exc_id=e.id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="btn btn-secondary">Delete</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p class="muted" style="margin-top:12px;">No exceptions set.</p>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

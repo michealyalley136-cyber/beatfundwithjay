@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Confirm logout · BeatFund{% endblock %}
+
+{% block content %}
+  <div class="card max-w-md">
+    <h1 style="margin-top:0;">Log out?</h1>
+    <p>Are you sure you want to log out of your account?</p>
+
+    <div class="form-actions" style="display:flex; gap:12px; margin-top:16px;">
+      <form method="post" action="{{ url_for('logout') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="btn">Yes, log me out</button>
+      </form>
+
+      <a class="btn btn-secondary" href="{{ url_for('route_to_dashboard') }}">Cancel</a>
+    </div>
+  </div>
+{% endblock %}

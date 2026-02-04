@@ -1,0 +1,1011 @@
+{% extends "base.html" %}
+{% block title %}Manager Dashboard · BeatFund{% endblock %}
+
+{% block extra_head %}
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  .bf-manager {
+    display: flex;
+    min-height: calc(100vh - 80px);
+    gap: 0;
+  }
+
+  /* Sidebar */
+  .bf-sidebar {
+    width: 260px;
+    min-width: 260px;
+    background: rgba(15,23,42,.95);
+    border-right: 1px solid rgba(255,255,255,.12);
+    padding: 20px 0;
+    position: sticky;
+    top: 80px;
+    height: calc(100vh - 80px);
+    overflow-y: auto;
+  }
+
+  .bf-sidebar-header {
+    padding: 0 20px 20px;
+    border-bottom: 1px solid rgba(255,255,255,.1);
+    margin-bottom: 20px;
+  }
+
+  .bf-sidebar-title {
+    font-size: 1.3rem;
+    font-weight: 700;
+    margin: 0;
+  }
+
+  .bf-sidebar-subtitle {
+    font-size: .85rem;
+    opacity: .7;
+    margin-top: 4px;
+  }
+
+  .bf-nav {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+
+  .bf-nav-item {
+    margin: 0;
+  }
+
+  .bf-nav-link {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 20px;
+    color: rgba(255,255,255,.7);
+    text-decoration: none;
+    transition: all 0.2s ease;
+    border-left: 3px solid transparent;
+  }
+
+  .bf-nav-link:hover {
+    background: rgba(255,255,255,.05);
+    color: rgba(255,255,255,1);
+  }
+
+  .bf-nav-link.active {
+    background: rgba(34,197,94,.1);
+    color: rgba(34,197,94,1);
+    border-left-color: rgba(34,197,94,1);
+  }
+
+  .bf-nav-icon {
+    font-size: 1.2rem;
+    width: 24px;
+    text-align: center;
+  }
+
+  /* Main Content */
+  .bf-main-content {
+    flex: 1;
+    padding: 24px;
+    max-width: 1400px;
+    margin: 0 auto;
+    width: 100%;
+  }
+
+  .bf-hero {
+    display: flex;
+    gap: 14px;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    margin-bottom: 24px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid rgba(255,255,255,.1);
+  }
+
+  .bf-hero-left h1 {
+    margin: 0;
+    font-size: 1.8rem;
+    font-weight: 700;
+  }
+
+  .bf-hero-left p {
+    margin: 4px 0 0;
+    opacity: .7;
+    font-size: .95rem;
+  }
+
+  .bf-grid {
+    display: grid;
+    grid-template-columns: repeat(12, 1fr);
+    gap: 16px;
+    margin-top: 16px;
+  }
+
+  .bf-card {
+    border: 1px solid rgba(255,255,255,.12);
+    background: rgba(255,255,255,.06);
+    border-radius: 18px;
+    padding: 20px;
+  }
+
+  .bf-card h3 {
+    margin: 0 0 16px;
+    font-size: 1.1rem;
+    font-weight: 700;
+  }
+
+  .bf-kpis {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
+  }
+
+  .bf-kpi {
+    padding: 16px;
+    border-radius: 16px;
+    border: 1px solid rgba(255,255,255,.10);
+    background: rgba(255,255,255,.05);
+    transition: all 0.2s ease;
+  }
+
+  .bf-kpi:hover {
+    background: rgba(255,255,255,.08);
+    transform: translateY(-2px);
+  }
+
+  .bf-kpi .label {
+    opacity: .75;
+    font-size: .85rem;
+    margin-bottom: 6px;
+  }
+
+  .bf-kpi .value {
+    font-size: 1.8rem;
+    font-weight: 800;
+    line-height: 1.2;
+  }
+
+  .bf-kpi .hint {
+    opacity: .7;
+    font-size: .8rem;
+    margin-top: 6px;
+  }
+
+  .bf-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 10px 16px;
+    border-radius: 12px;
+    border: 1px solid rgba(255,255,255,.12);
+    background: rgba(255,255,255,.08);
+    color: inherit;
+    text-decoration: none;
+    font-weight: 600;
+    font-size: .9rem;
+    transition: all 0.2s ease;
+    cursor: pointer;
+  }
+
+  .bf-btn:hover {
+    background: rgba(255,255,255,.12);
+    transform: translateY(-1px);
+  }
+
+  .bf-btn.primary {
+    background: linear-gradient(135deg, rgba(34,197,94,.4), rgba(34,197,94,.3));
+    border-color: rgba(34,197,94,.5);
+  }
+
+  .bf-btn.primary:hover {
+    background: linear-gradient(135deg, rgba(34,197,94,.5), rgba(34,197,94,.4));
+  }
+
+  .bf-btn.block {
+    width: 100%;
+  }
+
+  .bf-btn.small {
+    font-size: .85rem;
+    padding: 6px 12px;
+    min-height: 32px;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  th {
+    text-align: left;
+    padding: 12px;
+    font-size: .9rem;
+    opacity: .7;
+    border-bottom: 1px solid rgba(255,255,255,.1);
+    font-weight: 600;
+  }
+
+  td {
+    padding: 12px;
+    border-bottom: 1px solid rgba(255,255,255,.05);
+  }
+
+  tr:hover {
+    background: rgba(255,255,255,.03);
+  }
+
+  .bf-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .bf-row {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    padding: 12px;
+    border-radius: 12px;
+    border: 1px solid rgba(255,255,255,.08);
+    background: rgba(0,0,0,.2);
+  }
+
+  .bf-row .left {
+    min-width: 0;
+    flex: 1;
+  }
+
+  .bf-row .title {
+    font-weight: 600;
+    font-size: .95rem;
+    margin-bottom: 4px;
+  }
+
+  .bf-row .meta {
+    opacity: .75;
+    font-size: .85rem;
+  }
+
+  .bf-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 10px;
+    border-radius: 999px;
+    border: 1px solid rgba(255,255,255,.12);
+    background: rgba(255,255,255,.06);
+    font-size: .8rem;
+    opacity: .9;
+  }
+
+  .bf-avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 12px;
+    object-fit: cover;
+    border: 1px solid rgba(255,255,255,.12);
+  }
+
+  .artist-card {
+    display: flex;
+    gap: 12px;
+    padding: 16px;
+    border-radius: 12px;
+    border: 1px solid rgba(255,255,255,.08);
+    background: rgba(0,0,0,.2);
+    transition: all 0.2s ease;
+  }
+
+  .artist-card:hover {
+    background: rgba(0,0,0,.3);
+    border-color: rgba(255,255,255,.12);
+  }
+
+  .artist-info {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .artist-name {
+    font-weight: 700;
+    font-size: 1rem;
+    margin-bottom: 4px;
+  }
+
+  .artist-meta {
+    opacity: .7;
+    font-size: .85rem;
+    margin-top: 4px;
+  }
+
+  .span-12 { grid-column: span 12; }
+  .span-8 { grid-column: span 12; }
+  .span-6 { grid-column: span 12; }
+  .span-4 { grid-column: span 12; }
+
+  @media (min-width: 900px) {
+    .span-8 { grid-column: span 8; }
+    .span-4 { grid-column: span 4; }
+    .span-6 { grid-column: span 6; }
+  }
+
+  @media (max-width: 768px) {
+    .bf-sidebar {
+      display: none;
+    }
+  }
+
+  .section {
+    display: none;
+  }
+
+  .section.active {
+    display: block;
+  }
+
+  .quick-actions {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-top: 12px;
+  }
+
+  .artist-switcher {
+    position: relative;
+    display: inline-block;
+  }
+
+  .artist-switcher select {
+    padding: 10px 16px;
+    border-radius: 12px;
+    border: 1px solid rgba(255,255,255,.12);
+    background: rgba(255,255,255,.08);
+    color: inherit;
+    font-size: .9rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="bf-manager">
+  <!-- Sidebar Navigation -->
+  <aside class="bf-sidebar">
+    <div class="bf-sidebar-header">
+      <h2 class="bf-sidebar-title">🎯 Manager</h2>
+      <p class="bf-sidebar-subtitle">Artist Management Hub</p>
+    </div>
+    <nav>
+      <ul class="bf-nav">
+        <li class="bf-nav-item">
+          <a href="#" class="bf-nav-link active" onclick="showSection('dashboard'); return false;">
+            <span class="bf-nav-icon">📊</span>
+            <span>Dashboard</span>
+          </a>
+        </li>
+        <li class="bf-nav-item">
+          <a href="#" class="bf-nav-link" onclick="showSection('artists'); return false;">
+            <span class="bf-nav-icon">👥</span>
+            <span>My Artists</span>
+          </a>
+        </li>
+        <li class="bf-nav-item">
+          <a href="#" class="bf-nav-link" onclick="showSection('requests'); return false;">
+            <span class="bf-nav-icon">📨</span>
+            <span>Requests</span>
+          </a>
+        </li>
+        <li class="bf-nav-item">
+          <a href="#" class="bf-nav-link" onclick="showSection('projects'); return false;">
+            <span class="bf-nav-icon">📁</span>
+            <span>Projects</span>
+          </a>
+        </li>
+        <li class="bf-nav-item">
+          <a href="#" class="bf-nav-link" onclick="showSection('schedule'); return false;">
+            <span class="bf-nav-icon">📅</span>
+            <span>Schedule</span>
+          </a>
+        </li>
+        <li class="bf-nav-item">
+          <a href="#" class="bf-nav-link" onclick="showSection('payments'); return false;">
+            <span class="bf-nav-icon">💰</span>
+            <span>Payments</span>
+          </a>
+        </li>
+        <li class="bf-nav-item">
+          <a href="#" class="bf-nav-link" onclick="showSection('reports'); return false;">
+            <span class="bf-nav-icon">📈</span>
+            <span>Reports</span>
+          </a>
+        </li>
+        <li class="bf-nav-item">
+          <a href="#" class="bf-nav-link" onclick="showSection('discovery'); return false;">
+            <span class="bf-nav-icon">🔍</span>
+            <span>Talent Discovery</span>
+          </a>
+        </li>
+        <li class="bf-nav-item">
+          <a href="#" class="bf-nav-link" onclick="showSection('settings'); return false;">
+            <span class="bf-nav-icon">⚙️</span>
+            <span>Settings</span>
+          </a>
+        </li>
+      </ul>
+    </nav>
+  </aside>
+
+  <!-- Main Content -->
+  <main class="bf-main-content">
+    {% include "_provider_rating_snippet.html" %}
+    <div class="bf-hero">
+      <div class="bf-hero-left">
+        <h1>Manager Dashboard</h1>
+        <p>Managing artists, providers, schedules, and performance</p>
+      </div>
+      <div class="quick-actions">
+        <a class="bf-btn primary" href="#" onclick="showSection('requests'); return false;">Create Request</a>
+        <a class="bf-btn" href="#" onclick="showSection('discovery'); return false;">Invite Artist</a>
+        <div class="artist-switcher">
+          <select onchange="switchArtist(this.value)">
+            <option value="">All Artists</option>
+            {% for artist in artists[:10] %}
+              <option value="{{ artist.id }}">{{ artist.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- 1. Dashboard Overview -->
+    <div id="section-dashboard" class="section active">
+      <div class="bf-grid">
+        <div class="bf-card span-12">
+          <h3>Overview Statistics</h3>
+          <div class="bf-kpis">
+            <div class="bf-kpi">
+              <div class="label">Managed Artists</div>
+              <div class="value">{{ stats.managed_artists_count }}</div>
+              <div class="hint">Active artists</div>
+            </div>
+            <div class="bf-kpi">
+              <div class="label">New Inquiries</div>
+              <div class="value">{{ stats.new_inquiries_count }}</div>
+              <div class="hint">Pending requests</div>
+            </div>
+            <div class="bf-kpi">
+              <div class="label">Active Projects</div>
+              <div class="value">{{ stats.active_projects_count }}</div>
+              <div class="hint">In progress</div>
+            </div>
+            <div class="bf-kpi">
+              <div class="label">Upcoming Bookings</div>
+              <div class="value">{{ stats.upcoming_bookings_count }}</div>
+              <div class="hint">Scheduled</div>
+            </div>
+            <div class="bf-kpi">
+              <div class="label">Earnings This Month</div>
+              <div class="value">${{ "%.2f"|format(stats.total_earnings_this_month) }}</div>
+              <div class="hint">Current month</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="bf-card span-6">
+          <h3>Quick Actions</h3>
+          <div class="bf-list">
+            <a class="bf-btn block primary" href="#" onclick="showSection('requests'); return false;">Create Request</a>
+            <a class="bf-btn block" href="#" onclick="showSection('discovery'); return false;">Invite Artist</a>
+            <a class="bf-btn block" href="#" onclick="showSection('schedule'); return false;">View Schedule</a>
+            <a class="bf-btn block" href="#" onclick="showSection('payments'); return false;">View Payments</a>
+          </div>
+        </div>
+
+        <div class="bf-card span-6">
+          <h3>Recent Activity</h3>
+          {% if projects and projects|length > 0 %}
+            <div class="bf-list">
+                  {% for project in projects[:5] %}
+                <div class="bf-row">
+                  <div class="left">
+                    <div class="title">{{ project.event_title if project.event_title else 'Project' }}</div>
+                    <div class="meta">
+                      Artist: {{ project.artist_name }} · Status: {{ project.status|title }}
+                    </div>
+                  </div>
+                </div>
+              {% endfor %}
+            </div>
+          {% else %}
+            <p style="opacity: .75; padding: 20px 0; text-align: center;">No recent activity.</p>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <!-- 2. My Artists -->
+    <div id="section-artists" class="section">
+      <div class="bf-grid">
+        <div class="bf-card span-12">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+            <h3 style="margin: 0;">My Artists</h3>
+            <a class="bf-btn primary" href="#" onclick="showSection('discovery'); return false;">Invite New Artist</a>
+          </div>
+          {% if artists and artists|length > 0 %}
+            <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px;">
+              {% for artist in artists %}
+                <div class="artist-card">
+                  <img src="{{ artist.avatar_url }}" alt="{{ artist.name }}" class="bf-avatar" style="width: 60px; height: 60px;">
+                  <div class="artist-info">
+                    <div class="artist-name">{{ artist.name }}</div>
+                    <div class="artist-meta">
+                      <div>Genre: {{ artist.genre }}</div>
+                      <div>Upcoming: {{ artist.upcoming_count }} bookings</div>
+                      <div>Earnings: ${{ "%.2f"|format(artist.earnings_snapshot) }}</div>
+                    </div>
+                    <div style="margin-top: 8px;">
+                      <span class="bf-chip" style="{% if artist.status == 'active' %}background: rgba(34,197,94,.2); border-color: rgba(34,197,94,.4);{% else %}background: rgba(239,68,68,.2); border-color: rgba(239,68,68,.4);{% endif %}">
+                        {{ artist.status|title }}
+                      </span>
+                    </div>
+                  </div>
+                  <div style="display: flex; flex-direction: column; gap: 6px;">
+                    <a class="bf-btn small" href="{{ url_for('user_profile', username=artist.id) }}">View</a>
+                    <a class="bf-btn small" href="#">Edit</a>
+                    <a class="bf-btn small" href="#" style="background: rgba(239,68,68,.15); border-color: rgba(239,68,68,.3);">End</a>
+                  </div>
+                </div>
+              {% endfor %}
+            </div>
+          {% else %}
+            <p style="opacity: .75; padding: 40px 0; text-align: center;">No artists managed yet. Start by inviting artists from Talent Discovery.</p>
+            <div style="text-align: center; margin-top: 20px;">
+              <a class="bf-btn primary" href="#" onclick="showSection('discovery'); return false;">Discover Talent</a>
+            </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <!-- 3. Requests -->
+    <div id="section-requests" class="section">
+      <div class="bf-grid">
+        <div class="bf-card span-12">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+            <h3 style="margin: 0;">Requests</h3>
+            <a class="bf-btn primary" href="#">Create New Request</a>
+          </div>
+          {% if requests and requests|length > 0 %}
+            <div style="overflow-x: auto;">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Artist</th>
+                    <th>Client/Lead</th>
+                    <th>Service Needed</th>
+                    <th>Budget</th>
+                    <th>Dates</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for req in requests %}
+                    <tr>
+                      <td>{{ req.artist_name }}</td>
+                      <td>{{ req.lead_name }}</td>
+                      <td>{{ req.service_type[:30] }}{% if req.service_type|length > 30 %}...{% endif %}</td>
+                      <td>{{ req.budget or "—" }}</td>
+                      <td>{{ req.date_range or "—" }}</td>
+                      <td>
+                        <span class="bf-chip" style="{% if req.status == 'accepted' %}background: rgba(34,197,94,.2); border-color: rgba(34,197,94,.4);{% elif req.status == 'declined' or req.status == 'cancelled' %}background: rgba(239,68,68,.2); border-color: rgba(239,68,68,.4);{% else %}background: rgba(251,191,36,.2); border-color: rgba(251,191,36,.4);{% endif %}">
+                          {{ req.status|title }}
+                        </span>
+                      </td>
+                      <td>
+                        <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+                          <a class="bf-btn small" href="#">View</a>
+                          {% if req.status not in ['accepted', 'declined'] %}
+                            <a class="bf-btn small" href="#">Edit</a>
+                            <a class="bf-btn small" href="#" style="background: rgba(239,68,68,.15); border-color: rgba(239,68,68,.3);">Cancel</a>
+                          {% endif %}
+                        </div>
+                      </td>
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          {% else %}
+            <p style="opacity: .75; padding: 40px 0; text-align: center;">No requests yet. Create a new request to start booking services for your artists.</p>
+            <div style="text-align: center; margin-top: 20px;">
+              <a class="bf-btn primary" href="#">Create First Request</a>
+            </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <!-- 4. Projects -->
+    <div id="section-projects" class="section">
+      <div class="bf-grid">
+        <div class="bf-card span-12">
+          <h3>Projects</h3>
+          {% if projects and projects|length > 0 %}
+            <div style="overflow-x: auto;">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Artist</th>
+                    <th>Provider</th>
+                    <th>Project</th>
+                    <th>Status</th>
+                    <th>Deliverables</th>
+                    <th>Payment</th>
+                    <th>Updated</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for project in projects %}
+                    <tr>
+                      <td>{{ project.artist_name }}</td>
+                      <td>
+                        {% if project.provider_id %}
+                          <a href="{{ url_for('user_profile', username=project.provider_id) }}" style="color: inherit; text-decoration: none;">
+                            {{ project.provider_name }}
+                          </a>
+                        {% else %}
+                          —
+                        {% endif %}
+                      </td>
+                      <td>{{ project.event_title if project.event_title else "Project" }}</td>
+                      <td>
+                        <span class="bf-chip" style="{% if project.status == 'completed' %}background: rgba(34,197,94,.2); border-color: rgba(34,197,94,.4);{% elif project.status in ['accepted', 'confirmed'] %}background: rgba(59,130,246,.2); border-color: rgba(59,130,246,.4);{% else %}background: rgba(251,191,36,.2); border-color: rgba(251,191,36,.4);{% endif %}">
+                          {{ project.status|title }}
+                        </span>
+                      </td>
+                      <td>
+                        <span class="bf-chip" style="background: rgba(251,191,36,.2); border-color: rgba(251,191,36,.4);">
+                          {{ project.deliverables_status|title }}
+                        </span>
+                      </td>
+                      <td>
+                        <span class="bf-chip" style="{% if project.payment_status == 'paid' %}background: rgba(34,197,94,.2); border-color: rgba(34,197,94,.4);{% else %}background: rgba(251,191,36,.2); border-color: rgba(251,191,36,.4);{% endif %}">
+                          {{ project.payment_status|title }}
+                        </span>
+                      </td>
+                      <td>
+                        {% if project.updated_at %}
+                          {{ project.updated_at.strftime("%b %d, %Y") }}
+                        {% else %}
+                          —
+                        {% endif %}
+                      </td>
+                      <td>
+                        <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+                          <a class="bf-btn small" href="#">View</a>
+                          <a class="bf-btn small" href="#">Notes</a>
+                        </div>
+                      </td>
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          {% else %}
+            <p style="opacity: .75; padding: 40px 0; text-align: center;">No projects yet.</p>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <!-- 5. Schedule -->
+    <div id="section-schedule" class="section">
+      <div class="bf-grid">
+        <div class="bf-card span-12">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+            <h3 style="margin: 0;">Schedule</h3>
+            <div style="display: flex; gap: 8px;">
+              <a class="bf-btn" href="#">Block Date</a>
+              <a class="bf-btn" href="#">Update Availability</a>
+            </div>
+          </div>
+          {% if schedule_items and schedule_items|length > 0 %}
+            <div class="bf-list">
+              {% for item in schedule_items %}
+                <div class="bf-row">
+                  <div class="left">
+                    <div class="title">{{ item.label }}</div>
+                    <div class="meta">
+                      Artist: {{ item.artist_name }} · 
+                      Type: {{ item.type|title }} · 
+                      {% if item.start %}
+                        {{ item.start.strftime("%b %d, %Y %I:%M %p") }}
+                        {% if item.end %}
+                          - {{ item.end.strftime("%I:%M %p") }}
+                        {% endif %}
+                      {% endif %}
+                    </div>
+                  </div>
+                </div>
+              {% endfor %}
+            </div>
+          {% else %}
+            <p style="opacity: .75; padding: 40px 0; text-align: center;">No schedule items yet.</p>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <!-- 6. Payments -->
+    <div id="section-payments" class="section">
+      <div class="bf-grid">
+        <div class="bf-card span-12">
+          <h3>Payments</h3>
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px;">
+            <div style="padding: 20px; border-radius: 16px; background: rgba(34,197,94,.1); border: 1px solid rgba(34,197,94,.2);">
+              <div style="font-size: .85rem; opacity: .7; margin-bottom: 8px;">Total Paid</div>
+              <div style="font-size: 2rem; font-weight: 700;">${{ "%.2f"|format(payments.total_paid) }}</div>
+            </div>
+            <div style="padding: 20px; border-radius: 16px; background: rgba(251,191,36,.1); border: 1px solid rgba(251,191,36,.2);">
+              <div style="font-size: .85rem; opacity: .7; margin-bottom: 8px;">Total Pending</div>
+              <div style="font-size: 2rem; font-weight: 700;">${{ "%.2f"|format(payments.total_pending) }}</div>
+            </div>
+            <div style="padding: 20px; border-radius: 16px; background: rgba(59,130,246,.1); border: 1px solid rgba(59,130,246,.2);">
+              <div style="font-size: .85rem; opacity: .7; margin-bottom: 8px;">This Month</div>
+              <div style="font-size: 2rem; font-weight: 700;">${{ "%.2f"|format(payments.this_month_total) }}</div>
+            </div>
+          </div>
+          {% if transactions and transactions|length > 0 %}
+            <div style="overflow-x: auto;">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Artist</th>
+                    <th>Project</th>
+                    <th>Amount</th>
+                    <th>Date</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for trans in transactions %}
+                    <tr>
+                      <td>{{ trans.artist_name }}</td>
+                      <td>{{ trans.event_title if trans.event_title else "Transaction" }}</td>
+                      <td>${{ "%.2f"|format(trans.amount) }}</td>
+                      <td>{{ trans.date.strftime("%b %d, %Y") if trans.date else "—" }}</td>
+                      <td>
+                        <span class="bf-chip" style="{% if trans.status == 'completed' %}background: rgba(34,197,94,.2); border-color: rgba(34,197,94,.4);{% elif trans.status in ['accepted', 'confirmed'] %}background: rgba(59,130,246,.2); border-color: rgba(59,130,246,.4);{% else %}background: rgba(251,191,36,.2); border-color: rgba(251,191,36,.4);{% endif %}">
+                          {{ trans.status|title }}
+                        </span>
+                      </td>
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          {% else %}
+            <p style="opacity: .75; padding: 20px 0; text-align: center;">No transactions yet.</p>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <!-- 7. Reports -->
+    <div id="section-reports" class="section">
+      <div class="bf-grid">
+        <div class="bf-card span-6">
+          <h3>Conversion Rate</h3>
+          <div style="text-align: center; padding: 40px 20px;">
+            <div style="font-size: 3rem; font-weight: 700; margin-bottom: 8px;">
+              {{ "%.1f"|format(reports.conversion_rate) }}%
+            </div>
+            <div style="opacity: .7; font-size: .9rem;">Requests → Booked</div>
+          </div>
+        </div>
+
+        <div class="bf-card span-6">
+          <h3>Top Service Categories</h3>
+          {% if reports.top_services and reports.top_services|length > 0 %}
+            <div class="bf-list">
+              {% for service in reports.top_services[:5] %}
+                <div class="bf-row">
+                  <div class="left">
+                    <div class="title">{{ service.service }}</div>
+                  </div>
+                  <div style="font-weight: 700;">{{ service.count }}</div>
+                </div>
+              {% endfor %}
+            </div>
+          {% else %}
+            <p style="opacity: .75; padding: 20px 0; text-align: center;">No service data available.</p>
+          {% endif %}
+        </div>
+
+        <div class="bf-card span-12">
+          <h3>Revenue by Artist</h3>
+          {% if reports.revenue_by_artist and reports.revenue_by_artist|length > 0 %}
+            <div style="overflow-x: auto;">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Artist</th>
+                    <th>Revenue</th>
+                    <th>Percentage</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% set total_revenue = reports.revenue_by_artist|sum(attribute='revenue') %}
+                  {% for artist_data in reports.revenue_by_artist %}
+                    <tr>
+                      <td>{{ artist_data.artist_name }}</td>
+                      <td>${{ "%.2f"|format(artist_data.revenue) }}</td>
+                      <td>
+                        {% if total_revenue > 0 %}
+                          {{ "%.1f"|format((artist_data.revenue / total_revenue * 100)) }}%
+                        {% else %}
+                          0%
+                        {% endif %}
+                      </td>
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          {% else %}
+            <p style="opacity: .75; padding: 40px 0; text-align: center;">No revenue data available.</p>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <!-- 8. Talent Discovery -->
+    <div id="section-discovery" class="section">
+      <div class="bf-grid">
+        <div class="bf-card span-12">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 12px;">
+            <h3 style="margin: 0;">Talent Discovery</h3>
+            <div style="display: flex; gap: 8px;">
+              <input type="text" placeholder="Search artists..." style="padding: 10px 16px; border-radius: 12px; border: 1px solid rgba(255,255,255,.12); background: rgba(255,255,255,.08); color: inherit; min-width: 200px;">
+              <select style="padding: 10px 16px; border-radius: 12px; border: 1px solid rgba(255,255,255,.12); background: rgba(255,255,255,.08); color: inherit;">
+                <option>All Genres</option>
+              </select>
+            </div>
+          </div>
+          {% if discovery_artists and discovery_artists|length > 0 %}
+            <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 16px;">
+              {% for artist in discovery_artists %}
+                <div class="artist-card">
+                  <img src="{{ artist.avatar_url }}" alt="{{ artist.name }}" class="bf-avatar" style="width: 60px; height: 60px;">
+                  <div class="artist-info">
+                    <div class="artist-name">{{ artist.name }}</div>
+                    <div class="artist-meta">
+                      <div>Genre: {{ artist.genre }}</div>
+                      <div>Location: {{ artist.location }}</div>
+                      <div>Engagement: {{ artist.engagement_score }} followers</div>
+                    </div>
+                  </div>
+                  <div style="display: flex; flex-direction: column; gap: 6px;">
+                    <a class="bf-btn small" href="{{ url_for('user_profile', username=artist.id) }}">View Profile</a>
+                    <a class="bf-btn small primary" href="#">Invite to Management</a>
+                  </div>
+                </div>
+              {% endfor %}
+            </div>
+          {% else %}
+            <p style="opacity: .75; padding: 40px 0; text-align: center;">No unmanaged artists found.</p>
+          {% endif %}
+        </div>
+
+        {% if invites and invites|length > 0 %}
+          <div class="bf-card span-12">
+            <h3>Pending Invites</h3>
+            <div class="bf-list">
+              {% for invite in invites %}
+                <div class="bf-row">
+                  <div class="left">
+                    <div class="title">{{ invite.artist_name }}</div>
+                    <div class="meta">
+                      Status: {{ invite.status|title }} · Sent: {{ invite.sent_at.strftime("%b %d, %Y") if invite.sent_at else "—" }}
+                    </div>
+                  </div>
+                </div>
+              {% endfor %}
+            </div>
+          </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- 9. Settings -->
+    <div id="section-settings" class="section">
+      <div class="bf-grid">
+        <div class="bf-card span-12">
+          <h3>Settings</h3>
+          <div class="bf-list">
+            <a class="bf-btn block" href="{{ url_for('profile_edit') }}">Account Information</a>
+            <a class="bf-btn block" href="{{ url_for('profile_edit') }}">Password & Security</a>
+            <a class="bf-btn block" href="{{ url_for('bookme_profile') }}">Notification Preferences</a>
+            <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid rgba(255,255,255,.1);">
+              <h4 style="margin: 0 0 12px; font-size: .95rem; opacity: .8;">Management Permissions</h4>
+              <div style="display: grid; gap: 12px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px; border-radius: 12px; background: rgba(0,0,0,.2);">
+                  <div>
+                    <div style="font-weight: 600; font-size: .9rem;">Can Edit Artist Profile</div>
+                    <div style="opacity: .7; font-size: .85rem;">Allow editing artist profiles</div>
+                  </div>
+                  <label style="position: relative; display: inline-block; width: 44px; height: 24px;">
+                    <input type="checkbox" checked style="opacity: 0; width: 0; height: 0;">
+                    <span style="position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(34,197,94,.3); border-radius: 24px; transition: .4s;"></span>
+                    <span style="position: absolute; content: ''; height: 18px; width: 18px; left: 3px; bottom: 3px; background-color: white; border-radius: 50%; transition: .4s; transform: translateX(20px);"></span>
+                  </label>
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px; border-radius: 12px; background: rgba(0,0,0,.2);">
+                  <div>
+                    <div style="font-weight: 600; font-size: .9rem;">Can Manage Availability</div>
+                    <div style="opacity: .7; font-size: .85rem;">Allow blocking/managing artist schedules</div>
+                  </div>
+                  <label style="position: relative; display: inline-block; width: 44px; height: 24px;">
+                    <input type="checkbox" checked style="opacity: 0; width: 0; height: 0;">
+                    <span style="position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(34,197,94,.3); border-radius: 24px; transition: .4s;"></span>
+                    <span style="position: absolute; content: ''; height: 18px; width: 18px; left: 3px; bottom: 3px; background-color: white; border-radius: 50%; transition: .4s; transform: translateX(20px);"></span>
+                  </label>
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px; border-radius: 12px; background: rgba(0,0,0,.2);">
+                  <div>
+                    <div style="font-weight: 600; font-size: .9rem;">Can View Payments</div>
+                    <div style="opacity: .7; font-size: .85rem;">Allow viewing artist payment details</div>
+                  </div>
+                  <label style="position: relative; display: inline-block; width: 44px; height: 24px;">
+                    <input type="checkbox" checked style="opacity: 0; width: 0; height: 0;">
+                    <span style="position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(34,197,94,.3); border-radius: 24px; transition: .4s;"></span>
+                    <span style="position: absolute; content: ''; height: 18px; width: 18px; left: 3px; bottom: 3px; background-color: white; border-radius: 50%; transition: .4s; transform: translateX(20px);"></span>
+                  </label>
+                </div>
+              </div>
+            </div>
+            <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid rgba(255,255,255,.1);">
+              <a class="bf-btn block" href="{{ url_for('profile_edit') }}" style="background: rgba(239,68,68,.15); border-color: rgba(239,68,68,.3);">
+                Deactivate Account
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script nonce="{{ csp_nonce }}">
+  function showSection(sectionId) {
+    // Hide all sections
+    document.querySelectorAll('.section').forEach(section => {
+      section.classList.remove('active');
+    });
+
+    // Remove active class from all nav links
+    document.querySelectorAll('.bf-nav-link').forEach(link => {
+      link.classList.remove('active');
+    });
+
+    // Show selected section
+    const section = document.getElementById('section-' + sectionId);
+    if (section) {
+      section.classList.add('active');
+    }
+
+    // Add active class to clicked nav link
+    event.target.closest('.bf-nav-link').classList.add('active');
+    
+    // Scroll to top
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function switchArtist(artistId) {
+    // Filter views by artist (placeholder - can be implemented with AJAX)
+    console.log('Switching to artist:', artistId);
+    // This would filter the displayed data by artist_id
+  }
+</script>
+{% endblock %}

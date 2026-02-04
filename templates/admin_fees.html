@@ -1,0 +1,35 @@
+{% extends "base_admin.html" %}
+{% block title %}BeatFund · Admin · Fees{% endblock %}
+
+{% block admin_content %}
+<div class="admin-page-header">
+  <h1>Fees Configuration</h1>
+  <p>Read-only snapshot of fee-related configuration used by the application.</p>
+</div>
+
+<div class="card">
+  <h2>Config</h2>
+  <div class="card-subtitle">These values should match what users see on confirmation pages.</div>
+  <table style="width:100%; border-collapse:collapse;">
+    <thead>
+      <tr>
+        <th style="text-align:left; padding:8px; border-bottom:1px solid rgba(148,163,184,0.2);">Key</th>
+        <th style="text-align:left; padding:8px; border-bottom:1px solid rgba(148,163,184,0.2);">Value</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for k, v in cfg.items() %}
+      <tr style="border-top:1px solid rgba(148,163,184,0.10);">
+        <td style="padding:8px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;">{{ k }}</td>
+        <td style="padding:8px;">{{ v }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="card">
+  <h2>Public page</h2>
+  <div class="card-subtitle">What users see: <a href="{{ url_for('fees') }}">Fees & Pricing</a></div>
+</div>
+{% endblock %}

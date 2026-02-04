@@ -1,0 +1,1597 @@
+{% extends "base.html" %}
+{% block title %}Beat Marketplace · BeatFund{% endblock %}
+
+{% block extra_head %}
+<style>
+  /* Page shell */
+  .mk-page {
+    max-width: 1120px;
+    margin: 32px auto 40px;
+    padding-inline: 16px;
+  }
+
+  .mk-page-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 24px;
+    margin-bottom: 24px;
+  }
+  @media (max-width: 900px) {
+    .mk-page-header {
+      flex-direction: column;
+      align-items: flex-start;
+    }
+  }
+
+  .mk-kicker {
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: #6b8bff;
+    margin-bottom: 4px;
+  }
+
+  .mk-page-title {
+    font-size: 26px;
+    font-weight: 650;
+    letter-spacing: 0.01em;
+    margin: 0 0 4px;
+  }
+
+  .mk-page-sub {
+    font-size: 13px;
+    color: #9aa4c2;
+    margin: 0;
+  }
+
+  .mk-header-pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 12px;
+  }
+  .mk-header-pill {
+    font-size: 11px;
+    padding: 4px 9px;
+    border-radius: 999px;
+    border: 1px solid rgba(148, 163, 184, 0.35);
+    background: radial-gradient(circle at top left, rgba(148, 163, 184, 0.25), rgba(15, 23, 42, 0.7));
+  }
+
+  .mk-header-orb {
+    position: relative;
+    min-width: 220px;
+    align-self: stretch;
+    border-radius: 20px;
+    padding: 14px 16px;
+    background:
+      radial-gradient(circle at top left, rgba(74, 222, 128, 0.22), transparent 55%),
+      radial-gradient(circle at bottom right, rgba(59, 130, 246, 0.28), transparent 55%),
+      rgba(15, 23, 42, 0.9);
+    border: 1px solid rgba(148, 163, 184, 0.35);
+    box-shadow:
+      0 22px 45px rgba(15, 23, 42, 0.9),
+      0 0 0 1px rgba(15, 23, 42, 0.8) inset;
+    overflow: hidden;
+  }
+  .mk-header-orb-title {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: #9ca3ff;
+    margin-bottom: 4px;
+  }
+  .mk-header-orb-main {
+    font-size: 22px;
+    font-weight: 600;
+    margin-bottom: 8px;
+  }
+  .mk-header-orb-sub {
+    font-size: 12px;
+    color: #9aa4c2;
+    margin-bottom: 10px;
+  }
+  .mk-header-orb-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: 11px;
+    color: #cbd5f5;
+  }
+  .mk-header-orb-pulses {
+    position: absolute;
+    inset: -40%;
+    pointer-events: none;
+    opacity: 0.35;
+    mix-blend-mode: screen;
+    background:
+      radial-gradient(circle at 10% 20%, rgba(59, 130, 246, 0.85), transparent 55%),
+      radial-gradient(circle at 80% 70%, rgba(16, 185, 129, 0.8), transparent 55%);
+  }
+
+  /* Layout: shell switches between 1-column and 2-column */
+  .mk-shell {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 16px;
+    align-items: flex-start;
+    transition: grid-template-columns 0.18s ease;
+  }
+
+  .mk-shell.filters-open {
+    grid-template-columns: minmax(0, 1.02fr) minmax(0, 1.6fr);
+  }
+
+  @media (max-width: 980px) {
+    .mk-shell.filters-open {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  /* Cards */
+  .mk-card {
+    position: relative;
+    border-radius: 18px;
+    border: 1px solid rgba(30, 64, 175, 0.7);
+    background:
+      linear-gradient(135deg, rgba(15, 23, 42, 0.96), rgba(12, 10, 30, 0.98));
+    box-shadow:
+      0 22px 40px rgba(15, 23, 42, 0.85),
+      0 0 0 1px rgba(15, 23, 42, 1) inset;
+    padding: 16px 18px 14px;
+    overflow: hidden;
+  }
+  .mk-card::before {
+    content: "";
+    position: absolute;
+    inset: -40%;
+    background:
+      radial-gradient(circle at 0% 0%, rgba(59, 130, 246, 0.25), transparent 55%),
+      radial-gradient(circle at 100% 100%, rgba(16, 185, 129, 0.25), transparent 55%);
+    opacity: 0.22;
+    mix-blend-mode: screen;
+    pointer-events: none;
+  }
+  .mk-card-inner {
+    position: relative;
+    z-index: 1;
+  }
+
+  .mk-card-title {
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+  .mk-card-sub {
+    font-size: 12px;
+    color: #9aa4c2;
+    margin-bottom: 12px;
+  }
+
+  .mk-card-title-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 4px;
+  }
+
+  .mk-row-card {
+    margin-top: 20px;
+  }
+
+  /* Filters card: hidden by default, only shows when shell gets .filters-open */
+  .mk-filters-card {
+    display: none;
+    opacity: 0;
+    transform: translateX(-4px);
+    transition: opacity 0.16s ease, transform 0.16s ease;
+  }
+
+  .mk-shell.filters-open .mk-filters-card {
+    display: block;
+    opacity: 1;
+    transform: translateX(0);
+  }
+
+  /* Generic filters for marketplace rows */
+  .mk-studio-filters,
+  .mk-video-filters,
+  .mk-talent-filters,
+  .mk-provider-filters {
+    display: none;
+    margin-bottom: 10px;
+    gap: 8px;
+    flex-wrap: wrap;
+    align-items: flex-end;
+  }
+
+  .mk-studio-filters.is-open,
+  .mk-video-filters.is-open,
+  .mk-talent-filters.is-open,
+  .mk-provider-filters.is-open {
+    display: flex;
+  }
+
+  .mk-filters-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+  @media (max-width: 640px) {
+    .mk-filters-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .mk-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #8f9bc6;
+    margin-bottom: 3px;
+  }
+
+  .mk-input,
+  .mk-select {
+    width: 100%;
+    border-radius: 11px;
+    border: 1px solid #303a5c;
+    background: radial-gradient(circle at top, rgba(15, 23, 42, 0.9), rgba(15, 23, 42, 1));
+    color: #e3e9ff;
+    padding: 8px 11px;
+    font-size: 13px;
+    outline: none;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease, transform 0.06s ease;
+  }
+  .mk-input::placeholder {
+    color: #6f7aa4;
+  }
+  .mk-input:focus,
+  .mk-select:focus {
+    border-color: #4f8bff;
+    box-shadow: 0 0 0 1px rgba(79, 139, 255, 0.5);
+    transform: translateY(-0.5px);
+  }
+
+  .mk-filter-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    margin-top: 12px;
+    flex-wrap: wrap;
+    font-size: 11px;
+    color: #9aa4c2;
+  }
+
+  .mk-filter-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+
+  .mk-btn-primary,
+  .mk-btn-ghost {
+    border-radius: 999px;
+    padding: 7px 16px;
+    font-size: 13px;
+    border: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    text-decoration: none;
+    white-space: nowrap;
+    transition: transform 0.1s ease, box-shadow 0.1s ease, background 0.12s ease, border-color 0.12s ease;
+  }
+  .mk-btn-primary {
+    background: linear-gradient(135deg, #4de3ff, #6366f1);
+    color: #ffffff;
+    box-shadow: 0 6px 18px rgba(56, 189, 248, 0.45);
+  }
+  .mk-btn-primary:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 10px 26px rgba(79, 70, 229, 0.55);
+  }
+  .mk-btn-primary:active {
+    transform: translateY(0);
+    box-shadow: 0 4px 12px rgba(30, 64, 175, 0.6);
+  }
+
+  .mk-btn-ghost {
+    background: rgba(15, 23, 42, 0.7);
+    color: #c1ccff;
+    border: 1px solid #3b476b;
+  }
+  .mk-btn-ghost:hover {
+    background: rgba(34, 43, 75, 0.96);
+    border-color: #4f8bff;
+  }
+
+  .mk-btn-small {
+    padding-block: 5px;
+    padding-inline: 12px;
+    font-size: 12px;
+  }
+
+  .mk-link-row {
+    display: flex;
+    gap: 10px;
+    margin-top: 12px;
+    flex-wrap: wrap;
+  }
+  .mk-link-row a {
+    font-size: 12px;
+    color: #4aa8ff;
+    text-decoration: none;
+    position: relative;
+  }
+  .mk-link-row a::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: -1px;
+    height: 1px;
+    background: linear-gradient(90deg, #38bdf8, #a855f7);
+    opacity: 0.9;
+  }
+
+  /* Horizontal rail */
+  .mk-beat-grid {
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 16px;
+    overflow-x: auto;
+    padding-bottom: 8px;
+    margin-bottom: -4px;
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .mk-beat-card {
+    flex: 0 0 220px;
+    border-radius: 18px;
+    border: 1px solid rgba(17, 24, 39, 0.95);
+    background:
+      radial-gradient(circle at top left, rgba(59, 130, 246, 0.28), transparent 58%),
+      radial-gradient(circle at bottom right, rgba(15, 23, 42, 1), rgba(15, 23, 42, 1));
+    padding: 8px 8px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    transition: transform 0.12s ease, box-shadow 0.12s ease, border-color 0.12s ease, background 0.12s ease;
+    scroll-snap-align: start;
+  }
+
+  .mk-beat-card:hover {
+    transform: translateY(-2px);
+    border-color: rgba(59, 130, 246, 0.9);
+    box-shadow:
+      0 14px 30px rgba(15, 23, 42, 0.9),
+      0 0 0 1px rgba(30, 64, 175, 0.8);
+  }
+
+  .mk-beat-card-more {
+    background:
+      radial-gradient(circle at top left, rgba(45, 212, 191, 0.28), transparent 60%),
+      radial-gradient(circle at bottom right, rgba(30, 64, 175, 1), rgba(15, 23, 42, 1));
+    display: flex;
+    justify-content: center;
+  }
+
+  .mk-beat-cover {
+    position: relative;
+    border-radius: 14px;
+    overflow: hidden;
+    background: radial-gradient(circle at 0% 0%, #1f2937, #020617 65%);
+  }
+
+  .mk-beat-cover-img {
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    object-fit: cover;
+    display: block;
+  }
+
+  .mk-beat-featured-badge {
+    position: absolute;
+    left: 8px;
+    top: 8px;
+    padding: 3px 8px;
+    border-radius: 999px;
+    font-size: 11px;
+    background: rgba(250, 204, 21, 0.96);
+    color: #1f2937;
+    font-weight: 600;
+  }
+
+  .mk-beat-info {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding-inline: 2px;
+  }
+
+  .mk-beat-title-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 6px;
+    align-items: baseline;
+  }
+
+  .mk-beat-main-title {
+    font-size: 13px;
+    font-weight: 560;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .mk-beat-artist {
+    font-size: 11px;
+    color: #9ca3c8;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    text-align: right;
+  }
+
+  /* Clickable @username (now a link, not a button) */
+  .mk-producer-link {
+    padding: 0;
+    margin: 0;
+    font: inherit;
+    color: #9ca3c8;
+    cursor: pointer;
+    text-align: right;
+    text-decoration: none;
+  }
+  .mk-producer-link:hover {
+    color: #e5e7eb;
+    text-decoration: underline;
+  }
+
+  .mk-beat-meta {
+    font-size: 11px;
+    color: #9aa4c2;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .mk-beat-audio-row { margin-top: 4px; }
+  .mk-beat-audio { width: 100%; outline: none; }
+
+  .mk-beat-bottom {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    margin-top: 2px;
+  }
+
+  .mk-price-row {
+    font-size: 14px;
+    font-weight: 620;
+    color: #bbf7d0;
+  }
+
+  .mk-price-sub {
+    font-size: 11px;
+    color: #9aa4c2;
+  }
+
+  .mk-buy-inline-form { margin: 0; }
+
+  .mk-btn-buy-inline {
+    border-radius: 999px;
+    padding: 6px 13px;
+    font-size: 12px;
+    border: none;
+    cursor: pointer;
+    background: linear-gradient(135deg, #4de3ff, #6366f1);
+    color: #ffffff;
+    box-shadow: 0 6px 16px rgba(56, 189, 248, 0.4);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: transform 0.1s ease, box-shadow 0.1s ease, background 0.12s ease;
+    white-space: nowrap;
+    text-decoration: none;
+  }
+
+  .mk-btn-buy-inline:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 10px 24px rgba(79, 70, 229, 0.55);
+  }
+
+  .mk-btn-buy-inline:active {
+    transform: translateY(0);
+    box-shadow: 0 4px 10px rgba(30, 64, 175, 0.7);
+  }
+
+  .mk-empty {
+    font-size: 13px;
+    color: #9aa4c2;
+    padding: 10px 0 2px;
+  }
+
+  .mk-studio-filter-field {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 130px;
+  }
+
+  .mk-studio-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #8f9bc6;
+  }
+
+  .mk-studio-filter-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+
+  .mk-studio-results {
+    font-size: 11px;
+    color: #9aa4c2;
+    margin-top: 4px;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="mk-page">
+  <header class="mk-page-header">
+    <div>
+      <div class="mk-kicker">Marketplace</div>
+      <h1 class="mk-page-title">Beat marketplace</h1>
+      <p class="mk-page-sub">
+        Browse featured beats from producers. Purchases are paid instantly via Stripe checkout.
+      </p>
+
+      <div class="mk-header-pills">
+        <span class="mk-header-pill">Stripe checkout</span>
+        <span class="mk-header-pill">Instant licensing</span>
+        <span class="mk-header-pill">Built for creators &amp; producers</span>
+      </div>
+    </div>
+
+    <aside class="mk-header-orb" aria-hidden="true">
+      <div class="mk-header-orb-pulses"></div>
+      <div class="mk-card-inner">
+        <div class="mk-header-orb-title">BeatFund</div>
+        <div class="mk-header-orb-main">Fintech for creators</div>
+        <div class="mk-header-orb-sub">
+          Upload, sell, and buy beats with secure Stripe checkout.
+        </div>
+        <div class="mk-header-orb-footer">
+          <span>Secure balance • Instant payouts • Clear rights</span>
+          <a href="{{ url_for('market_index') }}" class="mk-btn-ghost mk-btn-small">Payments via Stripe</a>
+        </div>
+      </div>
+    </aside>
+  </header>
+
+  <div class="mk-shell" id="mk-shell" data-refresh-root="market">
+    <!-- LEFT: "Find the right beat" filters -->
+    <section class="mk-card mk-filters-card">
+      <div class="mk-card-inner">
+        <div class="mk-card-title">Find the right beat</div>
+        <div class="mk-card-sub">
+          Filter by title, producer, genre or BPM, then preview &amp; purchase.
+        </div>
+
+        <div class="mk-filters-grid">
+          <div>
+            <div class="mk-label">Search</div>
+            <input id="mk-search" class="mk-input" type="text" placeholder="Title, producer, tags…">
+          </div>
+
+          <div>
+            <div class="mk-label">Genre</div>
+            <select id="mk-genre-filter" class="mk-select">
+              <option value="">All genres</option>
+              {% set seen_genres = [] %}
+              {% for b in items %}
+                {% if b.genre and b.genre not in seen_genres %}
+                  {% set _ = seen_genres.append(b.genre) %}
+                  <option value="{{ b.genre|lower }}">{{ b.genre }}</option>
+                {% endif %}
+              {% endfor %}
+            </select>
+          </div>
+
+          <div>
+            <div class="mk-label">License</div>
+            <select id="mk-license-filter" class="mk-select">
+              <option value="">All licenses</option>
+              <option value="standard">Standard</option>
+              <option value="exclusive">Exclusive</option>
+            </select>
+          </div>
+
+          <div>
+            <div class="mk-label">BPM (min)</div>
+            <input id="mk-bpm-min" class="mk-input" type="number" min="0" placeholder="Any">
+          </div>
+
+          <div>
+            <div class="mk-label">BPM (max)</div>
+            <input id="mk-bpm-max" class="mk-input" type="number" min="0" placeholder="Any">
+          </div>
+
+          <div>
+            <div class="mk-label">Max price ($)</div>
+            <input id="mk-price-max" class="mk-input" type="number" min="0" step="1" placeholder="Any">
+          </div>
+        </div>
+
+        <div class="mk-filter-footer">
+          <div class="mk-filter-actions">
+            <button type="button" id="mk-clear-filters" class="mk-btn-ghost mk-btn-small">Clear</button>
+            <button type="button" id="mk-apply-filters" class="mk-btn-primary mk-btn-small">Find beats</button>
+          </div>
+          <div id="mk-results-count">
+            Showing {{ items|length }} beat{{ items|length != 1 and 's' or '' }}.
+          </div>
+        </div>
+
+        <div class="mk-link-row">
+          <a href="{{ url_for('market_my_purchases') }}">View my purchased beats →</a>
+          <a href="{{ url_for('market_index') }}">Stripe checkout →</a>
+        </div>
+      </div>
+    </section>
+
+    <!-- RIGHT: Beats list -->
+    <section class="mk-card">
+      <div class="mk-card-inner">
+        <div class="mk-card-title-row">
+          <div class="mk-card-title">Available beats</div>
+          <button type="button" id="mk-toggle-find" class="mk-btn-ghost mk-btn-small">Find the right beat</button>
+        </div>
+        <div class="mk-card-sub">
+          Click “Buy with Stripe” to purchase instantly via Stripe checkout.
+        </div>
+
+        {% if items %}
+          <div class="mk-beat-grid" id="mk-beat-grid">
+            {% for b in items %}
+              {% set price = (b.price_cents or 0) / 100.0 %}
+              <article
+                class="mk-beat-card"
+                data-title="{{ b.title|lower }}"
+                data-producer="{{ (b.owner.username if b.owner else '')|lower }}"
+                data-genre="{{ (b.genre or '')|lower }}"
+                data-license="{{ (b.license or 'standard')|lower }}"
+                data-bpm="{{ b.bpm or '' }}"
+                data-price="{{ '%.2f'|format(price) }}"
+              >
+                <div class="mk-beat-cover">
+                  <img
+                    class="mk-beat-cover-img"
+                    src="{{ b.cover_url or url_for('static', filename='img/beat-placeholder.jpg') }}"
+                    alt="{{ b.title }} cover"
+                  >
+                  {% if b.is_featured %}
+                    <span class="mk-beat-featured-badge">Featured</span>
+                  {% endif %}
+                </div>
+
+                <div class="mk-beat-info">
+                  <div class="mk-beat-title-row">
+                    <div class="mk-beat-main-title">{{ b.title }}</div>
+                    {% if b.owner %}
+                      <a
+                        class="mk-beat-artist mk-producer-link"
+                        href="{{ url_for('user_profile', username=b.owner.username) }}"
+                        title="View @{{ b.owner.username }}"
+                      >
+                        @{{ b.owner.username }}
+                      </a>
+                    {% endif %}
+                  </div>
+
+                  <div class="mk-beat-meta">
+                    {% if b.genre %}{{ b.genre }}{% endif %}
+                    {% if b.genre and b.bpm %} · {% endif %}
+                    {% if b.bpm %}{{ b.bpm }} BPM{% endif %}
+                    {% if b.id %} · #{{ b.id }}{% endif %}
+                  </div>
+
+                  {% if b.preview_url %}
+                    <div class="mk-beat-audio-row">
+                      <audio class="mk-beat-audio" controls controlsList="nodownload noplaybackrate" preload="none">
+                        <source src="{{ b.preview_url }}" type="audio/mpeg">
+                        Your browser does not support audio playback.
+                      </audio>
+                    </div>
+                  {% endif %}
+
+                  <div class="mk-beat-bottom">
+                    <div>
+                      <div class="mk-price-row">${{ "%.2f"|format(price) }}</div>
+                      <div class="mk-price-sub">{% if price == 0 %}Free{% elif b.owner_id and b.owner_id in producer_ids_with_stripe %}Paid via Stripe Connect{% else %}Setup pending{% endif %}</div>
+                    </div>
+
+                    {% if price == 0 or (b.owner_id and b.owner_id in producer_ids_with_stripe) %}
+                    <a href="{{ url_for('market_confirm', beat_id=b.id) }}" class="mk-btn-buy-inline">{% if price == 0 %}Get for free{% else %}Buy with Stripe{% endif %}</a>
+                    {% else %}
+                    <span class="mk-btn-buy-inline" style="opacity: 0.6; cursor: default; pointer-events: none;">Payment setup pending</span>
+                    {% endif %}
+                  </div>
+                </div>
+              </article>
+            {% endfor %}
+
+            <article class="mk-beat-card mk-beat-card-more">
+              <div class="mk-beat-info">
+                <div class="mk-beat-main-title">Reached the end?</div>
+                <div class="mk-beat-meta">
+                  Tap a producer’s @name to view their profile, or browse the producer catalog for even more beats.
+                </div>
+                <div class="mk-beat-bottom">
+                  <div class="mk-price-sub">Keep exploring new sounds.</div>
+                 <a href="{{ url_for('producer_catalog_index') }}" class="mk-btn-buy-inline">Producer catalog</a>
+                </div>
+              </div>
+            </article>
+          </div>
+        {% else %}
+          <p class="mk-empty">
+            No marketplace beats are active yet. Once producers upload beats, they’ll appear here.
+          </p>
+        {% endif %}
+      </div>
+    </section>
+  </div>
+
+  {# STUDIOS ROW #}
+  <section class="mk-card mk-row-card">
+    <div class="mk-card-inner">
+      <div class="mk-card-title-row">
+        <div class="mk-card-title">Studios near you</div>
+        <button type="button" id="mk-toggle-studio-filters" class="mk-btn-ghost mk-btn-small">Filter studios</button>
+      </div>
+      <div class="mk-card-sub">Book recording studios by the hour and pay securely via Stripe.</div>
+
+      <div id="mk-studio-filters" class="mk-studio-filters">
+        <div class="mk-studio-filter-field">
+          <label for="mk-studio-city" class="mk-studio-label">City</label>
+          <input id="mk-studio-city" class="mk-input" type="text" placeholder="e.g. Columbus">
+        </div>
+        <div class="mk-studio-filter-field">
+          <label for="mk-studio-state" class="mk-studio-label">State</label>
+          <input id="mk-studio-state" class="mk-input" type="text" placeholder="e.g. OH">
+        </div>
+        <div class="mk-studio-filter-field">
+          <label for="mk-studio-zip" class="mk-studio-label">ZIP</label>
+          <input id="mk-studio-zip" class="mk-input" type="text" placeholder="e.g. 43201">
+        </div>
+        <div class="mk-studio-filter-actions">
+          <button type="button" id="mk-apply-studio-filters" class="mk-btn-primary mk-btn-small">Apply</button>
+          <button type="button" id="mk-clear-studio-filters" class="mk-btn-ghost mk-btn-small">Clear</button>
+        </div>
+      </div>
+
+      <div id="mk-studio-results-count" class="mk-studio-results">
+        {% if studios is defined and studios %}
+          Showing {{ studios|length }} studio{{ studios|length != 1 and 's' or '' }}.
+        {% else %}
+          No studios available yet.
+        {% endif %}
+      </div>
+
+      {% if studios is defined and studios %}
+        <div class="mk-beat-grid">
+          {% for s in studios %}
+            <article
+              class="mk-beat-card"
+              data-studio-card="1"
+              data-city="{{ s.city|default('', true)|lower }}"
+              data-state="{{ s.state|default('', true)|lower }}"
+              data-zip="{{ s.zip|default('', true)|lower }}"
+            >
+              <div class="mk-beat-cover">
+                <img
+                  class="mk-beat-cover-img"
+                  src="{{ s.user.avatar_url if s.user else url_for('static', filename='img/studio-placeholder.jpg') }}"
+                  alt="{{ s.display_name }} studio photo"
+                >
+              </div>
+
+              <div class="mk-beat-info">
+                <div class="mk-beat-title-row">
+                  <div class="mk-beat-main-title">{{ s.display_name }}</div>
+                  {% if s.user %}
+                    <a class="mk-beat-artist mk-producer-link"
+                       href="{{ url_for('user_profile', username=s.user.username) }}">
+                      @{{ s.user.username }}
+                    </a>
+                  {% endif %}
+                  {% if not s.is_visible %}
+                    <span style="display: inline-block; padding: 2px 8px; background: rgba(239,68,68,.2); border: 1px solid rgba(239,68,68,.4); border-radius: 12px; font-size: 0.75rem; color: rgba(239,68,68,.9); margin-left: 8px;">Inactive</span>
+                  {% endif %}
+                </div>
+
+                <div class="mk-beat-meta">
+                  {% if s.city and s.state %}{{ s.city }}, {{ s.state }}{% elif s.city %}{{ s.city }}{% endif %}
+                  {% if s.service_types %} · {{ s.service_types }}{% endif %}
+                </div>
+
+                <div class="mk-beat-bottom">
+                  <div>
+                    {% if s.rate_notes %}<div class="mk-price-row">{{ s.rate_notes }}</div>{% endif %}
+                    <div class="mk-price-sub">Book and pay via BeatFund</div>
+                  </div>
+
+                  {% if s.user %}
+                    {% if not s.is_visible %}
+                      <span class="mk-price-sub" style="color: rgba(239,68,68,.8);">Currently inactive</span>
+                    {% else %}
+                      <a href="{{ url_for('bookme_book_provider', username=s.user.username) }}" class="mk-btn-buy-inline">
+                        Book a session
+                      </a>
+                    {% endif %}
+                  {% else %}
+                    <span class="mk-price-sub">Unavailable</span>
+                  {% endif %}
+                </div>
+              </div>
+            </article>
+          {% endfor %}
+
+          <article class="mk-beat-card mk-beat-card-more">
+            <div class="mk-beat-info">
+              <div class="mk-beat-main-title">Need more options?</div>
+              <div class="mk-beat-meta">Browse the full studio catalog to compare locations, rates, and availability.</div>
+              <div class="mk-beat-bottom">
+                <div class="mk-price-sub">Discover more studios.</div>
+                <a href="{{ url_for('bookme_search', role='studio') }}" class="mk-btn-buy-inline">View all studios</a>
+              </div>
+            </div>
+          </article>
+        </div>
+      {% else %}
+        <p class="mk-empty">Studios marketplace is coming soon. Once studios are onboarded near you, they’ll appear here.</p>
+      {% endif %}
+    </div>
+  </section>
+
+  {# VIDEOGRAPHERS ROW #}
+  <section class="mk-card mk-row-card">
+    <div class="mk-card-inner">
+      <div class="mk-card-title-row">
+        <div class="mk-card-title">Videographers &amp; directors</div>
+        <button type="button" id="mk-toggle-video-filters" class="mk-btn-ghost mk-btn-small">Filter videographers</button>
+      </div>
+      <div class="mk-card-sub">Find video teams for music videos, promos, and live sessions, then lock in your shoot with BeatFund.</div>
+
+      <div id="mk-video-filters" class="mk-video-filters">
+        <div class="mk-studio-filter-field">
+          <label for="mk-video-search" class="mk-studio-label">Search</label>
+          <input id="mk-video-search" class="mk-input" type="text" placeholder="Name, @handle, city…">
+        </div>
+        <div class="mk-studio-filter-field">
+          <label for="mk-video-city" class="mk-studio-label">City</label>
+          <input id="mk-video-city" class="mk-input" type="text" placeholder="e.g. Columbus">
+        </div>
+        <div class="mk-studio-filter-field">
+          <label for="mk-video-state" class="mk-studio-label">State</label>
+          <input id="mk-video-state" class="mk-input" type="text" placeholder="e.g. OH">
+        </div>
+        <div class="mk-studio-filter-actions">
+          <button type="button" id="mk-apply-video-filters" class="mk-btn-primary mk-btn-small">Apply</button>
+          <button type="button" id="mk-clear-video-filters" class="mk-btn-ghost mk-btn-small">Clear</button>
+        </div>
+      </div>
+
+      <div id="mk-video-results-count" class="mk-studio-results">
+        {% if videographers is defined and videographers %}
+          Showing {{ videographers|length }} videographer{{ videographers|length != 1 and 's' or '' }}.
+        {% else %}
+          No videographers available yet.
+        {% endif %}
+      </div>
+
+      {% if videographers is defined and videographers %}
+        <div class="mk-beat-grid">
+          {% for v in videographers %}
+            <article
+              class="mk-beat-card"
+              data-video-card="1"
+              data-city="{{ v.city|default('', true)|lower }}"
+              data-state="{{ v.state|default('', true)|lower }}"
+              data-search="{{ (v.display_name ~ ' ' ~ (v.user.username if v.user else '') ~ ' ' ~ (v.city or '') ~ ' ' ~ (v.state or ''))|lower }}"
+            >
+              <div class="mk-beat-cover">
+                <img class="mk-beat-cover-img"
+                     src="{{ v.user.avatar_url if v.user else url_for('static', filename='img/videographer-placeholder.jpg') }}"
+                     alt="{{ v.display_name }} videographer photo">
+              </div>
+
+              <div class="mk-beat-info">
+                <div class="mk-beat-title-row">
+                  <div class="mk-beat-main-title">{{ v.display_name }}</div>
+                  {% if v.user %}
+                    <a class="mk-beat-artist mk-producer-link"
+                       href="{{ url_for('user_profile', username=v.user.username) }}">
+                      @{{ v.user.username }}
+                    </a>
+                  {% endif %}
+                  {% if not v.is_visible %}
+                    <span style="display: inline-block; padding: 2px 8px; background: rgba(239,68,68,.2); border: 1px solid rgba(239,68,68,.4); border-radius: 12px; font-size: 0.75rem; color: rgba(239,68,68,.9); margin-left: 8px;">Inactive</span>
+                  {% endif %}
+                </div>
+
+                <div class="mk-beat-meta">
+                  {% if v.city and v.state %}{{ v.city }}, {{ v.state }}{% elif v.city %}{{ v.city }}{% endif %}
+                  {% if v.service_types %} · {{ v.service_types }}{% endif %}
+                </div>
+
+                <div class="mk-beat-bottom">
+                  <div>
+                    {% if v.rate_notes %}<div class="mk-price-row">{{ v.rate_notes }}</div>{% endif %}
+                    <div class="mk-price-sub">Secure your shoot via BeatFund</div>
+                  </div>
+
+                  {% if v.user %}
+                    {% if not v.is_visible %}
+                      <span class="mk-price-sub" style="color: rgba(239,68,68,.8);">Currently inactive</span>
+                    {% else %}
+                      <a href="{{ url_for('bookme_book_provider', username=v.user.username) }}" class="mk-btn-buy-inline">
+                        Book a shoot
+                      </a>
+                    {% endif %}
+                  {% else %}
+                    <span class="mk-price-sub">Unavailable</span>
+                  {% endif %}
+                </div>
+              </div>
+            </article>
+          {% endfor %}
+
+          <article class="mk-beat-card mk-beat-card-more">
+            <div class="mk-beat-info">
+              <div class="mk-beat-main-title">See more video teams</div>
+              <div class="mk-beat-meta">Compare videographers by style, pricing, and past projects in one place.</div>
+              <div class="mk-beat-bottom">
+                <div class="mk-price-sub">Explore the video catalog.</div>
+                <a href="{{ url_for('bookme_search', role='videographer') }}" class="mk-btn-buy-inline">View all videographers</a>
+              </div>
+            </div>
+          </article>
+        </div>
+      {% else %}
+        <p class="mk-empty">Videographers will appear here once providers start offering video services on BeatFund.</p>
+      {% endif %}
+    </div>
+  </section>
+
+  {# TALENT ROW #}
+  <section class="mk-card mk-row-card">
+    <div class="mk-card-inner">
+      <div class="mk-card-title-row">
+        <div class="mk-card-title">Talent &amp; video vixens</div>
+        <button type="button" id="mk-toggle-talent-filters" class="mk-btn-ghost mk-btn-small">Filter talent</button>
+      </div>
+      <div class="mk-card-sub">Build the right cast for your video shoots, campaigns, and live performances.</div>
+
+      <div id="mk-talent-filters" class="mk-talent-filters">
+        <div class="mk-studio-filter-field">
+          <label for="mk-talent-search" class="mk-studio-label">Search</label>
+          <input id="mk-talent-search" class="mk-input" type="text" placeholder="Name, @handle, roles…">
+        </div>
+        <div class="mk-studio-filter-field">
+          <label for="mk-talent-city" class="mk-studio-label">City</label>
+          <input id="mk-talent-city" class="mk-input" type="text" placeholder="e.g. Atlanta">
+        </div>
+        <div class="mk-studio-filter-field">
+          <label for="mk-talent-roles" class="mk-studio-label">Roles</label>
+          <input id="mk-talent-roles" class="mk-input" type="text" placeholder="e.g. vixen, host, model">
+        </div>
+        <div class="mk-studio-filter-actions">
+          <button type="button" id="mk-apply-talent-filters" class="mk-btn-primary mk-btn-small">Apply</button>
+          <button type="button" id="mk-clear-talent-filters" class="mk-btn-ghost mk-btn-small">Clear</button>
+        </div>
+      </div>
+
+      <div id="mk-talent-results-count" class="mk-studio-results">
+        {% if talent_profiles is defined and talent_profiles %}
+          Showing {{ talent_profiles|length }} talent profile{{ talent_profiles|length != 1 and 's' or '' }}.
+        {% else %}
+          No talent profiles available yet.
+        {% endif %}
+      </div>
+
+      {% if talent_profiles is defined and talent_profiles %}
+        <div class="mk-beat-grid">
+          {% for t in talent_profiles %}
+            <article
+              class="mk-beat-card"
+              data-talent-card="1"
+              data-city="{{ t.city|default('', true)|lower }}"
+              data-state="{{ t.state|default('', true)|lower }}"
+              data-roles="{{ t.service_types|default('', true)|lower }}"
+              data-search="{{ (t.display_name ~ ' ' ~ (t.user.username if t.user else '') ~ ' ' ~ (t.service_types or '') ~ ' ' ~ (t.city or '') ~ ' ' ~ (t.state or ''))|lower }}"
+            >
+              <div class="mk-beat-cover">
+                <img class="mk-beat-cover-img"
+                     src="{{ t.user.avatar_url if t.user else url_for('static', filename='img/talent-placeholder.jpg') }}"
+                     alt="{{ t.display_name }} talent photo">
+              </div>
+
+              <div class="mk-beat-info">
+                <div class="mk-beat-title-row">
+                  <div class="mk-beat-main-title">{{ t.display_name }}</div>
+                  {% if t.user %}
+                    <a class="mk-beat-artist mk-producer-link"
+                       href="{{ url_for('user_profile', username=t.user.username) }}">
+                      @{{ t.user.username }}
+                    </a>
+                  {% endif %}
+                  {% if not t.is_visible %}
+                    <span style="display: inline-block; padding: 2px 8px; background: rgba(239,68,68,.2); border: 1px solid rgba(239,68,68,.4); border-radius: 12px; font-size: 0.75rem; color: rgba(239,68,68,.9); margin-left: 8px;">Inactive</span>
+                  {% endif %}
+                </div>
+
+                <div class="mk-beat-meta">
+                  {% if t.city and t.state %}{{ t.city }}, {{ t.state }}{% elif t.city %}{{ t.city }}{% endif %}
+                  {% if t.service_types %} · {{ t.service_types }}{% endif %}
+                </div>
+
+                <div class="mk-beat-bottom">
+                  <div>
+                    {% if t.rate_notes %}<div class="mk-price-row">{{ t.rate_notes }}</div>{% endif %}
+                    <div class="mk-price-sub">Book appearances through BeatFund</div>
+                  </div>
+
+                  {% if t.user %}
+                    {% if not t.is_visible %}
+                      <span class="mk-price-sub" style="color: rgba(239,68,68,.8);">Currently inactive</span>
+                    {% else %}
+                      <a href="{{ url_for('bookme_book_provider', username=t.user.username) }}" class="mk-btn-buy-inline">
+                        Book talent
+                      </a>
+                    {% endif %}
+                  {% else %}
+                    <span class="mk-price-sub">Unavailable</span>
+                  {% endif %}
+                </div>
+              </div>
+            </article>
+          {% endfor %}
+
+          <article class="mk-beat-card mk-beat-card-more">
+            <div class="mk-beat-info">
+              <div class="mk-beat-main-title">Discover more talent</div>
+              <div class="mk-beat-meta">Browse performers, models, ushers, and more for your next project.</div>
+              <div class="mk-beat-bottom">
+                <div class="mk-price-sub">Explore the talent catalog.</div>
+                <a href="{{ url_for('bookme_search') }}" class="mk-btn-buy-inline">View all talent</a>
+              </div>
+            </div>
+          </article>
+        </div>
+      {% else %}
+        <p class="mk-empty">Talent profiles are coming soon. Once creators start building portfolios, they’ll appear here.</p>
+      {% endif %}
+    </div>
+  </section>
+
+  {# OTHER PROVIDERS ROW #}
+  <section class="mk-card mk-row-card">
+    <div class="mk-card-inner">
+      <div class="mk-card-title-row">
+        <div class="mk-card-title">Other providers</div>
+        <button type="button" id="mk-toggle-provider-filters" class="mk-btn-ghost mk-btn-small">Filter providers</button>
+      </div>
+      <div class="mk-card-sub">Makeup artists, dancers, event planners, photographers, DJs, and more — all paid safely through BeatFund.</div>
+
+      <div id="mk-provider-filters" class="mk-provider-filters">
+        <div class="mk-studio-filter-field">
+          <label for="mk-provider-search" class="mk-studio-label">Search</label>
+          <input id="mk-provider-search" class="mk-input" type="text" placeholder="Name, @handle, category…">
+        </div>
+        <div class="mk-studio-filter-field">
+          <label for="mk-provider-city" class="mk-studio-label">City</label>
+          <input id="mk-provider-city" class="mk-input" type="text" placeholder="e.g. Nashville">
+        </div>
+        <div class="mk-studio-filter-field">
+          <label for="mk-provider-category" class="mk-studio-label">Category</label>
+          <input id="mk-provider-category" class="mk-input" type="text" placeholder="e.g. makeup, DJ, planner">
+        </div>
+        <div class="mk-studio-filter-actions">
+          <button type="button" id="mk-apply-provider-filters" class="mk-btn-primary mk-btn-small">Apply</button>
+          <button type="button" id="mk-clear-provider-filters" class="mk-btn-ghost mk-btn-small">Clear</button>
+        </div>
+      </div>
+
+      <div id="mk-provider-results-count" class="mk-studio-results">
+        {% if other_providers is defined and other_providers %}
+          Showing {{ other_providers|length }} provider{{ other_providers|length != 1 and 's' or '' }}.
+        {% else %}
+          No providers available yet.
+        {% endif %}
+      </div>
+
+      {% if other_providers is defined and other_providers %}
+        <div class="mk-beat-grid">
+          {% for p in other_providers %}
+            <article
+              class="mk-beat-card"
+              data-provider-card="1"
+              data-city="{{ p.city|default('', true)|lower }}"
+              data-state="{{ p.state|default('', true)|lower }}"
+              data-category="{{ (p.user.role|default('', true))|lower if p.user and p.user.role else '' }}"
+              data-search="{{ (p.display_name ~ ' ' ~ (p.user.username if p.user else '') ~ ' ' ~ (p.service_types or '') ~ ' ' ~ (p.city or '') ~ ' ' ~ (p.state or ''))|lower }}"
+            >
+              <div class="mk-beat-cover">
+                <img class="mk-beat-cover-img"
+                     src="{{ p.user.avatar_url if p.user else url_for('static', filename='img/provider-placeholder.jpg') }}"
+                     alt="{{ p.display_name }} provider photo">
+              </div>
+
+              <div class="mk-beat-info">
+                <div class="mk-beat-title-row">
+                  <div class="mk-beat-main-title">{{ p.display_name }}</div>
+                  {% if p.user %}
+                    <a class="mk-beat-artist mk-producer-link"
+                       href="{{ url_for('user_profile', username=p.user.username) }}">
+                      @{{ p.user.username }}
+                    </a>
+                  {% endif %}
+                  {% if not p.is_visible %}
+                    <span style="display: inline-block; padding: 2px 8px; background: rgba(239,68,68,.2); border: 1px solid rgba(239,68,68,.4); border-radius: 12px; font-size: 0.75rem; color: rgba(239,68,68,.9); margin-left: 8px;">Inactive</span>
+                  {% endif %}
+                </div>
+
+                <div class="mk-beat-meta">
+                  {% if p.user and p.user.role %}{{ p.user.role.replace('_', ' ')|title }}{% endif %}
+                  {% if (p.city or p.state) and (p.user and p.user.role) %} · {% endif %}
+                  {% if p.city and p.state %}{{ p.city }}, {{ p.state }}{% elif p.city %}{{ p.city }}{% endif %}
+                </div>
+
+                <div class="mk-beat-bottom">
+                  <div>
+                    {% if p.rate_notes %}<div class="mk-price-row">{{ p.rate_notes }}</div>{% endif %}
+                    <div class="mk-price-sub">Book &amp; pay via BeatFund</div>
+                  </div>
+
+                  {% if p.user %}
+                    {% if not p.is_visible %}
+                      <span class="mk-price-sub" style="color: rgba(239,68,68,.8);">Currently inactive</span>
+                    {% else %}
+                      <a href="{{ url_for('bookme_book_provider', username=p.user.username) }}" class="mk-btn-buy-inline">
+                        Book provider
+                      </a>
+                    {% endif %}
+                  {% else %}
+                    <span class="mk-price-sub">Unavailable</span>
+                  {% endif %}
+                </div>
+              </div>
+            </article>
+          {% endfor %}
+
+          <article class="mk-beat-card mk-beat-card-more">
+            <div class="mk-beat-info">
+              <div class="mk-beat-main-title">Explore all providers</div>
+              <div class="mk-beat-meta">From glam teams to event coordinators, manage your creative crew in one place.</div>
+              <div class="mk-beat-bottom">
+                <div class="mk-price-sub">See the full provider list.</div>
+                <a href="{{ url_for('bookme_search') }}" class="mk-btn-buy-inline">View all providers</a>
+              </div>
+            </div>
+          </article>
+        </div>
+      {% else %}
+        <p class="mk-empty">Service providers like makeup artists, dancers, and event planners will appear here once they join BeatFund.</p>
+      {% endif %}
+    </div>
+  </section>
+</div>
+
+<script nonce="{{ csp_nonce }}">
+  function initMarketUI() {
+    const shell = document.getElementById("mk-shell");
+
+    // Beats filtering only affects the beats rail
+    const cards = Array.from(document.querySelectorAll("#mk-beat-grid .mk-beat-card"));
+    const searchInput = document.getElementById("mk-search");
+    const genreSelect = document.getElementById("mk-genre-filter");
+    const licenseSelect = document.getElementById("mk-license-filter");
+    const bpmMinInput = document.getElementById("mk-bpm-min");
+    const bpmMaxInput = document.getElementById("mk-bpm-max");
+    const priceMaxInput = document.getElementById("mk-price-max");
+    const clearBtn = document.getElementById("mk-clear-filters");
+    const applyBtn = document.getElementById("mk-apply-filters");
+    const resultsCount = document.getElementById("mk-results-count");
+
+    const toggleBtn = document.getElementById("mk-toggle-find");
+
+    // --- Studios filter elements ---
+    const studioFilterToggle = document.getElementById("mk-toggle-studio-filters");
+    const studioFiltersBox = document.getElementById("mk-studio-filters");
+    const studioCityInput = document.getElementById("mk-studio-city");
+    const studioStateInput = document.getElementById("mk-studio-state");
+    const studioZipInput = document.getElementById("mk-studio-zip");
+    const studioApplyBtn = document.getElementById("mk-apply-studio-filters");
+    const studioClearBtn = document.getElementById("mk-clear-studio-filters");
+    const studioResults = document.getElementById("mk-studio-results-count");
+    const studioCards = Array.from(document.querySelectorAll("[data-studio-card]"));
+
+    // --- Videographers filter elements ---
+    const videoFilterToggle = document.getElementById("mk-toggle-video-filters");
+    const videoFiltersBox = document.getElementById("mk-video-filters");
+    const videoSearchInput = document.getElementById("mk-video-search");
+    const videoCityInput = document.getElementById("mk-video-city");
+    const videoStateInput = document.getElementById("mk-video-state");
+    const videoApplyBtn = document.getElementById("mk-apply-video-filters");
+    const videoClearBtn = document.getElementById("mk-clear-video-filters");
+    const videoResults = document.getElementById("mk-video-results-count");
+    const videoCards = Array.from(document.querySelectorAll("[data-video-card]"));
+
+    // --- Talent filter elements ---
+    const talentFilterToggle = document.getElementById("mk-toggle-talent-filters");
+    const talentFiltersBox = document.getElementById("mk-talent-filters");
+    const talentSearchInput = document.getElementById("mk-talent-search");
+    const talentCityInput = document.getElementById("mk-talent-city");
+    const talentRolesInput = document.getElementById("mk-talent-roles");
+    const talentApplyBtn = document.getElementById("mk-apply-talent-filters");
+    const talentClearBtn = document.getElementById("mk-clear-talent-filters");
+    const talentResults = document.getElementById("mk-talent-results-count");
+    const talentCards = Array.from(document.querySelectorAll("[data-talent-card]"));
+
+    // --- Other providers filter elements ---
+    const providerFilterToggle = document.getElementById("mk-toggle-provider-filters");
+    const providerFiltersBox = document.getElementById("mk-provider-filters");
+    const providerSearchInput = document.getElementById("mk-provider-search");
+    const providerCityInput = document.getElementById("mk-provider-city");
+    const providerCategoryInput = document.getElementById("mk-provider-category");
+    const providerApplyBtn = document.getElementById("mk-apply-provider-filters");
+    const providerClearBtn = document.getElementById("mk-clear-provider-filters");
+    const providerResults = document.getElementById("mk-provider-results-count");
+    const providerCards = Array.from(document.querySelectorAll("[data-provider-card]"));
+
+    // Toggle filters (beats)
+    if (toggleBtn && shell) {
+      toggleBtn.addEventListener("click", () => {
+        const open = shell.classList.toggle("filters-open");
+        toggleBtn.textContent = open ? "Hide filters" : "Find the right beat";
+        if (open) shell.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+    }
+
+    function toNumber(val) {
+      const n = parseFloat(val);
+      return Number.isNaN(n) ? null : n;
+    }
+
+    // --------- BEATS FILTERING ----------
+    function applyFilters() {
+      const q = (searchInput && searchInput.value || "").trim().toLowerCase();
+      const genre = (genreSelect && genreSelect.value || "").toLowerCase();
+      const lic = (licenseSelect && licenseSelect.value || "").toLowerCase();
+      const bpmMin = bpmMinInput ? toNumber(bpmMinInput.value) : null;
+      const bpmMax = bpmMaxInput ? toNumber(bpmMaxInput.value) : null;
+      const priceMax = priceMaxInput ? toNumber(priceMaxInput.value) : null;
+
+      let visibleCount = 0;
+
+      cards.forEach((card) => {
+        const title = (card.dataset.title || "").toLowerCase();
+        const producer = (card.dataset.producer || "").toLowerCase();
+        const cardGenre = (card.dataset.genre || "").toLowerCase();
+        const cardLic = (card.dataset.license || "").toLowerCase();
+        const cardBpm = card.dataset.bpm ? toNumber(card.dataset.bpm) : null;
+        const cardPrice = card.dataset.price ? toNumber(card.dataset.price) : null;
+
+        let matches = true;
+
+        const isCTA =
+          !title && !producer && !cardGenre && !cardLic && cardBpm === null && cardPrice === null;
+
+        if (!isCTA) {
+          if (matches && q) {
+            const inTitle = title.includes(q);
+            const inProducer = producer.includes(q);
+            if (!inTitle && !inProducer) matches = false;
+          }
+
+          if (matches && genre && cardGenre !== genre) matches = false;
+          if (matches && lic && cardLic !== lic) matches = false;
+
+          if (matches && bpmMin !== null) {
+            if (cardBpm === null || cardBpm < bpmMin) matches = false;
+          }
+          if (matches && bpmMax !== null) {
+            if (cardBpm === null || cardBpm > bpmMax) matches = false;
+          }
+          if (matches && priceMax !== null) {
+            if (cardPrice === null || cardPrice > priceMax) matches = false;
+          }
+        }
+
+        if (matches) {
+          card.style.display = "";
+          if (!isCTA) visibleCount++;
+        } else {
+          card.style.display = "none";
+        }
+      });
+
+      if (resultsCount) {
+        const label = visibleCount === 1 ? "beat" : "beats";
+        resultsCount.textContent = `Showing ${visibleCount} ${label}.`;
+      }
+    }
+
+    function clearFilters() {
+      if (searchInput) searchInput.value = "";
+      if (genreSelect) genreSelect.value = "";
+      if (licenseSelect) licenseSelect.value = "";
+      if (bpmMinInput) bpmMinInput.value = "";
+      if (bpmMaxInput) bpmMaxInput.value = "";
+      if (priceMaxInput) priceMaxInput.value = "";
+
+      cards.forEach((card) => { card.style.display = ""; });
+
+      if (resultsCount) {
+        const realCards = cards.filter((card) => card.dataset.title || card.dataset.producer);
+        const total = realCards.length;
+        const label = total === 1 ? "beat" : "beats";
+        resultsCount.textContent = `Showing ${total} ${label}.`;
+      }
+    }
+
+    if (applyBtn) applyBtn.addEventListener("click", (e) => { e.preventDefault(); applyFilters(); });
+    if (clearBtn) clearBtn.addEventListener("click", (e) => { e.preventDefault(); clearFilters(); });
+    if (searchInput) searchInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") { e.preventDefault(); applyFilters(); }
+    });
+
+    // --------- STUDIOS FILTERING ----------
+    if (studioFilterToggle && studioFiltersBox) {
+      studioFilterToggle.addEventListener("click", () => {
+        const isOpen = studioFiltersBox.classList.toggle("is-open");
+        studioFilterToggle.textContent = isOpen ? "Hide filters" : "Filter studios";
+      });
+    }
+
+    function updateStudioResults(count) {
+      if (!studioResults) return;
+      if (studioCards.length === 0) { studioResults.textContent = "No studios available yet."; return; }
+      const label = count === 1 ? "studio" : "studios";
+      studioResults.textContent = `Showing ${count} ${label}.`;
+    }
+
+    function applyStudioFilters() {
+      const cityVal = (studioCityInput && studioCityInput.value || "").trim().toLowerCase();
+      const stateVal = (studioStateInput && studioStateInput.value || "").trim().toLowerCase();
+      const zipVal = (studioZipInput && studioZipInput.value || "").trim().toLowerCase();
+
+      let visibleCount = 0;
+
+      studioCards.forEach((card) => {
+        const city = (card.dataset.city || "").toLowerCase();
+        const state = (card.dataset.state || "").toLowerCase();
+        const zip = (card.dataset.zip || "").toLowerCase();
+
+        let matches = true;
+        if (cityVal && !city.includes(cityVal)) matches = false;
+        if (matches && stateVal && !state.includes(stateVal)) matches = false;
+        if (matches && zipVal) { if (!zip || !zip.startsWith(zipVal)) matches = false; }
+
+        if (matches) { card.style.display = ""; visibleCount++; }
+        else { card.style.display = "none"; }
+      });
+
+      updateStudioResults(visibleCount);
+    }
+
+    function clearStudioFilters() {
+      if (studioCityInput) studioCityInput.value = "";
+      if (studioStateInput) studioStateInput.value = "";
+      if (studioZipInput) studioZipInput.value = "";
+      studioCards.forEach((card) => { card.style.display = ""; });
+      updateStudioResults(studioCards.length);
+    }
+
+    if (studioApplyBtn) studioApplyBtn.addEventListener("click", (e) => { e.preventDefault(); applyStudioFilters(); });
+    if (studioClearBtn) studioClearBtn.addEventListener("click", (e) => { e.preventDefault(); clearStudioFilters(); });
+
+    [studioCityInput, studioStateInput, studioZipInput].forEach((input) => {
+      if (!input) return;
+      input.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") { e.preventDefault(); applyStudioFilters(); }
+      });
+    });
+
+    // --------- VIDEOGRAPHERS FILTERING ----------
+    if (videoFilterToggle && videoFiltersBox) {
+      videoFilterToggle.addEventListener("click", () => {
+        const isOpen = videoFiltersBox.classList.toggle("is-open");
+        videoFilterToggle.textContent = isOpen ? "Hide filters" : "Filter videographers";
+      });
+    }
+
+    function updateVideoResults(count) {
+      if (!videoResults) return;
+      if (videoCards.length === 0) { videoResults.textContent = "No videographers available yet."; return; }
+      const label = count === 1 ? "videographer" : "videographers";
+      videoResults.textContent = `Showing ${count} ${label}.`;
+    }
+
+    function applyVideoFilters() {
+      const searchVal = (videoSearchInput && videoSearchInput.value || "").trim().toLowerCase();
+      const cityVal = (videoCityInput && videoCityInput.value || "").trim().toLowerCase();
+      const stateVal = (videoStateInput && videoStateInput.value || "").trim().toLowerCase();
+
+      let visibleCount = 0;
+
+      videoCards.forEach((card) => {
+        const city = (card.dataset.city || "").toLowerCase();
+        const state = (card.dataset.state || "").toLowerCase();
+        const search = (card.dataset.search || "").toLowerCase();
+
+        let matches = true;
+        if (searchVal && !search.includes(searchVal)) matches = false;
+        if (matches && cityVal && !city.includes(cityVal)) matches = false;
+        if (matches && stateVal && !state.includes(stateVal)) matches = false;
+
+        if (matches) { card.style.display = ""; visibleCount++; }
+        else { card.style.display = "none"; }
+      });
+
+      updateVideoResults(visibleCount);
+    }
+
+    function clearVideoFilters() {
+      if (videoSearchInput) videoSearchInput.value = "";
+      if (videoCityInput) videoCityInput.value = "";
+      if (videoStateInput) videoStateInput.value = "";
+      videoCards.forEach((card) => { card.style.display = ""; });
+      updateVideoResults(videoCards.length);
+    }
+
+    if (videoApplyBtn) videoApplyBtn.addEventListener("click", (e) => { e.preventDefault(); applyVideoFilters(); });
+    if (videoClearBtn) videoClearBtn.addEventListener("click", (e) => { e.preventDefault(); clearVideoFilters(); });
+
+    [videoSearchInput, videoCityInput, videoStateInput].forEach((input) => {
+      if (!input) return;
+      input.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") { e.preventDefault(); applyVideoFilters(); }
+      });
+    });
+
+    // --------- TALENT FILTERING ----------
+    if (talentFilterToggle && talentFiltersBox) {
+      talentFilterToggle.addEventListener("click", () => {
+        const isOpen = talentFiltersBox.classList.toggle("is-open");
+        talentFilterToggle.textContent = isOpen ? "Hide filters" : "Filter talent";
+      });
+    }
+
+    function updateTalentResults(count) {
+      if (!talentResults) return;
+      if (talentCards.length === 0) { talentResults.textContent = "No talent profiles available yet."; return; }
+      const label = count === 1 ? "talent profile" : "talent profiles";
+      talentResults.textContent = `Showing ${count} ${label}.`;
+    }
+
+    function applyTalentFilters() {
+      const searchVal = (talentSearchInput && talentSearchInput.value || "").trim().toLowerCase();
+      const cityVal = (talentCityInput && talentCityInput.value || "").trim().toLowerCase();
+      const rolesVal = (talentRolesInput && talentRolesInput.value || "").trim().toLowerCase();
+
+      let visibleCount = 0;
+
+      talentCards.forEach((card) => {
+        const city = (card.dataset.city || "").toLowerCase();
+        const roles = (card.dataset.roles || "").toLowerCase();
+        const search = (card.dataset.search || "").toLowerCase();
+
+        let matches = true;
+        if (searchVal && !search.includes(searchVal)) matches = false;
+        if (matches && cityVal && !city.includes(cityVal)) matches = false;
+        if (matches && rolesVal && !roles.includes(rolesVal)) matches = false;
+
+        if (matches) { card.style.display = ""; visibleCount++; }
+        else { card.style.display = "none"; }
+      });
+
+      updateTalentResults(visibleCount);
+    }
+
+    function clearTalentFilters() {
+      if (talentSearchInput) talentSearchInput.value = "";
+      if (talentCityInput) talentCityInput.value = "";
+      if (talentRolesInput) talentRolesInput.value = "";
+      talentCards.forEach((card) => { card.style.display = ""; });
+      updateTalentResults(talentCards.length);
+    }
+
+    if (talentApplyBtn) talentApplyBtn.addEventListener("click", (e) => { e.preventDefault(); applyTalentFilters(); });
+    if (talentClearBtn) talentClearBtn.addEventListener("click", (e) => { e.preventDefault(); clearTalentFilters(); });
+
+    [talentSearchInput, talentCityInput, talentRolesInput].forEach((input) => {
+      if (!input) return;
+      input.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") { e.preventDefault(); applyTalentFilters(); }
+      });
+    });
+
+    // --------- OTHER PROVIDERS FILTERING ----------
+    if (providerFilterToggle && providerFiltersBox) {
+      providerFilterToggle.addEventListener("click", () => {
+        const isOpen = providerFiltersBox.classList.toggle("is-open");
+        providerFilterToggle.textContent = isOpen ? "Hide filters" : "Filter providers";
+      });
+    }
+
+    function updateProviderResults(count) {
+      if (!providerResults) return;
+      if (providerCards.length === 0) { providerResults.textContent = "No providers available yet."; return; }
+      const label = count === 1 ? "provider" : "providers";
+      providerResults.textContent = `Showing ${count} ${label}.`;
+    }
+
+    function applyProviderFilters() {
+      const searchVal = (providerSearchInput && providerSearchInput.value || "").trim().toLowerCase();
+      const cityVal = (providerCityInput && providerCityInput.value || "").trim().toLowerCase();
+      const categoryVal = (providerCategoryInput && providerCategoryInput.value || "").trim().toLowerCase();
+
+      let visibleCount = 0;
+
+      providerCards.forEach((card) => {
+        const city = (card.dataset.city || "").toLowerCase();
+        const category = (card.dataset.category || "").toLowerCase();
+        const search = (card.dataset.search || "").toLowerCase();
+
+        let matches = true;
+        if (searchVal && !search.includes(searchVal)) matches = false;
+        if (matches && cityVal && !city.includes(cityVal)) matches = false;
+        if (matches && categoryVal && !category.includes(categoryVal)) matches = false;
+
+        if (matches) { card.style.display = ""; visibleCount++; }
+        else { card.style.display = "none"; }
+      });
+
+      updateProviderResults(visibleCount);
+    }
+
+    function clearProviderFilters() {
+      if (providerSearchInput) providerSearchInput.value = "";
+      if (providerCityInput) providerCityInput.value = "";
+      if (providerCategoryInput) providerCategoryInput.value = "";
+      providerCards.forEach((card) => { card.style.display = ""; });
+      updateProviderResults(providerCards.length);
+    }
+
+    if (providerApplyBtn) providerApplyBtn.addEventListener("click", (e) => { e.preventDefault(); applyProviderFilters(); });
+    if (providerClearBtn) providerClearBtn.addEventListener("click", (e) => { e.preventDefault(); clearProviderFilters(); });
+
+    [providerSearchInput, providerCityInput, providerCategoryInput].forEach((input) => {
+      if (!input) return;
+      input.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") { e.preventDefault(); applyProviderFilters(); }
+      });
+    });
+  }
+
+  document.addEventListener("DOMContentLoaded", initMarketUI);
+  window.BeatFundPageInit = initMarketUI;
+</script>
+{% endblock %}

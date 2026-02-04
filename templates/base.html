@@ -1,0 +1,461 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="csrf-token" content="{{ csrf_token() }}">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+
+  <title>{% block title %}BeatFund{% endblock %}</title>
+
+  <link rel="manifest" href="{{ url_for('static', filename='manifest.webmanifest') }}">
+  <meta name="theme-color" content="#19E28C">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="BeatFund">
+  <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='img/favicon/icon-180.png') }}">
+  <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='img/favicon/icon-32.png') }}">
+  <link rel="icon" type="image/png" sizes="16x16" href="{{ url_for('static', filename='img/favicon/icon-16.png') }}">
+
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/responsive.css') }}">
+  {% block extra_head %}{% endblock %}
+</head>
+
+<body data-role="{{ current_user.role if current_user.is_authenticated else '' }}" data-notif-poll="{{ NOTIF_POLL_SECONDS|default(30) }}">
+{% set brand_href = url_for('route_to_dashboard') %}
+<header class="top-nav{% if current_user.is_authenticated and current_user.role == RoleEnum.admin %} top-nav-admin{% endif %}">
+  <div class="topbar">
+    <a class="brand" href="{{ brand_href }}">
+      <div class="brand-title">BEATFUND</div>
+      <div class="brand-tagline">FINTECH FOR CREATORS</div>
+    </a>
+    <div class="topbar-actions">
+      {% if current_user.is_authenticated %}
+        {% if current_user.role == RoleEnum.admin %}
+          <div class="notifications-bell-container" data-notifications data-count-url="{{ url_for('admin_notifications_unread_count') }}" data-recent-url="{{ url_for('admin_notifications_recent') }}" data-read-url-prefix="/admin/notifications" data-view-url="{{ url_for('admin_notifications') }}">
+            <button class="notif-btn notifications-bell" type="button" aria-label="Notifications" aria-expanded="false" data-toggle="notifications">
+              <svg class="icon-bell" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M6 9a6 6 0 1 1 12 0v4l2 3H4l2-3V9z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+                <path d="M9.5 19a2.5 2.5 0 0 0 5 0" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+              </svg>
+              <span class="badge notifications-badge" data-badge>{{ unread_count|default(0) }}</span>
+            </button>
+            <div class="notifications-dropdown" data-dropdown>
+              <div class="notifications-dropdown-header">
+                <strong>Admin alerts</strong>
+                <span class="notifications-subtitle">Critical + ticket/KYC events</span>
+              </div>
+              <div class="notifications-list" data-list>
+                <div class="notifications-loading">Loading...</div>
+              </div>
+              <div class="notifications-dropdown-footer">
+                <a href="{{ url_for('admin_notifications') }}">View all admin notifications</a>
+              </div>
+            </div>
+          </div>
+        {% else %}
+          <div class="notifications-bell-container" data-notifications data-count-url="{{ url_for('api_notifications_unread_count') }}" data-recent-url="{{ url_for('api_notifications_recent') }}" data-read-url-prefix="/notifications" data-view-url="{{ url_for('notifications_page') }}">
+            <button class="notif-btn notifications-bell" type="button" aria-label="Notifications" aria-expanded="false" data-toggle="notifications">
+              <svg class="icon-bell" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M6 9a6 6 0 1 1 12 0v4l2 3H4l2-3V9z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+                <path d="M9.5 19a2.5 2.5 0 0 0 5 0" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+              </svg>
+              <span class="badge notifications-badge" data-badge>{{ unread_count|default(0) }}</span>
+            </button>
+            <div class="notifications-dropdown" data-dropdown>
+              <div class="notifications-dropdown-header">
+                <strong>Notifications</strong>
+                <form method="POST" action="{{ url_for('mark_all_notifications_read_route') }}" style="display: inline; margin: 0;">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <button type="submit" class="notifications-mark-read">Mark all read</button>
+                </form>
+              </div>
+              <div class="notifications-list" data-list>
+                <div class="notifications-loading">Loading...</div>
+              </div>
+              <div class="notifications-dropdown-footer">
+                <a href="{{ url_for('notifications_page') }}">View all notifications</a>
+              </div>
+            </div>
+          </div>
+        {% endif %}
+      {% endif %}
+
+      <button class="menu-btn" type="button" aria-label="Menu" aria-expanded="false" data-toggle="mobile-menu">
+        <svg class="icon-menu" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M4 7h16M4 12h16M4 17h16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+        </svg>
+        <span>MENU</span>
+      </button>
+    </div>
+  </div>
+
+  <div class="desktop-nav">
+  <div class="nav-left">
+    <a href="{{ brand_href }}" style="text-decoration: none; color: inherit; display: block; cursor: pointer; transition: opacity 0.2s;" onmouseover="this.style.opacity='0.8'" onmouseout="this.style.opacity='1'">
+      <div class="brand-text">
+        <div class="brand-main">BEATFUND</div>
+        <div class="brand-sub">
+          {% if current_user.is_authenticated and current_user.role == RoleEnum.admin %}
+            Admin
+          {% else %}
+            Fintech for Creators
+          {% endif %}
+        </div>
+      </div>
+    </a>
+  </div>
+
+  {# Desktop admin nav (hidden on mobile by CSS) #}
+  <nav class="nav-center">
+    {% if current_user.is_authenticated and current_user.role == RoleEnum.admin %}
+      <a href="{{ url_for('admin_dashboard') }}">Admin Dashboard</a>
+      <a href="{{ url_for('admin_users') }}">Users</a>
+      <a href="{{ url_for('admin_kyc') }}">KYC Queue</a>
+      <a href="{{ url_for('admin_transactions') }}">Transactions</a>
+      <a href="{{ url_for('admin_refunds') }}">Refunds</a>
+      <a href="{{ url_for('admin_tickets') }}">Tickets</a>
+      <a href="{{ url_for('admin_reports') }}">Reports</a>
+      <a href="{{ url_for('admin_audit') }}">System Logs</a>
+      <a href="{{ url_for('admin_waitlist') }}">Waitlist</a>
+      <a href="{{ url_for('opportunities') }}">Opportunities</a>
+      {% if current_user.is_superadmin %}
+        <a href="{{ url_for('admin_team') }}">Admin Team</a>
+      {% endif %}
+    {% endif %}
+  </nav>
+
+  {# Desktop main nav (hidden on mobile by CSS) #}
+    <div class="nav-right">
+    {% if current_user.is_authenticated %}
+      {% if current_user.role == RoleEnum.admin %}
+        {# Admin utilities are shown under the install button on the right #}
+      {% else %}
+        <span class="nav-username">@{{ current_user.username }}</span>
+        <a href="{{ url_for('route_to_dashboard') }}">Dashboard</a>
+        <a href="{{ url_for('market_index') }}">Market</a>
+        <a href="{{ url_for('market_my_purchases') }}">My Purchases</a>
+        <a href="{{ url_for('bookme_search') }}">BookMe</a>
+        <a href="{{ url_for('wallet_home') }}">Wallet</a>
+        <a href="{{ url_for('opportunities') }}">Opportunities</a>
+
+        {# Notifications bell #}
+        <div class="notifications-bell-container" data-notifications data-count-url="{{ url_for('api_notifications_unread_count') }}" data-recent-url="{{ url_for('api_notifications_recent') }}" data-read-url-prefix="/notifications" data-view-url="{{ url_for('notifications_page') }}">
+          <button class="notifications-bell" type="button" aria-label="Notifications" aria-expanded="false" data-toggle="notifications">
+            <svg class="icon-bell" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M6 9a6 6 0 1 1 12 0v4l2 3H4l2-3V9z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+              <path d="M9.5 19a2.5 2.5 0 0 0 5 0" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+            </svg>
+            <span class="notifications-badge" data-badge>0</span>
+          </button>
+          <div class="notifications-dropdown" data-dropdown>
+            <div class="notifications-dropdown-header">
+              <strong>Notifications</strong>
+              <form method="POST" action="{{ url_for('mark_all_notifications_read_route') }}" style="display: inline; margin: 0;">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="notifications-mark-read">Mark all read</button>
+              </form>
+            </div>
+            <div class="notifications-list" data-list>
+              <div class="notifications-loading">Loading...</div>
+            </div>
+            <div class="notifications-dropdown-footer">
+              <a href="{{ url_for('notifications_page') }}">View all notifications</a>
+            </div>
+          </div>
+        </div>
+      {% endif %}
+
+      {% if current_user.role != RoleEnum.admin %}
+        <form method="get" action="{{ url_for('logout_get') }}" class="logout-form">
+          <button type="submit" class="nav-link-button">Logout</button>
+        </form>
+      {% endif %}
+    {% else %}
+      <a href="{{ url_for('login') }}">Log in</a>
+      <a href="{{ url_for('register') }}">Sign up</a>
+    {% endif %}
+  </div>
+  </div>
+
+  <div class="pwa-install{% if current_user.is_authenticated and current_user.role == RoleEnum.admin %} admin-install{% endif %}">
+    <button id="installBtn" class="btn btn-primary" style="display:none;">Install BeatFund</button>
+    <div id="iosInstallTip" class="ios-install-tip" style="display:none;">On iPhone: Share -> Add to Home Screen</div>
+    <div id="androidInstallTip" class="ios-install-tip" style="display:none;">On Android: Menu -> Install app</div>
+    {% if current_user.is_authenticated and current_user.role == RoleEnum.admin %}
+      <div class="pwa-admin-meta">
+        <div class="notifications-bell-container" data-notifications data-count-url="{{ url_for('admin_notifications_unread_count') }}" data-recent-url="{{ url_for('admin_notifications_recent') }}" data-read-url-prefix="/admin/notifications" data-view-url="{{ url_for('admin_notifications') }}">
+          <button class="notifications-bell" type="button" aria-label="Notifications" aria-expanded="false" data-toggle="notifications">
+            <svg class="icon-bell" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M6 9a6 6 0 1 1 12 0v4l2 3H4l2-3V9z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+              <path d="M9.5 19a2.5 2.5 0 0 0 5 0" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+            </svg>
+            <span class="notifications-badge" data-badge>0</span>
+          </button>
+          <div class="notifications-dropdown" data-dropdown>
+            <div class="notifications-dropdown-header">
+              <strong>Admin alerts</strong>
+              <span class="notifications-subtitle">Critical + ticket/KYC events</span>
+            </div>
+            <div class="notifications-list" data-list>
+              <div class="notifications-loading">Loading...</div>
+            </div>
+            <div class="notifications-dropdown-footer">
+              <a href="{{ url_for('admin_notifications') }}">View all admin notifications</a>
+            </div>
+          </div>
+        </div>
+        <span class="nav-username">@{{ current_user.username }}</span>
+        <form method="get" action="{{ url_for('logout_get') }}" class="logout-form">
+          <button type="submit" class="nav-link-button">Logout</button>
+        </form>
+      </div>
+    {% endif %}
+  </div>
+
+</header>
+
+{# Mobile menu overlay #}
+<div id="mobileMenuBackdrop" class="mobile-menu-backdrop" hidden></div>
+
+{# Mobile menu panel #}
+<nav id="mobileMenu" class="mobile-menu" hidden>
+  {% if current_user.is_authenticated %}
+    <div class="mobile-menu-head">
+      <div class="mobile-user">@{{ current_user.username }}</div>
+      <button class="mobile-close" type="button" aria-label="Close menu">&times;</button>
+    </div>
+
+    {% if current_user.role != RoleEnum.admin %}
+      <div class="mobile-menu-section">
+        <a href="{{ url_for('route_to_dashboard') }}">Dashboard</a>
+        <a href="{{ url_for('market_index') }}">Market</a>
+        <a href="{{ url_for('market_my_purchases') }}">My Purchases</a>
+        <a href="{{ url_for('bookme_search') }}">BookMe</a>
+        <a href="{{ url_for('wallet_home') }}">Wallet</a>
+        <a href="{{ url_for('opportunities') }}">Opportunities</a>
+      </div>
+    {% endif %}
+
+    {% if current_user.role == RoleEnum.admin %}
+      <div class="mobile-menu-divider"></div>
+      <div class="mobile-menu-section">
+        <a href="{{ url_for('admin_dashboard') }}">Admin Dashboard</a>
+        <a href="{{ url_for('admin_users') }}">Users</a>
+        <a href="{{ url_for('admin_kyc') }}">KYC Queue</a>
+        <a href="{{ url_for('admin_transactions') }}">Transactions</a>
+        <a href="{{ url_for('admin_tickets') }}">Tickets</a>
+        <a href="{{ url_for('admin_reports') }}">Reports</a>
+        <a href="{{ url_for('admin_audit') }}">System Logs</a>
+        <a href="{{ url_for('admin_waitlist') }}">Waitlist</a>
+        <a href="{{ url_for('opportunities') }}">Opportunities</a>
+        {% if current_user.is_superadmin %}
+          <a href="{{ url_for('admin_team') }}">Admin Team</a>
+        {% endif %}
+      </div>
+    {% endif %}
+
+    <div class="mobile-menu-divider"></div>
+
+    <form method="get" action="{{ url_for('logout_get') }}" class="mobile-logout">
+      <button type="submit" class="mobile-logout-btn">Logout</button>
+    </form>
+
+  {% else %}
+    <div class="mobile-menu-head">
+      <div class="mobile-user">Welcome</div>
+      <button class="mobile-close" type="button" aria-label="Close menu">&times;</button>
+    </div>
+
+    <div class="mobile-menu-section">
+      <a href="{{ url_for('login') }}">Log in</a>
+      <a href="{{ url_for('register') }}">Sign up</a>
+    </div>
+  {% endif %}
+</nav>
+
+<main class="page-main">
+  {% if kyc_bypass_active %}
+    <div class="kyc-bypass-banner">
+      KYC not verified (staging bypass enabled)
+    </div>
+  {% endif %}
+  {% with msgs = get_flashed_messages(with_categories=true) %}
+    {% if msgs %}
+      <div class="flash-container">
+        {% for category, msg in msgs %}
+          <div class="flash flash-{{ category }}">{{ msg }}</div>
+        {% endfor %}
+      </div>
+    {% endif %}
+  {% endwith %}
+
+  {% block content %}{% endblock %}
+</main>
+
+<footer class="site-footer">
+  <div class="footer-content">
+    <div class="footer-section">
+      <h3>Legal</h3>
+      <a href="{{ url_for('terms') }}">Terms of Service</a>
+      <a href="{{ url_for('privacy') }}">Privacy Policy</a>
+      <a href="{{ url_for('cookies') }}">Cookie Policy</a>
+      <a href="{{ url_for('aup') }}">Acceptable Use Policy</a>
+    </div>
+    <div class="footer-section">
+      <h3>Policies</h3>
+      <a href="{{ url_for('fees') }}">Fees & Pricing</a>
+      <a href="{{ url_for('refunds') }}">Refund & Cancellation Policy</a>
+      <a href="{{ url_for('payouts') }}">Payout & Withdrawal Policy</a>
+      <a href="{{ url_for('disputes') }}">Dispute Resolution Policy</a>
+    </div>
+    <div class="footer-section">
+      <h3>Compliance</h3>
+      <a href="{{ url_for('kyc_policy') }}">KYC & Identity Verification</a>
+      <a href="{{ url_for('aml') }}">AML & Fraud Prevention</a>
+      <a href="{{ url_for('risk') }}">Risk Disclosure</a>
+      <a href="{{ url_for('wallet_disclosure') }}">Wallet Disclosure</a>
+    </div>
+    <div class="footer-section">
+      <h3>Company</h3>
+      <a href="{{ url_for('careers') }}">Careers</a>
+      <a href="{{ url_for('affiliate_marketing') }}">Affiliate Marketing</a>
+    </div>
+  </div>
+</footer>
+
+<div id="bfToast" class="bf-toast" role="status" aria-live="polite"></div>
+
+
+
+<script nonce="{{ csp_nonce }}">
+  (function() {
+    function initAudioErrors() {
+      document.querySelectorAll('audio').forEach((audio) => {
+        if (audio.dataset.errorBound) return;
+        audio.dataset.errorBound = '1';
+        audio.addEventListener('error', () => {
+          let msg = audio.parentElement ? audio.parentElement.querySelector('.audio-error') : null;
+          if (!msg && audio.parentElement) {
+            msg = document.createElement('div');
+            msg.className = 'audio-error';
+            msg.textContent = 'Audio failed to load. Please try again.';
+            audio.parentElement.appendChild(msg);
+          }
+        });
+      });
+    }
+
+    document.addEventListener('DOMContentLoaded', initAudioErrors);
+    window.BeatFundAudioInit = initAudioErrors;
+  })();
+</script>
+
+<script nonce="{{ csp_nonce }}">
+  (function() {
+    const refreshBtn = document.getElementById('mobileRefreshBtn');
+    const toastEl = document.getElementById('bfToast');
+    const eligible = /^\/(dashboard|bookme\/requests|notifications|market|wallet)/.test(window.location.pathname || '');
+    if (refreshBtn) {
+      refreshBtn.style.display = eligible ? 'inline-flex' : 'none';
+    }
+
+    let refreshing = false;
+    function showToast(message) {
+      if (!toastEl) return;
+      toastEl.textContent = message;
+      toastEl.classList.add('show');
+      setTimeout(() => toastEl.classList.remove('show'), 2800);
+    }
+
+    async function softRefresh(trigger) {
+      if (refreshing) return;
+      refreshing = true;
+      if (!eligible) {
+        window.location.reload();
+        return;
+      }
+      try {
+        const roots = Array.from(document.querySelectorAll('[data-refresh-root]'));
+        if (!roots.length) {
+          window.location.reload();
+          return;
+        }
+        const resp = await fetch(window.location.href, { headers: { 'X-Refresh': '1' } });
+        const html = await resp.text();
+        const doc = new DOMParser().parseFromString(html, 'text/html');
+        roots.forEach((root) => {
+          const key = root.dataset.refreshRoot;
+          const replacement = doc.querySelector(`[data-refresh-root="${key}"]`);
+          if (replacement) {
+            root.replaceWith(replacement);
+          }
+        });
+        if (typeof window.BeatFundPageInit === 'function') {
+          window.BeatFundPageInit();
+        }
+        if (typeof window.BeatFundAudioInit === 'function') {
+          window.BeatFundAudioInit();
+        }
+        showToast(trigger === 'pull' ? 'Refreshed' : 'Updated');
+      } catch (err) {
+        showToast('Refresh failed. Try again.');
+      } finally {
+        refreshing = false;
+      }
+    }
+
+    if (refreshBtn) {
+      refreshBtn.addEventListener('click', () => softRefresh('tap'));
+    }
+
+    let startY = 0;
+    let pullReady = false;
+    window.addEventListener('touchstart', (e) => {
+      if (!eligible || refreshing) return;
+      if (window.scrollY <= 0) {
+        startY = e.touches[0].clientY;
+        pullReady = true;
+      }
+    }, { passive: true });
+
+    window.addEventListener('touchmove', (e) => {
+      if (!pullReady || refreshing) return;
+      const delta = e.touches[0].clientY - startY;
+      if (delta > 70) {
+        pullReady = false;
+        softRefresh('pull');
+      }
+    }, { passive: true });
+
+    window.addEventListener('touchend', () => {
+      pullReady = false;
+    });
+  })();
+
+  (function() {
+    document.addEventListener('submit', (e) => {
+      const form = e.target;
+      if (!form || !form.hasAttribute('data-disable-on-submit')) return;
+      const buttons = form.querySelectorAll('button[type="submit"]');
+      buttons.forEach((btn) => {
+        if (btn.disabled) return;
+        btn.disabled = true;
+        const loadingText = btn.getAttribute('data-loading-text');
+        if (loadingText) {
+          btn.setAttribute('data-original-text', btn.textContent);
+          btn.textContent = loadingText;
+        }
+      });
+    });
+  })();
+</script>
+
+<script src="{{ url_for('static', filename='js/ui.js') }}" defer></script>
+<script src="{{ url_for('static', filename='pwa.js') }}"></script>
+
+</body>
+</html>
+
+

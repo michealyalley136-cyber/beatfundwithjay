@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block title %}KYC Status{% endblock %}
+{% block content %}
+<h2>KYC Status</h2>
+<p>Your KYC status: <strong>{{ status.value }}</strong></p>
+{% if status.value == 'rejected' %}
+  <p>Please update and resubmit your KYC.</p>
+{% endif %}
+{% endblock %}

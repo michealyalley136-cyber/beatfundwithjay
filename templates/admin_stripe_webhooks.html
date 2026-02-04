@@ -1,0 +1,71 @@
+{% extends "base_admin.html" %}
+{% block title %}BeatFund · Admin · Stripe Webhooks{% endblock %}
+
+{% block admin_content %}
+<div class="admin-page-header">
+  <h1>Stripe Webhooks</h1>
+  <p>Verification + idempotency tracking (received/processed/failed). Use “Retry” for failed events.</p>
+</div>
+
+<div class="card">
+  <h2>Filters</h2>
+  <form method="get" action="{{ url_for('admin_stripe_webhooks') }}" style="display:flex; gap:10px; flex-wrap:wrap; align-items:end;">
+    <div>
+      <label class="stat-label">Status</label>
+      <select class="form-control" name="status">
+        <option value="" {% if not filters.status %}selected{% endif %}>All</option>
+        <option value="RECEIVED" {% if filters.status=='RECEIVED' %}selected{% endif %}>RECEIVED</option>
+        <option value="PROCESSING" {% if filters.status=='PROCESSING' %}selected{% endif %}>PROCESSING</option>
+        <option value="PROCESSED" {% if filters.status=='PROCESSED' %}selected{% endif %}>PROCESSED</option>
+        <option value="FAILED" {% if filters.status=='FAILED' %}selected{% endif %}>FAILED</option>
+      </select>
+    </div>
+    <div>
+      <label class="stat-label">Type</label>
+      <input class="form-control" name="type" value="{{ filters.type }}" placeholder="checkout.session.completed">
+    </div>
+    <button class="btn btn-primary" type="submit">Apply</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>Recent events</h2>
+  <div style="overflow:auto;">
+    <table style="width:100%; border-collapse:collapse;">
+      <thead>
+        <tr>
+          <th style="text-align:left; padding:8px; border-bottom:1px solid rgba(148,163,184,0.2);">Received</th>
+          <th style="text-align:left; padding:8px; border-bottom:1px solid rgba(148,163,184,0.2);">Type</th>
+          <th style="text-align:left; padding:8px; border-bottom:1px solid rgba(148,163,184,0.2);">Stripe event id</th>
+          <th style="text-align:left; padding:8px; border-bottom:1px solid rgba(148,163,184,0.2);">Status</th>
+          <th style="text-align:left; padding:8px; border-bottom:1px solid rgba(148,163,184,0.2);">Processed</th>
+          <th style="text-align:left; padding:8px; border-bottom:1px solid rgba(148,163,184,0.2);">Last error</th>
+          <th style="text-align:left; padding:8px; border-bottom:1px solid rgba(148,163,184,0.2);">Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+        <tr style="border-top:1px solid rgba(148,163,184,0.10);">
+          <td style="padding:8px; white-space:nowrap;">{{ r.received_at.strftime("%Y-%m-%d %H:%M:%S") if r.received_at else "-" }}</td>
+          <td style="padding:8px;">{{ r.type }}</td>
+          <td style="padding:8px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;">{{ r.stripe_event_id }}</td>
+          <td style="padding:8px;">{{ r.status if r.status else "-" }}</td>
+          <td style="padding:8px; white-space:nowrap;">{{ r.processed_at.strftime("%Y-%m-%d %H:%M:%S") if r.processed_at else "-" }}</td>
+          <td style="padding:8px; max-width:320px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ r.last_error or "" }}</td>
+          <td style="padding:8px;">
+            {% if r.status and r.status != 'PROCESSED' %}
+            <form method="post" action="{{ url_for('admin_stripe_webhook_retry', row_id=r.id) }}" style="display:inline;">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button class="btn" type="submit">Retry</button>
+            </form>
+            {% else %}
+              -
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

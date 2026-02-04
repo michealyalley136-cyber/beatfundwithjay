@@ -1,0 +1,32 @@
+{# templates/public_profile.html #}
+{% extends "base.html" %}
+{% block title %}{{ profile_user.display_name }} · BeatFund{% endblock %}
+
+{% block content %}
+<div class="page">
+
+  <div class="card">
+    <div style="display:flex; align-items:center; gap:14px; flex-wrap:wrap;">
+      <img src="{{ profile_user.avatar_url }}" alt="avatar"
+           style="width:72px;height:72px;border-radius:16px;object-fit:cover;">
+
+      <div style="flex:1; min-width:240px;">
+        <h2 style="margin:0;">{{ profile_user.display_name }}</h2>
+        <div class="muted">@{{ profile_user.username }} · {{ role_label }}</div>
+      </div>
+    </div>
+  </div>
+
+  {% include "_follow_widget.html" %}
+
+  <div class="card">
+    <h3 style="margin-top:0;">Discover</h3>
+    <div style="display:flex; gap:10px; flex-wrap:wrap;">
+      <a class="btn btn-secondary" href="{{ url_for('bookme_search') }}">BookMe Directory</a>
+      <a class="btn btn-secondary" href="{{ url_for('producer_catalog_index') }}">Producers</a>
+      <a class="btn btn-secondary" href="{{ url_for('market_index') }}">Marketplace</a>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

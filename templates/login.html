@@ -1,0 +1,326 @@
+{% extends "base.html" %}
+{% block title %}Sign in · BeatFund{% endblock %}
+
+{% block extra_head %}
+<style>
+  .auth-page {
+    max-width: 1120px;
+    margin: 40px auto 48px;
+    padding-inline: 16px;
+    display: flex;
+    gap: 32px;
+    align-items: stretch;
+  }
+
+  @media (max-width: 900px) {
+    .auth-page {
+      flex-direction: column;
+    }
+  }
+
+  .auth-hero {
+    flex: 1.05;
+    padding: 20px 18px 18px;
+    border-radius: 24px;
+    border: 1px solid rgba(148, 163, 184, 0.4);
+    background:
+      radial-gradient(circle at top left, rgba(56, 189, 248, 0.28), transparent 55%),
+      radial-gradient(circle at bottom right, rgba(129, 140, 248, 0.3), transparent 60%),
+      rgba(15, 23, 42, 0.96);
+    box-shadow:
+      0 26px 55px rgba(15, 23, 42, 0.95),
+      0 0 0 1px rgba(15, 23, 42, 1) inset;
+    color: #e5e7eb;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .auth-hero::before {
+    content: "";
+    position: absolute;
+    inset: -40%;
+    background:
+      radial-gradient(circle at 10% 0%, rgba(59, 130, 246, 0.35), transparent 55%),
+      radial-gradient(circle at 90% 100%, rgba(45, 212, 191, 0.3), transparent 55%);
+    opacity: 0.45;
+    mix-blend-mode: screen;
+    pointer-events: none;
+  }
+
+  .auth-hero-inner {
+    position: relative;
+    z-index: 1;
+  }
+
+  .auth-kicker {
+    font-size: 11px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: #a5b4fc;
+    margin-bottom: 6px;
+  }
+
+  .auth-hero-title {
+    font-size: 26px;
+    font-weight: 650;
+    letter-spacing: 0.02em;
+    margin-bottom: 8px;
+  }
+
+  .auth-hero-sub {
+    font-size: 13px;
+    color: #cbd5f5;
+    max-width: 420px;
+    margin-bottom: 18px;
+  }
+
+  .auth-list {
+    font-size: 12px;
+    color: #d1d5f0;
+    margin: 10px 0 14px;
+    padding-left: 18px;
+  }
+  .auth-list li {
+    margin-bottom: 4px;
+  }
+
+  .auth-hero-footer {
+    font-size: 11px;
+    color: #9ca3c8;
+    margin-top: 8px;
+  }
+
+  .auth-card {
+    flex: 0.95;
+    border-radius: 22px;
+    border: 1px solid rgba(30, 64, 175, 0.8);
+    background:
+      linear-gradient(135deg, rgba(15, 23, 42, 0.96), rgba(12, 10, 30, 0.98));
+    box-shadow:
+      0 26px 50px rgba(15, 23, 42, 0.95),
+      0 0 0 1px rgba(15, 23, 42, 1) inset;
+    padding: 20px 22px 18px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .auth-card::before {
+    content: "";
+    position: absolute;
+    inset: -40%;
+    background:
+      radial-gradient(circle at 0% 0%, rgba(59, 130, 246, 0.25), transparent 60%),
+      radial-gradient(circle at 100% 100%, rgba(79, 70, 229, 0.3), transparent 60%);
+    opacity: 0.22;
+    pointer-events: none;
+  }
+
+  .auth-card-inner {
+    position: relative;
+    z-index: 1;
+  }
+
+  .auth-card-title {
+    font-size: 18px;
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+
+  .auth-card-sub {
+    font-size: 12px;
+    color: #9aa4c2;
+    margin-bottom: 18px;
+  }
+
+  .auth-form {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .auth-field-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #8f9bc6;
+    margin-bottom: 3px;
+  }
+
+  .auth-input {
+    width: 100%;
+    border-radius: 11px;
+    border: 1px solid #303a5c;
+    background: radial-gradient(circle at top, rgba(15, 23, 42, 0.9), rgba(15, 23, 42, 1));
+    color: #e3e9ff;
+    padding: 9px 11px;
+    font-size: 13px;
+    outline: none;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease, transform 0.06s ease;
+  }
+  .auth-input::placeholder {
+    color: #6f7aa4;
+  }
+  .auth-input:focus {
+    border-color: #4f8bff;
+    box-shadow: 0 0 0 1px rgba(79, 139, 255, 0.5);
+    transform: translateY(-0.5px);
+  }
+
+  .auth-row-inline {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    font-size: 12px;
+    color: #9aa4c2;
+  }
+
+  .auth-checkbox-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .auth-checkbox-row input[type="checkbox"] {
+    width: 14px;
+    height: 14px;
+    border-radius: 4px;
+    border: 1px solid #4b5563;
+    background: #020617;
+  }
+
+  .auth-link {
+    font-size: 12px;
+    color: #60a5fa;
+    text-decoration: none;
+    position: relative;
+  }
+  .auth-link::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: -1px;
+    height: 1px;
+    background: linear-gradient(90deg, #38bdf8, #a855f7);
+    opacity: 0.9;
+  }
+
+  .auth-btn-primary {
+    border-radius: 999px;
+    padding: 9px 18px;
+    font-size: 14px;
+    border: none;
+    cursor: pointer;
+    background: linear-gradient(135deg, #4de3ff, #6366f1);
+    color: #ffffff;
+    box-shadow: 0 7px 20px rgba(56, 189, 248, 0.45);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    margin-top: 6px;
+    transition: transform 0.1s ease, box-shadow 0.1s ease, background 0.12s ease;
+  }
+  .auth-btn-primary:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 11px 28px rgba(79, 70, 229, 0.55);
+  }
+  .auth-btn-primary:active {
+    transform: translateY(0);
+    box-shadow: 0 4px 12px rgba(30, 64, 175, 0.7);
+  }
+
+  .auth-footer-text {
+    font-size: 12px;
+    color: #9aa4c2;
+    margin-top: 12px;
+    text-align: center;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="auth-page">
+  <!-- Left hero -->
+  <section class="auth-hero" aria-hidden="true">
+    <div class="auth-hero-inner">
+      <div class="auth-kicker">BeatFund</div>
+      <h1 class="auth-hero-title">Sign in to your creator account</h1>
+      <p class="auth-hero-sub">
+        Track your balance, unlock beat purchases, and book creative services — all from
+        one place built for the music business.
+      </p>
+
+      <ol class="auth-list">
+        <li>Pay securely with Stripe across beats and bookings.</li>
+        <li>Instant licensing for beats with clear, simple terms.</li>
+        <li>Studios, videographers, talent, and more — all paid safely.</li>
+      </ol>
+
+      <p class="auth-hero-footer">
+        Fintech for creators · Producers · Service providers
+        <span style="opacity:0.7">No hidden platform fees*</span>
+      </p>
+    </div>
+  </section>
+
+  <!-- Right card -->
+  <section class="auth-card" aria-label="Sign in form">
+    <div class="auth-card-inner">
+      <h2 class="auth-card-title">Welcome back</h2>
+      <p class="auth-card-sub">
+        Sign in to continue with your BeatFund account and marketplace activity.
+      </p>
+
+      <form method="POST" action="{{ url_for('login') }}" class="auth-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+        <div>
+          <div class="auth-field-label">Email or username</div>
+          <input
+            type="text"
+            name="username"
+            class="auth-input"
+            placeholder="you@example.com or admin"
+            autocomplete="username"
+            required
+          >
+        </div>
+
+        <div>
+          <div class="auth-field-label">Password</div>
+          <input
+            type="password"
+            name="password"
+            class="auth-input"
+            placeholder="Your password"
+            autocomplete="current-password"
+            required
+          >
+        </div>
+
+        <div class="auth-row-inline">
+          <label class="auth-checkbox-row">
+            <input type="checkbox" name="remember_me">
+            <span>Keep me signed in</span>
+          </label>
+
+          <a href="{{ url_for('forgot_password') }}" class="auth-link">
+            Forgot password?
+          </a>
+        </div>
+
+        <button type="submit" class="auth-btn-primary">
+          Sign in
+        </button>
+      </form>
+
+      <p class="auth-footer-text">
+        New to BeatFund?
+        <a href="{{ url_for('register') }}" class="auth-link">Create an account</a>
+      </p>
+    </div>
+  </section>
+</div>
+{% endblock %}

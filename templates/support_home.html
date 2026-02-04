@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Support{% endblock %}
+{% block content %}
+<div class="page" style="max-width:980px;margin:0 auto;padding:24px 16px;">
+  <div class="card">
+    <h2 style="margin-top:0;">Support tickets</h2>
+    <p class="muted">Create a ticket or check updates from the support team.</p>
+    <a href="{{ url_for('support_new') }}" class="btn btn-primary">New ticket</a>
+  </div>
+
+  <div class="card" style="margin-top:16px;">
+    <h3 style="margin-top:0;">My tickets</h3>
+    {% if tickets %}
+      <table style="width:100%;border-collapse:collapse;">
+        <thead>
+          <tr>
+            <th style="text-align:left;padding:6px;border-bottom:1px solid #eee;">ID</th>
+            <th style="text-align:left;padding:6px;border-bottom:1px solid #eee;">Subject</th>
+            <th style="text-align:left;padding:6px;border-bottom:1px solid #eee;">Type</th>
+            <th style="text-align:left;padding:6px;border-bottom:1px solid #eee;">Status</th>
+            <th style="text-align:left;padding:6px;border-bottom:1px solid #eee;"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for t in tickets %}
+            <tr>
+              <td style="padding:6px;">#{{ t.id }}</td>
+              <td style="padding:6px;">{{ t.subject }}</td>
+              <td style="padding:6px;">{{ t.type.value|replace('_',' ')|title }}</td>
+              <td style="padding:6px;">{{ t.status.value|replace('_',' ')|title }}</td>
+              <td style="padding:6px;">
+                <a class="btn btn-secondary" href="{{ url_for('support_ticket_detail', ticket_id=t.id) }}">Open</a>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p class="muted">No tickets yet.</p>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

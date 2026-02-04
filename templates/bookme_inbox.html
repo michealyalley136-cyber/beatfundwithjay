@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}BookMe Inbox{% endblock %}
+{% block content %}
+<h2>BookMe · Inbox</h2>
+
+<div class="grid-2" style="margin-top:16px;gap:16px;">
+  <div>
+    <h3>Requests I sent</h3>
+    {% if mine_as_client %}
+      <ul class="feature-list">
+        {% for b in mine_as_client %}
+          <li>
+            To <strong>@{{ b.provider.username }}</strong> —
+            <em>{{ b.requested_date }}</em>
+            (status: {{ b.status.value }})
+            {% if b.status.value in ["pending", "accepted"] %}
+              <form method="post"
+                    action="{{ url_for('bookme_booking_action', booking_id=b.id) }}"
+                    style="display:inline;">
+                <input type="hidden" name="action" value="cancel">
+                <button type="submit" class="btn btn-outline btn-xs">Cancel</button>
+              </form>
+            {% endif %}
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="muted">You haven’t requested any sessions yet.</p>
+    {% endif %}
+  </div>
+
+  <div>
+    <h3>Requests for me</h3>
+    {% if mine_as_provider %}
+      <ul class="feature-list">
+        {% for b in mine_as_provider %}
+          <li>
+            From <strong>@{{ b.client.username }}</strong> —
+            <em>{{ b.requested_date }}</em>
+            {% if b.notes %}
+              <div class="muted small">{{ b.notes }}</div>
+            {% endif %}
+            <div class="small">Status: {{ b.status.value }}</div>
+
+            {% if b.status.value == "pending" %}
+              <form method="post"
+                    action="{{ url_for('bookme_booking_action', booking_id=b.id) }}"
+                    style="display:inline;">
+                <input type="hidden" name="action" value="accept">
+                <button type="submit" class="btn btn-primary btn-xs">Accept</button>
+              </form>
+              <form method="post"
+                    action="{{ url_for('bookme_booking_action', booking_id=b.id) }}"
+                    style="display:inline;margin-left:4px;">
+                <input type="hidden" name="action" value="decline">
+                <button type="submit" class="btn btn-outline btn-xs">Decline</button>
+              </form>
+            {% endif %}
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="muted">No one has requested a session with you yet.</p>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

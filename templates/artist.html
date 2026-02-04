@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container mt-4">
+  <h2 class="mb-4">Artist Dashboard</h2>
+
+  <!-- WALLET BALANCE CARD -->
+  <div class="card mb-4 shadow-sm">
+    <div class="card-body">
+      <h5 class="card-title">Wallet Balance</h5>
+      <p class="display-6 text-success">${{ "%.2f"|format(current_user.wallet_balance) }}</p>
+      <p class="text-muted">Use the menu above to manage wallet, card, or browse beats.</p>
+    </div>
+  </div>
+
+  <!-- FUNDING REQUESTS -->
+  <h4 class="mb-3">Your Funding Requests</h4>
+  {% if requests %}
+    <div class="table-responsive">
+      <table class="table table-hover align-middle">
+        <thead class="table-light">
+          <tr>
+            <th>ID</th>
+            <th>Description</th>
+            <th>Amount</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for req in requests %}
+          <tr>
+            <td><strong>#{{ req.id }}</strong></td>
+            <td>{{ req.description }}</td>
+            <td><strong>${{ "%.2f"|format(req.amount) }}</strong></td>
+            <td>
+              <span class="badge bg-{{ 'success' if req.status == 'disbursed' else 'warning' if req.status == 'approved' else 'secondary' }}">
+                {{ req.status.title() }}
+              </span>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <div class="alert alert-info">
+      <p>No funding requests yet. <a href="{{ url_for('create') }}" class="alert-link">Create your first one</a> to get started!</p>
+    </div>
+  {% endif %}
+
+  <!-- ACTION BUTTON -->
+  <a href="{{ url_for('create') }}" class="btn btn-primary btn-lg mt-3">
+    + New Funding Request
+  </a>
+</div>
+{% endblock %}

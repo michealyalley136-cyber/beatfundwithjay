@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+
+{% block title %}500 - Server Error · BeatFund{% endblock %}
+
+{% block content %}
+<div style="text-align: center; padding: 60px 20px; max-width: 600px; margin: 0 auto;">
+  <h1 style="font-size: 48px; margin-bottom: 16px;">500</h1>
+  <p style="font-size: 18px; color: #9aa4c2; margin-bottom: 24px;">An error occurred on the server</p>
+  <a href="{{ url_for('home') }}" style="display: inline-block; padding: 12px 24px; background: linear-gradient(135deg, #4de3ff, #6366f1); color: white; text-decoration: none; border-radius: 8px;">Return to Home</a>
+</div>
+{% endblock %}

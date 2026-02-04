@@ -1,0 +1,345 @@
+{% extends "base.html" %}
+{% block title %}Transactions &amp; Audit · BeatFund Admin{% endblock %}
+
+{% block extra_head %}
+<style>
+  .tx-page-title {
+    font-size: 22px;
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+  .tx-page-subtitle {
+    font-size: 13px;
+    color: #9aa4c2;
+    margin-bottom: 18px;
+  }
+
+  .tx-grid {
+    display: grid;
+    grid-template-columns: 1.4fr 1.6fr;
+    gap: 16px;
+    align-items: flex-start;
+    margin-bottom: 16px;
+  }
+  @media (max-width: 1024px) {
+    .tx-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .tx-card {
+    background: linear-gradient(135deg, #0b1220, #020617);
+    border-radius: 16px;
+    border: 1px solid #20263b;
+    box-shadow: 0 18px 35px rgba(15, 23, 42, 0.9);
+    padding: 18px 18px 14px;
+  }
+
+  .tx-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+  }
+
+  .tx-card-title {
+    font-size: 14px;
+    font-weight: 600;
+  }
+
+  .tx-card-sub {
+    font-size: 12px;
+    color: #9aa4c2;
+  }
+
+  .tx-label-pill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 3px 8px;
+    border-radius: 999px;
+    border: 1px solid rgba(148, 163, 184, 0.4);
+    font-size: 11px;
+    color: #cbd5f5;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+
+  thead tr {
+    border-bottom: 1px solid #111827;
+  }
+
+  th,
+  td {
+    padding: 8px 6px;
+    text-align: left;
+  }
+
+  th {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: #64748b;
+  }
+
+  tbody tr + tr {
+    border-top: 1px solid rgba(15, 23, 42, 0.9);
+  }
+
+  .amount-positive {
+    color: #4ade80;
+  }
+
+  .amount-negative {
+    color: #f97373;
+  }
+
+  .tx-muted {
+    font-size: 12px;
+    color: #9aa4c2;
+  }
+
+  .tx-search-form {
+    display: flex;
+    gap: 8px;
+    margin-top: 10px;
+    margin-bottom: 4px;
+    flex-wrap: wrap;
+  }
+
+  .tx-input {
+    flex: 1 1 160px;
+    min-width: 0;
+    border-radius: 999px;
+    border: 1px solid #1f2937;
+    background: rgba(15, 23, 42, 0.8);
+    color: #e5e7eb;
+    font-size: 13px;
+    padding: 8px 10px;
+  }
+
+  .tx-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px 14px;
+    border-radius: 999px;
+    border: 1px solid #1f2937;
+    font-size: 13px;
+    color: #e5e7eb;
+    background: rgba(15, 23, 42, 0.9);
+    text-decoration: none;
+    cursor: pointer;
+  }
+
+  .tx-btn-primary {
+    border-color: #0ea5e9;
+    background: linear-gradient(135deg, #38bdf8, #2563eb);
+  }
+
+  .tx-btn-primary:hover {
+    background: linear-gradient(135deg, #4fd5ff, #3280ff);
+  }
+
+  .tx-btn-ghost {
+    background: rgba(15, 23, 42, 0.7);
+  }
+
+  .tx-user-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 9px;
+    border-radius: 999px;
+    border: 1px solid rgba(96, 165, 250, 0.7);
+    font-size: 12px;
+    color: #bfdbfe;
+    background: rgba(15, 23, 42, 0.9);
+  }
+
+  .tx-user-chip span.handle {
+    font-weight: 600;
+  }
+
+  .tx-audit-list {
+    list-style: none;
+    padding: 0;
+    margin: 8px 0 0;
+  }
+
+  .tx-audit-list li + li {
+    margin-top: 6px;
+    border-top: 1px solid rgba(15, 23, 42, 0.9);
+    padding-top: 6px;
+  }
+
+  .tx-audit-title {
+    font-size: 12px;
+  }
+
+  .tx-audit-meta {
+    font-size: 11px;
+    color: #9aa4c2;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="tx-page-title">Transactions &amp; Audit</div>
+<div class="tx-page-subtitle">
+  System-wide wallet activity and secure access to per-customer transaction history.
+</div>
+
+<div class="tx-grid">
+  <!-- Left: wallet activity summary -->
+  <div class="tx-card">
+    <div class="tx-card-header">
+      <div>
+        <div class="tx-card-title">Wallet activity summary</div>
+        <div class="tx-card-sub">
+          Aggregated counts and volume by entry type across all wallets.
+        </div>
+      </div>
+      <div class="tx-label-pill">
+        Ledger overview
+      </div>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Count</th>
+          <th>Total amount</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% if stats %}
+          {% for entry_type, count, sum_cents in stats %}
+            {% set dollars = (sum_cents / 100.0) %}
+            <tr>
+              <td>{{ entry_type.value.replace('_', ' ')|title }}</td>
+              <td>{{ count }}</td>
+              <td>
+                <span class="{{ 'amount-positive' if dollars >= 0 else 'amount-negative' }}">
+                  ${{ "%.2f"|format(dollars) }}
+                </span>
+              </td>
+            </tr>
+          {% endfor %}
+        {% else %}
+          <tr>
+            <td colspan="3" style="padding:10px 6px; color:#9aa4c2;">
+              No wallet activity recorded yet.
+            </td>
+          </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Right: secure user audit lookup -->
+  <div class="tx-card">
+    <div class="tx-card-header">
+      <div>
+        <div class="tx-card-title">Secure customer audit access</div>
+        <div class="tx-card-sub">
+          Search a username, then record an access reason before viewing their full ledger.
+        </div>
+      </div>
+    </div>
+
+    <form method="GET" action="{{ url_for('admin_transactions') }}" class="tx-search-form">
+      <input
+        type="text"
+        name="q"
+        class="tx-input"
+        placeholder="Search username (e.g. artist1)"
+        value="{{ q }}"
+      >
+      <button type="submit" class="tx-btn tx-btn-primary">
+        Search
+      </button>
+    </form>
+
+    {% if q %}
+      {% if found_user %}
+        <p class="tx-muted" style="margin-top:6px;">
+          Match found:
+        </p>
+        <div style="margin-top:4px; margin-bottom:10px;">
+          <span class="tx-user-chip">
+            <span class="handle">@{{ found_user.username }}</span>
+            <span>· {{ found_user.role|capitalize }}</span>
+          </span>
+        </div>
+        <p class="tx-muted">
+          To view this customer's wallet history, you must first log an audit reason.
+        </p>
+        <div style="margin-top:10px;">
+          <a href="{{ url_for('admin_audit_access', user_id=found_user.id) }}"
+             class="tx-btn tx-btn-ghost">
+            Continue to audit reason step →
+          </a>
+        </div>
+      {% else %}
+        <p class="tx-muted" style="margin-top:10px;">
+          No user found with username “{{ q }}”.
+        </p>
+      {% endif %}
+    {% else %}
+      <p class="tx-muted" style="margin-top:10px;">
+        Enter an exact username to start a secure audit of that customer's wallet activity.
+      </p>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Recent admin audit log -->
+<div class="tx-card">
+  <div class="tx-card-header">
+    <div>
+      <div class="tx-card-title">Recent admin audit log</div>
+      <div class="tx-card-sub">
+        Last 10 admin actions where customer access reasons were recorded.
+      </div>
+    </div>
+    <a href="{{ url_for('admin_audit_log') }}" class="tx-btn tx-btn-ghost">
+      View raw log
+    </a>
+  </div>
+
+  {% if audit_logs %}
+    <ul class="tx-audit-list">
+      {% for log in audit_logs %}
+        <li>
+          <div class="tx-audit-title">
+            {{ log.action.replace('_', ' ')|title }}
+          </div>
+          <div class="tx-audit-meta">
+            {{ log.created_at.strftime('%Y-%m-%d %H:%M') if log.created_at else '' }}
+            · Admin @{{ log.admin.username if log.admin else 'unknown' }}
+            {% if log.user %}
+              · Customer @{{ log.user.username }}
+            {% endif %}
+            {% if log.reason %}
+              · Reason: {{ log.reason }}
+            {% endif %}
+          </div>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="tx-muted" style="margin-top:6px;">
+      No audit entries recorded yet. Once admins start accessing customer ledgers via the audit flow,
+      those actions will appear here.
+    </p>
+  {% endif %}
+</div>
+{% endblock %}

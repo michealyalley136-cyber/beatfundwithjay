@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% block title %}My Beats · BeatFund{% endblock %}
+
+{% block content %}
+<div class="page">
+  <div class="page-header">
+    <h1>My Beats</h1>
+    <p>Upload beats for the marketplace. Listeners can hear a short preview before purchase; the original MP3 is delivered after payment.</p>
+  </div>
+
+  {% if has_paid_beats and not producer_stripe_connected %}
+  <div class="card" style="margin-bottom: 24px; border: 1px solid rgba(251,191,36,.4); background: rgba(251,191,36,.08);">
+    <h3 style="margin-top: 0; color: #fbbf24;">Connect Stripe to receive payments</h3>
+    <p>You have paid beats listed. To receive payments when buyers purchase your beats via Stripe, connect your Stripe account. Payments go directly to your connected account.</p>
+    <a href="{{ url_for('stripe_connect_start') }}" class="btn btn-primary">Connect Stripe &amp; set up payouts</a>
+  </div>
+  {% endif %}
+
+  <div class="card">
+    <h2>Upload a Beat</h2>
+    <form method="POST" enctype="multipart/form-data">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+      <div class="form-group">
+        <label>Title *</label>
+        <input class="form-control" name="title" required>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label>Price (USD)</label>
+          <input class="form-control" name="price_dollars" placeholder="19.99">
+        </div>
+
+        <div class="form-group">
+          <label>BPM</label>
+          <input class="form-control" name="bpm" placeholder="130">
+        </div>
+
+        <div class="form-group">
+          <label>Genre</label>
+          <input class="form-control" name="genre" placeholder="Afrobeats / Trap / R&B...">
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>Cover Image (jpg/png)</label>
+        <input class="form-control" type="file" name="cover_file" accept=".jpg,.jpeg,.png">
+      </div>
+
+      <div class="form-group">
+        <label>Original Audio (mp3/wav/m4a/ogg) *</label>
+        <input class="form-control" type="file" name="audio_file" accept=".mp3,.wav,.m4a,.ogg" required>
+      </div>
+
+      <div class="form-group">
+        <label>Preview MP3 (optional)</label>
+        <input class="form-control" type="file" name="preview_file" accept=".mp3,.wav,.m4a,.ogg">
+        <small class="muted">Optional: upload a custom preview. If omitted, we generate a short preview automatically.</small>
+      </div>
+
+      <div class="form-group">
+        <label>Preview length (seconds)</label>
+        <input class="form-control" name="preview_seconds" type="number" min="5" max="90" placeholder="30">
+      </div>
+
+      <div class="form-group">
+        <label>Stems / Deliverables (optional ZIP)</label>
+        <input class="form-control" type="file" name="stems_file" accept=".zip,.rar,.7z,.mp3,.wav,.m4a,.ogg">
+      </div>
+
+      <button class="btn btn-primary" type="submit">Save Beat</button>
+      <a class="btn btn-secondary" href="{{ url_for('market_index') }}">Go to Market</a>
+    </form>
+  </div>
+
+  <div class="card">
+    <h2>Your Uploaded Beats</h2>
+
+    {% if beats %}
+      <div class="grid">
+        {% for b in beats %}
+          <div class="beat-card">
+            <div class="beat-cover">
+              {% if b.cover_url %}
+                <img src="{{ b.cover_url }}" alt="{{ b.title }}">
+              {% else %}
+                <div class="cover-placeholder">No Cover</div>
+              {% endif %}
+            </div>
+
+            <div class="beat-meta">
+              <div class="beat-title">{{ b.title }}</div>
+              <div class="beat-sub">
+                {% if b.genre %}{{ b.genre }} · {% endif %}
+                {% if b.bpm %}{{ b.bpm }} BPM · {% endif %}
+                ${{ "%.2f"|format((b.price_cents or 0)/100) }}
+              </div>
+
+              {% if b.preview_url %}
+                <audio controls preload="none" style="width:100%;">
+                  <source src="{{ b.preview_url }}">
+                </audio>
+              {% endif %}
+
+              <form method="POST" action="{{ url_for('producer_beats_delete', beat_id=b.id) }}"
+                    onsubmit="return confirm('Delete this beat?');">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button class="btn btn-danger" type="submit">Delete</button>
+              </form>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p>No beats uploaded yet.</p>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+
+

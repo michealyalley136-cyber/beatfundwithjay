@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>BeatFund - Virtual Card</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700&family=Roboto:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        body { 
+            font-family: 'Roboto', sans-serif; 
+            margin: 0; 
+            padding: 20px; 
+            background: linear-gradient(135deg, #0f0c29, #302b63, #24243e); 
+            color: white;
+            min-height: 100vh;
+        }
+        .header { 
+            background: rgba(0,0,0,0.3); 
+            padding: 15px; 
+            border-radius: 12px; 
+            text-align: center; 
+            margin-bottom: 20px;
+        }
+        .header h1 { 
+            margin: 0; 
+            font-family: 'Orbitron', sans-serif; 
+            color: #00d4ff; 
+            font-size: 1.8em; 
+        }
+        .nav { margin-top: 10px; }
+        .nav a { color: #00d4ff; margin: 0 15px; text-decoration: none; font-weight: 500; }
+        .nav a:hover { text-decoration: underline; }
+
+        .card-container {
+            max-width: 420px;
+            margin: 30px auto;
+            perspective: 1000px;
+        }
+        .card-wrapper {
+            position: relative;
+            width: 100%;
+            height: 260px;
+            transition: transform 0.6s;
+            transform-style: preserve-3d;
+        }
+        .card-front, .card-back {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            backface-visibility: hidden;
+            border-radius: 16px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            padding: 20px;
+            box-sizing: border-box;
+        }
+        .card-front {
+            background: linear-gradient(135deg, #1e3c72, #2a5298);
+            color: white;
+        }
+        .card-back {
+            background: linear-gradient(135deg, #2c3e50, #34495e);
+            transform: rotateY(180deg);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+
+        .chip {
+            width: 50px;
+            height: 40px;
+            background: linear-gradient(45deg, #ffd700, #f9a825);
+            border-radius: 6px;
+            margin: 15px 0;
+            position: relative;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+        }
+        .chip::before {
+            content: '';
+            position: absolute;
+            top: 8px; left: 8px; right: 8px; bottom: 8px;
+            background: repeating-linear-gradient(
+                90deg,
+                #b8860b 0px,
+                #b8860b 2px,
+                #ffd700 2px,
+                #ffd700 4px
+            );
+            border-radius: 3px;
+        }
+
+        .logo {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 1.6em;
+            font-weight: 700;
+            color: #00d4ff;
+            text-shadow: 0 0 10px rgba(0, 212, 255, 0.5);
+            margin-bottom: 20px;
+        }
+
+        .card-number {
+            font-family: 'Courier New', monospace;
+            font-size: 1.4em;
+            letter-spacing: 3px;
+            margin: 20px 0;
+            text-align: center;
+        }
+
+        .card-details {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.9em;
+            margin-top: 10px;
+        }
+        .card-details div { text-align: left; }
+
+        .magnetic-stripe {
+            height: 50px;
+            background: #000;
+            margin-bottom: 20px;
+        }
+        .signature {
+            height: 40px;
+            background: white;
+            margin: 10px 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #333;
+            font-style: italic;
+            font-size: 0.9em;
+        }
+        .cvv-box {
+            background: white;
+            color: #000;
+            width: 60px;
+            text-align: center;
+            padding: 5px;
+            font-family: monospace;
+            font-weight: bold;
+            margin-left: auto;
+        }
+
+        .status-badge {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 0.8em;
+            font-weight: bold;
+        }
+        .active { background: #2ed573; color: white; }
+        .blocked { background: #ff4757; color: white; }
+
+        .btn {
+            display: block;
+            width: 100%;
+            padding: 14px;
+            margin: 15px 0;
+            border: none;
+            border-radius: 10px;
+            font-weight: bold;
+            cursor: pointer;
+            font-size: 1.1em;
+            transition: 0.3s;
+        }
+        .btn-generate { background: #00d4ff; color: black; }
+        .btn-block { background: #ff4757; color: white; }
+        .btn-unblock { background: #2ed573; color: white; }
+        .btn:hover { transform: translateY(-2px); box-shadow: 0 5px 15px rgba(0,0,0,0.3); }
+
+        .back-link {
+            text-align: center;
+            margin-top: 20px;
+        }
+        .back-link a {
+            color: #00d4ff;
+            text-decoration: none;
+            font-weight: 500;
+        }
+
+        .flash {
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 10px;
+            background: rgba(0, 212, 255, 0.1);
+            border: 1px solid #00d4ff;
+            color: #00d4ff;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>BeatFund</h1>
+        <div class="nav">
+            Hi {{ current_user.username }} | 
+            <a href="{{ url_for('dashboard') }}">Dashboard</a> | 
+            <a href="{{ url_for('logout') }}">Logout</a>
+        </div>
+    </div>
+
+    <div class="card-container">
+        <div class="card-wrapper" id="cardWrapper">
+            <!-- FRONT -->
+            <div class="card-front">
+                <div class="status-badge {% if card.is_active %}active{% else %}blocked{% endif %}">
+                    {% if card.is_active %}ACTIVE{% else %}BLOCKED{% endif %}
+                </div>
+                <div class="chip"></div>
+                <div class="logo">BeatFund</div>
+                <div class="card-number">
+                    {% if card %}
+                        {{ card.card_number[:4] }} {{ card.card_number[4:8] }} {{ card.card_number[8:12] }} {{ card.card_number[12:] }}
+                    {% else %}
+                        •••• •••• •••• ••••
+                    {% endif %}
+                </div>
+                <div class="card-details">
+                    <div>
+                        <div><small>VALID THRU</small></div>
+                        <div>{% if card %}{{ card.expiry }}{% else %}MM/YY{% endif %}</div>
+                    </div>
+                    <div>
+                        <div><small>CARD HOLDER</small></div>
+                        <div>{{ current_user.full_name|upper }}</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- BACK -->
+            <div class="card-back">
+                <div class="magnetic-stripe"></div>
+                <div class="signature">
+                    <div style="margin-right: auto;">Authorized Signature</div>
+                    <div class="cvv-box">{% if card %}{{ card.cvv }}{% else %}•••{% endif %}</div>
+                </div>
+                <p style="font-size: 0.7em; text-align: center; margin-top: 20px; opacity: 0.7;">
+                    For customer service call 1-800-BEATFUND
+                </p>
+            </div>
+        </div>
+
+        <!-- ACTIONS -->
+        <div style="margin-top: 30px; text-align: center;">
+            {% if card %}
+                <form method="POST" style="display: inline;">
+                    <input type="hidden" name="action" value="toggle">
+                    <button type="submit" class="btn {% if card.is_active %}btn-block{% else %}btn-unblock{% endif %}">
+                        {% if card.is_active %}Block Card{% else %}Unblock Card{% endif %}
+                    </button>
+                </form>
+            {% else %}
+                <form method="POST">
+                    <input type="hidden" name="action" value="generate">
+                    <button type="submit" class="btn btn-generate">Generate Virtual Card</button>
+                </form>
+            {% endif %}
+
+            <div class="back-link">
+                <a href="{{ url_for('dashboard') }}">Back to Dashboard</a>
+            </div>
+        </div>
+    </div>
+
+    {% with messages = get_flashed_messages() %}
+      {% if messages %}
+        <div class="flash">
+          {% for message in messages %}
+            <p>{{ message }}</p>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+
+    <script nonce="{{ csp_nonce }}">
+        // Flip card on click
+        document.getElementById('cardWrapper').addEventListener('click', function() {
+            this.style.transform = this.style.transform === 'rotateY(180deg)' ? 'rotateY(0deg)' : 'rotateY(180deg)';
+        });
+    </script>
+</body>
+</html>

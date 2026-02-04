@@ -1,0 +1,169 @@
+{% extends "base.html" %}
+{% block title %}Apply for {{ opportunity.title }} · BeatFund{% endblock %}
+
+{% block extra_head %}
+<style>
+  .opp-apply-page {
+    max-width: 600px;
+    margin: 32px auto 40px;
+    padding-inline: 16px;
+  }
+
+  .opp-apply-card {
+    background: white;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 32px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  }
+
+  .opp-apply-title {
+    font-size: 24px;
+    font-weight: 700;
+    margin: 0 0 8px;
+    color: #1e293b;
+  }
+
+  .opp-apply-subtitle {
+    font-size: 16px;
+    color: #64748b;
+    margin: 0 0 24px;
+  }
+
+  .opp-apply-form-group {
+    margin-bottom: 20px;
+  }
+
+  .opp-apply-label {
+    display: block;
+    font-weight: 500;
+    color: #374151;
+    margin-bottom: 6px;
+  }
+
+  .opp-apply-input,
+  .opp-apply-textarea {
+    width: 100%;
+    padding: 12px;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    font-size: 16px;
+    transition: border-color 0.2s ease;
+  }
+
+  .opp-apply-input:focus,
+  .opp-apply-textarea:focus {
+    outline: none;
+    border-color: #6b8bff;
+    box-shadow: 0 0 0 3px rgba(107, 139, 255, 0.1);
+  }
+
+  .opp-apply-textarea {
+    resize: vertical;
+    min-height: 100px;
+  }
+
+  .opp-apply-actions {
+    display: flex;
+    gap: 12px;
+    margin-top: 24px;
+  }
+
+  .opp-apply-submit {
+    padding: 12px 24px;
+    background: #6b8bff;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 16px;
+    cursor: pointer;
+    transition: background 0.2s ease;
+  }
+
+  .opp-apply-submit:hover {
+    background: #5a6fd8;
+  }
+
+  .opp-apply-cancel {
+    padding: 12px 24px;
+    background: white;
+    color: #6b8bff;
+    border: 2px solid #6b8bff;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 16px;
+    text-decoration: none;
+    transition: all 0.2s ease;
+  }
+
+  .opp-apply-cancel:hover {
+    background: #6b8bff;
+    color: white;
+  }
+
+  .opp-apply-back {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: #6b8bff;
+    text-decoration: none;
+    font-weight: 500;
+    margin-bottom: 16px;
+  }
+
+  .opp-apply-back:hover {
+    color: #5a6fd8;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="opp-apply-page">
+  <a href="{{ url_for('opportunities_detail', opportunity_id=opportunity.id) }}" class="opp-apply-back">
+    ← Back to {{ opportunity.title }}
+  </a>
+
+  <div class="opp-apply-card">
+    <h1 class="opp-apply-title">Apply for this Opportunity</h1>
+    <p class="opp-apply-subtitle">
+      Send a message to the host about your interest in "{{ opportunity.title }}"
+    </p>
+
+    <form method="POST">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+
+      <div class="opp-apply-form-group">
+        <label class="opp-apply-label" for="name">Full Name *</label>
+        <input type="text" id="name" name="name" class="opp-apply-input"
+               value="{% if current_user.is_authenticated %}{{ current_user.name or '' }}{% endif %}" required>
+      </div>
+
+      <div class="opp-apply-form-group">
+        <label class="opp-apply-label" for="email">Email Address *</label>
+        <input type="email" id="email" name="email" class="opp-apply-input"
+               value="{% if current_user.is_authenticated %}{{ current_user.email }}{% endif %}" required>
+      </div>
+
+      <div class="opp-apply-form-group">
+        <label class="opp-apply-label" for="phone">Phone Number (optional)</label>
+        <input type="tel" id="phone" name="phone" class="opp-apply-input">
+      </div>
+
+      <div class="opp-apply-form-group">
+        <label class="opp-apply-label" for="message">Message to Host</label>
+        <textarea id="message" name="message" class="opp-apply-textarea" placeholder="Tell the host why you're interested in this opportunity..."></textarea>
+      </div>
+
+      <div class="opp-apply-actions">
+        <a href="{{ url_for('opportunities_detail', opportunity_id=opportunity.id) }}" class="opp-apply-cancel">
+          Cancel
+        </a>
+        <button type="submit" class="opp-apply-submit">
+          Send Application
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

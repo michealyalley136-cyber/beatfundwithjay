@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block title %}Redirecting to Stripe · BeatFund{% endblock %}
+
+{% block extra_head %}
+<style>
+  .rt-wrap{
+    max-width: 720px;
+    margin: 40px auto;
+    padding: 0 16px;
+  }
+  .rt-card{
+    background: rgba(255,255,255,.06);
+    border: 1px solid rgba(255,255,255,.12);
+    border-radius: 18px;
+    padding: 26px;
+    box-shadow: 0 18px 45px rgba(0,0,0,.35);
+  }
+  .rt-title{
+    font-size: 20px;
+    font-weight: 800;
+    margin: 0 0 10px;
+  }
+  .rt-sub{
+    opacity: .85;
+    margin: 0 0 18px;
+    line-height: 1.55;
+  }
+  .rt-actions{
+    display:flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-top: 14px;
+  }
+  .rt-btn{
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    gap: 8px;
+    padding: 12px 16px;
+    border-radius: 12px;
+    text-decoration:none;
+    font-weight: 700;
+    border: 1px solid rgba(6,182,212,.55);
+    background: linear-gradient(135deg, rgba(6,182,212,.35), rgba(34,197,94,.22));
+    color: #fff;
+  }
+  .rt-btn-secondary{
+    border: 1px solid rgba(255,255,255,.16);
+    background: rgba(255,255,255,.08);
+    color: #cbd5f5;
+  }
+  .rt-hint{
+    margin-top: 14px;
+    font-size: 12px;
+    opacity: .75;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="rt-wrap">
+  <div class="rt-card">
+    <div class="rt-title">Redirecting to Stripe Checkout…</div>
+    <p class="rt-sub">
+      If you aren’t redirected automatically, click “Continue to Stripe”.
+    </p>
+
+    <div class="rt-actions">
+      <a class="rt-btn" href="{{ stripe_url }}">Continue to Stripe</a>
+      <a class="rt-btn rt-btn-secondary" href="{{ url_for('wallet_home') }}">Cancel</a>
+    </div>
+
+    <div class="rt-hint">
+      Tip: If you have strict popup/redirect blockers enabled, allow redirects for this site.
+    </div>
+  </div>
+</div>
+
+<script nonce="{{ csp_nonce }}">
+  (function () {
+    const url = {{ stripe_url|tojson }};
+    if (url) {
+      // Give the UI a moment to paint, then redirect.
+      setTimeout(() => { window.location.href = url; }, 250);
+    }
+  })();
+</script>
+{% endblock %}
+

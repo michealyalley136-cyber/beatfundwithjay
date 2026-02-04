@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}KYC{% endblock %}
+{% block content %}
+  <h2>KYC Verification</h2>
+  <p>Status:
+    <strong>
+      {{ status.value if status else 'not_started' }}
+    </strong>
+  </p>
+
+  {% if status and status.value in ['pending','approved','rejected'] %}
+    {% if status.value == 'pending' %}
+      <p>Your verification is in review. You’ll be notified when it’s complete.</p>
+    {% elif status.value == 'approved' %}
+      <p>✅ KYC approved. You now have full access to financial features.</p>
+    {% else %}
+      <p>❌ KYC was rejected. Please contact support to retry.</p>
+    {% endif %}
+  {% else %}
+    <form method="POST" action="{{ url_for('start_kyc') }}">
+      <button type="submit">Start KYC</button>
+    </form>
+  {% endif %}
+
+  {# Show these links ONLY to admins #}
+  {% if current_user.is_authenticated and current_user.role == 'admin' %}
+    <hr>
+    <p><em>Admin demo:</em>
+      <a href="{{ url_for('admin_kyc_action', user_id=current_user.id, action='approve') }}">Approve</a> |
+      <a href="{{ url_for('admin_kyc_action', user_id=current_user.id, action='reject') }}">Reject</a>
+    </p>
+  {% endif %}
+{% endblock %}

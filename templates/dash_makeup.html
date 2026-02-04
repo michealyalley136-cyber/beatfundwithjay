@@ -1,0 +1,783 @@
+{% extends "base.html" %}
+{% block title %}Makeup Artist Dashboard · BeatFund{% endblock %}
+
+{% block extra_head %}
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  .bf-makeup {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 24px;
+  }
+
+  .bf-hero {
+    display: flex;
+    gap: 14px;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    margin-bottom: 24px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid rgba(255,255,255,.1);
+  }
+
+  .bf-hero-left h1 {
+    margin: 0;
+    font-size: 1.8rem;
+    font-weight: 700;
+  }
+
+  .bf-hero-left p {
+    margin: 4px 0 0;
+    opacity: .7;
+    font-size: .95rem;
+  }
+
+  .bf-grid {
+    display: grid;
+    grid-template-columns: repeat(12, 1fr);
+    gap: 16px;
+    margin-top: 16px;
+  }
+
+  .bf-card {
+    border: 1px solid rgba(255,255,255,.12);
+    background: rgba(255,255,255,.06);
+    border-radius: 18px;
+    padding: 20px;
+  }
+
+  .bf-card h3 {
+    margin: 0 0 16px;
+    font-size: 1.1rem;
+    font-weight: 700;
+  }
+
+  .bf-kpis {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
+  }
+
+  .bf-kpi {
+    padding: 16px;
+    border-radius: 16px;
+    border: 1px solid rgba(255,255,255,.10);
+    background: rgba(255,255,255,.05);
+    transition: all 0.2s ease;
+  }
+
+  .bf-kpi:hover {
+    background: rgba(255,255,255,.08);
+    transform: translateY(-2px);
+  }
+
+  .bf-kpi .label {
+    opacity: .75;
+    font-size: .85rem;
+    margin-bottom: 6px;
+  }
+
+  .bf-kpi .value {
+    font-size: 1.8rem;
+    font-weight: 800;
+    line-height: 1.2;
+  }
+
+  .bf-kpi .hint {
+    opacity: .7;
+    font-size: .8rem;
+    margin-top: 6px;
+  }
+
+  .bf-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 10px 16px;
+    border-radius: 12px;
+    border: 1px solid rgba(255,255,255,.12);
+    background: rgba(255,255,255,.08);
+    color: inherit;
+    text-decoration: none;
+    font-weight: 600;
+    font-size: .9rem;
+    transition: all 0.2s ease;
+    cursor: pointer;
+  }
+
+  .bf-btn:hover {
+    background: rgba(255,255,255,.12);
+    transform: translateY(-1px);
+  }
+
+  .bf-btn.primary {
+    background: linear-gradient(135deg, rgba(244,63,94,.4), rgba(244,63,94,.3));
+    border-color: rgba(244,63,94,.5);
+  }
+
+  .bf-btn.primary:hover {
+    background: linear-gradient(135deg, rgba(244,63,94,.5), rgba(244,63,94,.4));
+  }
+
+  .bf-btn.block {
+    width: 100%;
+  }
+
+  .bf-btn.small {
+    font-size: .85rem;
+    padding: 6px 12px;
+    min-height: 32px;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  th {
+    text-align: left;
+    padding: 12px;
+    font-size: .9rem;
+    opacity: .7;
+    border-bottom: 1px solid rgba(255,255,255,.1);
+    font-weight: 600;
+  }
+
+  td {
+    padding: 12px;
+    border-bottom: 1px solid rgba(255,255,255,.05);
+  }
+
+  tr:hover {
+    background: rgba(255,255,255,.03);
+  }
+
+  .bf-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 10px;
+    border-radius: 999px;
+    border: 1px solid rgba(255,255,255,.12);
+    background: rgba(255,255,255,.06);
+    font-size: .8rem;
+    opacity: .9;
+  }
+
+  .bf-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .bf-row {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    padding: 12px;
+    border-radius: 12px;
+    border: 1px solid rgba(255,255,255,.08);
+    background: rgba(0,0,0,.2);
+  }
+
+  .bf-row .left {
+    min-width: 0;
+    flex: 1;
+  }
+
+  .bf-row .title {
+    font-weight: 600;
+    font-size: .95rem;
+    margin-bottom: 4px;
+  }
+
+  .bf-row .meta {
+    opacity: .75;
+    font-size: .85rem;
+  }
+
+  .span-12 { grid-column: span 12; }
+  .span-8 { grid-column: span 12; }
+  .span-6 { grid-column: span 12; }
+  .span-4 { grid-column: span 12; }
+
+  @media (min-width: 900px) {
+    .span-8 { grid-column: span 8; }
+    .span-4 { grid-column: span 4; }
+    .span-6 { grid-column: span 6; }
+  }
+
+  .section {
+    display: none;
+  }
+
+  .section.active {
+    display: block;
+  }
+
+  .nav-tabs {
+    display: flex;
+    gap: 8px;
+    border-bottom: 1px solid rgba(255,255,255,.1);
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+  }
+
+  .nav-tab {
+    padding: 12px 20px;
+    border: none;
+    background: transparent;
+    color: rgba(255,255,255,.7);
+    cursor: pointer;
+    font-weight: 600;
+    font-size: .9rem;
+    border-bottom: 2px solid transparent;
+    transition: all 0.2s ease;
+  }
+
+  .nav-tab:hover {
+    color: rgba(255,255,255,1);
+    background: rgba(255,255,255,.05);
+  }
+
+  .nav-tab.active {
+    color: rgba(244,63,94,1);
+    border-bottom-color: rgba(244,63,94,1);
+  }
+
+  .profile-panel {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 16px;
+    padding: 20px;
+    border-radius: 16px;
+    background: rgba(0,0,0,.2);
+    border: 1px solid rgba(255,255,255,.08);
+  }
+
+  .kit-item {
+    padding: 12px;
+    border-radius: 12px;
+    border: 1px solid rgba(255,255,255,.08);
+    background: rgba(0,0,0,.2);
+    margin-bottom: 8px;
+  }
+
+  .kit-item.low-stock {
+    border-color: rgba(251,191,36,.4);
+    background: rgba(251,191,36,.1);
+  }
+
+  .kit-item-name {
+    font-weight: 600;
+    font-size: .95rem;
+    margin-bottom: 4px;
+  }
+
+  .kit-item-status {
+    font-size: .85rem;
+    opacity: .8;
+  }
+
+  .kit-item-restock {
+    font-size: .8rem;
+    opacity: .7;
+    margin-top: 4px;
+    font-style: italic;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="bf-makeup">
+  {% include "_provider_rating_snippet.html" %}
+  <div class="bf-hero">
+    <div class="bf-hero-left">
+      <h1>💄 Makeup Artist Dashboard</h1>
+      <p>Manage your appointments, looks, and kit</p>
+    </div>
+  </div>
+
+  <!-- Navigation Tabs -->
+  <div class="nav-tabs">
+    <button class="nav-tab active" onclick="showSection('dashboard'); setActiveTab(this); return false;">Dashboard</button>
+    <button class="nav-tab" onclick="showSection('requests'); setActiveTab(this); return false;">Requests</button>
+    <button class="nav-tab" onclick="showSection('appointments'); setActiveTab(this); return false;">Appointments</button>
+    <button class="nav-tab" onclick="showSection('portfolio'); setActiveTab(this); return false;">Looks & Portfolio</button>
+    <button class="nav-tab" onclick="showSection('kit'); setActiveTab(this); return false;">Kit & Supplies</button>
+    <button class="nav-tab" onclick="showSection('availability'); setActiveTab(this); return false;">Availability</button>
+    <button class="nav-tab" onclick="showSection('earnings'); setActiveTab(this); return false;">Earnings</button>
+    <button class="nav-tab" onclick="showSection('reviews'); setActiveTab(this); return false;">Reviews</button>
+    <button class="nav-tab" onclick="showSection('settings'); setActiveTab(this); return false;">Settings</button>
+  </div>
+
+  <!-- 1. Dashboard Overview -->
+  <div id="section-dashboard" class="section active">
+    <div class="bf-grid">
+      <div class="bf-card span-12">
+        <h3>Overview Statistics</h3>
+        <div class="bf-kpis">
+          <div class="bf-kpi">
+            <div class="label">New Requests</div>
+            <div class="value">{{ stats.new_requests }}</div>
+            <div class="hint">Pending requests</div>
+          </div>
+          <div class="bf-kpi">
+            <div class="label">Upcoming Appointments</div>
+            <div class="value">{{ stats.upcoming_appointments }}</div>
+            <div class="hint">Confirmed</div>
+          </div>
+          <div class="bf-kpi">
+            <div class="label">Active Clients</div>
+            <div class="value">{{ stats.active_clients }}</div>
+            <div class="hint">Current clients</div>
+          </div>
+          <div class="bf-kpi">
+            <div class="label">Earnings This Month</div>
+            <div class="value">${{ "%.2f"|format(stats.earnings_this_month) }}</div>
+            <div class="hint">Current month</div>
+          </div>
+          {% if stats.avg_rating %}
+          <div class="bf-kpi">
+            <div class="label">Average Rating</div>
+            <div class="value">{{ "%.1f"|format(stats.avg_rating) }}</div>
+            <div class="hint">⭐ Reviews</div>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+
+      <!-- Profile -->
+      <div class="bf-card span-6">
+        <h3>Profile & Specialties</h3>
+        <div class="profile-panel">
+          <div>
+            <img src="{{ makeup_artist.avatar_url }}" alt="{{ makeup_artist.display_name }}" style="width: 80px; height: 80px; border-radius: 12px; object-fit: cover; border: 1px solid rgba(255,255,255,.12);">
+          </div>
+          <div>
+            <div style="font-weight: 700; font-size: 1.1rem; margin-bottom: 8px;">{{ makeup_artist.display_name }}</div>
+            {% if makeup_artist.specialties %}
+              <div style="opacity: .8; margin-bottom: 4px;"><strong>Specialties:</strong> {{ makeup_artist.specialties }}</div>
+            {% endif %}
+            {% if makeup_artist.skin_tones_styles %}
+              <div style="opacity: .8; margin-bottom: 4px;"><strong>Skin Tones/Styles:</strong> {{ makeup_artist.skin_tones_styles }}</div>
+            {% endif %}
+            {% if makeup_artist.travel_on_site %}
+              <div style="opacity: .8; margin-bottom: 4px;"><strong>Location:</strong> {{ makeup_artist.travel_on_site }}</div>
+            {% endif %}
+            {% if makeup_artist.packages %}
+              <div style="opacity: .8; margin-bottom: 8px;"><strong>Packages:</strong> {{ makeup_artist.packages }}</div>
+            {% endif %}
+            <div style="margin-top: 12px;">
+              <span class="bf-chip" style="background: rgba(34,197,94,.2); border-color: rgba(34,197,94,.4);">KYC Verified</span>
+            </div>
+          </div>
+        </div>
+        <div style="margin-top: 12px;">
+          <a class="bf-btn block" href="{{ url_for('bookme_profile') }}">Edit Profile</a>
+        </div>
+      </div>
+
+      <div class="bf-card span-6">
+        <h3>Upcoming Appointments</h3>
+        {% if appointments and appointments|length > 0 %}
+          <div class="bf-list">
+            {% for appointment in appointments[:5] %}
+              <div class="bf-row">
+                <div class="left">
+                  <div class="title">{{ appointment.service }}</div>
+                  <div class="meta">
+                    {{ appointment.client_name }} · {{ appointment.date_time.strftime("%b %d, %Y %I:%M %p") if appointment.date_time else "TBA" }}
+                  </div>
+                </div>
+              </div>
+            {% endfor %}
+          </div>
+        {% else %}
+          <p style="opacity: .75; padding: 20px 0; text-align: center;">No upcoming appointments.</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- 2. Requests -->
+  <div id="section-requests" class="section">
+    <div class="bf-grid">
+      <div class="bf-card span-12">
+        <h3>Booking Requests</h3>
+        {% if requests and requests|length > 0 %}
+          <div style="overflow-x: auto;">
+            <table>
+              <thead>
+                <tr>
+                  <th>Client</th>
+                  <th>Service Type</th>
+                  <th>Date & Time</th>
+                  <th>Location</th>
+                  <th>Party Size</th>
+                  <th>Budget</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for req in requests %}
+                  <tr>
+                    <td>{{ req.client_name }}</td>
+                    <td>
+                      <span class="bf-chip" style="text-transform: capitalize;">{{ req.service_type }}</span>
+                    </td>
+                    <td>{{ req.date_time or "TBA" }}</td>
+                    <td>{{ req.location or "TBA" }}</td>
+                    <td>{{ req.party_size or "—" }}</td>
+                    <td>{{ req.budget or "—" }}</td>
+                    <td>
+                      <span class="bf-chip" style="{% if req.status == 'accepted' %}background: rgba(34,197,94,.2); border-color: rgba(34,197,94,.4);{% elif req.status in ['declined', 'cancelled'] %}background: rgba(239,68,68,.2); border-color: rgba(239,68,68,.4);{% else %}background: rgba(251,191,36,.2); border-color: rgba(251,191,36,.4);{% endif %}">
+                        {{ req.status|title }}
+                      </span>
+                    </td>
+                    <td>
+                      <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+                        <a class="bf-btn small" href="#">View</a>
+                        {% if req.status == 'pending' %}
+                          <a class="bf-btn small primary" href="#">Accept</a>
+                          <a class="bf-btn small" href="#" style="background: rgba(239,68,68,.15); border-color: rgba(239,68,68,.3);">Decline</a>
+                        {% endif %}
+                      </div>
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}
+          <p style="opacity: .75; padding: 40px 0; text-align: center;">No booking requests yet.</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- 3. Appointments -->
+  <div id="section-appointments" class="section">
+    <div class="bf-grid">
+      <div class="bf-card span-12">
+        <h3>Confirmed Appointments</h3>
+        {% if appointments and appointments|length > 0 %}
+          <div style="overflow-x: auto;">
+            <table>
+              <thead>
+                <tr>
+                  <th>Client</th>
+                  <th>Service</th>
+                  <th>Date/Time</th>
+                  <th>Time Block</th>
+                  <th>Location</th>
+                  <th>Payment Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for appointment in appointments %}
+                  <tr>
+                    <td>{{ appointment.client_name }}</td>
+                    <td>{{ appointment.service }}</td>
+                    <td>{{ appointment.date_time.strftime("%b %d, %Y %I:%M %p") if appointment.date_time else "TBA" }}</td>
+                    <td>{{ appointment.time_block }}</td>
+                    <td>{{ appointment.location }}</td>
+                    <td>
+                      <span class="bf-chip" style="{% if appointment.payment_status == 'paid' %}background: rgba(34,197,94,.2); border-color: rgba(34,197,94,.4);{% else %}background: rgba(251,191,36,.2); border-color: rgba(251,191,36,.4);{% endif %}">
+                        {{ appointment.payment_status|title }}
+                      </span>
+                    </td>
+                    <td>
+                      <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+                        <a class="bf-btn small" href="#">View</a>
+                        <a class="bf-btn small" href="#">Notes</a>
+                      </div>
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          <!-- Prep Notes Section -->
+          {% for appointment in appointments %}
+            <div style="margin-top: 20px; padding: 16px; border-radius: 12px; background: rgba(0,0,0,.2); border: 1px solid rgba(255,255,255,.08);">
+              <h4 style="margin: 0 0 12px;">{{ appointment.service }} - {{ appointment.client_name }}</h4>
+              <div><strong>Prep Notes:</strong> {{ appointment.prep_notes }}</div>
+            </div>
+          {% endfor %}
+        {% else %}
+          <p style="opacity: .75; padding: 40px 0; text-align: center;">No confirmed appointments yet.</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- 4. Looks & Portfolio -->
+  <div id="section-portfolio" class="section">
+    <div class="bf-grid">
+      <div class="bf-card span-12">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+          <h3 style="margin: 0;">Looks & Portfolio</h3>
+          <a class="bf-btn primary" href="{{ url_for('bookme_portfolio') }}">Upload Look</a>
+        </div>
+        {% if portfolio_items and portfolio_items|length > 0 %}
+          <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px;">
+            {% for item in portfolio_items %}
+              <div style="position: relative; border-radius: 12px; overflow: hidden; border: 1px solid rgba(255,255,255,.08); background: rgba(0,0,0,.2);">
+                {% if item.url %}
+                  <img src="{{ item.url }}" alt="{{ item.title }}" style="width: 100%; height: 200px; object-fit: cover;">
+                {% else %}
+                  <div style="width: 100%; height: 200px; background: rgba(244,63,94,.2); display: flex; align-items: center; justify-content: center;">
+                    <span style="font-size: 2rem;">💄</span>
+                  </div>
+                {% endif %}
+                <div style="padding: 12px;">
+                  <div style="font-weight: 600; font-size: .9rem; margin-bottom: 8px;">{{ item.title }}</div>
+                  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 4px;">
+                    <span class="bf-chip" style="font-size: .75rem;">{{ item.category }}</span>
+                    {% if item.is_featured %}
+                      <span class="bf-chip" style="background: rgba(251,191,36,.2); border-color: rgba(251,191,36,.4); font-size: .75rem;">⭐ Featured</span>
+                    {% endif %}
+                  </div>
+                  <div style="display: flex; gap: 6px;">
+                    <a class="bf-btn small" href="#" style="flex: 1;">Edit</a>
+                    <button class="bf-btn small" style="flex: 1;">{% if item.is_visible %}Hide{% else %}Show{% endif %}</button>
+                  </div>
+                </div>
+              </div>
+            {% endfor %}
+          </div>
+        {% else %}
+          <p style="opacity: .75; padding: 40px 0; text-align: center;">No portfolio items yet. Upload your makeup looks to showcase your work.</p>
+          <div style="text-align: center; margin-top: 20px;">
+            <a class="bf-btn primary" href="{{ url_for('bookme_portfolio') }}">Upload First Look</a>
+          </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- 5. Kit & Supplies -->
+  <div id="section-kit" class="section">
+    <div class="bf-grid">
+      <div class="bf-card span-12">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+          <h3 style="margin: 0;">Kit & Supplies</h3>
+          <a class="bf-btn primary" href="#">Add Item</a>
+        </div>
+        {% if kit_items and kit_items|length > 0 %}
+          <div>
+            {% for item in kit_items %}
+              <div class="kit-item {% if item.low_stock %}low-stock{% endif %}">
+                <div class="kit-item-name">
+                  {{ item.name }}
+                  {% if item.low_stock %}
+                    <span class="bf-chip" style="background: rgba(251,191,36,.2); border-color: rgba(251,191,36,.4); margin-left: 8px; font-size: .75rem;">⚠️ Low Stock</span>
+                  {% endif %}
+                </div>
+                <div class="kit-item-status">
+                  Status: <span style="text-transform: capitalize;">{{ item.status }}</span>
+                </div>
+                {% if item.restock_notes %}
+                  <div class="kit-item-restock">
+                    📝 {{ item.restock_notes }}
+                  </div>
+                {% endif %}
+                <div style="margin-top: 8px; display: flex; gap: 6px;">
+                  <a class="bf-btn small" href="#">Edit</a>
+                  <a class="bf-btn small" href="#">Mark Restocked</a>
+                </div>
+              </div>
+            {% endfor %}
+          </div>
+        {% else %}
+          <p style="opacity: .75; padding: 40px 0; text-align: center;">No kit items added yet. Track your makeup supplies and inventory.</p>
+          <div style="text-align: center; margin-top: 20px;">
+            <a class="bf-btn primary" href="#">Add First Item</a>
+          </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- 6. Availability -->
+  <div id="section-availability" class="section">
+    <div class="bf-grid">
+      <div class="bf-card span-12">
+        <h3>Availability Calendar</h3>
+        <div style="margin-bottom: 20px; padding: 16px; border-radius: 12px; background: rgba(0,0,0,.2); border: 1px solid rgba(255,255,255,.08);">
+          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+            <div>
+              <div style="font-weight: 600; margin-bottom: 4px;">Accept New Requests</div>
+              <div style="opacity: .7; font-size: .85rem;">Allow clients to send booking requests</div>
+            </div>
+            <label style="position: relative; display: inline-block; width: 44px; height: 24px;">
+              <input type="checkbox" {% if availability.accept_new_requests %}checked{% endif %} style="opacity: 0; width: 0; height: 0;">
+              <span style="position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: {% if availability.accept_new_requests %}rgba(34,197,94,.3){% else %}rgba(107,114,128,.3){% endif %}; border-radius: 24px; transition: .4s;"></span>
+              <span style="position: absolute; content: ''; height: 18px; width: 18px; left: 3px; bottom: 3px; background-color: white; border-radius: 50%; transition: .4s; transform: {% if availability.accept_new_requests %}translateX(20px){% else %}translateX(0){% endif %};"></span>
+            </label>
+          </div>
+        </div>
+        {% if availability.blocks and availability.blocks|length > 0 %}
+          <div class="bf-list">
+            <h4 style="margin: 0 0 12px; font-size: .95rem;">Blocked Dates</h4>
+            {% for block in availability.blocks %}
+              <div class="bf-row">
+                <div class="left">
+                  <div class="title">{{ block.date.strftime("%B %d, %Y") if block.date else "Date" }}</div>
+                  <div class="meta">{{ block.reason or "Blocked" }}</div>
+                </div>
+              </div>
+            {% endfor %}
+          </div>
+        {% else %}
+          <p style="opacity: .75; padding: 20px 0; text-align: center;">No blocked dates. Start by blocking dates when you're unavailable.</p>
+        {% endif %}
+        <div style="margin-top: 16px;">
+          <a class="bf-btn" href="#">Block Date</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 7. Earnings -->
+  <div id="section-earnings" class="section">
+    <div class="bf-grid">
+      <div class="bf-card span-12">
+        <h3>Earnings</h3>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px;">
+          <div style="padding: 20px; border-radius: 16px; background: rgba(34,197,94,.1); border: 1px solid rgba(34,197,94,.2);">
+            <div style="font-size: .85rem; opacity: .7; margin-bottom: 8px;">Total Earned</div>
+            <div style="font-size: 2rem; font-weight: 700;">${{ "%.2f"|format(earnings.total_earned) }}</div>
+          </div>
+          <div style="padding: 20px; border-radius: 16px; background: rgba(251,191,36,.1); border: 1px solid rgba(251,191,36,.2);">
+            <div style="font-size: .85rem; opacity: .7; margin-bottom: 8px;">Pending Payments</div>
+            <div style="font-size: 2rem; font-weight: 700;">${{ "%.2f"|format(earnings.pending) }}</div>
+          </div>
+          <div style="padding: 20px; border-radius: 16px; background: rgba(59,130,246,.1); border: 1px solid rgba(59,130,246,.2);">
+            <div style="font-size: .85rem; opacity: .7; margin-bottom: 8px;">This Month</div>
+            <div style="font-size: 2rem; font-weight: 700;">${{ "%.2f"|format(earnings.this_month) }}</div>
+          </div>
+        </div>
+        {% if transactions and transactions|length > 0 %}
+          <div style="overflow-x: auto;">
+            <table>
+              <thead>
+                <tr>
+                  <th>Service</th>
+                  <th>Amount</th>
+                  <th>Date</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for trans in transactions %}
+                  <tr>
+                    <td>{{ trans.service }}</td>
+                    <td>${{ "%.2f"|format(trans.amount) }}</td>
+                    <td>{{ trans.date.strftime("%b %d, %Y") if trans.date else "—" }}</td>
+                    <td>
+                      <span class="bf-chip" style="{% if trans.status == 'completed' %}background: rgba(34,197,94,.2); border-color: rgba(34,197,94,.4);{% elif trans.status in ['accepted', 'confirmed'] %}background: rgba(59,130,246,.2); border-color: rgba(59,130,246,.4);{% else %}background: rgba(251,191,36,.2); border-color: rgba(251,191,36,.4);{% endif %}">
+                        {{ trans.status|title }}
+                      </span>
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}
+          <p style="opacity: .75; padding: 20px 0; text-align: center;">No transactions yet.</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- 8. Reviews -->
+  <div id="section-reviews" class="section">
+    <div class="bf-grid">
+      <div class="bf-card span-12">
+        <h3>Client Reviews</h3>
+        {% if reviews and reviews|length > 0 %}
+          <div class="bf-list">
+            {% for review in reviews %}
+              <div class="bf-row">
+                <div class="left">
+                  <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
+                    <div class="title">{{ review.rating }} ⭐</div>
+                    {% if review.service %}
+                      <span class="bf-chip" style="font-size: .75rem;">{{ review.service }}</span>
+                    {% endif %}
+                  </div>
+                  <div class="meta">{{ review.comment }}</div>
+                  {% if review.created_at %}
+                    <div style="opacity: .6; font-size: .8rem; margin-top: 4px;">
+                      {{ review.created_at.strftime("%b %d, %Y") }}
+                    </div>
+                  {% endif %}
+                </div>
+              </div>
+            {% endfor %}
+          </div>
+        {% else %}
+          <p style="opacity: .75; padding: 40px 0; text-align: center;">No reviews yet. Reviews will appear here once clients leave feedback.</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- 9. Settings -->
+  <div id="section-settings" class="section">
+    <div class="bf-grid">
+      <div class="bf-card span-12">
+        <h3>Settings</h3>
+        <div class="bf-list">
+          <h4 style="margin: 0 0 12px; font-size: .95rem; opacity: .8;">Profile Settings</h4>
+          <a class="bf-btn block" href="{{ url_for('bookme_profile') }}">Artist Name & Profile</a>
+          <a class="bf-btn block" href="{{ url_for('bookme_profile') }}">Specialties & Services</a>
+          <a class="bf-btn block" href="{{ url_for('bookme_profile') }}">Skin Tones & Styles</a>
+          <a class="bf-btn block" href="{{ url_for('bookme_profile') }}">Location & Travel/On-Site</a>
+          <a class="bf-btn block" href="{{ url_for('bookme_profile') }}">Packages & Add-ons</a>
+          
+          <h4 style="margin: 20px 0 12px; font-size: .95rem; opacity: .8;">Account</h4>
+          <a class="bf-btn block" href="{{ url_for('profile_edit') }}">Change Password</a>
+          <a class="bf-btn block" href="{{ url_for('bookme_profile') }}">Notification Preferences</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script nonce="{{ csp_nonce }}">
+  function showSection(sectionId) {
+    // Hide all sections
+    document.querySelectorAll('.section').forEach(section => {
+      section.classList.remove('active');
+    });
+
+    // Show selected section
+    const section = document.getElementById('section-' + sectionId);
+    if (section) {
+      section.classList.add('active');
+    }
+    
+    // Scroll to top
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function setActiveTab(clickedTab) {
+    // Remove active class from all tabs
+    document.querySelectorAll('.nav-tab').forEach(tab => {
+      tab.classList.remove('active');
+    });
+    
+    // Add active class to clicked tab
+    clickedTab.classList.add('active');
+  }
+</script>
+{% endblock %}
+

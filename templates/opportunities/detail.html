@@ -1,0 +1,452 @@
+{% extends "base.html" %}
+{% block title %}{{ opportunity.title }} · BeatFund Opportunities{% endblock %}
+
+{% block extra_head %}
+<style>
+  .opp-detail-page {
+    max-width: 1000px;
+    margin: 32px auto 40px;
+    padding-inline: 16px;
+  }
+
+  .opp-detail-header {
+    margin-bottom: 32px;
+  }
+
+  .opp-detail-title {
+    font-size: 32px;
+    font-weight: 700;
+    margin: 0 0 16px;
+    color: #1e293b;
+  }
+
+  .opp-detail-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    font-size: 14px;
+    color: #64748b;
+    margin-bottom: 24px;
+  }
+
+  .opp-detail-meta-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .opp-detail-price {
+    font-size: 28px;
+    font-weight: 700;
+    color: #6b8bff;
+    margin-bottom: 24px;
+  }
+
+  .opp-detail-price-free {
+    color: #10b981;
+  }
+
+  .opp-detail-actions {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 32px;
+  }
+
+  .opp-detail-cta {
+    padding: 12px 24px;
+    background: #6b8bff;
+    color: white;
+    text-decoration: none;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 16px;
+    transition: background 0.2s ease;
+  }
+
+  .opp-detail-cta:hover {
+    background: #5a6fd8;
+    color: white;
+  }
+
+  .opp-detail-cta-secondary {
+    padding: 12px 24px;
+    background: white;
+    color: #6b8bff;
+    text-decoration: none;
+    border: 2px solid #6b8bff;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 16px;
+    transition: all 0.2s ease;
+  }
+
+  .opp-detail-cta-secondary:hover {
+    background: #6b8bff;
+    color: white;
+  }
+
+  .opp-detail-cta-disabled {
+    background: #e2e8f0;
+    color: #94a3b8;
+    cursor: not-allowed;
+    border: 2px solid #e2e8f0;
+  }
+
+  .opp-detail-cta-disabled:hover {
+    background: #e2e8f0;
+    color: #94a3b8;
+  }
+
+  .opp-detail-section {
+    margin-bottom: 32px;
+  }
+
+  .opp-detail-section-title {
+    font-size: 20px;
+    font-weight: 600;
+    margin: 0 0 16px;
+    color: #1e293b;
+  }
+
+  .opp-detail-description {
+    font-size: 16px;
+    line-height: 1.6;
+    color: #475569;
+    margin-bottom: 24px;
+  }
+
+  .opp-detail-grid {
+    display: grid;
+    grid-template-columns: 1fr 300px;
+    gap: 32px;
+  }
+
+  @media (max-width: 900px) {
+    .opp-detail-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .opp-detail-main {
+    order: 1;
+  }
+
+  .opp-detail-sidebar {
+    order: 2;
+  }
+
+  .opp-detail-card {
+    background: white;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 24px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  }
+
+  .opp-detail-info-item {
+    display: flex;
+    justify-content: space-between;
+    padding: 12px 0;
+    border-bottom: 1px solid #f1f5f9;
+  }
+
+  .opp-detail-info-item:last-child {
+    border-bottom: none;
+  }
+
+  .opp-detail-info-label {
+    font-weight: 500;
+    color: #475569;
+  }
+
+  .opp-detail-info-value {
+    color: #1e293b;
+    text-align: right;
+  }
+
+  .opp-detail-report {
+    margin-top: 16px;
+    padding-top: 16px;
+    border-top: 1px solid #f1f5f9;
+  }
+
+  .opp-detail-report-link {
+    color: #dc2626;
+    text-decoration: none;
+    font-size: 14px;
+    font-weight: 500;
+  }
+
+  .opp-detail-report-link:hover {
+    text-decoration: underline;
+  }
+
+  .opp-detail-back {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: #6b8bff;
+    text-decoration: none;
+    font-weight: 500;
+    margin-bottom: 16px;
+  }
+
+  .opp-detail-back:hover {
+    color: #5a6fd8;
+  }
+
+  .opp-detail-capacity {
+    color: #dc2626;
+    font-weight: 500;
+    margin-top: 8px;
+  }
+
+  .opp-detail-capacity-full {
+    color: #dc2626;
+  }
+
+  .opp-detail-capacity-available {
+    color: #10b981;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="opp-detail-page">
+  <a href="{{ url_for('opportunities_index') }}" class="opp-detail-back">
+    ← Back to Opportunities
+  </a>
+
+  <div class="opp-detail-header">
+    <h1 class="opp-detail-title">{{ opportunity.title }}</h1>
+
+    <div class="opp-detail-meta">
+      <div class="opp-detail-meta-item">
+        <span>🏢</span>
+        <span>{{ opportunity.host_profile.host_name }}</span>
+      </div>
+      <div class="opp-detail-meta-item">
+        <span>📚</span>
+        <span>{{ opportunity.category.replace('_', ' ').title() }}</span>
+      </div>
+      <div class="opp-detail-meta-item">
+        <span>{% if opportunity.format == 'online' %}💻{% else %}📍{% endif %}</span>
+        <span>{{ 'Online' if opportunity.format == 'online' else 'In Person' }}</span>
+      </div>
+      {% if opportunity.location_text %}
+      <div class="opp-detail-meta-item">
+        <span>📍</span>
+        <span>{{ opportunity.location_text }}</span>
+      </div>
+      {% endif %}
+      {% if opportunity.start_date %}
+      <div class="opp-detail-meta-item">
+        <span>📅</span>
+        <span>{{ opportunity.start_date.strftime('%B %d, %Y') }}{% if opportunity.end_date %} - {{ opportunity.end_date.strftime('%B %d, %Y') }}{% endif %}</span>
+      </div>
+      {% endif %}
+    </div>
+
+    <div class="opp-detail-price {% if opportunity.price_cents == 0 %}opp-detail-price-free{% endif %}">
+      {% if opportunity.price_cents == 0 %}
+      Free
+      {% else %}
+      ${{ "%.0f"|format(opportunity.price_cents / 100) }}
+      {% endif %}
+    </div>
+
+    <div class="opp-detail-actions">
+      {% if is_enrolled %}
+      <span class="opp-detail-cta opp-detail-cta-disabled">
+        ✓ Already Enrolled
+      </span>
+      {% elif opportunity.capacity and opportunity.seats_taken >= opportunity.capacity %}
+      <span class="opp-detail-cta opp-detail-cta-disabled">
+        Class Full
+      </span>
+      {% else %}
+      <form method="POST" action="{{ url_for('opportunities_enroll', opportunity_id=opportunity.id) }}" style="display: inline;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+        <input type="text" name="buyer_name" placeholder="Your Full Name" required style="margin-right: 8px; padding: 8px; border: 1px solid #e2e8f0; border-radius: 4px;">
+        <input type="email" name="buyer_email" placeholder="Your Email" required style="margin-right: 8px; padding: 8px; border: 1px solid #e2e8f0; border-radius: 4px;">
+        <button type="submit" class="opp-detail-cta">
+          {% if opportunity.price_cents == 0 %}Apply Now{% else %}Enroll Now{% endif %}
+        </button>
+      </form>
+      {% endif %}
+
+      <a href="{{ url_for('opportunities_apply', opportunity_id=opportunity.id) }}" class="opp-detail-cta-secondary">
+        Send Message
+      </a>
+    </div>
+
+    {% if opportunity.capacity %}
+    <div class="opp-detail-capacity {% if opportunity.seats_taken >= opportunity.capacity %}opp-detail-capacity-full{% else %}opp-detail-capacity-available{% endif %}">
+      {% if opportunity.seats_taken >= opportunity.capacity %}
+      Class is full ({{ opportunity.capacity }}/{{ opportunity.capacity }})
+      {% else %}
+      {{ opportunity.capacity - opportunity.seats_taken }} spots remaining ({{ opportunity.seats_taken }}/{{ opportunity.capacity }} enrolled)
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="opp-detail-grid">
+    <div class="opp-detail-main">
+      {% if opportunity.description %}
+      <div class="opp-detail-section">
+        <h2 class="opp-detail-section-title">About This Opportunity</h2>
+        <div class="opp-detail-description">
+          {{ opportunity.description | safe }}
+        </div>
+      </div>
+      {% endif %}
+
+      {% if opportunity.outcomes_text %}
+      <div class="opp-detail-section">
+        <h2 class="opp-detail-section-title">What You'll Learn</h2>
+        <div class="opp-detail-description">
+          {{ opportunity.outcomes_text | safe }}
+        </div>
+      </div>
+      {% endif %}
+
+      {% if opportunity.requirements_text %}
+      <div class="opp-detail-section">
+        <h2 class="opp-detail-section-title">Requirements</h2>
+        <div class="opp-detail-description">
+          {{ opportunity.requirements_text | safe }}
+        </div>
+      </div>
+      {% endif %}
+
+      {% if opportunity.schedule_text %}
+      <div class="opp-detail-section">
+        <h2 class="opp-detail-section-title">Schedule</h2>
+        <div class="opp-detail-description">
+          {{ opportunity.schedule_text | safe }}
+        </div>
+      </div>
+      {% endif %}
+
+      {% if opportunity.refund_policy_text %}
+      <div class="opp-detail-section">
+        <h2 class="opp-detail-section-title">Refund Policy</h2>
+        <div class="opp-detail-description">
+          {{ opportunity.refund_policy_text | safe }}
+        </div>
+      </div>
+      {% endif %}
+    </div>
+
+    <div class="opp-detail-sidebar">
+      <div class="opp-detail-card">
+        <h3 style="margin: 0 0 16px; font-size: 18px; font-weight: 600;">Opportunity Details</h3>
+
+        <div class="opp-detail-info-item">
+          <span class="opp-detail-info-label">Host</span>
+          <span class="opp-detail-info-value">{{ opportunity.host_profile.host_name }}</span>
+        </div>
+
+        <div class="opp-detail-info-item">
+          <span class="opp-detail-info-label">Category</span>
+          <span class="opp-detail-info-value">{{ opportunity.category.replace('_', ' ').title() }}</span>
+        </div>
+
+        <div class="opp-detail-info-item">
+          <span class="opp-detail-info-label">Format</span>
+          <span class="opp-detail-info-value">{{ 'Online' if opportunity.format == 'online' else 'In Person' }}</span>
+        </div>
+
+        {% if opportunity.location_text %}
+        <div class="opp-detail-info-item">
+          <span class="opp-detail-info-label">Location</span>
+          <span class="opp-detail-info-value">{{ opportunity.location_text }}</span>
+        </div>
+        {% endif %}
+
+        {% if opportunity.start_date %}
+        <div class="opp-detail-info-item">
+          <span class="opp-detail-info-label">Start Date</span>
+          <span class="opp-detail-info-value">{{ opportunity.start_date.strftime('%B %d, %Y') }}</span>
+        </div>
+        {% endif %}
+
+        {% if opportunity.end_date %}
+        <div class="opp-detail-info-item">
+          <span class="opp-detail-info-label">End Date</span>
+          <span class="opp-detail-info-value">{{ opportunity.end_date.strftime('%B %d, %Y') }}</span>
+        </div>
+        {% endif %}
+
+        {% if opportunity.capacity %}
+        <div class="opp-detail-info-item">
+          <span class="opp-detail-info-label">Capacity</span>
+          <span class="opp-detail-info-value">{{ opportunity.capacity }}</span>
+        </div>
+        {% endif %}
+
+        <div class="opp-detail-info-item">
+          <span class="opp-detail-info-label">Price</span>
+          <span class="opp-detail-info-value">
+            {% if opportunity.price_cents == 0 %}
+            Free
+            {% else %}
+            ${{ "%.0f"|format(opportunity.price_cents / 100) }}
+            {% endif %}
+          </span>
+        </div>
+
+        {% if current_user.is_authenticated %}
+        <div class="opp-detail-report">
+          <a href="#" onclick="showReportModal()" class="opp-detail-report-link">
+            Report this opportunity
+          </a>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+{% if current_user.is_authenticated %}
+<!-- Report Modal (hidden by default) -->
+<div id="report-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center;">
+  <div style="background: white; padding: 24px; border-radius: 12px; max-width: 400px; width: 90%; margin: 20px;">
+    <h3 style="margin: 0 0 16px; font-size: 18px;">Report Opportunity</h3>
+    <form method="POST" action="{{ url_for('opportunities_report', opportunity_id=opportunity.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+      <div style="margin-bottom: 16px;">
+        <label style="display: block; margin-bottom: 8px; font-weight: 500;">Reason for report:</label>
+        <select name="reason" required style="width: 100%; padding: 8px; border: 1px solid #e2e8f0; border-radius: 4px;">
+          <option value="">Select a reason</option>
+          <option value="spam">Spam or misleading</option>
+          <option value="inappropriate">Inappropriate content</option>
+          <option value="fraud">Potential fraud</option>
+          <option value="copyright">Copyright violation</option>
+          <option value="other">Other</option>
+        </select>
+      </div>
+      <div style="margin-bottom: 20px;">
+        <label style="display: block; margin-bottom: 8px; font-weight: 500;">Additional details (optional):</label>
+        <textarea name="details" rows="3" style="width: 100%; padding: 8px; border: 1px solid #e2e8f0; border-radius: 4px;"></textarea>
+      </div>
+      <div style="display: flex; gap: 12px; justify-content: flex-end;">
+        <button type="button" onclick="hideReportModal()" style="padding: 8px 16px; background: #f1f5f9; border: none; border-radius: 4px; cursor: pointer;">Cancel</button>
+        <button type="submit" style="padding: 8px 16px; background: #dc2626; color: white; border: none; border-radius: 4px; cursor: pointer;">Submit Report</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script nonce="{{ csp_nonce }}">
+function showReportModal() {
+  document.getElementById('report-modal').style.display = 'flex';
+}
+
+function hideReportModal() {
+  document.getElementById('report-modal').style.display = 'none';
+}
+</script>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,177 @@
+{% extends "base.html" %}
+
+{% block title %}Portfolio · BeatFund BookMe{% endblock %}
+
+{% block content %}
+<style>
+  .bf-page { max-width: 1100px; margin: 0 auto; padding: 32px 16px 64px; color: #f9fbff; }
+  .bf-card {
+    background: radial-gradient(circle at top left, #182a44, #050712);
+    border-radius: 18px;
+    border: 1px solid rgba(255,255,255,0.08);
+    padding: 18px 20px 20px;
+    box-shadow: 0 16px 40px rgba(0,0,0,0.45);
+    margin-bottom: 20px;
+  }
+  .bf-label { display:block; font-size:0.8rem; text-transform:uppercase; letter-spacing:0.06em; opacity:0.75; margin-bottom:4px; }
+  .bf-input, .bf-textarea, .bf-select {
+    width:100%; border-radius:12px; border:1px solid rgba(148,163,184,0.5);
+    background:rgba(15,23,42,0.9); color:#e5edff; padding:8px 10px; font-size:0.9rem;
+  }
+  .bf-textarea { min-height:70px; resize:vertical; }
+  .bf-btn-primary {
+    border-radius:999px; border:none; padding:9px 18px;
+    background:linear-gradient(135deg,#2563eb,#22c55e); color:#020617;
+    font-weight:600; font-size:0.9rem; cursor:pointer;
+  }
+  .bf-btn-danger {
+    border-radius:999px; border:1px solid rgba(248,113,113,0.8);
+    background:transparent; color:#fecaca; padding:4px 10px;
+    font-size:0.8rem; cursor:pointer;
+  }
+  .bf-small { font-size:0.76rem; opacity:0.75; }
+  .bf-grid {
+    display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); gap:14px;
+  }
+  .bf-item {
+    border-radius:14px; border:1px solid rgba(148,163,184,0.5);
+    background:rgba(15,23,42,0.85); padding:8px 10px;
+  }
+  .bf-thumb {
+    width:100%; border-radius:10px; overflow:hidden;
+    background:#020617; margin-bottom:6px;
+  }
+  .bf-thumb img, .bf-thumb video, .bf-thumb audio {
+    width:100%; display:block;
+  }
+  .bf-badge {
+    display:inline-flex; padding:2px 8px; border-radius:999px;
+    font-size:0.7rem; text-transform:uppercase; letter-spacing:0.05em;
+    border:1px solid rgba(148,163,184,0.7); margin-bottom:4px;
+  }
+</style>
+
+<div class="bf-page">
+  <h1>Portfolio</h1>
+  <p class="bf-small" style="margin-bottom:16px;">
+    Add up to <strong>8</strong> items to showcase your best work. Images, audio snippets, or links to videos and posts.
+  </p>
+
+  <!-- Add item form -->
+  <section class="bf-card">
+    <h2 style="font-size:1.02rem; margin-bottom:10px;">Add Portfolio Item</h2>
+    <form method="post" action="{{ url_for('bookme_portfolio') }}" enctype="multipart/form-data">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+      <div style="margin-bottom:10px;">
+        <label class="bf-label" for="title">Title</label>
+        <input class="bf-input" id="title" name="title" type="text" required>
+      </div>
+
+      <div style="margin-bottom:10px;">
+        <label class="bf-label" for="description">Description (optional)</label>
+        <textarea class="bf-textarea" id="description" name="description"></textarea>
+      </div>
+
+      <div style="display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; margin-bottom:10px;">
+        <div>
+          <label class="bf-label" for="media_type">Media Type</label>
+          <select class="bf-select" id="media_type" name="media_type">
+            <option value="image">Image (photo/flyer)</option>
+            <option value="audio">Audio snippet</option>
+            <option value="video">Video link</option>
+            <option value="link">Generic link</option>
+          </select>
+          <p class="bf-small" style="margin-top:4px;">
+            Use “Image” for photos/flyers; “Video” or “Link” for YouTube, IG, TikTok, etc.
+          </p>
+        </div>
+        <div>
+          <label class="bf-label" for="file">Upload file (optional)</label>
+          <input class="bf-input" id="file" name="file" type="file">
+          <p class="bf-small" style="margin-top:4px;">
+            For <strong>image/audio</strong> uploads. For links-only, leave this empty.
+          </p>
+        </div>
+      </div>
+
+      <div style="margin-bottom:10px;">
+        <label class="bf-label" for="external_url">External URL (optional)</label>
+        <input class="bf-input" id="external_url" name="external_url" type="url" placeholder="https://">
+        <p class="bf-small" style="margin-top:4px;">
+          Link to your video, post, or website. You can upload a file, set a URL, or both.
+        </p>
+      </div>
+
+      <button type="submit" class="bf-btn-primary">
+        Add to portfolio
+      </button>
+    </form>
+  </section>
+
+  <!-- Existing items -->
+  <section class="bf-card">
+    <h2 style="font-size:1.02rem; margin-bottom:10px;">Your Portfolio Items ({{ items|length }})</h2>
+
+    {% if items %}
+      <div class="bf-grid">
+        {% for item in items %}
+          <article class="bf-item">
+            <div class="bf-thumb">
+              {% if item.media_type == PortfolioMediaType.image and item.media_url %}
+                <img src="{{ item.media_url }}" alt="{{ item.title }}">
+              {% elif item.media_type == PortfolioMediaType.audio and item.media_url %}
+                <audio controls>
+                  <source src="{{ item.media_url }}">
+                  Your browser does not support the audio element.
+                </audio>
+              {% elif item.media_type == PortfolioMediaType.video and item.external_url %}
+                <div class="bf-small" style="padding:6px;">
+                  Video link:
+                  <a href="{{ item.external_url }}" target="_blank" rel="noopener">
+                    {{ item.external_url }}
+                  </a>
+                </div>
+              {% elif item.external_url %}
+                <div class="bf-small" style="padding:6px;">
+                  Link:
+                  <a href="{{ item.external_url }}" target="_blank" rel="noopener">
+                    {{ item.external_url }}
+                  </a>
+                </div>
+              {% else %}
+                <div class="bf-small" style="padding:6px;">
+                  No preview available.
+                </div>
+              {% endif %}
+            </div>
+
+            <span class="bf-badge">
+              {{ item.media_type.value|replace('_',' ')|title }}
+            </span>
+            <div style="font-weight:600; font-size:0.9rem; margin-top:4px;">
+              {{ item.title }}
+            </div>
+            {% if item.description %}
+              <div class="bf-small" style="margin-top:4px;">
+                {{ item.description }}
+              </div>
+            {% endif %}
+
+            <form method="post" action="{{ url_for('bookme_portfolio_delete', item_id=item.id) }}" style="margin-top:8px;">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button type="submit" class="bf-btn-danger">
+                Remove
+              </button>
+            </form>
+          </article>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="bf-small">
+        No items yet. Add your first image, audio snippet, or link above.
+      </p>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}

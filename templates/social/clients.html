@@ -1,0 +1,204 @@
+{% extends "base.html" %}
+{% block title %}Clients · Social Media Manager{% endblock %}
+
+{% block extra_head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+<style>
+  .smm-page {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 20px 16px;
+  }
+
+  .smm-nav {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 24px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid rgba(255,255,255,.1);
+  }
+
+  .smm-nav a {
+    padding: 10px 16px;
+    border-radius: 10px;
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 14px;
+    color: #cbd5f5;
+    background: rgba(255,255,255,.05);
+    border: 1px solid rgba(255,255,255,.1);
+    transition: all 0.2s ease;
+  }
+
+  .smm-nav a:hover {
+    background: rgba(255,255,255,.1);
+  }
+
+  .smm-nav a.active {
+    background: linear-gradient(135deg, rgba(6,182,212,.3), rgba(34,197,94,.2));
+    border-color: rgba(6,182,212,.5);
+    color: #fff;
+  }
+
+  .smm-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 24px;
+    flex-wrap: wrap;
+    gap: 16px;
+  }
+
+  .smm-title {
+    font-size: 1.75rem;
+    font-weight: 800;
+    margin: 0;
+  }
+
+  .smm-btn {
+    padding: 12px 20px;
+    border-radius: 12px;
+    text-decoration: none;
+    font-weight: 600;
+    background: linear-gradient(135deg, rgba(6,182,212,.4), rgba(34,197,94,.3));
+    border: 1px solid rgba(6,182,212,.5);
+    color: #fff;
+    transition: all 0.2s ease;
+  }
+
+  .smm-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(6,182,212,.3);
+  }
+
+  .smm-card {
+    border: 1px solid rgba(255,255,255,.12);
+    background: rgba(255,255,255,.06);
+    border-radius: 18px;
+    padding: 20px;
+    margin-bottom: 16px;
+  }
+
+  .smm-client-row {
+    display: flex;
+    gap: 16px;
+    align-items: flex-start;
+    justify-content: space-between;
+    flex-wrap: wrap;
+  }
+
+  .smm-client-info {
+    flex: 1;
+    min-width: 200px;
+  }
+
+  .smm-client-name {
+    font-size: 1.2rem;
+    font-weight: 700;
+    margin: 0 0 8px;
+  }
+
+  .smm-client-meta {
+    opacity: .8;
+    font-size: .9rem;
+    margin-bottom: 8px;
+  }
+
+  .smm-platforms {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 12px;
+  }
+
+  .smm-platform-tag {
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: rgba(6,182,212,.2);
+    border: 1px solid rgba(6,182,212,.4);
+    font-size: .85rem;
+    text-transform: capitalize;
+  }
+
+  .smm-client-actions {
+    display: flex;
+    gap: 10px;
+  }
+
+  .smm-btn-small {
+    padding: 8px 14px;
+    border-radius: 10px;
+    text-decoration: none;
+    font-size: .9rem;
+    font-weight: 600;
+    background: rgba(255,255,255,.08);
+    border: 1px solid rgba(255,255,255,.12);
+    color: #cbd5f5;
+    transition: all 0.2s ease;
+  }
+
+  .smm-btn-small:hover {
+    background: rgba(255,255,255,.12);
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="smm-page">
+  <nav class="smm-nav">
+    <a href="{{ url_for('social_dashboard') }}">Dashboard</a>
+    <a href="{{ url_for('social_clients') }}" class="active">Clients</a>
+    <a href="{{ url_for('social_calendar') }}">Content Calendar</a>
+    <a href="{{ url_for('social_posts') }}">Posts & Assets</a>
+    <a href="{{ url_for('social_approvals') }}">Approvals</a>
+    <a href="{{ url_for('social_analytics') }}">Analytics</a>
+    <a href="{{ url_for('social_availability') }}">Availability</a>
+    <a href="{{ url_for('social_earnings') }}">Earnings</a>
+    <a href="{{ url_for('social_reviews') }}">Reviews</a>
+    <a href="{{ url_for('social_settings') }}">Settings</a>
+  </nav>
+
+  <div class="smm-header">
+    <h1 class="smm-title">Clients</h1>
+    <a href="#" class="smm-btn">+ Add Client</a>
+  </div>
+
+  {% if clients %}
+    {% for item in clients %}
+      <div class="smm-card">
+        <div class="smm-client-row">
+          <div class="smm-client-info">
+            <h3 class="smm-client-name">{{ item.client.client_name }}</h3>
+            {% if item.client.client_email %}
+              <div class="smm-client-meta">📧 {{ item.client.client_email }}</div>
+            {% endif %}
+            {% if item.client.client_phone %}
+              <div class="smm-client-meta">📱 {{ item.client.client_phone }}</div>
+            {% endif %}
+            {% if item.platforms %}
+              <div class="smm-platforms">
+                {% for platform in item.platforms %}
+                  <span class="smm-platform-tag">{{ platform }}</span>
+                {% endfor %}
+              </div>
+            {% endif %}
+            {% if item.client.notes %}
+              <div style="margin-top: 12px; opacity: .8; font-size: .9rem;">{{ item.client.notes[:100] }}{% if item.client.notes|length > 100 %}...{% endif %}</div>
+            {% endif %}
+          </div>
+          <div class="smm-client-actions">
+            <a href="#" class="smm-btn-small">View</a>
+            <a href="#" class="smm-btn-small">Edit</a>
+          </div>
+        </div>
+      </div>
+    {% endfor %}
+  {% else %}
+    <div class="smm-card">
+      <p style="opacity: .8; text-align: center; padding: 40px 20px;">No clients yet. Add your first client to get started.</p>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}
+

@@ -1,0 +1,16 @@
+{% if provider_rating_summary %}
+  <div class="bf-rating-card">
+    <div class="bf-rating-left">
+      {% if provider_rating_summary.count and provider_rating_summary.count > 0 %}
+        <span class="bf-rating-score">⭐ {{ '%.1f'|format(provider_rating_summary.avg) }}</span>
+        <span class="bf-rating-count">({{ provider_rating_summary.count }})</span>
+      {% else %}
+        <span class="bf-rating-new">New • No reviews yet</span>
+      {% endif %}
+    </div>
+    <div class="bf-rating-actions">
+      <a class="btn btn-secondary" href="{{ url_for('provider_portfolio_public', username=current_user.username) }}">View reviews</a>
+      <a class="btn btn-secondary" href="{{ url_for('provider_availability_alias') }}">Availability</a>
+    </div>
+  </div>
+{% endif %}

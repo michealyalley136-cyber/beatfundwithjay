@@ -1,0 +1,738 @@
+{% extends "base.html" %}
+{% block title %}Vendor Dashboard · BeatFund{% endblock %}
+
+{% block extra_head %}
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  .bf-studio { max-width: 1200px; margin: 0 auto; padding: 16px; }
+  .bf-hero { display:flex; gap:14px; align-items:center; justify-content:space-between; flex-wrap:wrap; margin-bottom: 20px; }
+  .bf-hero-left { display:flex; gap:12px; align-items:center; min-width: 260px; }
+  .bf-avatar { width: 56px; height: 56px; border-radius: 16px; object-fit: cover; border: 1px solid rgba(255,255,255,.12); }
+  .bf-title { margin:0; font-size: 1.35rem; line-height: 1.2; }
+  .bf-sub { margin:4px 0 0; opacity:.8; font-size: .95rem; }
+  .bf-actions { display:flex; gap:10px; flex-wrap:wrap; align-items:center; justify-content:flex-end; }
+
+  .bf-grid { display:grid; grid-template-columns: repeat(12, 1fr); gap: 14px; margin-top: 14px; }
+  .bf-card { border: 1px solid rgba(255,255,255,.12); background: rgba(255,255,255,.06); border-radius: 18px; padding: 16px; }
+  .bf-card h3 { margin:0 0 12px; font-size: 1.1rem; font-weight: 700; }
+  .bf-kpis { display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+  .bf-kpi { padding: 14px; border-radius: 16px; border: 1px solid rgba(255,255,255,.10); background: rgba(255,255,255,.05); }
+  .bf-kpi .label { opacity:.75; font-size: .9rem; margin-bottom: 6px; }
+  .bf-kpi .value { font-size: 1.5rem; font-weight: 800; line-height: 1.2; }
+  .bf-kpi .hint { opacity:.7; font-size: .85rem; margin-top: 6px; }
+
+  .bf-btn {
+    display:inline-flex; align-items:center; justify-content:center;
+    padding: 12px 16px; border-radius: 14px;
+    border: 1px solid rgba(255,255,255,.12);
+    background: rgba(255,255,255,.08);
+    color: inherit;
+    text-decoration:none;
+    font-weight: 600;
+    min-height: 44px;
+    transition: all 0.2s ease;
+  }
+  .bf-btn:hover { background: rgba(255,255,255,.12); transform: translateY(-1px); }
+  .bf-btn.primary { background: linear-gradient(135deg, rgba(251,146,60,.4), rgba(249,115,22,.3)); border-color: rgba(251,146,60,.5); }
+  .bf-btn.primary:hover { background: linear-gradient(135deg, rgba(251,146,60,.5), rgba(249,115,22,.4)); }
+  .bf-btn.block { width: 100%; }
+  .bf-btn.small { font-size: .85rem; padding: 8px 12px; min-height: 36px; }
+
+  .bf-list { display:flex; flex-direction:column; gap:10px; }
+  .bf-row { display:flex; gap:12px; align-items:center; justify-content:space-between; flex-wrap:wrap; padding: 12px; border-radius: 12px; border: 1px solid rgba(255,255,255,.08); background: rgba(0,0,0,.2); }
+  .bf-row .left { min-width: 0; flex: 1; }
+  .bf-row .title { font-weight: 700; font-size: 1rem; }
+  .bf-row .meta { opacity:.75; font-size:.9rem; margin-top: 4px; }
+  .bf-chip {
+    display:inline-flex; align-items:center;
+    padding: 6px 12px; border-radius: 999px;
+    border: 1px solid rgba(255,255,255,.12);
+    background: rgba(255,255,255,.06);
+    font-size: .85rem; opacity:.9;
+  }
+
+  .bf-profile-cta {
+    text-align: center;
+    padding: 24px;
+    border-radius: 18px;
+    background: linear-gradient(135deg, rgba(251,146,60,.15), rgba(249,115,22,.1));
+    border: 1px solid rgba(251,146,60,.3);
+    margin-bottom: 20px;
+  }
+  .bf-profile-cta h2 { margin: 0 0 8px; font-size: 1.3rem; }
+  .bf-profile-cta p { margin: 0 0 16px; opacity: .8; font-size: .95rem; }
+
+  .span-12 { grid-column: span 12; }
+  .span-8 { grid-column: span 12; }
+  .span-4 { grid-column: span 12; }
+  .span-6 { grid-column: span 12; }
+
+  @media (min-width: 900px){
+    .span-8 { grid-column: span 8; }
+    .span-4 { grid-column: span 4; }
+    .span-6 { grid-column: span 6; }
+  }
+
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; padding: 12px; font-size: .9rem; opacity: .7; border-bottom: 1px solid rgba(255,255,255,.1); }
+  td { padding: 12px; border-bottom: 1px solid rgba(255,255,255,.05); }
+  tr:hover { background: rgba(255,255,255,.03); }
+
+  .listing-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
+  .listing-card { position: relative; aspect-ratio: 4/3; border-radius: 12px; overflow: hidden; border: 1px solid rgba(255,255,255,.1); background: rgba(0,0,0,.3); }
+  .listing-img { width: 100%; height: 100%; object-fit: cover; }
+  .listing-overlay { position: absolute; bottom: 0; left: 0; right: 0; background: linear-gradient(to top, rgba(0,0,0,.9), transparent); padding: 12px; }
+  .listing-title { font-weight: 600; font-size: .9rem; margin-bottom: 4px; }
+  .listing-meta { font-size: .75rem; opacity: .8; }
+
+  .inventory-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+  .inventory-item { position: relative; aspect-ratio: 1; border-radius: 12px; overflow: hidden; border: 1px solid rgba(255,255,255,.1); background: rgba(0,0,0,.3); }
+  .inventory-img { width: 100%; height: 100%; object-fit: cover; }
+  .inventory-badge { position: absolute; top: 8px; right: 8px; }
+
+  /* Modal styles */
+  .modal-overlay {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0,0,0,.7);
+    backdrop-filter: blur(4px);
+    z-index: 1000;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+  
+  .modal-overlay.active {
+    display: flex;
+  }
+  
+  .modal-content {
+    background: rgba(15,23,42,.95);
+    border: 1px solid rgba(255,255,255,.12);
+    border-radius: 20px;
+    max-width: 600px;
+    width: 100%;
+    max-height: 80vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 20px 60px rgba(0,0,0,.6);
+  }
+  
+  .modal-header {
+    padding: 20px;
+    border-bottom: 1px solid rgba(255,255,255,.1);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  
+  .modal-header h2 {
+    margin: 0;
+    font-size: 1.3rem;
+    font-weight: 700;
+  }
+  
+  .modal-close {
+    background: none;
+    border: none;
+    color: rgba(255,255,255,.7);
+    font-size: 1.5rem;
+    cursor: pointer;
+    padding: 0;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+    transition: all 0.2s ease;
+  }
+  
+  .modal-close:hover {
+    background: rgba(255,255,255,.1);
+    color: rgba(255,255,255,1);
+  }
+  
+  .modal-body {
+    padding: 20px;
+    overflow-y: auto;
+    flex: 1;
+  }
+  
+  .user-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  
+  .user-item {
+    padding: 12px;
+    border-radius: 12px;
+    border: 1px solid rgba(255,255,255,.08);
+    background: rgba(255,255,255,.03);
+    transition: all 0.2s ease;
+  }
+  
+  .user-item:hover {
+    background: rgba(255,255,255,.06);
+    border-color: rgba(255,255,255,.12);
+  }
+  
+  .user-avatar {
+    width: 48px;
+    height: 48px;
+    border-radius: 12px;
+    object-fit: cover;
+    border: 1px solid rgba(255,255,255,.1);
+  }
+  
+  .user-info {
+    flex: 1;
+    min-width: 0;
+  }
+  
+  .user-name {
+    font-weight: 600;
+    font-size: 1rem;
+    margin-bottom: 2px;
+  }
+  
+  .user-username {
+    font-size: 0.9rem;
+    opacity: 0.7;
+    margin-bottom: 4px;
+  }
+  
+  .user-role {
+    font-size: 0.85rem;
+    opacity: 0.6;
+  }
+  
+  .user-link {
+    color: inherit;
+    text-decoration: none;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex: 1;
+    min-width: 0;
+  }
+  
+  .user-link:hover {
+    color: inherit;
+  }
+  
+  .loading-state, .empty-state {
+    text-align: center;
+    padding: 40px 20px;
+    opacity: 0.7;
+  }
+  
+  .loading-spinner {
+    display: inline-block;
+    width: 32px;
+    height: 32px;
+    border: 3px solid rgba(255,255,255,.1);
+    border-top-color: rgba(251,146,60,1);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="bf-studio">
+
+  {% include "_provider_rating_snippet.html" %}
+
+  <div class="bf-hero">
+    <div class="bf-hero-left">
+      <img class="bf-avatar" src="{{ current_user.avatar_url }}" alt="avatar">
+      <div>
+        <h1 class="bf-title">🏪 Vendor Dashboard</h1>
+        <p class="bf-sub">@{{ current_user.username }} · Sell & rent equipment/services</p>
+        <div style="display: flex; gap: 12px; margin-top: 8px; flex-wrap: wrap;">
+          <button type="button" class="bf-chip" style="background: rgba(251,146,60,.15); border-color: rgba(251,146,60,.3); cursor: pointer; border: 1px solid rgba(251,146,60,.3); transition: all 0.2s ease;" onclick="showFollowers()" onmouseover="this.style.background='rgba(251,146,60,.25)'; this.style.borderColor='rgba(251,146,60,.5)'" onmouseout="this.style.background='rgba(251,146,60,.15)'; this.style.borderColor='rgba(251,146,60,.3)'">
+            <span style="display: inline-block; width: 8px; height: 8px; background: rgba(251,146,60,1); border-radius: 50%; margin-right: 6px;"></span>
+            Followers: <strong>{{ followers_count }}</strong>
+          </button>
+          <button type="button" class="bf-chip" style="background: rgba(249,115,22,.15); border-color: rgba(249,115,22,.3); cursor: pointer; border: 1px solid rgba(249,115,22,.3); transition: all 0.2s ease;" onclick="showFollowing()" onmouseover="this.style.background='rgba(249,115,22,.25)'; this.style.borderColor='rgba(249,115,22,.5)'" onmouseout="this.style.background='rgba(249,115,22,.15)'; this.style.borderColor='rgba(249,115,22,.3)'">
+            Following: <strong>{{ following_count }}</strong>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="bf-actions">
+      <a class="bf-btn primary" href="{{ url_for('bookme_profile') }}">
+        {{ "Edit Profile" if artist_can_take_gigs else "Create Profile" }}
+      </a>
+      <a class="bf-btn" href="{{ url_for('bookme_portfolio') }}">Listings</a>
+      <a class="bf-btn" href="{{ url_for('bookme_requests') }}">Orders</a>
+      <a class="bf-btn" href="{{ url_for('wallet_home') }}">Wallet</a>
+    </div>
+  </div>
+
+  {% if not artist_can_take_gigs %}
+  <!-- Profile CTA -->
+  <div class="bf-profile-cta">
+    <h2>Activate Your Vendor Profile</h2>
+    <p>Create your vendor profile to start selling or renting equipment and services.</p>
+    <a class="bf-btn primary" href="{{ url_for('bookme_profile') }}" style="font-size: 1rem; padding: 14px 28px;">
+      Create Vendor Profile →
+    </a>
+  </div>
+  {% endif %}
+
+  <div class="bf-grid">
+
+    <!-- 1. Overview Stats -->
+    <div class="bf-card span-12">
+      <h3>Overview Statistics</h3>
+      <div class="bf-kpis">
+        <div class="bf-kpi">
+          <div class="label">Total Orders</div>
+          <div class="value">{{ total_orders }}</div>
+          <div class="hint">All orders</div>
+        </div>
+        <div class="bf-kpi">
+          <div class="label">Pending Orders</div>
+          <div class="value">{{ pending_orders }}</div>
+          <div class="hint">Awaiting fulfillment</div>
+        </div>
+        <div class="bf-kpi">
+          <div class="label">Active Orders</div>
+          <div class="value">{{ active_orders }}</div>
+          <div class="hint">In progress</div>
+        </div>
+        <div class="bf-kpi">
+          <div class="label">Completed Orders</div>
+          <div class="value">{{ completed_orders }}</div>
+          <div class="hint">Fulfilled</div>
+        </div>
+        <div class="bf-kpi">
+          <div class="label">Active Listings</div>
+          <div class="value">{{ listings_count }}</div>
+          <div class="hint">Products/services</div>
+        </div>
+        <div class="bf-kpi">
+          <div class="label">Total Earnings</div>
+          <div class="value">${{ "%.2f"|format(total_earnings) }}</div>
+          <div class="hint">All-time revenue</div>
+        </div>
+        <div class="bf-kpi">
+          <div class="label">Monthly Earnings</div>
+          <div class="value">${{ "%.2f"|format(monthly_earnings) }}</div>
+          <div class="hint">This month</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 2. Vendor Profile -->
+    <div class="bf-card span-4">
+      <h3>Vendor Profile</h3>
+      <div style="text-align: center; padding: 16px 0;">
+        <img class="bf-avatar" src="{{ current_user.avatar_url }}" alt="avatar" style="width: 80px; height: 80px; margin: 0 auto 12px;">
+        <div style="font-size: 1.2rem; font-weight: 700; margin-bottom: 4px;">
+          {{ prof.display_name if prof else current_user.display_name or current_user.username }}
+        </div>
+        <div class="bf-chip" style="margin: 8px 0;">Vendor</div>
+        {% if specialties %}
+          <div style="margin-top: 12px; display: flex; flex-wrap: wrap; gap: 6px; justify-content: center;">
+            {% for spec in specialties[:4] %}
+              <span class="bf-chip" style="font-size: .8rem; padding: 4px 10px;">{{ spec }}</span>
+            {% endfor %}
+          </div>
+        {% endif %}
+        {% if prof %}
+          <div style="opacity: .7; font-size: .9rem; margin-top: 12px;">
+            {% if prof.city or prof.state %}
+              📍 {{ prof.city }}{% if prof.city and prof.state %}, {% endif %}{{ prof.state }}
+            {% else %}
+              🌐 Remote
+            {% endif %}
+          </div>
+          <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,.1);">
+            <div style="opacity: .7; font-size: .85rem; margin-bottom: 8px;">
+              Status: 
+              <span class="bf-chip" style="{% if prof.is_visible %}background: rgba(34,197,94,.2); border-color: rgba(34,197,94,.4);{% else %}background: rgba(239,68,68,.2); border-color: rgba(239,68,68,.4);{% endif %}">
+                {{ "Active" if prof.is_visible else "Inactive" }}
+              </span>
+            </div>
+          </div>
+        {% endif %}
+      </div>
+      <div style="margin-top: 16px;">
+        <a class="bf-btn block primary" href="{{ url_for('bookme_profile') }}">
+          {{ "Edit Profile" if artist_can_take_gigs else "Create Profile" }}
+        </a>
+        {% if artist_can_take_gigs %}
+          <a class="bf-btn block" href="{{ url_for('provider_portfolio_public', username=current_user.username) }}" style="margin-top: 8px;">
+            View Public Profile
+          </a>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- 3. Product/Service Listings -->
+    <div class="bf-card span-8">
+      <h3>Product/Service Listings</h3>
+      {% if listings and listings|length > 0 %}
+        <div class="listing-grid">
+          {% for listing in listings[:6] %}
+            <div class="listing-card">
+              {% if listing.media_type.value == 'image' and listing.media_url %}
+                <img src="{{ listing.media_url }}" alt="{{ listing.title }}" class="listing-img">
+              {% else %}
+                <div style="position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(251,146,60,.2);">
+                  <span style="font-size: 3rem;">📦</span>
+                </div>
+              {% endif %}
+              <div class="listing-overlay">
+                <div class="listing-title">{{ listing.title }}</div>
+                <div class="listing-meta">
+                  {{ listing.description[:30] if listing.description else "No description" }}{% if listing.description and listing.description|length > 30 %}...{% endif %}
+                </div>
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+        <div style="margin-top: 16px; display: flex; gap: 8px; flex-wrap: wrap;">
+          <a class="bf-btn block primary" href="{{ url_for('bookme_portfolio') }}">Manage Listings</a>
+          <a class="bf-btn block" href="{{ url_for('bookme_portfolio') }}">Add New Listing</a>
+        </div>
+      {% else %}
+        <p style="opacity:.75; margin:12px 0;">No listings yet. Create your first product or service listing to start selling.</p>
+        <a class="bf-btn block primary" href="{{ url_for('bookme_portfolio') }}">Create First Listing</a>
+      {% endif %}
+    </div>
+
+    <!-- 4. Orders & Fulfillment Status -->
+    <div class="bf-card span-12">
+      <h3>Orders & Fulfillment Status</h3>
+      {% if recent_orders and recent_orders|length > 0 %}
+        <div style="overflow-x: auto;">
+          <table>
+            <thead>
+              <tr>
+                <th>Order ID</th>
+                <th>Customer</th>
+                <th>Product/Service</th>
+                <th>Order Date</th>
+                <th>Status</th>
+                <th>Amount</th>
+                <th>Fulfillment</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for order in recent_orders[:10] %}
+                <tr>
+                  <td>#{{ order.id }}</td>
+                  <td>
+                    {% if order.client %}
+                      @{{ order.client.username }}
+                    {% else %}
+                      —
+                    {% endif %}
+                  </td>
+                  <td>{{ order.event_title }}</td>
+                  <td>
+                    {% if order.created_at %}
+                      {{ order.created_at.strftime("%b %d, %Y") }}
+                    {% else %}
+                      —
+                    {% endif %}
+                  </td>
+                  <td>
+                    <span class="bf-chip" style="{% if order.status and order.status.value == 'completed' %}background: rgba(34,197,94,.2); border-color: rgba(34,197,94,.4);{% elif order.status and order.status.value in ['accepted', 'confirmed'] %}background: rgba(59,130,246,.2); border-color: rgba(59,130,246,.4);{% else %}background: rgba(251,191,36,.2); border-color: rgba(251,191,36,.4);{% endif %}">
+                      {{ order.status.value|title if order.status else "Pending" }}
+                    </span>
+                  </td>
+                  <td>
+                    {% if order.total_cents %}
+                      ${{ "%.2f"|format(order.total_cents / 100.0) }}
+                    {% else %}
+                      —
+                    {% endif %}
+                  </td>
+                  <td>
+                    <span class="bf-chip" style="{% if order.status and order.status.value == 'completed' %}background: rgba(34,197,94,.2); border-color: rgba(34,197,94,.4);{% elif order.status and order.status.value in ['accepted', 'confirmed'] %}background: rgba(251,191,36,.2); border-color: rgba(251,191,36,.4);{% else %}background: rgba(239,68,68,.2); border-color: rgba(239,68,68,.4);{% endif %}">
+                      {% if order.status and order.status.value == 'completed' %}Fulfilled
+                      {% elif order.status and order.status.value in ['accepted', 'confirmed'] %}In Progress
+                      {% else %}Pending{% endif %}
+                    </span>
+                  </td>
+                  <td>
+                    <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+                      <a class="bf-btn small" href="{{ url_for('booking_detail', booking_id=order.id) if order.id else '#' }}">View</a>
+                      {% if order.status and order.status.value not in ['completed'] %}
+                        <a class="bf-btn small" href="{{ url_for('booking_detail', booking_id=order.id) if order.id else '#' }}" style="background: rgba(34,197,94,.2); border-color: rgba(34,197,94,.4);">Fulfill</a>
+                      {% endif %}
+                    </div>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        <div style="margin-top:12px;">
+          <a class="bf-btn block" href="{{ url_for('bookme_requests') }}">View All Orders</a>
+        </div>
+      {% else %}
+        <p style="opacity:.75; margin:12px 0;">No orders yet. When customers place orders, they'll appear here.</p>
+      {% endif %}
+    </div>
+
+    <!-- 5. Inventory Management -->
+    <div class="bf-card span-6">
+      <h3>Inventory Management</h3>
+      {% if inventory_items and inventory_items|length > 0 %}
+        <div class="inventory-grid">
+          {% for item in inventory_items[:6] %}
+            <div class="inventory-item">
+              {% if item.media_type.value == 'image' and item.media_url %}
+                <img src="{{ item.media_url }}" alt="{{ item.title }}" class="inventory-img">
+              {% else %}
+                <div style="position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(251,146,60,.2);">
+                  <span style="font-size: 2rem;">📦</span>
+                </div>
+              {% endif %}
+              <div style="position: absolute; bottom: 0; left: 0; right: 0; background: linear-gradient(to top, rgba(0,0,0,.8), transparent); padding: 8px; font-size: .75rem; font-weight: 600;">
+                {{ item.title[:20] }}{% if item.title|length > 20 %}...{% endif %}
+              </div>
+              <div class="inventory-badge">
+                <span class="bf-chip" style="background: rgba(34,197,94,.3); border-color: rgba(34,197,94,.5); font-size: .7rem; padding: 2px 6px;">In Stock</span>
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+        <div style="margin-top: 16px;">
+          <a class="bf-btn block primary" href="{{ url_for('bookme_portfolio') }}">Manage Inventory</a>
+        </div>
+      {% else %}
+        <p style="opacity:.75; margin:12px 0;">No inventory items yet. Add products or equipment to track your inventory.</p>
+        <a class="bf-btn block primary" href="{{ url_for('bookme_portfolio') }}">Add Inventory Item</a>
+      {% endif %}
+    </div>
+
+    <!-- 6. Earnings -->
+    <div class="bf-card span-6">
+      <h3>Earnings Overview</h3>
+      <div style="padding: 12px 0;">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px;">
+          <div style="padding: 16px; border-radius: 12px; background: rgba(34,197,94,.1); border: 1px solid rgba(34,197,94,.2);">
+            <div style="font-size: .85rem; opacity: .7; margin-bottom: 4px;">Total Earnings</div>
+            <div style="font-size: 1.8rem; font-weight: 700;">${{ "%.2f"|format(total_earnings) }}</div>
+          </div>
+          <div style="padding: 16px; border-radius: 12px; background: rgba(251,146,60,.1); border: 1px solid rgba(251,146,60,.2);">
+            <div style="font-size: .85rem; opacity: .7; margin-bottom: 4px;">This Month</div>
+            <div style="font-size: 1.8rem; font-weight: 700;">${{ "%.2f"|format(monthly_earnings) }}</div>
+          </div>
+        </div>
+        {% if recent_transactions and recent_transactions|length > 0 %}
+          <div style="margin-bottom: 16px;">
+            <div style="font-weight: 600; margin-bottom: 8px; font-size: .9rem;">Recent Transactions</div>
+            <div class="bf-list">
+              {% for trans in recent_transactions[:3] %}
+                <div class="bf-row">
+                  <div class="left">
+                    <div class="title">{{ trans.entry_type.value|title if trans.entry_type else "Transaction" }}</div>
+                    <div class="meta">
+                      {% if trans.created_at %}{{ trans.created_at.strftime("%b %d, %Y") }}{% endif %}
+                    </div>
+                  </div>
+                  <div style="font-weight: 700; {% if trans.entry_type and trans.entry_type.value in ['deposit', 'transfer_in', 'interest', 'adjustment', 'sale_income'] %}color: rgba(34,197,94,1);{% else %}color: rgba(239,68,68,1);{% endif %}">
+                    {% if trans.entry_type and trans.entry_type.value in ['deposit', 'transfer_in', 'interest', 'adjustment', 'sale_income'] %}+{% else %}-{% endif %}${{ "%.2f"|format(trans.amount_cents / 100.0) if trans.amount_cents else "0.00" }}
+                  </div>
+                </div>
+              {% endfor %}
+            </div>
+          </div>
+        {% endif %}
+        <div style="margin-top: 16px;">
+          <a class="bf-btn block primary" href="{{ url_for('wallet_home') }}">View All Transactions</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- 7. Reviews -->
+    <div class="bf-card span-6">
+      <h3>Reviews & Ratings</h3>
+      <div style="padding: 12px 0;">
+        {% if average_rating %}
+          <div style="text-align: center; padding: 20px 0; margin-bottom: 20px;">
+            <div style="font-size: 3rem; margin-bottom: 8px;">⭐</div>
+            <div style="font-size: 2rem; font-weight: 700; margin-bottom: 4px;">{{ "%.1f"|format(average_rating) }}</div>
+            <div style="opacity: .7; font-size: .9rem;">{{ rating_count }} review{{ rating_count != 1 and 's' or '' }}</div>
+          </div>
+        {% else %}
+          <div style="text-align: center; padding: 20px 0; margin-bottom: 20px;">
+            <div style="font-size: 2rem; margin-bottom: 8px;">⭐</div>
+            <div style="opacity: .7; font-size: .9rem;">No reviews yet</div>
+            <div style="opacity: .6; font-size: .85rem; margin-top: 4px;">Complete orders to receive reviews</div>
+          </div>
+        {% endif %}
+        {% if reviews and reviews|length > 0 %}
+          <div class="bf-list">
+            {% for review in reviews[:5] %}
+              <div class="bf-row">
+                <div class="left">
+                  <div class="title">
+                    {{ review.client_name }}
+                    <span style="opacity: .7; font-size: .9rem; margin-left: 8px;">
+                      {% for i in range(review.stars) %}⭐{% endfor %}
+                    </span>
+                  </div>
+                  <div class="meta">
+                    {{ review.comment[:100] }}{% if review.comment|length > 100 %}...{% endif %}
+                    <br>
+                    <span style="opacity: .6; font-size: .85rem;">{{ review.project_title }} · {{ review.date.strftime("%b %d, %Y") if review.date else "" }}</span>
+                  </div>
+                </div>
+              </div>
+            {% endfor %}
+          </div>
+          <div style="margin-top: 12px;">
+            <a class="bf-btn block" href="#">View All Reviews</a>
+          </div>
+        {% else %}
+          <p style="opacity:.75; font-size: .9rem; text-align: center;">No reviews yet. Complete orders to receive customer feedback.</p>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- 8. Settings -->
+    <div class="bf-card span-6">
+      <h3>Settings</h3>
+      <div class="bf-list">
+        <a class="bf-btn block" href="{{ url_for('profile_edit') }}">Account Information</a>
+        <a class="bf-btn block" href="{{ url_for('profile_edit') }}">Password & Security</a>
+        <a class="bf-btn block" href="{{ url_for('bookme_profile') }}">Notification Preferences</a>
+        <a class="bf-btn block" href="{{ url_for('provider_portfolio_public', username=current_user.username) }}">Profile Visibility</a>
+        <a class="bf-btn block" href="{{ url_for('wallet_home') }}">Payment Methods</a>
+        <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,.1);">
+          <a class="bf-btn block" href="{{ url_for('profile_edit') }}" style="background: rgba(239,68,68,.15); border-color: rgba(239,68,68,.3);">
+            Deactivate Account
+          </a>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Followers/Following Modal -->
+<div class="modal-overlay" id="socialModal" onclick="closeModal(event)">
+  <div class="modal-content" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <h2 id="modalTitle">Followers</h2>
+      <button class="modal-close" onclick="closeModal()" aria-label="Close">×</button>
+    </div>
+    <div class="modal-body" id="modalBody">
+      <div class="loading-state">
+        <div class="loading-spinner"></div>
+        <p style="margin-top: 12px;">Loading...</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script nonce="{{ csp_nonce }}">
+  let currentModalType = null;
+
+  function showFollowers() {
+    currentModalType = 'followers';
+    document.getElementById('modalTitle').textContent = 'Followers';
+    document.getElementById('socialModal').classList.add('active');
+    loadSocialList('followers');
+  }
+
+  function showFollowing() {
+    currentModalType = 'following';
+    document.getElementById('modalTitle').textContent = 'Following';
+    document.getElementById('socialModal').classList.add('active');
+    loadSocialList('following');
+  }
+
+  function closeModal(event) {
+    if (event && event.target !== event.currentTarget) return;
+    document.getElementById('socialModal').classList.remove('active');
+    currentModalType = null;
+  }
+
+  async function loadSocialList(type) {
+    const modalBody = document.getElementById('modalBody');
+    modalBody.innerHTML = '<div class="loading-state"><div class="loading-spinner"></div><p style="margin-top: 12px;">Loading...</p></div>';
+
+    try {
+      const followersUrl = '{{ url_for("api_followers", user_id=current_user.id) }}';
+      const followingUrl = '{{ url_for("api_following", user_id=current_user.id) }}';
+      const url = type === 'followers' ? followersUrl : followingUrl;
+      
+      const response = await fetch(url);
+      
+      if (!response.ok) {
+        throw new Error('Failed to load');
+      }
+
+      const data = await response.json();
+      const users = type === 'followers' ? data.followers : data.following;
+
+      if (users.length === 0) {
+        modalBody.innerHTML = '<div class="empty-state"><p>No ' + type + ' yet.</p></div>';
+        return;
+      }
+
+      let html = '<div class="user-list">';
+      for (let i = 0; i < users.length; i++) {
+        const user = users[i];
+        const profileUrl = '/u/' + user.username;
+        let roleText = '';
+        if (user.role) {
+          roleText = user.role.replace(/_/g, ' ').replace(/\b\w/g, function(l) { return l.toUpperCase(); });
+        }
+        html += '<div class="user-item">';
+        html += '<a href="' + profileUrl + '" class="user-link">';
+        html += '<img src="' + user.avatar_url + '" alt="' + escapeHtml(user.username) + '" class="user-avatar">';
+        html += '<div class="user-info">';
+        html += '<div class="user-name">' + escapeHtml(user.display_name) + '</div>';
+        html += '<div class="user-username">@' + escapeHtml(user.username) + '</div>';
+        if (user.role) {
+          html += '<div class="user-role">' + escapeHtml(roleText) + '</div>';
+        }
+        html += '</div>';
+        html += '</a>';
+        html += '</div>';
+      }
+      html += '</div>';
+      modalBody.innerHTML = html;
+
+    } catch (error) {
+      modalBody.innerHTML = '<div class="empty-state"><p>Error loading ' + type + '. Please try again.</p></div>';
+    }
+  }
+
+  function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+  }
+
+  // Close modal on Escape key
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && document.getElementById('socialModal').classList.contains('active')) {
+      closeModal();
+    }
+  });
+</script>
+{% endblock %}

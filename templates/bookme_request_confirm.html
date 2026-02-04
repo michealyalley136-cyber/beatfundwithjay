@@ -1,0 +1,220 @@
+{% extends "base.html" %}
+{% block title %}Confirm Booking Request · BeatFund{% endblock %}
+
+{% block extra_head %}
+<style>
+  .confirm-page {
+    max-width: 600px;
+    margin: 40px auto;
+    padding: 0 16px;
+  }
+
+  .confirm-card {
+    background: rgba(255,255,255,.06);
+    border: 1px solid rgba(255,255,255,.12);
+    border-radius: 18px;
+    padding: 32px;
+  }
+
+  .confirm-header {
+    text-align: center;
+    margin-bottom: 32px;
+  }
+
+  .confirm-title {
+    font-size: 1.75rem;
+    font-weight: 800;
+    margin: 0 0 8px;
+  }
+
+  .confirm-subtitle {
+    opacity: .8;
+    font-size: .95rem;
+  }
+
+  .provider-info {
+    display: flex;
+    gap: 16px;
+    align-items: center;
+    padding: 20px;
+    background: rgba(0,0,0,.2);
+    border-radius: 12px;
+    margin-bottom: 24px;
+    border: 1px solid rgba(255,255,255,.08);
+  }
+
+  .provider-avatar {
+    width: 64px;
+    height: 64px;
+    border-radius: 12px;
+    object-fit: cover;
+    border: 2px solid rgba(255,255,255,.15);
+  }
+
+  .provider-details {
+    flex: 1;
+  }
+
+  .provider-name {
+    font-size: 1.2rem;
+    font-weight: 700;
+    margin: 0 0 6px;
+  }
+
+  .provider-role {
+    opacity: .8;
+    font-size: .9rem;
+  }
+
+  .booking-details {
+    background: rgba(0,0,0,.2);
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 24px;
+    border: 1px solid rgba(255,255,255,.08);
+  }
+
+  .detail-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 12px 0;
+    border-bottom: 1px solid rgba(255,255,255,.08);
+  }
+
+  .detail-row:last-child {
+    border-bottom: none;
+  }
+
+  .detail-label {
+    opacity: .8;
+    font-size: .95rem;
+  }
+
+  .detail-value {
+    font-weight: 600;
+    text-align: right;
+  }
+
+  .warning-box {
+    background: rgba(251,191,36,.1);
+    border: 1px solid rgba(251,191,36,.3);
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 24px;
+    color: #fbbf24;
+    font-size: .9rem;
+  }
+
+  .confirm-actions {
+    display: flex;
+    gap: 12px;
+    flex-direction: column;
+  }
+
+  .btn {
+    padding: 14px 24px;
+    border-radius: 12px;
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 1rem;
+    text-align: center;
+    transition: all 0.2s ease;
+    border: none;
+    cursor: pointer;
+    display: block;
+  }
+
+  .btn-primary {
+    background: linear-gradient(135deg, rgba(6,182,212,.4), rgba(34,197,94,.3));
+    border: 1px solid rgba(6,182,212,.5);
+    color: #fff;
+  }
+
+  .btn-primary:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(6,182,212,.3);
+  }
+
+  .btn-secondary {
+    background: rgba(255,255,255,.08);
+    border: 1px solid rgba(255,255,255,.12);
+    color: #cbd5f5;
+  }
+
+  .btn-secondary:hover {
+    background: rgba(255,255,255,.12);
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="confirm-page">
+  <div class="confirm-card">
+    <div class="confirm-header">
+      <h1 class="confirm-title">Confirm Booking Request</h1>
+      <p class="confirm-subtitle">Review your booking details before sending</p>
+    </div>
+
+    <div class="provider-info">
+      <img class="provider-avatar" src="{{ provider.avatar_url }}" alt="{{ provider.username }}">
+      <div class="provider-details">
+        <div class="provider-name">@{{ provider.username }}</div>
+        <div class="provider-role">{{ provider.role|replace('_', ' ')|title }}</div>
+      </div>
+    </div>
+
+    {% if time_blocked %}
+      <div class="warning-box">
+        Warning: This time slot is blocked and may not be available.
+      </div>
+    {% endif %}
+
+    {% if availability_ok is defined and not availability_ok %}
+      <div class="warning-box">
+        {{ availability_reason or "Requested time is not available." }}
+      </div>
+    {% endif %}
+
+    <div class="booking-details">
+      <div class="detail-row">
+        <span class="detail-label">Preferred Time</span>
+        <span class="detail-value">{{ preferred_time }}</span>
+      </div>
+      {% if message %}
+        <div class="detail-row">
+          <span class="detail-label">Message</span>
+          <span class="detail-value" style="max-width: 60%; word-wrap: break-word;">{{ message }}</span>
+        </div>
+      {% endif %}
+    </div>
+
+    {% if settings %}
+      <div class="booking-details">
+        <div class="detail-row">
+          <span class="detail-label">Accepting new requests</span>
+          <span class="detail-value">{{ "Yes" if settings.accepting_new_requests else "No" }}</span>
+        </div>
+        <div class="detail-row">
+          <span class="detail-label">Modes</span>
+          <span class="detail-value">
+            {% if settings.onsite %}On-site{% endif %}
+            {% if settings.remote %}{% if settings.onsite %} · {% endif %}Remote{% endif %}
+            {% if not settings.onsite and not settings.remote %}Not specified{% endif %}
+          </span>
+        </div>
+      </div>
+    {% endif %}
+
+    <div class="confirm-actions">
+      <form method="POST" action="{{ url_for('bookme_request_confirm', provider_id=provider.id) }}" data-disable-on-submit="true">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="confirmed" value="true">
+        <input type="hidden" name="message" value="{{ message }}">
+        <input type="hidden" name="preferred_time" value="{{ preferred_time }}">
+        <button type="submit" class="btn btn-primary" data-loading-text="Sending...">Confirm & Send Request</button>
+      </form>
+      <a href="{{ url_for('bookme_request', provider_id=provider.id) }}" class="btn btn-secondary">Cancel</a>
+    </div>
+  </div>
+</div>
+{% endblock %}

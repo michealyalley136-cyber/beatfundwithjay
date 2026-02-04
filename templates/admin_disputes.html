@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}Admin - Disputes{% endblock %}
+
+{% block content %}
+<div class="page" style="max-width:1100px;margin:0 auto;padding:24px 16px;">
+  <h2>Booking Disputes</h2>
+  <form method="GET" style="display:flex;gap:10px;flex-wrap:wrap;margin:12px 0;">
+    <select name="status" style="padding:8px;border-radius:8px;border:1px solid #ddd;">
+      <option value="">All</option>
+      {% for s in DISPUTE_STATUSES %}
+        <option value="{{ s }}" {% if status == s %}selected{% endif %}>{{ s|replace('_',' ')|title }}</option>
+      {% endfor %}
+    </select>
+    <button type="submit" class="btn btn-secondary">Filter</button>
+  </form>
+
+  {% if disputes %}
+    <table style="width:100%;border-collapse:collapse;">
+      <thead>
+        <tr>
+          <th style="text-align:left;padding:6px;border-bottom:1px solid #eee;">Booking</th>
+          <th style="text-align:left;padding:6px;border-bottom:1px solid #eee;">Opened By</th>
+          <th style="text-align:left;padding:6px;border-bottom:1px solid #eee;">Status</th>
+          <th style="text-align:left;padding:6px;border-bottom:1px solid #eee;">Created</th>
+          <th style="text-align:left;padding:6px;border-bottom:1px solid #eee;"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for d in disputes %}
+          <tr>
+            <td style="padding:6px;">#{{ d.booking_id }}</td>
+            <td style="padding:6px;">@{{ d.opened_by.username }}</td>
+            <td style="padding:6px;">{{ d.status|replace('_',' ')|title }}</td>
+            <td style="padding:6px;">{{ d.created_at.strftime('%Y-%m-%d') }}</td>
+            <td style="padding:6px;">
+              <a href="{{ url_for('admin_dispute_detail', dispute_id=d.id) }}" class="btn btn-secondary">Open</a>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="muted">No disputes found.</p>
+  {% endif %}
+</div>
+{% endblock %}

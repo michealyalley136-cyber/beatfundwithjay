@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}My Producer Profile{% endblock %}
+{% block content %}
+<div class="card">
+  <h3>@{{ user.username }}</h3>
+  <p class="muted">Your public profile is visible at <code>/p/{{ user.username }}</code></p>
+  <a class="btn" href="{{ url_for('producer_market_mine') }}">My Listings</a>
+</div>
+{% endblock %}
+

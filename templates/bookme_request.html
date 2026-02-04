@@ -1,0 +1,422 @@
+{% extends "base.html" %}
+
+{% block title %}Request Booking · BeatFund{% endblock %}
+
+{% block content %}
+<style>
+  .br-page {
+    max-width: 700px;
+    margin: 0 auto;
+    padding: 32px 16px 64px;
+    color: #f7f9ff;
+  }
+
+  .bf-page h1 {
+    font-size: 1.6rem;
+    margin-bottom: 0.25rem;
+  }
+  .bf-page-subtitle {
+    font-size: 0.9rem;
+    opacity: 0.8;
+    margin-bottom: 1.75rem;
+  }
+
+  .bf-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+  }
+  @media (max-width: 900px) {
+    .bf-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .bf-card {
+    background: radial-gradient(circle at top left, #182a44, #050712);
+    border-radius: 18px;
+    border: 1px solid rgba(255,255,255,0.08);
+    padding: 18px 20px 20px;
+    box-shadow: 0 16px 40px rgba(0,0,0,0.45);
+  }
+  .bf-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 0.75rem;
+  }
+  .bf-card h2 {
+    font-size: 1rem;
+    margin: 0;
+  }
+  .bf-card-caption {
+    font-size: 0.75rem;
+    opacity: 0.75;
+  }
+
+  .bf-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+  }
+  .bf-table th,
+  .bf-table td {
+    padding: 8px 10px;
+    border-bottom: 1px solid rgba(148,163,184,0.25);
+    vertical-align: top;
+  }
+  .bf-table th {
+    text-align: left;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    opacity: 0.8;
+  }
+
+  .bf-text-muted {
+    opacity: 0.8;
+    font-size: 0.9rem;
+  }
+
+  .bf-btn {
+    border-radius: 999px;
+    padding: 5px 10px;
+    border: 1px solid rgba(148,163,184,0.5);
+    background: transparent;
+    color: #f9fafb;
+    cursor: pointer;
+    font-size: 0.78rem;
+    line-height: 1.2;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    text-decoration: none;
+  }
+  .bf-btn:hover {
+    background: rgba(148,163,184,0.18);
+  }
+  .bf-btn-sm {
+    font-size: 0.75rem;
+    padding: 4px 8px;
+  }
+  .bf-btn-ghost {
+    background: transparent;
+    border-color: rgba(148,163,184,0.3);
+  }
+  .bf-btn-primary {
+    border-color: rgba(56,189,248,0.9);
+    background: radial-gradient(circle at top left, rgba(56,189,248,0.25), rgba(15,23,42,0.9));
+  }
+  .bf-btn-primary:hover {
+    background: radial-gradient(circle at top left, rgba(56,189,248,0.4), rgba(15,23,42,1));
+  }
+  .bf-btn-danger {
+    border-color: rgba(248,113,113,0.9);
+    color: #fecaca;
+  }
+  .bf-btn-danger:hover {
+    background: rgba(248,113,113,0.18);
+  }
+
+  .bf-pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 0.7rem;
+    border: 1px solid rgba(148,163,184,0.5);
+    white-space: nowrap;
+  }
+  .bf-pill-success {
+    border-color: rgba(34,197,94,0.6);
+    background: rgba(34,197,94,0.12);
+    color: #bbf7d0;
+  }
+  .bf-pill-muted {
+    opacity: 0.85;
+    border-color: rgba(148,163,184,0.4);
+    background: rgba(15,23,42,0.8);
+  }
+  .bf-pill-pending {
+    border-color: rgba(251,191,36,0.7);
+    background: rgba(251,191,36,0.15);
+    color: #fef3c7;
+  }
+  .bf-pill-danger {
+    border-color: rgba(248,113,113,0.85);
+    background: rgba(248,113,113,0.12);
+    color: #fecaca;
+  }
+
+  .bf-mono {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    font-size: 0.8rem;
+  }
+</style>
+
+<div class="bf-page">
+  <h1>BookMe · Requests & Bookings</h1>
+  <p class="bf-page-subtitle">
+    See who’s trying to book you, what you’ve requested from others, and all confirmed bookings.
+  </p>
+
+  <div class="bf-grid">
+    <!-- LEFT TOP: requests where YOU are the provider -->
+    <section class="bf-card">
+      <div class="bf-card-header">
+        <h2>Requests for you</h2>
+        <p class="bf-card-caption">Incoming requests where you’re the provider.</p>
+      </div>
+
+      {% if incoming_requests %}
+        <table class="bf-table">
+          <thead>
+            <tr>
+              <th>Client</th>
+              <th>Preferred time</th>
+              <th>Message</th>
+              <th>Status</th>
+              <th style="width: 140px;"></th>
+            </tr>
+          </thead>
+          <tbody>
+          {% for r in incoming_requests %}
+            <tr>
+              <td class="bf-mono">@{{ r.client.username }}</td>
+              <td>{{ r.preferred_time }}</td>
+              <td>{{ r.message or "-" }}</td>
+              <td>
+                {% if r.status == BookingStatus.pending %}
+                  <span class="bf-pill bf-pill-pending">Pending</span>
+                {% elif r.status == BookingStatus.accepted %}
+                  <span class="bf-pill bf-pill-success">Accepted</span>
+                {% elif r.status == BookingStatus.declined %}
+                  <span class="bf-pill bf-pill-muted">Declined</span>
+                {% elif r.status == BookingStatus.cancelled %}
+                  <span class="bf-pill bf-pill-muted">Cancelled</span>
+                {% else %}
+                  <span class="bf-pill bf-pill-muted">
+                    {{ r.status.value|replace("_"," ")|title }}
+                  </span>
+                {% endif %}
+              </td>
+              <td>
+                {% if r.status == BookingStatus.pending %}
+                  <div style="display:inline-flex; gap:6px;">
+                    <a href="{{ url_for('bookme_request_accept_confirm', req_id=r.id) }}" class="bf-btn bf-btn-sm bf-btn-primary" style="text-decoration: none;">
+                      Accept
+                    </a>
+                    <form method="post" action="{{ url_for('bookme_request_status', req_id=r.id) }}" style="display:inline;">
+                      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                      <button class="bf-btn bf-btn-sm bf-btn-danger" name="action" value="decline">
+                        Decline
+                      </button>
+                    </form>
+                  </div>
+                {% elif r.status == BookingStatus.accepted %}
+                  <span class="bf-text-muted" style="font-size:0.78rem;">
+                    A confirmed booking record was created.
+                  </span>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <p class="bf-text-muted">
+          You haven’t received any booking requests yet.
+        </p>
+      {% endif %}
+    </section>
+
+    <!-- RIGHT TOP: requests where YOU are the client -->
+    <section class="bf-card">
+      <div class="bf-card-header">
+        <h2>Requests you’ve sent</h2>
+        <p class="bf-card-caption">Requests where you’re the client.</p>
+      </div>
+
+      {% if outgoing_requests %}
+        <table class="bf-table">
+          <thead>
+            <tr>
+              <th>Provider</th>
+              <th>Preferred time</th>
+              <th>Message</th>
+              <th>Status</th>
+              <th style="width: 110px;"></th>
+            </tr>
+          </thead>
+          <tbody>
+          {% for r in outgoing_requests %}
+            <tr>
+              <td class="bf-mono">@{{ r.provider.username }}</td>
+              <td>{{ r.preferred_time }}</td>
+              <td>{{ r.message or "-" }}</td>
+              <td>
+                {% if r.status == BookingStatus.pending %}
+                  <span class="bf-pill bf-pill-pending">Pending</span>
+                {% elif r.status == BookingStatus.accepted %}
+                  <span class="bf-pill bf-pill-success">Accepted</span>
+                {% elif r.status == BookingStatus.declined %}
+                  <span class="bf-pill bf-pill-muted">Declined</span>
+                {% elif r.status == BookingStatus.cancelled %}
+                  <span class="bf-pill bf-pill-muted">Cancelled</span>
+                {% else %}
+                  <span class="bf-pill bf-pill-muted">
+                    {{ r.status.value|replace("_"," ")|title }}
+                  </span>
+                {% endif %}
+              </td>
+              <td>
+                {% if r.status in [BookingStatus.pending, BookingStatus.accepted] %}
+                  <form method="post" action="{{ url_for('bookme_request_status', req_id=r.id) }}" style="display:inline;">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button class="bf-btn bf-btn-sm bf-btn-ghost" name="action" value="cancel">
+                      Cancel
+                    </button>
+                  </form>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <p class="bf-text-muted">
+          You haven’t sent any booking requests yet.
+        </p>
+      {% endif %}
+    </section>
+
+    <!-- LEFT BOTTOM: confirmed bookings where YOU are provider -->
+    <section class="bf-card">
+      <div class="bf-card-header">
+        <h2>Your bookings (as provider)</h2>
+        <p class="bf-card-caption">Confirmed gigs where you’re performing / providing a service.</p>
+      </div>
+
+      {% if incoming_bookings %}
+        <table class="bf-table">
+          <thead>
+            <tr>
+              <th>Client</th>
+              <th>Event</th>
+              <th>Date & time</th>
+              <th>Status</th>
+              <th style="width: 90px;"></th>
+            </tr>
+          </thead>
+          <tbody>
+          {% for b in incoming_bookings %}
+            <tr>
+              <td class="bf-mono">@{{ b.client.username }}</td>
+              <td>{{ b.event_title }}</td>
+              <td>
+                {% if b.event_datetime %}
+                  {{ b.event_datetime.strftime("%Y-%m-%d %H:%M") }}
+                {% else %}
+                  <span class="bf-text-muted">TBD</span>
+                {% endif %}
+              </td>
+              <td>
+                {% set s = b.status|lower %}
+                {% if s == "pending" %}
+                  <span class="bf-pill bf-pill-pending">Pending</span>
+                {% elif s in ["confirmed","completed"] %}
+                  <span class="bf-pill bf-pill-success">
+                    {{ s|title }}
+                  </span>
+                {% elif s == "cancelled" %}
+                  <span class="bf-pill bf-pill-muted">Cancelled</span>
+                {% elif s == "disputed" %}
+                  <span class="bf-pill bf-pill-danger">Disputed</span>
+                {% else %}
+                  <span class="bf-pill bf-pill-muted">
+                    {{ b.status|replace("_"," ")|title }}
+                  </span>
+                {% endif %}
+              </td>
+              <td>
+                <a href="{{ url_for('booking_detail', booking_id=b.id) }}"
+                   class="bf-btn bf-btn-sm bf-btn-ghost">
+                  View
+                </a>
+              </td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <p class="bf-text-muted">
+          You don’t have any bookings as a provider yet.
+        </p>
+      {% endif %}
+    </section>
+
+    <!-- RIGHT BOTTOM: confirmed bookings where YOU are client -->
+    <section class="bf-card">
+      <div class="bf-card-header">
+        <h2>Your bookings (as client)</h2>
+        <p class="bf-card-caption">Bookings you’ve made with other providers.</p>
+      </div>
+
+      {% if outgoing_bookings %}
+        <table class="bf-table">
+          <thead>
+            <tr>
+              <th>Provider</th>
+              <th>Event</th>
+              <th>Date & time</th>
+              <th>Status</th>
+              <th style="width: 90px;"></th>
+            </tr>
+          </thead>
+          <tbody>
+          {% for b in outgoing_bookings %}
+            <tr>
+              <td class="bf-mono">@{{ b.provider.username }}</td>
+              <td>{{ b.event_title }}</td>
+              <td>
+                {% if b.event_datetime %}
+                  {{ b.event_datetime.strftime("%Y-%m-%d %H:%M") }}
+                {% else %}
+                  <span class="bf-text-muted">TBD</span>
+                {% endif %}
+              </td>
+              <td>
+                {% set s = b.status|lower %}
+                {% if s == "pending" %}
+                  <span class="bf-pill bf-pill-pending">Pending</span>
+                {% elif s in ["confirmed","completed"] %}
+                  <span class="bf-pill bf-pill-success">
+                    {{ s|title }}
+                  </span>
+                {% elif s == "cancelled" %}
+                  <span class="bf-pill bf-pill-muted">Cancelled</span>
+                {% elif s == "disputed" %}
+                  <span class="bf-pill bf-pill-danger">Disputed</span>
+                {% else %}
+                  <span class="bf-pill bf-pill-muted">
+                    {{ b.status|replace("_"," ")|title }}
+                  </span>
+                {% endif %}
+              </td>
+              <td>
+                <a href="{{ url_for('booking_detail', booking_id=b.id) }}"
+                   class="bf-btn bf-btn-sm bf-btn-ghost">
+                  View
+                </a>
+              </td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <p class="bf-text-muted">
+          You don’t have any bookings as a client yet.
+        </p>
+      {% endif %}
+    </section>
+{% endblock %}

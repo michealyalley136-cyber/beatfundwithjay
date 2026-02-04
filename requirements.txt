@@ -1,0 +1,30 @@
+﻿blinker==1.9.0
+cairosvg==2.7.1
+click==8.3.1
+colorama==0.4.6
+Flask==3.1.2
+Flask-Login==0.6.3
+Flask-SQLAlchemy==3.1.1
+Flask-WTF==1.2.2
+greenlet==3.2.4
+gunicorn==23.0.0
+itsdangerous==2.2.0
+Jinja2==3.1.6
+MarkupSafe==3.0.3
+packaging==25.0
+pillow==10.4.0
+psycopg[binary]==3.2.2
+python-dotenv==1.2.1
+pytest==8.3.4
+reportlab==4.2.2
+SQLAlchemy==2.0.44
+stripe==14.2.0
+svglib==1.5.1
+typing_extensions==4.15.0
+Werkzeug==3.1.3
+WTForms==3.2.1
+
+# Optional production dependencies (install only if needed)
+# redis>=5.0.0  # For Redis-based rate limiting (set REDIS_URL env var)
+boto3==1.42.42  # For S3 storage backend (set STORAGE_BACKEND=s3 env var)
+# sentry-sdk>=2.0.0  # For error tracking (set SENTRY_DSN env var)
