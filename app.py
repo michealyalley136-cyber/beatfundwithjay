@@ -11977,6 +11977,12 @@ def market_index():
             if b.owner_id and _producer_has_stripe_connected(b.owner_id)
         }
 
+        current_user_stripe_ready = (
+            _producer_has_stripe_connected(current_user.id)
+            if current_user.is_authenticated
+            else False
+        )
+
         return render_template(
             "market_index.html",
             items=items,
@@ -11987,6 +11993,7 @@ def market_index():
             other_providers=other_providers,
             RoleEnum=RoleEnum,
             producer_ids_with_stripe=producer_ids_with_stripe,
+            current_user_stripe_ready=current_user_stripe_ready,
         )
     except Exception as market_err:
         app.logger.error(f"Market page error: {type(market_err).__name__}: {str(market_err)}", exc_info=True)
@@ -12002,6 +12009,7 @@ def market_index():
             other_providers=[],
             RoleEnum=RoleEnum,
             producer_ids_with_stripe=set(),
+            current_user_stripe_ready=False,
         )
 
 

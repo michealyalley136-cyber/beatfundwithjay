@@ -515,6 +515,21 @@
     box-shadow: 0 4px 10px rgba(30, 64, 175, 0.7);
   }
 
+  .mk-btn-buy-inline.mk-pill-action {
+    pointer-events: auto;
+    cursor: pointer;
+    position: relative;
+    z-index: 10;
+  }
+
+  .mk-btn-buy-inline.mk-pill-muted {
+    opacity: 0.6;
+    cursor: default;
+    pointer-events: none;
+    background: rgba(100, 116, 139, 0.5);
+    box-shadow: none;
+  }
+
   .mk-empty {
     font-size: 13px;
     color: #9aa4c2;
@@ -666,6 +681,7 @@
         </div>
 
         {% if items %}
+          {# Beat card pill test: owner not connected -> "Connect Stripe" -> /connect/stripe/start; owner connected -> "Manage Stripe" -> /connect/stripe/dashboard; buyer + connected producer -> "Pay with Stripe" -> market_confirm; buyer + unconnected -> "Payment setup pending" muted #}
           <div class="mk-beat-grid" id="mk-beat-grid">
             {% for b in items %}
               {% set price = (b.price_cents or 0) / 100.0 %}
@@ -725,10 +741,19 @@
                       <div class="mk-price-sub">{% if price == 0 %}Free{% elif b.owner_id and b.owner_id in producer_ids_with_stripe %}Paid via Stripe Connect{% else %}Setup pending{% endif %}</div>
                     </div>
 
-                    {% if price == 0 or (b.owner_id and b.owner_id in producer_ids_with_stripe) %}
-                    <a href="{{ url_for('market_confirm', beat_id=b.id) }}" class="mk-btn-buy-inline">{% if price == 0 %}Get for free{% else %}Buy with Stripe{% endif %}</a>
+                    {% set is_owner = current_user.is_authenticated and current_user.id == b.owner_id %}
+                    {% if price == 0 %}
+                    <a href="{{ url_for('market_confirm', beat_id=b.id) }}" class="mk-btn-buy-inline mk-pill-action" onclick="event.stopPropagation();">Get for free</a>
+                    {% elif is_owner %}
+                      {% if current_user_stripe_ready %}
+                    <a href="{{ url_for('stripe_connect_dashboard') }}" class="mk-btn-buy-inline mk-pill-action" onclick="event.stopPropagation();">Manage Stripe</a>
+                      {% else %}
+                    <a href="{{ url_for('stripe_connect_start') }}" class="mk-btn-buy-inline mk-pill-action" onclick="event.stopPropagation();">Connect Stripe</a>
+                      {% endif %}
+                    {% elif b.owner_id and b.owner_id in producer_ids_with_stripe %}
+                    <a href="{{ url_for('market_confirm', beat_id=b.id) }}" class="mk-btn-buy-inline mk-pill-action" onclick="event.stopPropagation();">Pay with Stripe</a>
                     {% else %}
-                    <span class="mk-btn-buy-inline" style="opacity: 0.6; cursor: default; pointer-events: none;">Payment setup pending</span>
+                    <span class="mk-btn-buy-inline mk-pill-muted">Payment setup pending</span>
                     {% endif %}
                   </div>
                 </div>
