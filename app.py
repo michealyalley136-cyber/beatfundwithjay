@@ -10645,8 +10645,13 @@ def booking_detail(booking_id):
         flash("You don't have access to this booking.", "error")
         return redirect(url_for("bookme_requests"))
 
-    provider_user = booking.provider or User.query.get(booking.provider_id)
-    client_user = booking.client or User.query.get(booking.client_id)
+    try:
+        provider_user = booking.provider or User.query.get(booking.provider_id)
+        client_user = booking.client or User.query.get(booking.client_id)
+    except Exception as e:
+        app.logger.exception("booking_detail load participants failed: %s (booking_id=%s)", e, booking_id)
+        flash("Unable to load booking participants. Please try again or contact support.", "error")
+        return redirect(url_for("bookme_requests"))
     if not provider_user or not client_user:
         flash("Some booking participant details are unavailable. If this persists, contact support.", "warning")
 
@@ -10865,60 +10870,74 @@ def booking_detail(booking_id):
     # Reviews & disputes
     review = None
     can_leave_review = False
-    if is_client:
-        review = ProviderReview.query.filter_by(booking_id=booking.id).first()
-        if booking.status == BOOKING_STATUS_COMPLETED and not review:
-            can_leave_review = True
-
-    dispute = BookingDispute.query.filter_by(booking_id=booking.id).order_by(BookingDispute.created_at.desc()).first()
+    dispute = None
     can_open_dispute = False
     dispute_window_ok = True
-    if (is_client or is_provider) and not dispute:
-        # Only allow disputes within a window after event datetime (if known)
-        if booking.event_datetime:
-            dispute_deadline = booking.event_datetime + timedelta(days=DISPUTE_OPEN_WINDOW_DAYS)
-            dispute_window_ok = datetime.utcnow() <= dispute_deadline
-        if booking.status in [BOOKING_STATUS_CONFIRMED, BOOKING_STATUS_PAID, BOOKING_STATUS_COMPLETED, BOOKING_STATUS_ACCEPTED]:
-            can_open_dispute = dispute_window_ok
+    try:
+        if is_client:
+            review = ProviderReview.query.filter_by(booking_id=booking.id).first()
+            if booking.status == BOOKING_STATUS_COMPLETED and not review:
+                can_leave_review = True
+
+        dispute = BookingDispute.query.filter_by(booking_id=booking.id).order_by(BookingDispute.created_at.desc()).first()
+        if (is_client or is_provider) and not dispute:
+            if booking.event_datetime:
+                dispute_deadline = booking.event_datetime + timedelta(days=DISPUTE_OPEN_WINDOW_DAYS)
+                dispute_window_ok = datetime.utcnow() <= dispute_deadline
+            if booking.status in [BOOKING_STATUS_CONFIRMED, BOOKING_STATUS_PAID, BOOKING_STATUS_COMPLETED, BOOKING_STATUS_ACCEPTED]:
+                can_open_dispute = dispute_window_ok
+    except Exception as e:
+        app.logger.exception(
+            "booking_detail reviews/disputes failed: %s (booking_id=%s)",
+            e, booking_id,
+        )
 
     stripe_enabled = bool(STRIPE_AVAILABLE and STRIPE_SECRET_KEY and STRIPE_PUBLISHABLE_KEY)
 
-    return render_template(
-        "booking_detail.html",
-        booking=booking,
-        provider_user=provider_user,
-        client_user=client_user,
-        is_provider=is_provider,
-        is_client=is_client,
-        is_admin=is_admin,
-        deposit_breakdown=deposit_breakdown,
-        balance_breakdown=balance_breakdown,
-        deposit_due=deposit_due,
-        balance_due=balance_due,
-        balance_blocked=balance_blocked,
-        balance_blocked_reason=balance_blocked_reason,
-        balance_due_by=balance_due_by,
-        deposit_payment=deposit_payment,
-        balance_payment=balance_payment,
-        payment_order_id=(payment_order.id if payment_order else None),
-        service_total_cents=service_total_cents,
-        deposit_base_cents=deposit_base_cents,
-        deposit_credit_cents=deposit_credit_cents,
-        remaining_service_cents=remaining_service_cents,
-        base_paid_cents=base_paid_cents,
-        bf_paid_cents=bf_paid_cents,
-        beatfund_fee_total_cents=beatfund_fee_total_cents,
-        beatfund_fee_remaining_cents=beatfund_fee_remaining_cents,
-        stripe_enabled=stripe_enabled,
-        stripe_publishable_key=STRIPE_PUBLISHABLE_KEY,
-        BOOKING_BALANCE_DEADLINE_HOURS=BOOKING_BALANCE_DEADLINE_HOURS,
-        review=review,
-        can_leave_review=can_leave_review,
-        dispute=dispute,
-        can_open_dispute=can_open_dispute,
-        dispute_window_ok=dispute_window_ok,
-        DISPUTE_OPEN_WINDOW_DAYS=DISPUTE_OPEN_WINDOW_DAYS,
-    )
+    try:
+        return render_template(
+                "booking_detail.html",
+            booking=booking,
+            provider_user=provider_user,
+            client_user=client_user,
+            is_provider=is_provider,
+            is_client=is_client,
+            is_admin=is_admin,
+            deposit_breakdown=deposit_breakdown,
+            balance_breakdown=balance_breakdown,
+            deposit_due=deposit_due,
+            balance_due=balance_due,
+            balance_blocked=balance_blocked,
+            balance_blocked_reason=balance_blocked_reason,
+            balance_due_by=balance_due_by,
+            deposit_payment=deposit_payment,
+            balance_payment=balance_payment,
+            payment_order_id=(payment_order.id if payment_order else None),
+            service_total_cents=service_total_cents,
+            deposit_base_cents=deposit_base_cents,
+            deposit_credit_cents=deposit_credit_cents,
+            remaining_service_cents=remaining_service_cents,
+            base_paid_cents=base_paid_cents,
+            bf_paid_cents=bf_paid_cents,
+            beatfund_fee_total_cents=beatfund_fee_total_cents,
+            beatfund_fee_remaining_cents=beatfund_fee_remaining_cents,
+            stripe_enabled=stripe_enabled,
+            stripe_publishable_key=STRIPE_PUBLISHABLE_KEY,
+            BOOKING_BALANCE_DEADLINE_HOURS=BOOKING_BALANCE_DEADLINE_HOURS,
+            review=review,
+            can_leave_review=can_leave_review,
+            dispute=dispute,
+            can_open_dispute=can_open_dispute,
+            dispute_window_ok=dispute_window_ok,
+            DISPUTE_OPEN_WINDOW_DAYS=DISPUTE_OPEN_WINDOW_DAYS,
+        )
+    except Exception as e:
+        app.logger.exception(
+            "booking_detail render_template failed: %s (booking_id=%s)",
+            e, booking_id,
+        )
+        flash("Unable to load this booking. Please try again or contact support.", "error")
+        return redirect(url_for("bookme_requests"))
 
 
 @app.route("/bookings/<int:booking_id>/review", methods=["GET", "POST"])
