@@ -5,8 +5,8 @@
 <div class="page" style="max-width:980px;margin:0 auto;padding:24px 16px;">
   {% if not stripe_connect_connected %}
   <div class="card" style="margin-bottom: 16px; border: 1px solid rgba(251,191,36,.4); background: rgba(251,191,36,.06);">
-    <h3 style="margin-top: 0; color: #fbbf24;">Connect Stripe to receive booking payments</h3>
-    <p>To receive payments from clients when they book your services, connect your Stripe account. Payments go directly to your connected bank account.</p>
+    <h3 style="margin-top: 0; color: #fbbf24;">Connect Stripe to receive payments</h3>
+    <p>To receive payments from clients (bookings, beat sales, services), connect your Stripe account. Available for all roles—producers, studios, artists, videographers, and more. Payments go directly to your connected bank account.</p>
     <a href="{{ url_for('stripe_connect_start') }}" class="btn btn-primary">Connect Stripe &amp; set up payouts</a>
   </div>
   {% endif %}

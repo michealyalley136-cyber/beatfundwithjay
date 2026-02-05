@@ -1,4 +1,4 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
@@ -138,6 +138,9 @@
         <a href="{{ url_for('market_my_purchases') }}">My Purchases</a>
         <a href="{{ url_for('bookme_search') }}">BookMe</a>
         <a href="{{ url_for('wallet_home') }}">Wallet</a>
+        {% if not stripe_connect_connected %}
+        <a href="{{ url_for('stripe_connect_start') }}" class="nav-connect-stripe">Connect Stripe</a>
+        {% endif %}
         <a href="{{ url_for('opportunities') }}">Opportunities</a>
 
         {# Notifications bell #}
@@ -234,6 +237,9 @@
         <a href="{{ url_for('market_my_purchases') }}">My Purchases</a>
         <a href="{{ url_for('bookme_search') }}">BookMe</a>
         <a href="{{ url_for('wallet_home') }}">Wallet</a>
+        {% if not stripe_connect_connected %}
+        <a href="{{ url_for('stripe_connect_start') }}">Connect Stripe</a>
+        {% endif %}
         <a href="{{ url_for('opportunities') }}">Opportunities</a>
       </div>
     {% endif %}

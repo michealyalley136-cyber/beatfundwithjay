@@ -3,7 +3,7 @@ from __future__ import annotations
 from flask import (
     Flask, render_template, request, redirect, url_for, flash,
     send_from_directory, send_file, abort, jsonify, Response, session, g,
-    has_request_context, stream_with_context
+    has_request_context, stream_with_context, got_request_exception
 )
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import (
@@ -45,6 +45,7 @@ from io import StringIO, BytesIO
 import re
 import json
 import logging
+import traceback
 from logging.handlers import RotatingFileHandler
 import shutil
 import subprocess
@@ -703,17 +704,21 @@ def log_security_event(event_type: str, details: str, severity: str = "info", me
 
 
 # ---------------------------------------------------------
-# Enhanced Error Handling - Don't expose sensitive info
+# Enhanced Error Handling - Full tracebacks in Railway logs
 # ---------------------------------------------------------
+def _log_exception_with_traceback(e: BaseException, prefix: str = "ERROR", status_code: int | None = None):
+    """Log any exception with full traceback for Railway debugging."""
+    tb = getattr(e, "__traceback__", None)
+    tb_str = "".join(traceback.format_exception(type(e), e, tb)) if tb else traceback.format_exc()
+    extra = f" status={status_code}" if status_code is not None else ""
+    app.logger.error(f"{prefix}{extra} FULL TRACEBACK:\n{tb_str}")
+    app.logger.error(f"{prefix} TYPE: {type(e).__name__} | MSG: {str(e)}")
+
+
 @app.errorhandler(500)
 def handle_500_error(e):
     """Handle 500 errors without exposing sensitive information"""
-    # Log full error with traceback for debugging
-    import traceback
-    tb_str = traceback.format_exc()
-    app.logger.error(f"500 ERROR FULL TRACEBACK:\n{tb_str}")
-    app.logger.error(f"500 ERROR TYPE: {type(e).__name__}")
-    app.logger.error(f"500 ERROR STR: {str(e)}")
+    _log_exception_with_traceback(e, prefix="500", status_code=500)
     
     try:
         db.session.rollback()
@@ -745,6 +750,7 @@ def handle_500_error(e):
 @app.errorhandler(404)
 def handle_404_error(e):
     """Handle 404 errors"""
+    _log_exception_with_traceback(e, prefix="404", status_code=404)
     if os.path.exists(os.path.join(BASE_DIR, "templates", "404.html")):
         return render_template("404.html"), 404
     return "Page not found", 404
@@ -753,6 +759,7 @@ def handle_404_error(e):
 @app.errorhandler(403)
 def handle_403_error(e):
     """Handle 403 Forbidden errors"""
+    _log_exception_with_traceback(e, prefix="403", status_code=403)
     log_security_event("unauthorized_access", f"403 Forbidden: {request.path}", "warning")
     flash("You don't have permission to access this resource.", "error")
     return redirect(request.referrer or url_for("home"))
@@ -761,6 +768,7 @@ def handle_403_error(e):
 @app.errorhandler(RequestEntityTooLarge)
 def handle_request_entity_too_large(e):
     """Handle 413 Request Entity Too Large errors (file upload size exceeded)"""
+    _log_exception_with_traceback(e, prefix="413", status_code=413)
     log_security_event("upload_too_large", f"Request size exceeded limit: {request.path}", "warning")
     flash("Upload too large. Please upload a smaller file.", "error")
     
@@ -769,6 +777,14 @@ def handle_request_entity_too_large(e):
     if referrer:
         return redirect(referrer)
     return redirect(url_for("home"))
+
+
+def _on_request_exception(sender, exception, **extra):
+    """Log all unhandled exceptions with full traceback as soon as they occur."""
+    _log_exception_with_traceback(exception, prefix="UNHANDLED", status_code=500)
+
+
+got_request_exception.connect(_on_request_exception)
 
 
 @app.template_test("None")
@@ -5058,6 +5074,18 @@ def inject_provider_review_summary():
         provider_settings=settings,
         DAY_NAMES=DAY_NAMES,
     )
+
+
+@app.context_processor
+def inject_stripe_connect_status():
+    """Inject stripe_connect_connected for all roles - Stripe Connect is for creators, producers, studios, etc."""
+    connected = False
+    try:
+        if current_user.is_authenticated and current_user.role != RoleEnum.admin:
+            connected = _producer_has_stripe_connected(current_user.id)
+    except Exception:
+        connected = False
+    return {"stripe_connect_connected": connected}
 
 
 # =========================================================
@@ -10769,63 +10797,70 @@ def booking_detail(booking_id):
     beatfund_fee_remaining_cents = None
 
     if is_client:
-        ctx, changed = _resolve_booking_fee_fields(booking)
-        if changed:
-            db.session.commit()
-        service_total_cents = ctx.get("quoted_total_cents")
-        if service_total_cents is not None:
-            service_total_cents = int(service_total_cents)
+        try:
+            ctx, changed = _resolve_booking_fee_fields(booking)
+            if changed:
+                db.session.commit()
+            service_total_cents = ctx.get("quoted_total_cents")
+            if service_total_cents is not None:
+                service_total_cents = int(service_total_cents)
 
-        if service_total_cents:
-            payment_order, order_err = get_or_create_payment_order_for_booking(booking)
-            if order_err:
-                app.logger.warning(f"Booking order setup failed: {order_err}")
-            elif payment_order:
-                service_total_cents = int(payment_order.total_amount_cents or service_total_cents)
+            if service_total_cents:
+                payment_order, order_err = get_or_create_payment_order_for_booking(booking)
+                if order_err:
+                    app.logger.warning("Booking order setup failed: %s", order_err)
+                elif payment_order:
+                    service_total_cents = int(payment_order.total_amount_cents or service_total_cents)
 
-        deposit_base_cents = booking_hold_fee_effective(int(service_total_cents or 0))
+            deposit_base_cents = booking_hold_fee_effective(int(service_total_cents or 0))
 
-        if payment_order:
-            base_paid_cents = ledger_sum_gross(payment_order.id, phase=PaymentLedgerPhase.holding)
-            bf_paid_cents = ledger_sum_platform_fees(payment_order.id)
+            if payment_order:
+                base_paid_cents = ledger_sum_gross(payment_order.id, phase=PaymentLedgerPhase.holding)
+                bf_paid_cents = ledger_sum_platform_fees(payment_order.id)
 
-        if service_total_cents:
-            deposit_credit_cents = min(deposit_base_cents or 0, base_paid_cents or 0)
-            remaining_service_cents = max(0, int(service_total_cents) - int(deposit_credit_cents or 0))
-            beatfund_fee_total_cents = planned_platform_fee_cents(OrderType.booking, int(service_total_cents))
-            beatfund_fee_remaining_cents = max(0, int(beatfund_fee_total_cents) - int(bf_paid_cents or 0))
+            if service_total_cents:
+                deposit_credit_cents = min(deposit_base_cents or 0, base_paid_cents or 0)
+                remaining_service_cents = max(0, int(service_total_cents) - int(deposit_credit_cents or 0))
+                beatfund_fee_total_cents = planned_platform_fee_cents(OrderType.booking, int(service_total_cents))
+                beatfund_fee_remaining_cents = max(0, int(beatfund_fee_total_cents) - int(bf_paid_cents or 0))
 
-        if service_total_cents is not None:
-            deposit_breakdown = {
-                "base_cents": int(deposit_base_cents or 0),
-                "beatfund_fee_cents": 0,
-                "processing_fee_cents": 0,
-                "total_cents": int(deposit_base_cents or 0),
-            }
-            if (deposit_base_cents or 0) > 0 and base_paid_cents < (deposit_base_cents or 0):
-                deposit_due = True
+            if service_total_cents is not None:
+                deposit_breakdown = {
+                    "base_cents": int(deposit_base_cents or 0),
+                    "beatfund_fee_cents": 0,
+                    "processing_fee_cents": 0,
+                    "total_cents": int(deposit_base_cents or 0),
+                }
+                if (deposit_base_cents or 0) > 0 and base_paid_cents < (deposit_base_cents or 0):
+                    deposit_due = True
 
-            balance_breakdown = {
-                "base_cents": int(remaining_service_cents or 0),
-                "beatfund_fee_cents": 0,
-                "processing_fee_cents": 0,
-                "total_cents": int(remaining_service_cents or 0),
-            }
-            balance_paid = payment_order and _ledger_phase_succeeded(payment_order.id, PaymentLedgerPhase.balance)
-            if (remaining_service_cents or 0) > 0 and not deposit_due and not balance_paid:
-                balance_due = True
+                balance_breakdown = {
+                    "base_cents": int(remaining_service_cents or 0),
+                    "beatfund_fee_cents": 0,
+                    "processing_fee_cents": 0,
+                    "total_cents": int(remaining_service_cents or 0),
+                }
+                balance_paid = payment_order and _ledger_phase_succeeded(payment_order.id, PaymentLedgerPhase.balance)
+                if (remaining_service_cents or 0) > 0 and not deposit_due and not balance_paid:
+                    balance_due = True
 
-        if booking.event_datetime and balance_due:
-            now = datetime.utcnow()
-            balance_due_by = booking.event_datetime - timedelta(hours=BOOKING_BALANCE_DEADLINE_HOURS)
-            if now >= booking.event_datetime:
-                balance_blocked = True
-                balance_blocked_reason = "Balance payment is no longer available after the booking time."
-            elif now >= balance_due_by:
-                balance_blocked = True
-                balance_blocked_reason = (
-                    f"Balance must be paid at least {BOOKING_BALANCE_DEADLINE_HOURS} hours before the booking time."
-                )
+            if booking.event_datetime and balance_due:
+                now = datetime.utcnow()
+                balance_due_by = booking.event_datetime - timedelta(hours=BOOKING_BALANCE_DEADLINE_HOURS)
+                if now >= booking.event_datetime:
+                    balance_blocked = True
+                    balance_blocked_reason = "Balance payment is no longer available after the booking time."
+                elif now >= balance_due_by:
+                    balance_blocked = True
+                    balance_blocked_reason = (
+                        f"Balance must be paid at least {BOOKING_BALANCE_DEADLINE_HOURS} hours before the booking time."
+                    )
+        except Exception as e:
+            app.logger.exception(
+                "booking_detail client payment logic failed: %s (booking_id=%s, user_id=%s)",
+                e, booking_id, current_user.id,
+            )
+            flash("Unable to load payment details. Please try again or contact support.", "warning")
 
     # Reviews & disputes
     review = None
@@ -15199,7 +15234,7 @@ def market_buy(beat_id):
 
         # Producer must have Stripe Connect to receive payouts
         if not _producer_has_stripe_connected(seller.id):
-            flash("This beat is temporarily unavailable for purchase. The producer needs to connect their Stripe account.", "error")
+            flash("This beat is temporarily unavailable for purchase. The seller needs to connect their Stripe account.", "error")
             return redirect(url_for("market_confirm", beat_id=beat.id))
 
         order, err = get_or_create_payment_order_for_beat(beat, current_user)

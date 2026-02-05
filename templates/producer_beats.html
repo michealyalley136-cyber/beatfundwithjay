@@ -11,7 +11,7 @@
   {% if has_paid_beats and not producer_stripe_connected %}
   <div class="card" style="margin-bottom: 24px; border: 1px solid rgba(251,191,36,.4); background: rgba(251,191,36,.08);">
     <h3 style="margin-top: 0; color: #fbbf24;">Connect Stripe to receive payments</h3>
-    <p>You have paid beats listed. To receive payments when buyers purchase your beats via Stripe, connect your Stripe account. Payments go directly to your connected account.</p>
+    <p>You have paid beats listed. Connect your Stripe account to receive payments when buyers purchase your beats. Payments go directly to your connected bank—available for all creators.</p>
     <a href="{{ url_for('stripe_connect_start') }}" class="btn btn-primary">Connect Stripe &amp; set up payouts</a>
   </div>
   {% endif %}
