@@ -652,29 +652,31 @@
       'transfer_out': 'Transfer funds to your primary bank account or debit card. Instant options available for cards.'
     };
 
+    function activatePill(action) {
+      actionPills.forEach(p => {
+        p.classList.toggle('active', p.dataset.action === action && !p.disabled);
+      });
+      formPanels.forEach(panel => {
+        panel.classList.toggle('active', panel.dataset.action === action);
+      });
+      const descEl = document.getElementById('wallet-action-description');
+      if (descEl && descriptions[action]) descEl.textContent = descriptions[action];
+    }
+
     actionPills.forEach(pill => {
       pill.addEventListener('click', function() {
-        const action = this.dataset.action;
-        
-        // Update active states
-        actionPills.forEach(p => p.classList.remove('active'));
-        this.classList.add('active');
-        
-        // Show/hide form panels
-        formPanels.forEach(panel => {
-          panel.classList.remove('active');
-          if (panel.dataset.action === action) {
-            panel.classList.add('active');
-          }
-        });
-        
-        // Update description
-        const descEl = document.getElementById('wallet-action-description');
-        if (descEl && descriptions[action]) {
-          descEl.textContent = descriptions[action];
-        }
+        if (this.disabled) return;
+        activatePill(this.dataset.action);
       });
     });
+
+    // Activate initial pill on load (Add Money)
+    const activePill = document.querySelector('.wallet-action-pill.active');
+    if (activePill && activePill.dataset.action) {
+      activatePill(activePill.dataset.action);
+    } else {
+      activatePill('add');
+    }
 
     // Form validation
     const forms = document.querySelectorAll('.wallet-form-panel form');
