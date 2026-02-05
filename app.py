@@ -8330,6 +8330,17 @@ def wallet_page():
     recent = txns[:10] if txns else []
 
     kyc_blocked_payout = bool(KYC_ENFORCE and is_service_provider(current_user) and not _is_kyc_verified(current_user))
+
+    # Stripe Connect status for payout/beat sale flows
+    stripe_connect_connected = False
+    stripe_connect_payouts_enabled = False
+    stripe_connect_charges_enabled = False
+    acct_row = _get_or_refresh_provider_stripe_account(current_user.id, refresh=False)
+    if acct_row and acct_row.stripe_account_id:
+        stripe_connect_connected = True
+        stripe_connect_payouts_enabled = bool(acct_row.payouts_enabled)
+        stripe_connect_charges_enabled = bool(acct_row.charges_enabled)
+
     return render_template(
         "wallet_center.html",
         balance=balance,
@@ -8338,6 +8349,9 @@ def wallet_page():
         recent=recent,
         tab=tab,
         kyc_blocked_payout=kyc_blocked_payout,
+        stripe_connect_connected=stripe_connect_connected,
+        stripe_connect_payouts_enabled=stripe_connect_payouts_enabled,
+        stripe_connect_charges_enabled=stripe_connect_charges_enabled,
     )
 
 
@@ -8967,12 +8981,15 @@ def provider_settings():
         flash("Settings updated.", "success")
         return redirect(url_for("provider_settings"))
 
+    stripe_connect_connected = _producer_has_stripe_connected(current_user.id)
+
     return render_template(
         "provider_settings.html",
         settings=settings,
         slots=slots,
         exceptions=exceptions,
         DAY_NAMES=DAY_NAMES,
+        stripe_connect_connected=stripe_connect_connected,
     )
 
 
@@ -14120,6 +14137,33 @@ def stripe_connect_return():
         flash("Error verifying bank connection. Please try again.", "error")
 
     return redirect(url_for("wallet_home"))
+
+
+@app.route("/connect/stripe/dashboard", methods=["GET"])
+@login_required
+def stripe_connect_dashboard():
+    """Redirect to Stripe Express Dashboard for managing Connect account (bank details, payouts)."""
+    ok, err_msg = _stripe_env_guard()
+    if not ok:
+        flash(err_msg, "error")
+        return redirect(url_for("wallet_home"))
+
+    acct_id = (getattr(current_user, "stripe_account_id", None) or "").strip()
+    if not acct_id:
+        flash("Connect your Stripe account first.", "info")
+        return redirect(url_for("stripe_connect_start"))
+
+    try:
+        link = stripe.Account.create_login_link(acct_id)
+        return redirect(link.url)
+    except stripe.error.StripeError as e:
+        _log_stripe_error("stripe_connect_dashboard", e, user_id=current_user.id, stripe_account_id=acct_id)
+        flash("Unable to open Stripe dashboard. Please try again.", "error")
+        return redirect(url_for("wallet_home"))
+    except Exception as e:
+        _log_stripe_error("stripe_connect_dashboard", e, user_id=current_user.id, stripe_account_id=acct_id)
+        flash("Unable to open Stripe dashboard. Please try again.", "error")
+        return redirect(url_for("wallet_home"))
 
 
 @app.route("/connect/onboard/provider", methods=["GET"])
