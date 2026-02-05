@@ -14039,6 +14039,8 @@ def _finalize_wallet_topup(*, user_id: int, amount_cents: int, session_id: str |
 # =========================================================
 # Stripe Connect (Payouts / Withdrawals)
 # =========================================================
+# Stripe Connect start: test checklist: visit /connect/stripe/start logged in -> redirects to Stripe onboarding;
+# if it fails, flash shows real error and Railway logs contain exception trace
 @app.route("/connect/stripe/start", methods=["GET"])
 @login_required
 def stripe_connect_start():
@@ -14048,8 +14050,13 @@ def stripe_connect_start():
         return redirect(url_for("wallet_home"))
 
     base_url = get_stripe_base_url()
-    refresh_url = CONNECT_ONBOARDING_REFRESH_URL or f"{base_url}/connect/stripe/start"
-    return_url = CONNECT_ONBOARDING_RETURN_URL or f"{base_url}/connect/stripe/return"
+    base_url = (base_url or "").rstrip("/")
+    refresh_url = CONNECT_ONBOARDING_REFRESH_URL or (f"{base_url}/connect/stripe/start" if base_url else None)
+    return_url = CONNECT_ONBOARDING_RETURN_URL or (f"{base_url}/connect/stripe/return" if base_url else None)
+    if not refresh_url or not return_url:
+        app.logger.error("Stripe Connect start: missing refresh_url or return_url; base_url=%r", base_url)
+        flash("Stripe Connect URLs not configured. Set APP_BASE_URL or CONNECT_ONBOARDING_*.", "error")
+        return redirect(url_for("wallet_home"))
 
     try:
         # Create account if missing
@@ -14074,28 +14081,33 @@ def stripe_connect_start():
                 current_user.stripe_account_id = acct_id
             _get_or_refresh_provider_stripe_account(current_user.id, refresh=True)
 
-        link = stripe.AccountLink.create(
+        account_link = stripe.AccountLink.create(
             account=acct_id,
             refresh_url=refresh_url,
             return_url=return_url,
             type="account_onboarding",
         )
-        return redirect(link.url)
+        return redirect(account_link.url, code=303)
     except stripe.error.StripeError as e:
-        _log_stripe_error(
-            "stripe_connect_start",
-            e,
-            user_id=current_user.id,
+        msg = getattr(e, "user_message", None) or str(e)
+        json_body = getattr(e, "json_body", None)
+        app.logger.exception(
+            "Stripe Connect start failed: %s | json_body=%s",
+            msg,
+            json_body,
+            extra={"user_id": current_user.id},
         )
-        flash("Unable to start bank connection. Please try again.", "error")
+        # TEMP: flash real error for debugging; replace with generic message after resolved.
+        flash(msg or "Stripe error starting bank connection.", "error")
         return redirect(url_for("wallet_home"))
     except Exception as e:
-        _log_stripe_error(
-            "stripe_connect_start",
-            e,
-            user_id=current_user.id,
+        app.logger.exception(
+            "Stripe Connect start unexpected error: %s",
+            str(e),
+            extra={"user_id": current_user.id},
         )
-        flash("Unable to start bank connection. Please try again.", "error")
+        # TEMP: flash real error for debugging; replace with generic message after resolved.
+        flash(str(e) if str(e).strip() else "Unable to start bank connection. Please try again.", "error")
         return redirect(url_for("wallet_home"))
 
 
