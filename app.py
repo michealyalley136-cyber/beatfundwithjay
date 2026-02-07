@@ -5083,7 +5083,8 @@ def inject_stripe_connect_status():
     try:
         if current_user.is_authenticated and current_user.role != RoleEnum.admin:
             connected = _producer_has_stripe_connected(current_user.id)
-    except Exception:
+    except Exception as e:
+        app.logger.warning("inject_stripe_connect_status failed: %s (user_id=%s)", e, getattr(current_user, "id", None))
         connected = False
     return {"stripe_connect_connected": connected}
 
@@ -10922,7 +10923,7 @@ def booking_detail(booking_id):
             beatfund_fee_total_cents=beatfund_fee_total_cents,
             beatfund_fee_remaining_cents=beatfund_fee_remaining_cents,
             stripe_enabled=stripe_enabled,
-            stripe_publishable_key=STRIPE_PUBLISHABLE_KEY,
+            stripe_publishable_key=(STRIPE_PUBLISHABLE_KEY or ""),
             BOOKING_BALANCE_DEADLINE_HOURS=BOOKING_BALANCE_DEADLINE_HOURS,
             review=review,
             can_leave_review=can_leave_review,
